@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>RenderLumenReflections 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>RenderLumenReflections 函数算法附录</h1><div class="subtitle">配合主文档使用。展开 tile 分类与降采样、GenerateRays 的 GGX 采样与 Radiance Cache fade、追踪参数、三段降噪 CS（Resolve / Temporal / Spatial）的参数与 permutation，以及三套反射历史状态。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenReflections_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 RenderLumenReflections 主文档</a><a class="tag" href="LumenTraceScreenProbes_FunctionAppendix.html"><span class="dot" style="background:var(--purple)"></span>同源追踪：③ TraceScreenProbes 附录</a><a class="tag" href="UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenReflections.cpp · LumenReflectionsDenoiser.cpp · LumenReflectionTracing.cpp</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#Tile">Tile 分类与降采样</a><a href="#Gen">GenerateRays（GGX + RadianceCache fade）</a><a href="#Resolve">Resolve CS</a><a href="#Temporal">Temporal CS</a><a href="#Spatial">Spatial CS</a><a href="#State">反射历史状态</a><a href="#Rel">函数关系表</a></div></section>
+
+<section id="Tile" class="card"><h2>1. Tile 分类与降采样</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ReflectionTileClassification -&gt; FLumenReflectionTileParameters
+//   把屏幕切成 GReflectionResolveTileSize 的 tile，
+//   分类出：需要 resolve 的 tile / 需要 trace 的（降采样）tile / 需清空的 tile
+//   产出各自的 IndirectArgs（间接派发参数）+ tile 数据 buffer
+//   -&gt; 后续所有 pass 都用 AddPass(..., IndirectArgs) 只跑相关 tile
+
+// 降采样因子 LumenReflectionDownsampleFactorXY（1 或 2）：
+//   UserDownsampleFactor = 质量档 <= .25 ? 2 : 1
+//   CVarLumenReflectionsDownsampleCheckerboard: 只降 X（棋盘）
+//   ReflectionsConfig.DownsampleFactorXY 可外部指定（水面/半透明）
+
+// 追踪缓冲都是【下采样分辨率】的 Texture2DArray（按 closure 分层）：
+//   RayBuffer / DownsampledDepth / RayTraceDistance / TraceRadiance / TraceHit</textarea><div class="note"><h3>说明</h3><p>Tile 分类是反射的成本闸门：全屏大部分像素（天空、纯漫反射材质、被遮挡）根本不需要反射，分类后用<b>间接派发</b>让 GPU 只在有效 tile 上跑，省下的正是这些空 tile。</p><p><span class="note-label common">共同点</span>间接派发 + tile 分类与 ⑤ InterpolateAndIntegrate 的 tile classification、反射自己的各 pass 一脉相承。</p><p><span class="note-label diff">不同点</span>反射的追踪在<b>下采样分辨率</b>进行（GI 的 probe 是另一套稀疏结构），Resolve 阶段才上采回全屏。</p></div></div></section>
+
+<section id="Gen" class="card"><h2>2. GenerateRays：GGX 采样 + Radiance Cache fade</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// FReflectionGenerateRaysCS
+//   逐（下采样）像素：读粗糙度 -&gt; GGX 重要性采样反射方向 -&gt; 写 RayBuffer
+//   GGXSamplingBias: 把采样往法线方向偏，减小方差（牺牲少量准确度）
+
+// Radiance Cache fade（决定"发线 or 查缓存"）：
+//   RadianceCacheMinRoughness / MaxRoughness：粗糙度区间
+//   RadianceCacheRoughnessFadeLength：区间内平滑过渡
+//   RadianceCacheMinTraceDistance / MaxTraceDistance：距离区间
+//   roughness 越高、距离越远 -&gt; 越用 Radiance Cache，越不发线
+
+// permutation：
+//   FRadianceCache（bUseRadianceCache）
+//   FFrontLayerTranslucency（半透明前层）</textarea><div class="note"><h3>说明</h3><p>GenerateRays 决定"这根反射线值不值得真追"：光滑近处的反射细节丰富、必须精确追踪；粗糙远处的反射本就模糊，用 Radiance Cache 一查即可，省下大量光线。<span class="inline">RoughnessFadeLength</span> 保证两种模式之间平滑过渡不露缝。</p><p><span class="note-label common">共同点</span>与 ② GenerateImportanceSamplingRays 同为"把有限光线预算投到高价值方向"的思想，也共用 Radiance Cache。</p><p><span class="note-label diff">不同点</span>② 在半球上按 PDF 分配<b>多</b>根线；这里严格沿 GGX 波瓣采<b>一</b>根方向，且用粗糙度/距离阈值直接切到缓存兜底。</p></div></div></section>
+
+<section id="Resolve" class="card"><h2>3. FLumenReflectionResolveCS（空间重建 + 上采样）</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 输入：TraceRadiance / TraceHit（下采样、每像素 1 根噪声线）
+// 输出：ResolvedSpecularIndirect / ResolvedSpecularIndirectDepth（全屏）
+
+// 空间重建：借邻域像素的光线，按 BRDF 权重加权重建当前像素反射
+//   NumSpatialReconstructionSamples：邻域采样数（随质量档缩放，clamp 到 64）
+//   SpatialReconstructionKernelRadius：核半径（越糙越大）
+//   SpatialReconstructionRoughnessScale / MinWeight：权重调节
+
+// permutation：
+//   FSpatialReconstruction（bUseSpatialReconstruction）
+//   FDownsampleFactorX / FDownsampleFactorY（1 或 2，决定上采样方式）
+//   FUseAnisotropy（各向异性材质）
+//   FFrontLayerTranslucency / FDebugMode
+//   RemapPermutation 收敛无效组合</textarea><div class="note"><h3>说明</h3><p>Resolve 是三段降噪的第一击，也是唯一的<b>纯空间</b>去噪：每像素只有一根线太噪，借周围像素同样为反射发的线（它们方向略有不同，合起来近似覆盖 GGX 波瓣）做加权重建，同时把下采样结果上采回全屏。</p><p><span class="note-label diff">不同点</span>这是反射<b>独有</b>的一步——GI 靠 probe 的空间密度天然抗噪，不需要显式空间重建。核半径随粗糙度增大，因为糙反射的波瓣宽、邻域相关性强。</p></div></div></section>
+
+<section id="Temporal" class="card"><h2>4. FLumenReflectionDenoiserTemporalCS（时域累积）</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 输入：ResolvedSpecularIndirect + 历史(SpecularAndSecondMoment / NumFrames)
+//       + VelocityTexture + SceneDepthHistory
+// 输出：SpecularAndSecondMoment（颜色+二阶矩） / NumFramesAccumulated
+
+// 关键参数：
+//   PrevSceneColorPreExposureCorrection = PreExposure / PrevSceneColorPreExposure
+//   TemporalMaxFramesAccumulated = GetMaxFramesAccumulated()   // 累积上限
+//   TemporalNeighborhoodClampScale                             // 邻域钳制强度
+//   HistoryDistanceThreshold                                   // 深度差超阈值判失效
+//   HistoryScreenPositionScaleBias / HistoryUVMinMax / GatherUVMinMax // 重投影映射
+
+// permutation：
+//   FValidHistory(SceneDepthHistory && SpecularAndSecondMomentHistory && bTemporal)
+//   FFrontLayerTranslucency / FRayTracedTranslucencyLighting / FDebug
+
+// 二阶矩：E[c^2] 与 E[c] 一起 -&gt; 方差 = E[c^2]-E[c]^2 -&gt; 供 Spatial 用</textarea><div class="note"><h3>说明</h3><p>Temporal 用运动矢量把上一帧结果重投影到当前帧累积，累积越多越干净。它额外维护<b>二阶矩</b>：有了 E[c] 和 E[c²] 就能算每像素方差，这是下一步空域滤波"该滤多狠"的依据。<span class="inline">HistoryDistanceThreshold</span> + 邻域钳制两道防线拦鬼影。</p><p><span class="note-label common">共同点</span>velocity 重投影 + 邻域钳制 + <span class="inline">NumFramesAccumulated</span> 累积窗口 + PreExposure 校正，与 UpdateHistory / ④ 时域滤波完全同套路。</p><p><span class="note-label diff">不同点</span>多算并存了<b>二阶矩</b>（方差），因为镜面噪声需要方差驱动的自适应后处理；GI 的时域步不需要显式方差。</p></div></div></section>
+
+<section id="Spatial" class="card"><h2>5. FLumenReflectionDenoiserSpatialCS（方差自适应双边滤波）</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 输入：SpecularAndSecondMoment（含方差）+ NumFramesAccumulated
+// 输出：SpecularIndirect（最终反射结果）
+
+// 自适应：
+//   累积帧数少（NumFramesAccumulated 低，如 disocclusion 新区域）
+//     -&gt; 历史不足、方差大 -&gt; 加大滤波
+//   累积帧数多（已收敛） -&gt; 少滤，保细节
+//   SpatialFilterMaxDisocclusionFrames：多少帧内算"刚 disocclusion"
+
+// 参数：
+//   SpatialFilterKernelRadius / SpatialFilterNumSamples（clamp 0..1024）
+//   SpatialFilterDepthWeightScale：深度差权重（双边保边）
+
+// permutation：FSpatialFilter(bSpatial) / FFrontLayerTranslucency / FDebugMode</textarea><div class="note"><h3>说明</h3><p>Spatial 是"补刀"：时域累积够的像素基本不用再滤，主要救刚出现（disocclusion）、历史不足的区域——这些地方方差大，用更大的双边核在保深度边的前提下抹平噪声。滤波强度由二阶矩方差 + 累积帧数共同驱动，做到"该滤的多滤、该留的少动"。</p><p><span class="note-label common">共同点</span>双边滤波（深度权重保边）与 ④ FilterScreenProbes 的空域滤波思想一致。</p><p><span class="note-label diff">不同点</span>这里是<b>方差自适应</b>的：滤波强度随每像素方差/累积帧数变化，而非固定核。</p></div></div></section>
+
+<section id="State" class="card"><h2>6. 反射历史状态（三套）</h2><div class="body"><table class="table"><tr><th>ReflectionPass</th><th>状态字段</th><th>用途</th></tr><tr><td>Opaque</td><td>ViewState-&gt;Lumen.ReflectionState</td><td>不透明物体主反射</td></tr><tr><td>SingleLayerWater</td><td>ViewState-&gt;Lumen.WaterReflectionState</td><td>单层水面反射</td></tr><tr><td>FrontLayerTranslucency</td><td>ViewState-&gt;Lumen.TranslucentReflectionState</td><td>半透明前层反射</td></tr></table><div class="note"><h3>说明</h3><p>每套 <span class="inline">FReflectionTemporalState</span> 都含 <span class="inline">SpecularAndSecondMomentHistory</span> / <span class="inline">NumFramesAccumulatedHistory</span> + 一组 History*ScaleBias/UVMinMax 重投影映射。深度历史 <span class="inline">SceneDepthHistory</span> 与 GI 共享 StochasticLighting（半透明前层用 FrontLayerTranslucencyDepthHistory）。<span class="inline">bCameraCut</span> / <span class="inline">bPrevTransformsReset</span> 时整套丢弃。</p></div></div></section>
+
+<section id="Rel" class="card"><h2>函数关系表</h2><div class="body"><table class="table"><tr><th>函数 / CS</th><th>类型</th><th>职责</th></tr><tr><td>RenderLumenReflections</td><td>入口</td><td>反射链路总调度</td></tr><tr><td>ShouldRenderLumenReflections</td><td>门禁</td><td>判断是否渲染反射</td></tr><tr><td>ReflectionTileClassification</td><td>分类</td><td>圈定 resolve/trace/clear tile + 间接派发参数</td></tr><tr><td>FReflectionGenerateRaysCS</td><td>采样</td><td>GGX 逐像素定向 + Radiance Cache fade</td></tr><tr><td>TraceReflections</td><td>追踪</td><td>多后端级联（同 ③）+ 读 Surface Cache</td></tr><tr><td>FLumenReflectionResolveCS</td><td>降噪①</td><td>空间重建 + 上采样回全屏</td></tr><tr><td>FLumenReflectionDenoiserTemporalCS</td><td>降噪②</td><td>历史重投影累积 + 二阶矩</td></tr><tr><td>FLumenReflectionDenoiserSpatialCS</td><td>降噪③</td><td>方差自适应双边滤波</td></tr><tr><td>GetMaxFramesAccumulated</td><td>参数</td><td>时域累积上限</td></tr></table></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

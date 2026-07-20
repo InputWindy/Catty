@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>GenerateImportanceSamplingRays 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>GenerateImportanceSamplingRays 函数算法附录</h1><div class="subtitle">配合主文档使用。展开 C++ dispatcher（两趟 pass 编排）、ComputeLightingPDF shader、以及 PackRayInfo / 排序 / 细分相关 helper。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenGenerateImportanceSamplingRays_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 GenerateImportanceSamplingRays 主文档</a><a class="tag" href="LumenScreenProbeGather_RenderFlow_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>上级：RenderLumenScreenProbeGather 函数附录</a></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#Dispatcher">GenerateImportanceSamplingRays (C++)</a><a href="#LightingPDF">ComputeLightingPDF Shader</a><a href="#Pack">PackRayInfo / RaySortInfo</a><a href="#Helpers">Helper 速查</a></div></section>
+
+<section id="Dispatcher" class="card"><h2>1. GenerateImportanceSamplingRays（C++ dispatcher）</h2><div class="body grid2"><textarea class="codebox large" readonly spellcheck="false">void GenerateImportanceSamplingRays(
+	FRDGBuilder& GraphBuilder, 
+	const FViewInfo& View,
+	const FSceneTextures& SceneTextures,
+	const LumenRadianceCache::FRadianceCacheInterpolationParameters& RadianceCacheParameters,
+	FRDGTextureRef BRDFProbabilityDensityFunction,
+	FRDGBufferSRVRef BRDFProbabilityDensityFunctionSH,
+	FScreenProbeParameters& ScreenProbeParameters,
+	ERDGPassFlags ComputePassFlags)
+{
+	const uint32 MaxImportanceSamplingOctahedronResolution = ScreenProbeParameters.ScreenProbeTracingOctahedronResolution * (1 << GLumenScreenProbeImportanceSamplingNumLevels);
+	ScreenProbeParameters.ImportanceSampling.MaxImportanceSamplingOctahedronResolution = MaxImportanceSamplingOctahedronResolution;
+
+	const bool bImportanceSampleLighting = GLumenScreenProbeImportanceSampleIncomingLighting != 0;
+
+	FRDGTextureRef LightingProbabilityDensityFunction = nullptr;
+
+	if (bImportanceSampleLighting)
+	{
+		// 分配 LightingPDF 纹理
+		FIntPoint LightingPDFBufferSize = ScreenProbeParameters.ScreenProbeAtlasBufferSize * ScreenProbeParameters.ScreenProbeTracingOctahedronResolution;
+		LightingProbabilityDensityFunction = GraphBuilder.CreateTexture(..., TEXT("Lumen.ScreenProbeGather.LightingProbabilityDensityFunction"));
+
+		const FScreenProbeGatherTemporalState& ScreenProbeGatherState = View.ViewState->Lumen.ScreenProbeGatherState;
+
+		// 判定能否复用上一帧 probe radiance 历史
+		const bool bUseProbeRadianceHistory = GLumenScreenProbeImportanceSampleProbeRadianceHistory != 0 
+			&& ScreenProbeGatherState.ImportanceSamplingHistoryScreenProbeRadiance.IsValid()
+			&& !View.bCameraCut && !View.bPrevTransformsReset
+			&& ScreenProbeGatherState.ImportanceSamplingHistoryScreenProbeRadiance->GetDesc().Extent == ScreenProbeGatherBufferSize;
+
+		{
+			// Pass 1: ComputeLightingPDF
+			FScreenProbeComputeLightingProbabilityDensityFunctionCS::FParameters* PassParameters = ...;
+			PassParameters->RadianceCacheParameters = RadianceCacheParameters;
+			if (bUseProbeRadianceHistory)
+			{
+				// 绑定历史 radiance / depth / world position，供重投影
+				PassParameters->HistoryScreenProbeRadiance = GraphBuilder.RegisterExternalTexture(...);
+				PassParameters->HistoryScreenProbeSceneDepth = ...;
+				PassParameters->HistoryScreenProbeTranslatedWorldPosition = ...;
+			}
+
+			FScreenProbeComputeLightingProbabilityDensityFunctionCS::FPermutationDomain PermutationVector;
+			PermutationVector.Set<...FThreadGroupSize>(ComputeLightingPDFGroupSize);
+			PermutationVector.Set<...FProbeRadianceHistory>(bUseProbeRadianceHistory);
+			PermutationVector.Set<...FRadianceCache>(LumenScreenProbeGather::UseRadianceCache());
+			auto ComputeShader = View.ShaderMap->GetShader<...>(PermutationVector);
+
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("ComputeLightingPDF"), ComputePassFlags,
+				ComputeShader, PassParameters, ScreenProbeParameters.ProbeIndirectArgs,
+				(uint32)EScreenProbeIndirectArgs::GroupPerProbe * sizeof(FRHIDispatchIndirectParameters));
+		}
+	}
+
+	// 分配输出：每根光线的 RayInfo
+	FIntPoint RayInfosForTracingBufferSize = ScreenProbeParameters.ScreenProbeAtlasBufferSize * ScreenProbeParameters.ScreenProbeTracingOctahedronResolution;
+	ScreenProbeParameters.ImportanceSampling.StructuredImportanceSampledRayInfosForTracing = GraphBuilder.CreateTexture(..., TEXT("Lumen.ScreenProbeGather.RayInfosForTracing"));
+
+	{
+		// Pass 2: GenerateRays
+		FScreenProbeGenerateRaysCS::FParameters* PassParameters = ...;
+		PassParameters->BRDFProbabilityDensityFunction = BRDFProbabilityDensityFunction;
+		PassParameters->LightingProbabilityDensityFunction = LightingProbabilityDensityFunction;
+		PassParameters->BRDFProbabilityDensityFunctionSH = BRDFProbabilityDensityFunctionSH;
+		PassParameters->MinPDFToTrace = GLumenScreenProbeImportanceSamplingMinPDFToTrace;
+
+		FScreenProbeGenerateRaysCS::FPermutationDomain PermutationVector;
+		PermutationVector.Set<...FThreadGroupSize>(GenerateRaysGroupSize);
+		PermutationVector.Set<...FImportanceSampleLighting>(bImportanceSampleLighting);
+		auto ComputeShader = View.ShaderMap->GetShader<...>(PermutationVector);
+
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("GenerateRays %ux%u", ...), ComputePassFlags,
+			ComputeShader, PassParameters, ScreenProbeParameters.ProbeIndirectArgs,
+			(uint32)EScreenProbeIndirectArgs::GroupPerProbe * sizeof(FRHIDispatchIndirectParameters));
+	}
+}</textarea>
+<div class="note"><h3>说明</h3><p>C++ 侧编排两趟 compute pass，都是 GroupPerProbe indirect dispatch：</p><p><span class="note-label diff">Pass 1（可选）</span><span class="inline">ComputeLightingPDF</span>：仅 <span class="inline">bImportanceSampleLighting</span> 时执行，产出 lighting PDF 纹理。是否绑定历史由 <span class="inline">bUseProbeRadianceHistory</span> 决定（要求历史有效、无 camera cut、尺寸匹配）。</p><p><span class="note-label common">Pass 2（必跑）</span><span class="inline">GenerateRays</span>：读 BRDF PDF（+ 可选 lighting PDF），做排序/细分，写出 RayInfosForTracing。<span class="inline">MinPDFToTrace</span> 是剔除阈值。注意上面代码用 <span class="inline">...</span> 省略了纯样板的资源装配，完整逻辑见 shader 主文档。</p></div></div></section>
+
+<section id="LightingPDF" class="card"><h2>2. ComputeLightingPDF Shader（历史重投影 + Radiance Cache）</h2><div class="body grid2"><textarea class="codebox large" readonly spellcheck="false">void ScreenProbeComputeLightingProbabilityDensityFunctionCS(...)
+{
+	// 每 probe 一个线程组，每方向 texel 一个线程
+	if (probe 有效 && SceneDepth > 0)
+	{
+		float3 Lighting = 0; float Transparency = 1;
+
+#if PROBE_RADIANCE_HISTORY
+		// 1) 把当前 probe 重投影到上一帧屏幕位置
+		float3 HistoryScreenPosition = GetHistoryScreenPosition(...);
+		if (在历史视口内)
+		{
+			// 2) 取上一帧邻域 2x2 probe，按平面距离权重插值它们的历史 radiance
+			for (Y in 0..1) for (X in 0..1)
+			{
+				float PositionWeight = exp2(-10000 * RelativeDepthDiff^2) > .1 ? 1 : 0;
+				HistoryRadiance += HistoryScreenProbeRadiance.Load(...) * (曝光校正 * HistoryWeight);
+				HistoryRadianceWeight += HistoryWeight;
+			}
+			if (HistoryRadianceWeight > 0) Lighting = HistoryRadiance / HistoryRadianceWeight;
+			Transparency = 1 - saturate(HistoryRadianceWeight / 4);   // 历史不足则留给 RC 补
+		}
+#endif
+
+		if (Transparency > 0)
+		{
+#if RADIANCE_CACHE
+			// 3) 历史覆盖不足的部分，用世界空间 Radiance Cache 补
+			FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(TranslatedWorldPosition, WorldConeDirection, 0);
+			if (Coverage.bValid)
+				Lighting += SampleRadianceCacheInterpolated(...).Radiance * Transparency;
+			else
+#endif
+				Lighting = 1;   // 都没有则各向同性
+		}
+
+		PDF = Luminance(Lighting);   // 亮度作为方向重要性
+		SharedPDF[...] = PDF;
+	}
+
+	GroupMemoryBarrierWithGroupSync();
+	// 4) 并行 4 叉归约求 PDFSum，再归一化
+	while (NumValuesToAccumulate > 1) { LocalPDF = 4 个相加; ... }
+	RWLightingProbabilityDensityFunction[...] = PDF / max(PDFSum, 0.0001f);
+}</textarea>
+<div class="note"><h3>说明</h3><p>为每个方向估"入射光亮度"并归一成 PDF。<span class="note-label diff">发散</span>光照来源分两层：先 <span class="inline">PROBE_RADIANCE_HISTORY</span> 用上一帧 probe radiance 重投影插值（带曝光校正与位置权重），历史覆盖不足的比例记为 <span class="inline">Transparency</span>；再用 <span class="inline">RADIANCE_CACHE</span> 补上剩余部分（该世界空间缓存的更新流水线见 <a href="LumenRadianceCache_FunctionAppendix.html">Radiance Cache 函数附录</a>）；两者都缺时退化成各向同性 1。</p><p>末尾用<span class="inline">并行 4 叉归约</span>求组内 PDF 总和，再逐方向除以总和归一化——保证 lighting PDF 是一个合法的概率分布。</p></div></div></section>
+
+<section id="Pack" class="card"><h2>3. PackRayInfo / RaySortInfo（打包格式）</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 排序期间用的临时打包：x 存坐标+层级，y 存 PDF（用于排序 key）
+uint2 PackRaySortInfo(uint2 TexelCoord, uint Level, float PDF)
+{
+	return uint2((TexelCoord.x & 0xFF) | ((TexelCoord.y & 0xFF) << 8) | ((Level & 0xFF) << 16), asuint(PDF));
+}
+void UnpackRaySortInfo(uint2 RaySortInfo, out uint2 TexelCoord, out uint Level, out float PDF)
+{
+	TexelCoord.x = RaySortInfo.x & 0xFF;
+	TexelCoord.y = (RaySortInfo.x >> 8) & 0xFF;
+	Level = (RaySortInfo.x >> 16) & 0xFF;
+	PDF = asfloat(RaySortInfo.y);
+}
+
+// 最终写入 trace buffer 的紧凑格式（仅坐标+层级，不含 PDF）
+RWStructuredImportanceSampledRayInfosForTracing[TraceBufferCoord] = PackRayInfo(SourceTexelCoord, SourceLevel);</textarea>
+<div class="note"><h3>说明</h3><p>有两种打包：<span class="inline">RaySortInfo</span>（uint2）在 groupshared 排序/细分期间使用，把坐标、层级塞进 x，PDF 原样放 y 当排序 key；<span class="inline">PackRayInfo</span>（uint）是最终落盘格式，只保留方向 texel 坐标与精度层级——Trace 阶段据此还原世界方向。</p><p>层级 <span class="inline">Level</span> 编码了该光线在 octahedron mip 金字塔上的分辨率：Level 越小分辨率越高（方向越精细），正是细分把 Level 减 1 的含义。</p></div></div></section>
+
+<section id="Helpers" class="card"><h2>4. Helper 速查</h2><div class="body"><table class="table"><thead><tr><th>Helper</th><th>作用</th></tr></thead><tbody>
+<tr><td><span class="inline">EquiAreaSphericalMapping(uv)</span></td><td>octahedron UV → 世界方向，用于按方向求 BRDF SH 值 / 采样 Radiance Cache。</td></tr>
+<tr><td><span class="inline">DotSH3(BRDF, DirectionSH)</span></td><td>三阶 SH 点积，等于 BRDF 在某方向上的 PDF 值（路径 A）。</td></tr>
+<tr><td><span class="inline">GetHistoryScreenPosition(...)</span></td><td>把当前屏幕位置重投影到上一帧，用于取历史 probe radiance。</td></tr>
+<tr><td><span class="inline">GetRadianceCacheCoverage / SampleRadianceCacheInterpolated</span></td><td>查询并采样世界空间 Radiance Cache，补历史覆盖不足的方向。</td></tr>
+<tr><td><span class="inline">GetTraceBufferCoord(ProbeCoord, RayCoord)</span></td><td>把 (probe, 光线序号) 映射到 trace buffer 里的写入坐标。</td></tr>
+<tr><td><span class="inline">firstbithigh(...)</span></td><td>求 MaxRes/TracingRes 的对数 → UniformLevel（初始均匀层级）。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>函数关系表</h2><div class="body"><table class="table"><thead><tr><th>调用方</th><th>被调</th><th>关系</th></tr></thead><tbody>
+<tr><td>RenderLumenScreenProbeGather</td><td>GenerateImportanceSamplingRays</td><td>trace 前调用，产出 RayInfosForTracing。</td></tr>
+<tr><td>GenerateImportanceSamplingRays (C++)</td><td>ComputeLightingPDF CS</td><td>可选 Pass 1：估入射光照 PDF。</td></tr>
+<tr><td>GenerateImportanceSamplingRays (C++)</td><td>ScreenProbeGenerateRaysCS</td><td>Pass 2：合成 PDF + 排序 + 细分 + 写光线。</td></tr>
+<tr><td>ScreenProbeGatherScreenData</td><td>BRDF PDF</td><td>上游生产者：提供 BRDF PDF 输入。</td></tr>
+<tr><td>TraceScreenProbes</td><td>RayInfosForTracing</td><td>下游消费者：按此表追踪光线。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenGenerateImportanceSamplingRays_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 GenerateImportanceSamplingRays 主文档</a></div></section>
+</main>
+</body></html>

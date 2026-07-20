@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RenderLumenFinalGather 函数算法附录</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.24fr) minmax(340px,.86fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:92px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.branch{border-color:var(--orange)}.merge{border-color:var(--green)}.out{border-color:var(--yellow)}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}.codebox{width:100%;height:310px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:720px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2,.flow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>RenderLumenFinalGather 函数算法附录</h1><div class="subtitle">本附录展开 PC Deferred Lumen Final Gather 入口相关函数：平台门禁、视图门禁、异步步骤、方法选择和总调度。</div></header>
+<main>
+<section class="card"><h2>返回主文档</h2><div class="body"><a class="tag" href="LumenFinalGather_RenderFlow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 RenderLumenFinalGather 主文档</a><a class="tag" href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>下钻：RenderLumenScreenProbeGather 主文档</a><a class="tag" href="LumenScreenProbeGather_RenderFlow_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>下钻：ScreenProbeGather 函数附录（含 ①~⑤ shader 专题）</a><a class="tag" href="UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp</span></div></section>
+
+<section class="card"><h2>函数级汇聚/发散骨架</h2><div class="body flow"><div class="node gate"><strong>DoesPlatformSupportLumenGI</strong><small>平台/ForwardShading 门禁。</small></div><div class="node gate"><strong>ShouldRenderLumenDiffuseGI</strong><small>View 级 Lumen GI 门禁。</small></div><div class="node func"><strong>ELumenIndirectLightingSteps</strong><small>异步步骤状态机。</small></div><div class="node merge"><strong>RenderDiffuseIndirectAndAO</strong><small>上游统一调用点。</small></div><div class="node branch"><strong>GetFinalGatherMethod</strong><small>三种 gather 方案选择。</small></div><div class="node merge"><strong>RenderLumenFinalGather</strong><small>统一调度和输出。</small></div><div class="node out"><strong>FSSDSignalTextures</strong><small>交给 Composite。</small></div></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#DoesPlatformSupportLumenGI">DoesPlatformSupportLumenGI</a><a href="#ShouldRenderLumenForViewFamily">ShouldRenderLumenForViewFamily</a><a href="#IsLumenFeatureAllowedForView">IsLumenFeatureAllowedForView</a><a href="#ShouldRenderLumenDiffuseGI">ShouldRenderLumenDiffuseGI</a><a href="#IndirectSteps">ELumenIndirectLightingSteps</a><a href="#GetFinalGatherMethod">GetFinalGatherMethod</a><a href="#RenderDiffuseIndirectAndAO">RenderDiffuseIndirectAndAO 调用点</a><a href="#RenderLumenFinalGather">RenderLumenFinalGather</a></div></section>
+
+<section id="DoesPlatformSupportLumenGI" class="card"><h2>1. DoesPlatformSupportLumenGI</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">bool DoesPlatformSupportLumenGI(EShaderPlatform Platform, bool bSkipProjectCheck)
+{
+	bool bLumenSupported = DoesProjectSupportLumenGI(Platform);
+
+	EShaderPlatform ParentPreviewPlatform = SP_NumPlatforms;
+	#if WITH_EDITOR
+	if (GIsEditor)
+	{
+		if (FDataDrivenShaderPlatformInfo::GetIsPreviewPlatform(Platform))
+		{
+			ParentPreviewPlatform = FDataDrivenShaderPlatformInfo::GetPreviewShaderPlatformParent(Platform);
+		}
+	}
+	#endif
+
+	const bool bMetalSM5 = Platform == SP_METAL_SM5 || ParentPreviewPlatform == SP_METAL_SM5;
+	const bool bVulkanSM5 = Platform == SP_VULKAN_SM5 || Platform == SP_VULKAN_SM5_ANDROID || ParentPreviewPlatform == SP_VULKAN_SM5 || ParentPreviewPlatform == SP_VULKAN_SM5_ANDROID;
+	return (bSkipProjectCheck || bLumenSupported)
+		&& FDataDrivenShaderPlatformInfo::GetSupportsLumenGI(Platform)
+		&& (IsFeatureLevelSupported(Platform, ERHIFeatureLevel::SM6) || bVulkanSM5 || bMetalSM5)
+		&& !IsForwardShadingEnabled(Platform);
+}</textarea><div class="note"><h3>说明</h3><p>作用：决定当前 shader platform 是否允许 Lumen GI。</p><p>共同点：PC、Vulkan、Metal、Android SM5 等平台都先经过这个统一平台门禁。</p><p>不同点：PC Deferred 通常可以满足非 ForwardShading 和高特性级别要求；Mobile Forward 常规路径会被 <span class="inline">!IsForwardShadingEnabled</span> 排除。</p><ul><li>这是 Mobile 不走 <span class="inline">RenderLumenFinalGather</span> 主线的关键上游原因之一。</li><li>Android Vulkan SM5 有例外口子，但仍必须满足数据驱动平台支持和非 forward shading。</li></ul></div></div></section>
+
+<section id="ShouldRenderLumenForViewFamily" class="card"><h2>2. ShouldRenderLumenForViewFamily</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">bool ShouldRenderLumenForViewFamily(const FScene* Scene, const FSceneViewFamily& ViewFamily, bool bSkipProjectCheck)
+{
+	return Scene
+		&& Scene->DefaultLumenSceneData != nullptr
+		&& (ViewFamily.Views.Num() <= LUMEN_MAX_VIEWS || ViewFamily.Views[0]->bIsSceneCaptureCube)
+		&& DoesPlatformSupportLumenGI(Scene->GetShaderPlatform(), bSkipProjectCheck);
+}</textarea><div class="note"><h3>说明</h3><p>作用：在 ViewFamily 层面确认 Lumen Scene 数据和平台条件是否成立。</p><p>共同点：所有 Lumen GI view 都需要场景存在、Lumen Scene 数据存在、视图数量符合限制。</p><p>不同点：SceneCaptureCube 被单独允许；普通多视图数量超过限制会被排除。</p></div></div></section>
+
+<section id="IsLumenFeatureAllowedForView" class="card"><h2>3. IsLumenFeatureAllowedForView</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">bool Lumen::IsLumenFeatureAllowedForView(const FScene* Scene, const FSceneView& View, bool bSkipTracingDataCheck, bool bSkipProjectCheck)
+{
+	return View.Family
+		&& DoesRuntimePlatformSupportLumen()
+		&& ShouldRenderLumenForViewFamily(Scene, *View.Family, bSkipProjectCheck)
+		&& !View.bIsPlanarReflection
+		&& !View.bIsReflectionCapture
+		&& View.State
+		&& (bSkipTracingDataCheck || Lumen::UseHardwareRayTracing(*View.Family) || IsSoftwareRayTracingSupported());
+}</textarea><div class="note"><h3>说明</h3><p>作用：从 View 维度排除不适合更新 Lumen 的特殊视图。</p><p>共同点：所有 Lumen feature 都需要有效 ViewFamily、ViewState 和可用 tracing 数据。</p><p>不同点：PlanarReflection 和 ReflectionCapture 不更新这条 Lumen feature 路径。</p></div></div></section>
+
+<section id="ShouldRenderLumenDiffuseGI" class="card"><h2>4. ShouldRenderLumenDiffuseGI</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">bool ShouldRenderLumenDiffuseGI(const FScene* Scene, const FSceneView& View, bool bSkipTracingDataCheck, bool bSkipProjectCheck) 
+{
+	return Lumen::IsLumenFeatureAllowedForView(Scene, View, bSkipTracingDataCheck, bSkipProjectCheck)
+		&& View.FinalPostProcessSettings.DynamicGlobalIlluminationMethod == EDynamicGlobalIlluminationMethod::Lumen
+		&& CVarLumenGlobalIllumination.GetValueOnAnyThread()
+		&& View.Family->EngineShowFlags.GlobalIllumination 
+		&& View.Family->EngineShowFlags.LumenGlobalIllumination
+		&& !View.Family->EngineShowFlags.PathTracing
+		&& !View.Family->EngineShowFlags.RayTracingDebug
+		&& (bSkipTracingDataCheck || Lumen::UseHardwareRayTracedScreenProbeGather(*View.Family) || Lumen::IsSoftwareRayTracingSupported());
+}</textarea><div class="note"><h3>说明</h3><p>作用：最终确认当前 View 是否真的要渲染 Lumen diffuse GI。</p><p>共同点：平台、View、后处理 GI 方法、CVar、ShowFlag 都必须同时满足。</p><p>不同点：PathTracing 和 RayTracingDebug 会显式排除；没有硬件 RT 时仍可依赖软件距离场。</p></div></div></section>
+
+<section id="IndirectSteps" class="card"><h2>5. ELumenIndirectLightingSteps / FAsyncLumenIndirectLightingOutputs</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">enum class ELumenIndirectLightingSteps
+{
+	None = 0,
+	ScreenProbeGather = 1u << 0,
+	Reflections = 1u << 1,
+	Composite = 1u << 3,
+	All = ScreenProbeGather | Reflections | Composite
+};
+
+struct FAsyncLumenIndirectLightingOutputs
+{
+	struct FViewOutputs
+	{
+		FSSDSignalTextures IndirectLightingTextures;
+		FLumenMeshSDFGridParameters MeshSDFGridParameters;
+		LumenRadianceCache::FRadianceCacheInterpolationParameters RadianceCacheParameters;
+		FLumenScreenSpaceBentNormalParameters ScreenBentNormalParameters;
+		FLumenUpsampleParameters LumenUpsampleParameters;
+	};
+
+	TArray<FViewOutputs, TInlineAllocator<1>> ViewOutputs;
+	ELumenIndirectLightingSteps StepsLeft = ELumenIndirectLightingSteps::All;
+	bool bHasDrawnBeforeLightingDecals = false;
+};</textarea><div class="note"><h3>说明</h3><p>作用：异步 Lumen 间接光的状态机和跨 pass 输出缓存。</p><p>共同点：不管是否异步，最终都需要保存 <span class="inline">FSSDSignalTextures</span> 和 Composite 所需旁路参数。</p><p>不同点：异步路径先产出并缓存结果，Composite 阶段可能只拿缓存；非异步路径可能在同一函数中直接调用 Final Gather 并立刻 Composite。</p></div></div></section>
+
+<section id="GetFinalGatherMethod" class="card"><h2>6. GetFinalGatherMethod</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">ELumenFinalGatherMethod GetFinalGatherMethod(const FSceneViewFamily& ViewFamily, EShaderPlatform ShaderPlatform)
+{
+	if (UseIrradianceFieldGather())
+	{
+		return ELumenFinalGatherMethod::IrradianceFieldGather;
+	}
+	else if (Lumen::UseReSTIRGather(ViewFamily, ShaderPlatform))
+	{
+		return ELumenFinalGatherMethod::ReSTIRGather;
+	}
+	else
+	{
+		return ELumenFinalGatherMethod::ScreenProbeGather;
+	}
+}
+
+bool UseIrradianceFieldGather()
+{
+	return CVarLumenFinalGatherMethod.GetValueOnRenderThread() == 0;
+}</textarea><div class="note"><h3>说明</h3><p>作用：选择 Final Gather 的具体算法路径。</p><p>共同点：三条路径都服务于同一个目标：估计当前 View 的间接光，并统一输出给 Composite。</p><p>不同点：IrradianceFieldGather 更偏世界空间缓存；ReSTIRGather 更偏 reservoir 重采样；ScreenProbeGather 更偏屏幕 probe 多方向 trace。</p></div></div></section>
+
+<section id="RenderDiffuseIndirectAndAO" class="card"><h2>7. RenderDiffuseIndirectAndAmbientOcclusion 调用点</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">if (ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen)
+{
+	check(ViewPipelineState.DiffuseIndirectDenoiser == IScreenSpaceDenoiser::EMode::Disabled);
+
+	FLumenMeshSDFGridParameters MeshSDFGridParameters;
+	LumenRadianceCache::FRadianceCacheInterpolationParameters RadianceCacheParameters;
+	const ELumenIndirectLightingSteps StepsLeft = AsyncLumenIndirectLightingOutputs.StepsLeft;
+	const bool bDoComposite = StepsLeft == ELumenIndirectLightingSteps::All || StepsLeft == ELumenIndirectLightingSteps::Composite;
+
+	if (EnumHasAnyFlags(StepsLeft, ELumenIndirectLightingSteps::ScreenProbeGather))
+	{
+		DenoiserOutputs = RenderLumenFinalGather(...);
+	}
+}</textarea><div class="note"><h3>说明</h3><p>作用：这是 Final Gather 的直接调用点，也是 SSGI / Lumen / AO 统一渲染函数里的 Lumen 分支。</p><p>共同点：和 SSGI 一样，最终都要把间接光输出交给 Composite。</p><p>不同点：Lumen 不走 ScreenSpaceDenoiser 的 diffuse indirect denoiser，而是自己在 Gather 内部完成时空滤波和输出。</p></div></div></section>
+
+<section id="RenderLumenFinalGather" class="card"><h2>8. RenderLumenFinalGather</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">FSSDSignalTextures FDeferredShadingSceneRenderer::RenderLumenFinalGather(...)
+{
+	LLM_SCOPE_BYTAG(Lumen);
+
+	const FRDGSystemTextures& SystemTextures = FRDGSystemTextures::Get(GraphBuilder);
+	ScreenSpaceBentNormalParameters.ShortRangeAOMode = 0;
+	ScreenSpaceBentNormalParameters.ShortRangeAOTexture = SystemTextures.Black;
+	ScreenSpaceBentNormalParameters.ShortRangeGITexture = nullptr;
+	RadianceCacheParameters.RadianceProbeIndirectionTexture = nullptr;
+	UpsampleParameters.DownsampleFactor = 1;
+	UpsampleParameters.DownsampledSceneDepth = nullptr;
+	UpsampleParameters.DownsampledSceneWorldNormal = nullptr;
+
+	FSSDSignalTextures Outputs;
+	LumenRadianceCache::FRadianceCacheInterpolationParameters TranslucencyVolumeRadianceCacheParameters;
+	const ELumenFinalGatherMethod FinalGatherMethod = Lumen::GetFinalGatherMethod(*View.Family, ShaderPlatform);
+
+	if (FinalGatherMethod == ELumenFinalGatherMethod::IrradianceFieldGather)
+	{
+		Outputs = RenderLumenIrradianceFieldGather(...);
+	}
+	else if (FinalGatherMethod == ELumenFinalGatherMethod::ReSTIRGather)
+	{
+		Outputs = RenderLumenReSTIRGather(...);
+	}
+	else
+	{
+		Outputs = RenderLumenScreenProbeGather(...);
+	}
+
+	ComputeLumenTranslucencyGIVolume(...);
+
+	return Outputs;
+}</textarea><div class="note"><h3>说明</h3><p>作用：PC Deferred Lumen GI 的 Final Gather 总调度。它不直接实现某一种 gather 算法，而是负责默认参数、方法选择、三路分流、统一尾部处理和统一输出。</p><p>共同点：三条具体路径都回到 <span class="inline">FSSDSignalTextures</span> 输出契约。</p><p>不同点：各路径内部算法完全不同，但对上游调用和下游 Composite 来说被这个函数封装为统一接口。</p><p>下钻：默认分支 <span class="inline">RenderLumenScreenProbeGather(...)</span> 的完整调度与 ①~⑤ 子阶段 shader 解析见 <a href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html">ScreenProbeGather 主文档</a> 与 <a href="LumenScreenProbeGather_RenderFlow_FunctionAppendix.html">函数附录</a>。</p></div></div></section>
+
+<section class="card"><h2>函数关系表</h2><div class="body"><table class="table"><tr><th>函数/结构</th><th>类型</th><th>职责</th></tr><tr><td>DoesPlatformSupportLumenGI</td><td>门禁</td><td>平台、特性级别、ForwardShading 检查</td></tr><tr><td>ShouldRenderLumenForViewFamily</td><td>门禁</td><td>Scene 与 ViewFamily 级检查</td></tr><tr><td>IsLumenFeatureAllowedForView</td><td>门禁</td><td>View 级特殊视图与 tracing 数据检查</td></tr><tr><td>ShouldRenderLumenDiffuseGI</td><td>门禁</td><td>后处理 GI 方法、CVar、ShowFlag、调试路径检查</td></tr><tr><td>ELumenIndirectLightingSteps</td><td>状态机</td><td>控制 ScreenProbeGather / Reflections / Composite 步骤</td></tr><tr><td>GetFinalGatherMethod</td><td>分流</td><td>选择 IrradianceField / ReSTIR / ScreenProbe</td></tr><tr><td>RenderDiffuseIndirectAndAmbientOcclusion</td><td>调用点</td><td>在 Lumen 分支调用 RenderLumenFinalGather</td></tr><tr><td>RenderLumenFinalGather</td><td>汇聚</td><td>统一初始化、三路分发、统一输出</td></tr></table></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body>
+</html>

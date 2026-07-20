@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>RenderLumenReflections 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:760px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>RenderLumenReflections 代码解析（镜面反射链路）</h1><div class="subtitle">Lumen 的<b>反射</b>入口，与 Screen Probe Gather（漫反射 GI）<b>并列</b>的另一条链路：为每个屏幕像素按 GGX 粗糙度分布生成反射光线、追踪世界、再经"空间重建 → 时域累积 → 空域滤波"三段专用降噪，产出 <span class="inline">SpecularIndirect</span>，最终由 Composite 填入 <span class="inline">Textures[3]</span> 合入画面。它复用了与 GI 相同的追踪后端（屏幕/Mesh SDF/硬件 RT/Radiance Cache）与 Surface Cache 数据源，但采样与降噪是<b>为镜面量身定制</b>的。本页解析入口 <span class="inline">FDeferredShadingSceneRenderer::RenderLumenReflections</span>。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/合成</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/分支</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/参数</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>追踪/降噪</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁</span></div></section>
+
+<section class="card"><h2>一眼看懂：反射流水线骨架</h2><div class="body flow"><div class="node blue"><strong>Setup</strong><small>降采样因子 / 粗糙度阈值 / 缓冲。</small></div><div class="node red"><strong>TileClassification</strong><small>标记哪些像素要反射。</small></div><div class="node branch"><strong>GenerateRays</strong><small>GGX 重要性采样方向。</small></div><div class="node cyan"><strong>TraceReflections</strong><small>屏幕/SDF/HWRT/RadianceCache。</small></div><div class="node merge"><strong>Resolve</strong><small>空间重建 + 上采样回全屏。</small></div><div class="node cyan"><strong>Temporal</strong><small>历史重投影累积。</small></div><div class="node merge"><strong>Spatial</strong><small>双边滤波补噪。</small></div><div class="node out"><strong>SpecularIndirect</strong><small>返回，供 Composite。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦 <span class="inline">RenderLumenReflections</span> 的"生成方向 → 追踪 → 三段降噪 → 输出"主干。各 CS（<span class="inline">FReflectionGenerateRaysCS</span> / <span class="inline">FLumenReflectionResolveCS</span> / <span class="inline">FLumenReflectionDenoiserTemporalCS</span> / <span class="inline">FLumenReflectionDenoiserSpatialCS</span>）的参数、permutation、tile 分类与降采样机制放在函数附录。</p><a class="tag" href="LumenReflections_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 RenderLumenReflections 函数算法附录</a><a class="tag" href="UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：它与 GI 是什么关系</h2><div class="body"><p><b>并列而非从属</b>：漫反射 GI 走 <a href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html">RenderLumenScreenProbeGather</a>，镜面反射走本函数，两者都被上层 diffuse-indirect 调度调用，各自产出信号后由 <a href="LumenDiffuseIndirectComposite_ConvergenceAnnotated.html">DiffuseIndirectComposite</a> 合成——GI 进 Textures[0..2]，反射进 <b>Textures[3]</b>。</p><p><b>共享底座</b>：反射的追踪走的是与 ③ <a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">TraceScreenProbes</a> 同一套后端（屏幕/Mesh SDF/硬件 RT），命中后同样读 <a href="LumenSurfaceCache_ConvergenceAnnotated.html">Surface Cache</a> 的 FinalLightingAtlas 取光照；高粗糙度/远距离反射还会退回 <a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a>。差异全在<b>采样</b>（GGX 定向 vs 半球）与<b>降噪</b>（专用 resolve/temporal/spatial vs probe 滤波）。</p></div></section>
+
+<section class="card"><h2>完整源码对照（忠实骨架）</h2><div class="body"><p>函数约 650 行，主体是"Setup 参数 → TileClassification → GenerateRays → TraceReflections → Resolve → (bTemporal 时) Temporal + Spatial → 存历史 → return"。下面保留真实变量名与 pass 名，省略 Substrate closure 循环与 FrontLayer/Water 分支的资源样板。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenReflections.cpp</span><textarea class="codebox large" readonly spellcheck="false">FRDGTextureRef FDeferredShadingSceneRenderer::RenderLumenReflections(
+    FRDGBuilder&amp; GraphBuilder, const FViewInfo&amp; View, const FSceneTextures&amp; SceneTextures,
+    FLumenSceneFrameTemporaries&amp; FrameTemporaries, const FLumenMeshSDFGridParameters&amp; MeshSDFGridParameters,
+    const LumenRadianceCache::FRadianceCacheInterpolationParameters&amp; ScreenProbeRadianceCacheParameters,
+    ELumenReflectionPass ReflectionPass, const FLumenReflectionsConfig&amp; ReflectionsConfig, ERDGPassFlags ComputePassFlags)
+{
+    check(ShouldRenderLumenReflections(View));
+    // 反射复用 Screen Probe 的 Radiance Cache，只改一个重投影半径缩放
+    RadianceCacheParameters = ScreenProbeRadianceCacheParameters;
+    RadianceCacheParameters.RadianceCacheInputs.ReprojectionRadiusScale = GLumenReflectionRadianceCacheReprojectionRadiusScale;
+
+    // ===== Setup：降采样因子由 质量档 + 粗糙度决定（越糙越能省）=====
+    FLumenReflectionTracingParameters ReflectionTracingParameters;
+    ReflectionTracingParameters.ReflectionDownsampleFactorXY = LumenReflectionDownsampleFactorXY;  // 1 或 2
+    ReflectionTracingParameters.MaxReflectionBounces = LumenReflections::GetMaxReflectionBounces(View);
+    ReflectionTracingParameters.NearFieldMaxTraceDistance = Lumen::GetMaxTraceDistance(View);
+    ReflectionTracingParameters.FarFieldMaxTraceDistance  = bUseFarField ? Lumen::GetFarFieldMaxTraceDistance() : ...;
+    const bool bTemporal = GLumenReflectionTemporalFilter != 0 &amp;&amp; ReflectionsConfig.bDenoising;
+    // 追踪用的 Ray/Depth/Distance 缓冲（下采样分辨率、Texture2DArray 按 closure 分层）
+    ReflectionTracingParameters.RayBuffer / DownsampledDepth / RayTraceDistance = CreateTexture(...);
+
+    // ===== TileClassification：只在需要反射的屏幕 tile 上工作 =====
+    ReflectionTileParameters = ReflectionTileClassification(GraphBuilder, View, ..., ReflectionTracingParameters, ...);
+    const bool bUseRadianceCache = RadianceCacheParameters.RadianceProbeIndirectionTexture != nullptr
+                                   &amp;&amp; LumenReflections::UseRadianceCache() &amp;&amp; ReflectionPass == Opaque;
+    const bool bUseSpatialReconstruction = GLumenReflectionScreenSpaceReconstruction != 0 &amp;&amp; ReflectionsConfig.bScreenSpaceReconstruction;
+
+    // ===== GenerateRays：按 GGX 粗糙度分布重要性采样反射方向 =====
+    {
+        FReflectionGenerateRaysCS::FParameters* P = ...;
+        P-&gt;RWRayBuffer = ...; P-&gt;RWDownsampledDepth = ...; P-&gt;RWRayTraceDistance = ...;
+        // 高粗糙度 / 超出追踪距离 -&gt; 直接用 Radiance Cache 取值，不发线
+        P-&gt;RadianceCacheMinRoughness / MaxRoughness / MaxTraceDistance / RoughnessFadeLength = ...;
+        P-&gt;GGXSamplingBias = GLumenReflectionGGXSamplingBias;   // 偏向法线以降噪
+        P-&gt;RadianceCacheParameters = RadianceCacheParameters;
+        Perm.Set&lt;FRadianceCache&gt;(bUseRadianceCache);
+        AddPass("GenerateRays MaxRoughnessToTrace:%.2f", ..., TracingIndirectArgs);   // 间接派发，只跑分类 tile
+    }
+
+    // ===== TraceReflections：多后端追踪，填 TraceRadiance / TraceHit =====
+    ReflectionTracingParameters.TraceRadiance / TraceHit = CreateTexture(...);
+    if (UseHitLighting(...)) { TraceMaterialId / TraceBookmark = CreateTexture(...); }  // 命中重着色可选
+    TraceReflections(GraphBuilder, Scene, View, ..., bTraceMeshObjects, ...,
+                     bUseRadianceCache, DiffuseIndirectMethod, RadianceCacheParameters, ...);
+
+    // ===== Resolve：空间重建（复用邻居光线）+ 从下采样上采回全屏 =====
+    ResolvedSpecularIndirect / ResolvedSpecularIndirectDepth = CreateTexture(EffectiveTextureResolution, ...);
+    auto ResolveReflections = [&amp;](uint32 ClosureIndex) {
+        FLumenReflectionResolveCS::FParameters* P = ...;
+        P-&gt;NumSpatialReconstructionSamples = NumReconstructionSamples;   // 邻域复用样本数
+        P-&gt;SpatialReconstructionKernelRadius / RoughnessScale / MinWeight = ...;
+        Perm.Set&lt;FSpatialReconstruction&gt;(bUseSpatialReconstruction);
+        Perm.Set&lt;FDownsampleFactorX/Y&gt;(LumenReflectionDownsampleFactorXY);
+        AddPass("ReflectionsResolve DownsampleFactor:%dx%d", ..., ResolveIndirectArgs);
+    };
+    ResolveReflections(...);  // 逐 closure
+    FRDGTextureRef SpecularIndirect = ResolvedSpecularIndirect;
+
+    // ===== 降噪：仅当 bTemporal（时域滤波开 + 需要降噪）=====
+    if (bTemporal) {
+        // 取历史（按 ReflectionPass 分 Opaque / Water / Translucency 三套状态）
+        FReflectionTemporalState* ReflectionState = &amp;View.ViewState-&gt;Lumen.ReflectionState;  // 或 Water/Translucent
+        SceneDepthHistory = Register(ViewState-&gt;StochasticLighting.SceneDepthHistory);
+        if (ReflectionState &amp;&amp; !bCameraCut &amp;&amp; !bPrevTransformsReset) {
+            SpecularAndSecondMomentHistory = Register(ReflectionState-&gt;SpecularAndSecondMomentHistory);
+            NumFramesAccumulatedHistory    = Register(ReflectionState-&gt;NumFramesAccumulatedHistory);
+        }
+
+        // 1) 时域累积：重投影历史 + 邻域钳制 + 二阶矩（方差）驱动
+        auto TemporalAccumulation = [&amp;](uint32 ClosureIndex) {
+            FLumenReflectionDenoiserTemporalCS::FParameters* P = ...;
+            P-&gt;ResolvedSpecularLighting = ResolvedSpecularIndirect;  P-&gt;VelocityTexture = ...;
+            P-&gt;SpecularHistoryTexture = SpecularAndSecondMomentHistory;  P-&gt;SceneDepthHistory = SceneDepthHistory;
+            P-&gt;TemporalMaxFramesAccumulated = GetMaxFramesAccumulated();
+            P-&gt;TemporalNeighborhoodClampScale = ...;  P-&gt;HistoryDistanceThreshold = ...;
+            P-&gt;RWSpecularAndSecondMoment = ...;  P-&gt;RWNumFramesAccumulated = ...;
+            Perm.Set&lt;FValidHistory&gt;(SceneDepthHistory &amp;&amp; SpecularAndSecondMomentHistory &amp;&amp; bTemporal);
+            AddPass("TemporalAccumulation", ..., ResolveIndirectArgs);
+        };
+        TemporalAccumulation(...);
+
+        SpecularIndirect = CreateTexture(...);  // 最终输出纹理
+        // 2) 空域双边滤波：方差大（累积帧少）处多滤，方差小处少滤
+        auto SpatialFilter = [&amp;](uint32 ClosureIndex) {
+            FLumenReflectionDenoiserSpatialCS::FParameters* P = ...;
+            P-&gt;SpecularLightingAndSecondMomentTexture = SpecularAndSecondMoment;
+            P-&gt;NumFramesAccumulatedTexture = NumFramesAccumulated;
+            P-&gt;SpatialFilterKernelRadius / NumSamples / DepthWeightScale = ...;
+            Perm.Set&lt;FSpatialFilter&gt;(bSpatial);
+            AddPass("Spatial", ..., ResolveIndirectArgs);
+        };
+        SpatialFilter(...);
+
+        // 3) 存历史（下一帧重投影用）
+        if (ReflectionState &amp;&amp; !bStatePrevViewInfoIsReadOnly) {
+            ReflectionState-&gt;HistoryScreenPositionScaleBias / HistoryUVMinMax / ... = ...;
+            QueueTextureExtraction(SpecularAndSecondMoment, &amp;ReflectionState-&gt;SpecularAndSecondMomentHistory);
+            QueueTextureExtraction(NumFramesAccumulated,    &amp;ReflectionState-&gt;NumFramesAccumulatedHistory);
+        }
+    }
+
+    return SpecularIndirect;   // 交给 Composite 填 Textures[3]
+}</textarea></div></section>
+
+<section class="card"><h2>1. 核心思想：镜面为什么要单独一条链路</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 漫反射 GI（Screen Probe）：半球均匀重要性采样，方向"发散"，
+//   probe 稀疏放置 + 插值 —— 因为漫反射对方向不敏感。
+
+// 镜面反射：方向由【视线 + 法线 + 粗糙度】决定（GGX lobe），
+//   光滑表面几乎是单一方向（镜像），糙表面才展开成一片。
+//   -&gt; 不能用稀疏 probe 插值（会糊掉镜像细节），
+//      必须【逐像素】生成方向、逐像素追踪。
+
+// 但逐像素追踪很贵，于是三招省钱：
+//   1. TileClassification：只在真有反射的像素 tile 上跑
+//   2. Downsample：按粗糙度降采样（糙表面反正要糊，省一半线）
+//   3. RadianceCache：高粗糙度/远距离直接查缓存，不发线
+
+// 追踪后噪声大（每像素才 1 根线）=&gt; 三段降噪：
+//   Resolve(空间重建借邻居线) -&gt; Temporal(借历史帧) -&gt; Spatial(双边补)</textarea><div class="note"><h3>说明</h3><p>镜面与漫反射的根本区别是<b>方向性</b>：漫反射可以"稀疏采样 + 插值"，镜面必须"逐像素定向追踪"，否则镜像会糊。这决定了反射不能挂在 Screen Probe 体系里，而要单开一条逐像素链路。</p><p><span class="note-label common">共同点</span>追踪后端、Surface Cache 数据源、Radiance Cache 兜底、"追踪+时域累积去噪"的大思路都与 GI 一致。</p><p><span class="note-label diff">不同点</span>采样是 GGX 定向（<span class="inline">GGXSamplingBias</span> 偏法线降噪）；降噪是三段专用管线而非 probe 滤波；成本控制多了"按粗糙度降采样"这一招。</p></div></div></section>
+
+<section class="card"><h2>2. 生成方向 + 追踪（GenerateRays / TraceReflections）</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// GenerateRays（FReflectionGenerateRaysCS）：
+//   逐像素按 GGX(粗糙度) 重要性采样一个反射方向，写 RayBuffer
+//   RadianceCacheMinRoughness ~ MaxRoughness 之间做 fade：
+//     roughness 越高 -&gt; 越倾向用 Radiance Cache 取值而非发线
+//   RadianceCacheMaxTraceDistance：超这个距离也退回缓存
+//   -&gt; 只对"值得精确追踪"的方向发线，其余廉价兜底
+
+// TraceReflections：与 ③ TraceScreenProbes 同一套后端级联
+//   屏幕空间(HZB) -&gt; Mesh SDF / 硬件 RT -&gt; Radiance Cache
+//   命中后读 Surface Cache 的 FinalLightingAtlas 取表面光照
+//   填 TraceRadiance（命中辐照度）/ TraceHit（命中距离）
+//   UseHitLighting 时额外记 MaterialId/Bookmark 做命中重着色</textarea><div class="note"><h3>说明</h3><p>GenerateRays 是反射版的"重要性采样"：不像 ② 那样在半球上分配预算，而是严格沿 GGX 波瓣采一个方向。<span class="inline">GGXSamplingBias</span> 故意把采样往法线拉一点，牺牲一点物理精度换取显著更低的噪声（后面还有三段降噪兜底）。</p><p><span class="note-label common">共同点</span>追踪部分与 ③ TraceScreenProbes<b>完全同源</b>——同一套级联后端、同一个 Surface Cache 采样、同一个 Radiance Cache 兜底。想看追踪细节请直接读 ③ 与 Surface Cache 专题；其中硬件光追后端（Inline/RayGen 派发、SurfaceCache/Hit Lighting 着色）见 <a href="LumenHardwareRayTracing_ConvergenceAnnotated.html">↳ 下钻：Hardware Ray Tracing 后端解析</a>。</p><p><span class="note-label diff">不同点</span>③ 每 probe 发多根线覆盖半球；这里每像素只发<b>一根</b>沿反射方向的线，所以更依赖后续降噪。</p></div></div></section>
+
+<section class="card"><h2>3. 三段降噪：Resolve → Temporal → Spatial</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ① Resolve（FLumenReflectionResolveCS）：空间重建 + 上采样
+//    每像素只有 1 根噪声线，借【邻域像素的线】按 BRDF 权重重建，
+//    NumSpatialReconstructionSamples 个邻居，越糙半径越大
+//    同时把下采样结果上采回全屏 -&gt; ResolvedSpecularIndirect
+
+// ② Temporal（FLumenReflectionDenoiserTemporalCS）：时域累积
+//    用 velocity 重投影历史，邻域钳制(NeighborhoodClampScale)防鬼影
+//    维护【二阶矩 SecondMoment】-&gt; 估计方差 -&gt; 驱动空域滤波强度
+//    NumFramesAccumulated 记累积帧数，MaxFramesAccumulated 限上限
+
+// ③ Spatial（FLumenReflectionDenoiserSpatialCS）：双边滤波补刀
+//    对累积帧数少（历史不足/刚 disocclusion）的像素多滤，
+//    对已收敛像素少滤 -&gt; 方差自适应
+//    -&gt; SpecularIndirect（最终输出）</textarea><div class="note"><h3>说明</h3><p>三段是"空间 → 时间 → 空间"的组合拳：Resolve 先借<b>本帧邻居</b>把单线噪声压一轮并上采样；Temporal 借<b>历史帧</b>累积等效样本；Spatial 再用<b>方差自适应</b>的双边滤波给"还没累够历史"的区域补最后一刀。二阶矩（方差）是串起后两段的关键信号。</p><p><span class="note-label common">共同点</span>与 GI 的时域降噪（④、UpdateHistory）一样：velocity 重投影 + 邻域钳制 + <span class="inline">NumFramesAccumulated</span> 累积窗口，都是 TAA 家族套路。</p><p><span class="note-label diff">不同点</span>反射多了 <b>Resolve 空间重建</b>（GI 靠 probe 密度天然抗噪，不需要）和 <b>二阶矩方差驱动</b>的自适应空域滤波，因为镜面噪声结构与漫反射不同、更需要保边。</p></div></div></section>
+
+<section class="card"><h2>4. 历史状态与输出</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 三套独立历史（按 ReflectionPass 选）：
+//   ELumenReflectionPass::Opaque      -&gt; ViewState-&gt;Lumen.ReflectionState
+//   ::SingleLayerWater                -&gt; ViewState-&gt;Lumen.WaterReflectionState
+//   ::FrontLayerTranslucency          -&gt; ViewState-&gt;Lumen.TranslucentReflectionState
+
+// 历史内容：
+//   SpecularAndSecondMomentHistory   // 颜色 + 二阶矩（方差）
+//   NumFramesAccumulatedHistory      // 每像素累积帧数
+//   HistoryScreenPositionScaleBias / HistoryUVMinMax / ...  // 重投影坐标映射
+//   SceneDepthHistory（来自 StochasticLighting，与 GI 共享）
+
+// 门禁：bCameraCut / bPrevTransformsReset 时不复用历史
+// 存回：QueueTextureExtraction(SpecularAndSecondMoment / NumFramesAccumulated)
+
+// 返回 SpecularIndirect -&gt; 上层填入 Composite 的 Textures[3]</textarea><div class="note"><h3>说明</h3><p>反射按用途维护<b>三套独立历史</b>（不透明/水面/半透明前层），因为它们的重投影几何和更新频率不同，混用会互相污染。历史存的是"颜色 + 二阶矩"，让下一帧既能重投影又能重新估计方差。</p><p><span class="note-label common">共同点</span>与 UpdateHistory 一样用 <span class="inline">QueueTextureExtraction</span> 把 New* 提升为跨帧持久 RT，用 <span class="inline">bCameraCut</span> 等门禁防止读脏历史。</p><p><span class="note-label diff">不同点</span>GI 只有一套 ScreenProbeGatherState；反射按 pass 分三套。且反射历史带 <span class="inline">HistoryScreenPositionScaleBias</span> 这类精确的 UV 映射，因为镜面重投影对亚像素错位更敏感。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>环节</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>ShouldRenderLumenReflections</td><td><span class="note-label diff">门禁</span></td><td>不满足直接不进本函数。</td></tr>
+<tr><td>ReflectionTileClassification</td><td><span class="note-label diff">发散</span></td><td>只在有反射的 tile 上工作，间接派发。</td></tr>
+<tr><td>GenerateRays</td><td><span class="note-label diff">发散</span></td><td>逐像素 GGX 采样；高糙/远距分叉到 Radiance Cache。</td></tr>
+<tr><td>TraceReflections</td><td><span class="note-label common">汇聚</span></td><td>多后端追踪汇成 TraceRadiance/TraceHit（与 ③ 同源）。</td></tr>
+<tr><td>Resolve（空间重建）</td><td><span class="note-label common">汇聚</span></td><td>借邻域线重建 + 上采样回全屏。</td></tr>
+<tr><td>Temporal（时域累积）</td><td><span class="note-label common">汇聚</span></td><td>历史重投影 + 二阶矩，仅 bTemporal。</td></tr>
+<tr><td>Spatial（双边滤波）</td><td><span class="note-label common">汇聚</span></td><td>方差自适应补噪。</td></tr>
+<tr><td>存历史 / return</td><td><span class="note-label common">汇聚</span></td><td>三套状态择一存回；返回 SpecularIndirect。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note"><h3>骨架</h3><p><span class="inline">RenderLumenReflections</span> 是与 Screen Probe Gather 并列的镜面反射链路：TileClassification 圈定像素 → GenerateRays 按 GGX 逐像素定向 → TraceReflections 复用 GI 追踪后端 → Resolve/Temporal/Spatial 三段降噪 → 返回 SpecularIndirect 供 Composite 填 Textures[3]。</p><p>省钱三招（分类 tile / 按粗糙度降采样 / Radiance Cache 兜底）+ 降噪三段（空间重建 / 时域累积 / 双边滤波）是它的两条主线。</p></div><div class="note"><h3>阅读建议</h3><p>先记住"逐像素 + 定向"这个与 GI 的根本区别，再把追踪部分完全交给 ③ TraceScreenProbes 与 Surface Cache 专题（同源）。重点放在反射独有的 GGX 采样与三段降噪管线，permutation 与 tile 分类细节见函数附录。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenReflections_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>RenderLumenReflections 函数算法附录</a><a class="tag" href="LumenDiffuseIndirectComposite_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>下游：Composite（填 Textures[3]）</a><a class="tag" href="LumenTraceScreenProbes_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>同源追踪：③ TraceScreenProbes</a><a class="tag" href="LumenSurfaceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>数据源：Surface Cache</a><a class="tag" href="LumenRadianceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>兜底：Radiance Cache</a><a class="tag" href="UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

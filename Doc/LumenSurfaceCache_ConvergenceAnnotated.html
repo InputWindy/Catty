@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Surface Cache / Lumen Scene 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:760px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Surface Cache / Lumen Scene 代码解析（世界表面缓存）</h1><div class="subtitle">Lumen 的"世界表面数据库"：把场景里所有网格用一组 <b>Mesh Card</b> 代理起来，把它们的材质属性（Albedo/Normal/Depth/Emissive）与光照（Direct/Indirect/Final）烘进一组世界空间 <b>Atlas</b>。所有 Lumen 追踪（③ TraceScreenProbes、Radiance Cache、反射、半透明）命中一个表面时，都不重新算光照，而是查页表定位到卡片、直接采样 <span class="inline">FinalLightingAtlas</span>。它就是 Lumen 能做无限反弹 GI 的物理基础。本页解析两条更新流水线：<span class="inline">UpdateLumenScene</span>（材质捕获）与 <span class="inline">RenderLumenSceneLighting</span>（光照烘焙）。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/合成</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/预算分支</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/参数</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>持久化/复用</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁</span></div></section>
+
+<section class="card"><h2>一眼看懂：Surface Cache 两条更新流水线</h2><div class="body flow"><div class="node blue"><strong>Mesh Cards</strong><small>网格的卡片代理布点。</small></div><div class="node orange"><strong>选页 + 预算</strong><small>CardUpdateContext 挑本帧页。</small></div><div class="node cyan"><strong>Card Capture</strong><small>画 GBuffer 到捕获 atlas。</small></div><div class="node green"><strong>材质 Atlas</strong><small>Albedo/Normal/Depth/Emissive。</small></div><div class="node orange"><strong>Direct Lighting</strong><small>逐卡片阴影直接光。</small></div><div class="node orange"><strong>Radiosity</strong><small>一次反弹间接光（累帧）。</small></div><div class="node green"><strong>Combine</strong><small>Alb·(Dir+Ind)+Emissive。</small></div><div class="node out"><strong>FinalLightingAtlas</strong><small>供所有追踪采样。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦两条流水线（材质捕获 / 光照烘焙）的整体编排与"卡片 + atlas + 预算重烘"这一核心设计。各细节——Mesh Card 布点与页表、卡片捕获 GBuffer、Direct/Radiosity 逐 pass、CombineLighting 公式、SurfaceCache Feedback 反馈机制、追踪侧 <span class="inline">GetLumenCardTracingParameters</span> 绑定——放在函数附录。</p><a class="tag" href="LumenSurfaceCache_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 Surface Cache 函数算法附录</a><a class="tag" href="UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：谁调用它、它喂给谁</h2><div class="body"><p>Surface Cache 的更新在渲染帧早期完成（先于 GI 追踪），由 <span class="inline">FDeferredShadingSceneRenderer</span> 每帧调用 <span class="inline">UpdateLumenScene</span>（补材质 atlas）与 <span class="inline">RenderLumenSceneLighting</span>（补光照 atlas）。它<b>不被 ①~⑤ 直接调用</b>，而是作为所有追踪的<b>命中数据源</b>：<a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">③ TraceScreenProbes</a>、<a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a>、<a href="LumenReflections_ConvergenceAnnotated.html">反射</a>等在追踪命中一个表面后，通过 <span class="inline">GetLumenCardTracingParameters</span> 绑定的 atlas 采样已烘好的光照。其 Radiosity 阶段又<b>反过来采样上一帧的 <span class="inline">FinalLightingAtlas</span></b>，这正是"无限反弹"的来源。</p></div></section>
+
+<section class="card"><h2>完整源码对照（两条更新流水线骨架）</h2><div class="body"><p>两个入口各约数百行，含大量资源分配 / 上传 / mesh draw 样板。下面是<b>忠实骨架</b>（保留真实函数名与 RDG_EVENT / atlas 名，省略上传与 cull 细节，完整实现见源码文件）。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp  ·  LumenSceneLighting.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ========== 流水线 A：材质捕获 —— UpdateLumenScene ==========
+void FDeferredShadingSceneRenderer::UpdateLumenScene(FRDGBuilder&amp; GraphBuilder, FLumenSceneFrameTemporaries&amp; FrameTemporaries)
+{
+    if (!bAnyLumenActive) return;
+    FLumenSceneData&amp; LumenSceneData = *Scene-&gt;GetLumenSceneData(Views[0]);
+    // 本帧要重画的卡片页（CPU/GPU 按预算 + 距离 + feedback 选出，见 BeginUpdateLumenSceneTasks）
+    const TArray&lt;FCardPageRenderData&gt;&amp; CardPagesToRender = LumenCardRenderer.CardPagesToRender;
+
+    // 1) atlas 分配/复用：Albedo/Normal/Depth/Emissive（材质）+ Radiosity（间接光）
+    if (FrameTemporaries.bReallocateAtlas || !LumenSceneData.AlbedoAtlas)
+        LumenSceneData.AllocateCardAtlases(GraphBuilder, FrameTemporaries, ...);   // 持久 atlas
+    LumenSceneData.FillFrameTemporaries(...);
+
+    // 2) 上传页表 / 卡片场景 buffer；判定全局光照突变
+    UpdateLumenCardSceneUniformBuffer(...);
+    LumenCardRenderer.bPropagateGlobalLightingChange = UpdateGlobalLightingState(...);
+    LumenSceneData.UploadPageTable(...);  Lumen::UpdateCardSceneBuffer(...);
+
+    // 3) 重采样旧卡片（换 mip / 新分配）到 CardCaptureAtlas，避免闪烁
+    if (CardPagesToRender.Num()) ResampleLumenCards(..., CardCaptureAtlas, ...);
+
+    // 4) 卡片捕获：用 mesh draw command 把选中卡片页画成 GBuffer（材质属性）
+    if (CardPagesToRender.Num() &gt; 0) {
+        // 构建 SharedView（强制最低 LOD、关 mip bias）+ FLumenCardPassUniformParameters
+        // 逐卡片页执行 mesh pass -&gt; 写 CardCaptureAtlas.Albedo/Normal/Depth/Emissive
+        // 之后 CopyCardsToAtlas / Dilate 把捕获结果搬进持久材质 atlas
+    }
+}
+
+// ========== 流水线 B：光照烘焙 —— RenderLumenSceneLighting ==========
+void FDeferredShadingSceneRenderer::RenderLumenSceneLighting(FRDGBuilder&amp; GraphBuilder,
+    const FLumenSceneFrameTemporaries&amp; FrameTemporaries, const FLumenDirectLightingTaskData* DirectLightingTaskData)
+{
+    if (!bAnyLumenActive) return;
+    const ERDGPassFlags ComputePassFlags = UseAsyncCompute(ViewFamily) ? AsyncCompute : Compute;
+    LumenSceneData.IncrementSurfaceCacheUpdateFrameIndex();   // 帧号推进（预算/反馈用）
+
+    // 1) 清空最终 atlas；初始化 Radiosity 临时资源
+    AddClearRenderTargetPass(GraphBuilder, FrameTemporaries.FinalLightingAtlas);
+    LumenRadiosity::InitFrameTemporaries(...);
+
+    // 2) 选页预算：分别为"直接光"和"间接光"挑本帧要重烘的卡片页
+    Lumen::BuildCardUpdateContext(GraphBuilder, LumenSceneData, Views, FrameTemporaries,
+        bIndirectLightingHistoryValid,
+        DirectLightingCardUpdateContext,      // 直接光更新名单
+        IndirectLightingCardUpdateContext,    // 间接光更新名单
+        ComputePassFlags);
+
+    // 3) 直接光：逐卡片 texel 算带阴影的直接光 -&gt; DirectLightingAtlas
+    RenderDirectLightingForLumenScene(GraphBuilder, FrameTemporaries, DirectLightingTaskData,
+        DirectLightingCardUpdateContext, ComputePassFlags);
+
+    // 4) Radiosity（一次反弹间接光）：从卡片沿半球采样 -&gt; 命中处读【上一帧 FinalLightingAtlas】
+    //    -&gt; IndirectLightingAtlas，累帧收敛 =&gt; 事实上的无限反弹
+    RenderRadiosityForLumenScene(GraphBuilder, FrameTemporaries, RadiosityFrameTemporaries,
+        IndirectLightingCardUpdateContext, ComputePassFlags);
+
+    LumenSceneData.bFinalLightingAtlasContentsValid = true;
+}
+
+// ========== 合成：把三份光照 + 材质并成最终缓存 ==========
+void Lumen::CombineLumenSceneLighting(FScene* Scene, const FViewInfo&amp; View, FRDGBuilder&amp; GraphBuilder,
+    const FLumenSceneFrameTemporaries&amp; FrameTemporaries, const FLumenCardUpdateContext&amp; CardUpdateContext,
+    const FLumenCardTileUpdateContext&amp; CardTileUpdateContext, ERDGPassFlags ComputePassFlags)
+{
+    // FLumenCardCombineLightingCS 逐 card tile：
+    //   FinalLighting = Albedo * DiffuseColorBoost * (DirectLighting + IndirectLighting) + Emissive
+    // 输入：AlbedoAtlas / EmissiveAtlas / DirectLightingAtlas / IndirectLightingAtlas
+    // 输出：RWFinalLightingAtlas   （被 CombineLighting CS 逐 tile 写出）
+}
+
+// ========== 采样侧：追踪命中时怎么读 Surface Cache ==========
+void GetLumenCardTracingParameters(FRDGBuilder&amp; GraphBuilder, const FViewInfo&amp; View,
+    const FLumenSceneData&amp; LumenSceneData, const FLumenSceneFrameTemporaries&amp; FrameTemporaries,
+    bool bSurfaceCacheFeedback, FLumenCardTracingParameters&amp; TracingParameters)
+{
+    TracingParameters.LumenCardScene = FrameTemporaries.LumenCardSceneUniformBuffer;  // 页表/卡片元数据
+    // 绑定全套 atlas 供 shader 采样：
+    TracingParameters.FinalLightingAtlas = FrameTemporaries.FinalLightingAtlas;       // 命中主要读这个
+    TracingParameters.DirectLightingAtlas / IndirectLightingAtlas = ...;
+    TracingParameters.AlbedoAtlas / NormalAtlas / EmissiveAtlas / DepthAtlas = ...;
+    // 反馈：命中时把"用到但精度不足/缺失"的卡片写进 feedback buffer，指导下一帧选页预算
+    if (bSurfaceCacheFeedback) { TracingParameters.RWSurfaceCacheFeedbackBuffer = ...; }
+}</textarea></div></section>
+
+<section class="card"><h2>1. 核心思想：为什么把光照"烘进世界表面"</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 朴素想法：每根 GI 光线命中一个点，就地算这个点的光照
+//   -&gt; 命中点要采样所有光源 + 阴影 + 材质，极其昂贵
+//   -&gt; 每帧几百万根光线 * 每次完整着色 = 不可能实时
+
+// Lumen 的答案：把"表面被照亮的结果"预先缓存在世界空间
+//   1. 用 Mesh Card 把网格拍扁成几个正交方向的"卡片"（低分辨率代理）
+//   2. 卡片材质烘进 atlas（Albedo/Normal/Depth/Emissive）—— 更新流水线 A
+//   3. 卡片光照烘进 atlas（Direct + Indirect -&gt; Final）  —— 更新流水线 B
+//   4. GI 光线命中 -&gt; 查页表定位卡片 texel -&gt; 直接 Load FinalLightingAtlas
+//      命中着色从"完整光照计算"退化成"一次纹理采样"
+
+// 代价与收益：
+//   - 分辨率低、有延迟（预算重烘），但换来命中 O(1) 采样
+//   - Radiosity 读上一帧 Final -&gt; 天然多次反弹</textarea><div class="note"><h3>说明</h3><p>Surface Cache 的本质是<b>把昂贵的"命中点着色"从追踪热路径里挪出来</b>，改成离线式的世界空间缓存 + 命中时一次采样。这和 ③ 里"从廉价到昂贵级联"是同一种精打细算的思路，只是维度不同：级联省的是"追踪次数"，Surface Cache 省的是"每次命中的着色成本"。</p><p><span class="note-label common">共同点</span>和 Radiance Cache 一样，都用"世界空间缓存 + 每帧预算重烘一小部分 + 跨帧复用"来摊平成本。</p><p><span class="note-label diff">不同点</span>Radiance Cache 缓存的是"空间中某点各方向的入射辐照度"（probe），Surface Cache 缓存的是"具体网格表面被照亮的出射颜色"（card texel）。Radiance Cache 追踪时正是<b>读 Surface Cache 当命中光源</b>——两者是上下游关系。</p></div></div></section>
+
+<section class="card"><h2>2. 流水线 A · 材质捕获（UpdateLumenScene）</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Mesh Card：离线/运行时为网格生成的正交投影代理，
+//   每张卡片记录一块表面区域，映射到 atlas 里一个"卡片页"(CardPage)
+
+// 选页预算（BeginUpdateLumenSceneTasks，见附录）：
+//   按到相机距离 + SurfaceCache Feedback + 上次更新帧，
+//   每帧只挑一批 CardPagesToRender 重画（不是全量）
+
+// 捕获（mesh draw）：
+//   把选中卡片页当成一个个小视口，跑简化 mesh pass，
+//   输出材质 GBuffer 到 CardCaptureAtlas：
+//     Albedo（基础色） Normal（法线） Depth（深度） Emissive（自发光）
+//   ResampleLumenCards：换 mip / 新页时先从旧 atlas 重采样，防闪
+
+// 结果 Copy/Dilate 进持久材质 atlas（跨帧存活）</textarea><div class="note"><h3>说明</h3><p>流水线 A 只管<b>"表面长什么样"</b>（材质），不含光照。它把三维网格降维成一组卡片，用真正的 mesh 渲染把材质属性烘进四张 atlas。这是整个 Surface Cache 的几何/材质地基。</p><p><span class="note-label diff">不同点</span>捕获用 <span class="inline">ForceLowestLOD</span> + 关 mip bias 的 <span class="inline">SharedView</span>，因为卡片是低分辨率代理，不需要高模；且是<b>正交投影</b>而非透视。</p><p><span class="note-label common">共同点</span>"预算选页 + 持久 atlas + 重采样防闪"与 Radiance Cache 的"预算重追 + 持久 + 历史迁移"如出一辙。</p></div></div></section>
+
+<section class="card"><h2>3. 流水线 B · 光照烘焙（RenderLumenSceneLighting）</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 前提：材质 atlas 已就绪（流水线 A）
+
+BuildCardUpdateContext(...):
+    // 分别为 Direct / Indirect 选本帧要重烘的卡片页（各自预算）
+
+RenderDirectLightingForLumenScene(...):
+    // 逐卡片 texel：遍历影响它的光源，算带阴影的直接光
+    //   （阴影可用 SDF / 硬件 RT，见 LumenSceneDirectLighting*）
+    // -&gt; DirectLightingAtlas
+
+RenderRadiosityForLumenScene(...):
+    // 逐卡片 texel 沿半球发少量光线（低分辨率）
+    //   命中另一表面 -&gt; 读【上一帧 FinalLightingAtlas】取其出射光
+    // -&gt; IndirectLightingAtlas（时域累积去噪，NumFramesAccumulated）
+
+CombineLumenSceneLighting(...):
+    // FinalLighting = Albedo*(Direct + Indirect) + Emissive
+    // -&gt; FinalLightingAtlas（本帧对外发布的缓存）</textarea><div class="note"><h3>说明</h3><p>流水线 B 给已捕获的表面"打光"。<b>直接光</b>逐卡片算阴影光照；<b>Radiosity</b>是关键——它让卡片去采样<b>别的卡片上一帧的最终光照</b>，于是第 N 帧的间接光里含了 N-1 帧的直接光，跨帧迭代后收敛成<b>无限次反弹</b>。最后 Combine 把材质与光照乘算成 <span class="inline">FinalLightingAtlas</span>。</p><p><span class="note-label diff">不同点</span>Radiosity 读的是<b>上一帧</b>的 Final（历史），因此有一帧延迟但成本极低；这与 ④ FilterScreenProbes 的时域滤波、Radiance Cache 的历史复用同属"用历史换性能"。</p><p><span class="note-label common">共同点</span>Direct/Indirect 都走"选页预算 + card tile 逐块 dispatch"，且都支持 AsyncCompute 与主渲染 overlap。</p></div></div></section>
+
+<section class="card"><h2>4. 采样与反馈：追踪命中如何读、如何反哺预算</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 消费方（③ / Radiance Cache / 反射 / 半透明）在追踪前调用：
+GetLumenCardTracingParameters(..., bSurfaceCacheFeedback, TracingParameters);
+//   绑定 LumenCardScene（页表 + 卡片元数据）+ 全套 atlas
+
+// 命中着色（shader 侧，概念）：
+//   1. 命中世界点 + 法线 -&gt; 找到覆盖它的 Mesh Card
+//   2. 投影到卡片 UV -&gt; 查页表得 atlas 物理坐标
+//   3. SampleLumenCard: Load FinalLightingAtlas -&gt; 得出射 radiance
+//   4. 若该卡片精度不足/未驻留 -&gt; 写 SurfaceCacheFeedback
+
+// 反馈闭环（LumenSurfaceCacheFeedback）：
+//   feedback buffer 汇总"哪些卡片被高频采样但精度不够"
+//   -&gt; 下一帧 BeginUpdateLumenSceneTasks 优先给它们分配/提精度</textarea><div class="note"><h3>说明</h3><p>这一节把"更新"与"使用"接起来。追踪时不重算光照，而是<b>页表定位 + 采样 <span class="inline">FinalLightingAtlas</span></b>。同时通过 <b>SurfaceCache Feedback</b> 形成闭环：真正被采样到、但缓存精度不够的卡片会被记下，反哺下一帧的选页预算——让有限的重烘预算花在"镜头真正看得到、光线真正打得到"的表面上。</p><p><span class="note-label common">共同点</span>这个"使用时反馈需求 → 下帧按需更新"的闭环，与 Radiance Cache 的 <span class="inline">MarkUsedProbes</span> 回调是完全同构的按需驱动设计。</p><p><span class="note-label diff">不同点</span>Radiance Cache 的"被用到"是 CPU/GPU 回调显式标记；Surface Cache 的"被用到"是追踪 shader 在命中时顺手写 feedback buffer，更细粒度、更贴近真实采样分布。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>环节</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>UpdateLumenScene 选页</td><td><span class="note-label diff">发散</span></td><td>按预算/距离/反馈挑本帧要重画的卡片页，非全量。</td></tr>
+<tr><td>Card Capture → 材质 atlas</td><td><span class="note-label common">汇聚</span></td><td>mesh draw 把卡片材质统一烘进 Albedo/Normal/Depth/Emissive。</td></tr>
+<tr><td>Direct / Radiosity</td><td><span class="note-label diff">发散</span></td><td>两条光照支路各自选页预算、各写一张 atlas。</td></tr>
+<tr><td>CombineLumenSceneLighting</td><td><span class="note-label common">汇聚</span></td><td>材质 × (直接+间接) + 自发光 → FinalLightingAtlas。</td></tr>
+<tr><td>Radiosity 读上一帧 Final</td><td><span class="note-label common">汇聚</span></td><td>历史反馈闭环，构成无限反弹。</td></tr>
+<tr><td>GetLumenCardTracingParameters</td><td><span class="note-label common">汇聚</span></td><td>所有追踪后端统一的 Surface Cache 采样入口。</td></tr>
+<tr><td>SurfaceCache Feedback</td><td><span class="note-label diff">发散</span></td><td>命中时写需求，反哺下一帧选页预算。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note"><h3>骨架</h3><p>Surface Cache 是 Lumen 的世界表面光照数据库，由两条每帧流水线维护：<span class="inline">UpdateLumenScene</span> 捕获材质，<span class="inline">RenderLumenSceneLighting</span> 烘焙光照（Direct + Radiosity → Combine → Final）。所有追踪命中时只做一次 atlas 采样。</p><p>三大设计与 Radiance Cache 同源：卡片/页表（空间索引）、预算重烘（成本可控）、历史复用（Radiosity 读上帧 Final = 无限反弹）。</p></div><div class="note"><h3>阅读建议</h3><p>先抓住四张关键 atlas：<span class="inline">材质(Albedo/Normal/Depth/Emissive)</span>、<span class="inline">DirectLightingAtlas</span>、<span class="inline">IndirectLightingAtlas</span>、<span class="inline">FinalLightingAtlas</span>。再理解"捕获→打光→合成→采样→反馈"这条闭环。细节（Mesh Card 布点、页表、Radiosity 采样、Feedback）见函数附录。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenSurfaceCache_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>Surface Cache 函数算法附录</a><a class="tag" href="LumenRadianceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>下游消费者：Radiance Cache（追踪时读本缓存）</a><a class="tag" href="LumenTraceScreenProbes_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>下游消费者：③ TraceScreenProbes</a><a class="tag" href="UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>InterpolateAndIntegrate 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>InterpolateAndIntegrate 函数算法附录</h1><div class="subtitle">配合主文档使用。展开 tile 分类机制、四个相关 CS 的职责、FScreenProbeIntegrateCS 的 permutation 全表，以及"插值 + 积分"这一步的数学含义与输出去向。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenInterpolateAndIntegrate_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 InterpolateAndIntegrate 主文档</a><a class="tag" href="LumenScreenProbeGather_RenderFlow_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>上级：RenderLumenScreenProbeGather 函数附录</a></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#CS">四个 Compute Shader 职责</a><a href="#Tile">Tile 分类机制</a><a href="#Perm">FScreenProbeIntegrateCS permutation 全表</a><a href="#Math">插值 + 积分的数学含义</a><a href="#Rel">关系表</a></div></section>
+
+<section id="CS" class="card"><h2>1. 四个 Compute Shader 的职责</h2><div class="body"><table class="table"><thead><tr><th>Compute Shader</th><th>职责</th><th>派发方式</th></tr></thead><tbody>
+<tr><td><span class="inline">FInitScreenProbeTileIndirectArgsCS</span></td><td>把 IntegrateIndirectArgs / ClearUnusedIndirectArgs 计数器清零，为后续 indirect dispatch 做准备。</td><td>FIntVector(1,1,1)</td></tr>
+<tr><td><span class="inline">FScreenProbeTileClassificationBuildListsCS</span></td><td>读 LumenTileBitmask，判断每个 tile 需要哪种积分技术，写入对应分类 list 并累加计数。</td><td>GetGroupCount(ViewportIntegrateTileDimensions, 8) / overflow 用 ClosureTile indirect</td></tr>
+<tr><td><span class="inline">FScreenProbeIntegrateClearUnusedTileDataCS</span></td><td>清空不会被积分 pass 覆盖的 tile（因输出 UAV SkipBarrier overlap，需显式清零防残留）。</td><td>ClearUnusedIntegrateTileIndirectArgs</td></tr>
+<tr><td><span class="inline">FScreenProbeIntegrateCS</span></td><td>核心积分核：插值邻近 probe + 对像素 BRDF 积分，产出 Diffuse/RoughSpec/Backface/LightIsMoving。</td><td>分类路径用 IntegrateIndirectArgs 偏移；全屏路径用 GetGroupCount，Z=ClosureCount</td></tr>
+</tbody></table>
+<div class="note"><h3>说明</h3><p>前三个 CS 都是<span class="inline">为积分核铺路</span>的调度层：Init 清计数、BuildLists 分类、ClearUnused 清脏。真正做光照计算的只有第四个 <span class="inline">FScreenProbeIntegrateCS</span>——它被以不同 permutation、不同 tile list 反复调用，是整个阶段唯一的"计算主体"。</p><p>全屏路径下前三个 CS 全部省略，只保留 IntegrateCS 一次全屏 dispatch。</p></div></div></section>
+
+<section id="Tile" class="card"><h2>2. Tile 分类机制</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 分类：每个 tile 归到某个 EScreenProbeIntegrateTileClassification
+// 依据 LumenTileBitmask（哪些像素需要哪些功能）
+enum class EScreenProbeIntegrateTileClassification {
+    // 例如：SimpleDiffuse / SupportImportanceSample / SupportAll ... Num
+};
+
+// BuildLists 累加每个分类的 dispatch 计数，写进 IntegrateIndirectArgs
+// Integrate 循环里按 ClassificationMode 偏移取用对应分类的 tile list：
+AddPass("ScreenProbeIntegrate ...", IntegrateIndirectArgs,
+    ((bOverflow ? Num : 0) + ClassificationMode) * sizeof(FRHIDispatchIndirectParameters));
+
+// Substrate 多材质层：overflow 变体处理"一个像素多个 closure"的溢出 tile
+if (Lumen::SupportsMultipleClosureEvaluation(View))
+    ScreenProbeIntegrate(true);</textarea>
+<div class="note"><h3>说明</h3><p>Tile 分类的动机：不同屏幕区域需要的积分功能差异很大（纯漫反射 tile vs 需要背面漫反射/AO/多层材质的 tile）。若对全屏跑同一个"全功能"shader，简单区域会白白背上复杂分支的寄存器压力，降低 GPU occupancy。</p><p>解决办法：先把每个 tile 按需求归类，为每类编译一个<span class="inline">精简 permutation</span>，再用 <span class="inline">indirect dispatch</span> 让每类 shader 只对属于它的 tile 启动。<span class="inline">bOverflow</span> 分支专门处理 Substrate 多 closure 场景——同一像素有多个材质层时，用额外的 closure tile buffer 覆盖。</p></div></div></section>
+
+<section id="Perm" class="card"><h2>3. FScreenProbeIntegrateCS permutation 全表</h2><div class="body"><table class="table"><thead><tr><th>Permutation</th><th>作用</th></tr></thead><tbody>
+<tr><td><span class="inline">FTileClassificationMode</span></td><td>本次 dispatch 处理哪种分类的 tile；特殊值 Num 表示"全屏不分类、全功能"。</td></tr>
+<tr><td><span class="inline">FOverflowTile</span></td><td>是否处理 Substrate 多 closure 的溢出 tile。</td></tr>
+<tr><td><span class="inline">FProbeIrradianceFormat</span></td><td>与 Filter 的 ConvertToIrradiance 一致：SH3（点乘余弦瓣）或 Octahedron（采样 irradiance 图）。</td></tr>
+<tr><td><span class="inline">FStochasticProbeInterpolation</span></td><td>随机选单个 probe（省带宽，噪声交时域滤）vs 加权多个 probe。</td></tr>
+<tr><td><span class="inline">FShortRangeAO / FShortRangeAOBentNormal</span></td><td>是否应用近距离环境光遮蔽、是否用 bent normal。</td></tr>
+<tr><td><span class="inline">FSupportBackfaceDiffuse</span></td><td>是否额外输出背面漫反射（用于双面/次表面材质）。</td></tr>
+<tr><td><span class="inline">FIntegrateDownsampleFactor</span></td><td>积分分辨率下采样倍率（省算力，靠上采样补）。</td></tr>
+<tr><td><span class="inline">FScreenProbeExtraAO</span></td><td>是否消费 Filter 产出的 ExtraAOWithBorder。</td></tr>
+</tbody></table>
+<div class="note"><h3>说明</h3><p>这些 permutation <span class="inline">共同点</span>在于都作用于同一个积分核，最终产出同语义的输出纹理。<span class="inline">不同点</span>在于它们组合出"这块屏幕/这种材质到底要算多少东西"——tile 分类正是为了给每块屏幕挑一组最省的开关。</p><p>其中 <span class="inline">FProbeIrradianceFormat</span> 是跨阶段的强约束：它必须与 Filter 阶段 <span class="inline">GetScreenProbeIrradianceFormat</span> 的结果完全一致，否则积分核会用错误方式解码 probe 数据。</p></div></div></section>
+
+<section id="Math" class="card"><h2>4. 插值 + 积分的数学含义</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 概念伪代码（真实实现分散在 shader 里）
+// —— 插值：用 UpsampleParameters 找邻近 probe，按位置/深度/法线权重混合 ——
+Irradiance(dir) = Σ_p  w(p) · ProbeIrradiance[p](dir)   // w 由深度/法线一致性决定
+//   w 越低表示 probe 越不该被信任（跨越了几何边界 → 防漏光）
+
+// —— 积分：对像素 BRDF 做半球积分 ——
+DiffuseIndirect = ∫_Ω Irradiance(ω) · (N·ω) dω          // 漫反射余弦瓣
+                = Albedo · SH_DiffuseTransfer(SHIrradiance)   // SH3 路径下解析求解
+RoughSpecularIndirect = ∫_Ω Irradiance(ω) · D_rough(ω) dω // 粗糙镜面瓣，用 mip 近似锥角</textarea>
+<div class="note"><h3>说明</h3><p><span class="inline">插值</span>解决"像素不在 probe 位置上"的问题：取邻近若干 probe，按世界位置、深度、法线一致性给权重，权重低的 probe（例如在几何边界另一侧）被压制，避免把不该来的光泄漏进来。</p><p><span class="inline">积分</span>解决"probe 存的是全方向辐照度，像素只要 BRDF 加权那部分"的问题：漫反射对余弦瓣积分（SH3 路径可解析用 <span class="inline">CalcDiffuseTransferSH3</span> 一步算出，这正是 ① GatherScreenData 里编码余弦瓣的对偶操作）；粗糙镜面对镜面瓣积分，用之前 Filter 生成的 <span class="inline">radiance mip</span> 按粗糙度选层近似不同锥角。</p><p>这一步和第①阶段 GatherScreenData 形成闭环：那里为了"该往哪发线"把 BRDF 编码成 SH/PDF，这里为了"收回的光怎么加权"再用 BRDF 积分——重要性采样与积分用的是同一个 BRDF 模型。</p></div></div></section>
+
+<section id="Rel" class="card"><h2>5. 与上下游的关系</h2><div class="body"><table class="table"><thead><tr><th>关系</th><th>对象</th><th>说明</th></tr></thead><tbody>
+<tr><td>上游输入</td><td><span class="inline">FScreenProbeGatherParameters</span></td><td>来自 FilterScreenProbes，滤波后的 probe 辐照度场（SH3 或 Octahedron）+ Moving + ExtraAO。</td></tr>
+<tr><td>插值参数</td><td><span class="inline">FLumenUpsampleParameters</span></td><td>控制每像素如何加权邻近 probe（位置/深度/法线一致性）。</td></tr>
+<tr><td>下游输出</td><td><span class="inline">DiffuseIndirect / RoughSpecularIndirect / BackfaceDiffuseIndirect / LightIsMoving</span></td><td>屏幕空间间接光，先经 UpdateHistoryScreenProbeGather 时域降噪，再由 DiffuseIndirectComposite 合入场景。</td></tr>
+<tr><td>调用者</td><td><span class="inline">RenderScreenProbeGather</span></td><td>作为第五个（最后）子阶段被顺序调用，紧接 FilterScreenProbes 之后。</td></tr>
+<tr><td>闭环</td><td><span class="inline">DiffuseIndirectComposite</span></td><td>输出最终被顶层 Composite 消费——接回本系列第一份 Composite 解析文档。</td></tr>
+</tbody></table></div></section>
+</main>
+</body></html>

@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>RenderLumenScreenProbeGather 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:760px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>RenderLumenScreenProbeGather 代码解析</h1><div class="subtitle">本章解析 Lumen 默认 Screen Probe Gather 分支：它如何从屏幕 probe 参数、探针布点、screen data、Radiance Cache、重要性采样、trace、filter、integrate、history 更新一路产出 FSSDSignalTextures。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚点</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散点</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/参数</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>RDG/异步/历史</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>早退/门禁</span></div></section>
+<section class="card"><h2>一眼看懂：ScreenProbeGather 汇聚/发散骨架</h2><div class="body flow"><div class="node gate"><strong>早退门禁</strong><small>禁用时返回黑色 signal。</small></div><div class="node func"><strong>Probe 参数</strong><small>分辨率、下采样、atlas、jitter。</small></div><div class="node func"><strong>Probe 放置</strong><small>Uniform + Adaptive placement。</small></div><div class="node func"><strong>ScreenData</strong><small>BRDF/PDF/disocclusion/history。</small></div><div class="node branch"><strong>Radiance Cache</strong><small>可选持久世界空间缓存。</small></div><div class="node branch"><strong>Importance + Trace</strong><small>多后端 trace 获取 incoming radiance。</small></div><div class="node merge"><strong>Filter + Integrate</strong><small>滤波并积分成屏幕 GI。</small></div><div class="node out"><strong>FSSDSignalTextures</strong><small>返回给 Composite。</small></div></div></section>
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档用于确认 ScreenProbeGather 主流程；具体 helper 的算法实现放在函数附录中。</p><a class="tag" href="LumenScreenProbeGather_RenderFlow_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 RenderLumenScreenProbeGather 函数算法附录</a></div></section>
+<section class="card"><h2>完整源码对照</h2><div class="body"><p>以下是 RenderLumenScreenProbeGather 的完整源码，方便与阶段解析对照。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp</span><textarea class="codebox large" readonly spellcheck="false">FSSDSignalTextures FDeferredShadingSceneRenderer::RenderLumenScreenProbeGather(
+	FRDGBuilder& GraphBuilder,
+	const FSceneTextures& SceneTextures,
+	FLumenSceneFrameTemporaries& FrameTemporaries,
+	FRDGTextureRef LightingChannelsTexture,
+	FViewInfo& View,
+	int32 ViewIndex,
+	FPreviousViewInfo* PreviousViewInfos,
+	FLumenMeshSDFGridParameters& MeshSDFGridParameters,
+	LumenRadianceCache::FRadianceCacheInterpolationParameters& RadianceCacheParameters,
+	FLumenScreenSpaceBentNormalParameters& ScreenSpaceBentNormalParameters,
+	LumenRadianceCache::FRadianceCacheInterpolationParameters& TranslucencyVolumeRadianceCacheParameters,
+	ERDGPassFlags ComputePassFlags)
+{
+	const FRDGSystemTextures& SystemTextures = FRDGSystemTextures::Get(GraphBuilder);
+
+	RDG_EVENT_SCOPE_STAT(GraphBuilder, LumenScreenProbeGather, "LumenScreenProbeGather");
+
+	check(ShouldRenderLumenDiffuseGI(Scene, View));
+
+	if (!LightingChannelsTexture)
+	{
+		LightingChannelsTexture = SystemTextures.ZeroUIntDummy;
+	}
+
+	if (!GLumenScreenProbeGather)
+	{
+		FSSDSignalTextures ScreenSpaceDenoiserInputs;
+		ScreenSpaceDenoiserInputs.Textures[0] = SystemTextures.Black;
+		ScreenSpaceDenoiserInputs.Textures[1] = SystemTextures.Black;
+		FRDGTextureDesc RoughSpecularIndirectDesc = FRDGTextureDesc::Create2D(SceneTextures.Config.Extent, PF_FloatRGB, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV);
+		ScreenSpaceDenoiserInputs.Textures[2] = GraphBuilder.CreateTexture(RoughSpecularIndirectDesc, TEXT("Lumen.ScreenProbeGather.RoughSpecularIndirect"));
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenSpaceDenoiserInputs.Textures[2])), FLinearColor::Black);
+		return ScreenSpaceDenoiserInputs;
+	}
+
+	// Pull from uniform buffer to get fallback textures.
+	const FSceneTextureParameters SceneTextureParameters = GetSceneTextureParameters(GraphBuilder, SceneTextures.UniformBuffer);
+
+	FScreenProbeGatherCommonParameters ScreenProbeGatherCommonParameters;
+	ScreenProbeGatherCommonParameters.View = View.ViewUniformBuffer;
+	if (GVarLumenScreenProbeGatherDebug.GetValueOnRenderThread() != 0)
+	{
+		ShaderPrint::SetEnabled(true);
+		ShaderPrint::RequestSpaceForLines(256 * 1024u);
+		ShaderPrint::SetParameters(GraphBuilder, View.ShaderPrintData, ScreenProbeGatherCommonParameters.ShaderPrintUniformBuffer);
+	}
+
+	FScreenProbeParameters ScreenProbeParameters;
+	ScreenProbeParameters.ScreenProbeTracingOctahedronResolution = LumenScreenProbeGather::GetTracingOctahedronResolution(View);
+	ensureMsgf(ScreenProbeParameters.ScreenProbeTracingOctahedronResolution < (1 << 6) - 1, TEXT("Tracing resolution %u was larger than supported by PackRayInfo()"), ScreenProbeParameters.ScreenProbeTracingOctahedronResolution);
+	ScreenProbeParameters.ScreenProbeGatherOctahedronResolution = LumenScreenProbeGather::GetGatherOctahedronResolution(ScreenProbeParameters.ScreenProbeTracingOctahedronResolution);
+	ScreenProbeParameters.ScreenProbeGatherOctahedronResolutionWithBorder = ScreenProbeParameters.ScreenProbeGatherOctahedronResolution + 2 * (1 << (GLumenScreenProbeGatherNumMips - 1));
+	ScreenProbeParameters.ScreenProbeDownsampleFactor = LumenScreenProbeGather::GetScreenDownsampleFactor(View, SceneTextures);
+
+	ScreenProbeParameters.ScreenProbeViewSize = FIntPoint::DivideAndRoundUp(View.ViewRect.Size(), (int32)ScreenProbeParameters.ScreenProbeDownsampleFactor);
+	ScreenProbeParameters.ScreenProbeAtlasViewSize = ScreenProbeParameters.ScreenProbeViewSize;
+	ScreenProbeParameters.ScreenProbeAtlasViewSize.Y += FMath::TruncToInt(ScreenProbeParameters.ScreenProbeViewSize.Y * GLumenScreenProbeGatherAdaptiveProbeAllocationFraction);
+
+	ScreenProbeParameters.ScreenProbeAtlasBufferSize = FIntPoint::DivideAndRoundUp(SceneTextures.Config.Extent, (int32)ScreenProbeParameters.ScreenProbeDownsampleFactor);
+	ScreenProbeParameters.ScreenProbeAtlasBufferSize.Y += FMath::TruncToInt(ScreenProbeParameters.ScreenProbeAtlasBufferSize.Y * GLumenScreenProbeGatherAdaptiveProbeAllocationFraction);
+
+	ScreenProbeParameters.ScreenProbeGatherMaxMip = GLumenScreenProbeGatherNumMips - 1;
+	ScreenProbeParameters.RelativeSpeedDifferenceToConsiderLightingMoving = GLumenScreenProbeRelativeSpeedDifferenceToConsiderLightingMoving;
+	ScreenProbeParameters.ScreenTraceNoFallbackThicknessScale = Lumen::UseHardwareRayTracedScreenProbeGather(ViewFamily) ? 1.0f : GLumenScreenProbeScreenTracesThicknessScaleWhenNoFallback;
+	ScreenProbeParameters.ExtraAOMaxDistanceWorldSpace = FMath::Clamp<float>(GLumenScreenProbeExtraAmbientOcclusionMaxDistanceWorldSpace, .0001f, 1000000.0f);
+	ScreenProbeParameters.ExtraAOExponent = FMath::Clamp<float>(GLumenScreenProbeExtraAmbientOcclusionExponent, .01f, 100.0f);
+
+	const float DepthWeightScale = -10000.0f;
+	ScreenProbeParameters.ScreenProbeInterpolationDepthWeight = DepthWeightScale * CVarLumenScreenProbeInterpolationDepthWeight.GetValueOnRenderThread();
+	ScreenProbeParameters.ScreenProbeInterpolationDepthWeightFoliage = DepthWeightScale * CVarLumenScreenProbeInterpolationDepthWeightFoliage.GetValueOnRenderThread();
+	ScreenProbeParameters.ScreenProbeInterpolationDepthWeightFallback = DepthWeightScale * CVarLumenScreenProbeInterpolationDepthWeightFallback.GetValueOnRenderThread();
+
+	ScreenProbeParameters.NumUniformScreenProbes = ScreenProbeParameters.ScreenProbeViewSize.X * ScreenProbeParameters.ScreenProbeViewSize.Y;
+	ScreenProbeParameters.MaxNumAdaptiveProbes = FMath::TruncToInt(ScreenProbeParameters.NumUniformScreenProbes * GLumenScreenProbeGatherAdaptiveProbeAllocationFraction);
+	
+	ScreenProbeParameters.FixedJitterIndex = GLumenScreenProbeFixedJitterIndex;
+	if (ScreenProbeParameters.FixedJitterIndex < 0)
+	{
+		ScreenProbeParameters.FixedJitterIndex = CVarLumenScreenProbeFixedStateFrameIndex.GetValueOnRenderThread();
+
+		if (StochasticLighting::IsStateFrameIndexOverridden())
+		{
+			ScreenProbeParameters.FixedJitterIndex = StochasticLighting::GetStateFrameIndex(View.ViewState);
+		}
+	}
+
+	{
+		FVector2f InvAtlasWithBorderBufferSize = FVector2f(1.0f) / (FVector2f(ScreenProbeParameters.ScreenProbeGatherOctahedronResolutionWithBorder) * FVector2f(ScreenProbeParameters.ScreenProbeAtlasBufferSize));
+		ScreenProbeParameters.SampleRadianceProbeUVMul = FVector2f(ScreenProbeParameters.ScreenProbeGatherOctahedronResolution) * InvAtlasWithBorderBufferSize;
+		ScreenProbeParameters.SampleRadianceProbeUVAdd = FMath::Exp2(ScreenProbeParameters.ScreenProbeGatherMaxMip) * InvAtlasWithBorderBufferSize;
+		ScreenProbeParameters.SampleRadianceAtlasUVMul = FVector2f(ScreenProbeParameters.ScreenProbeGatherOctahedronResolutionWithBorder) * InvAtlasWithBorderBufferSize;
+	}
+
+	extern int32 GLumenScreenProbeGatherVisualizeTraces;
+	// Automatically set a fixed jitter if we are visualizing, but don't override existing fixed jitter
+	if (GLumenScreenProbeGatherVisualizeTraces != 0 && ScreenProbeParameters.FixedJitterIndex < 0)
+	{
+		ScreenProbeParameters.FixedJitterIndex = 6;
+	}
+
+	uint32 StateFrameIndex = View.ViewState ? View.ViewState->GetFrameIndex() : 0;
+	if (ScreenProbeParameters.FixedJitterIndex >= 0)
+	{
+		StateFrameIndex = ScreenProbeParameters.FixedJitterIndex;
+	}
+	ScreenProbeParameters.ScreenProbeRayDirectionFrameIndex = StateFrameIndex % FMath::Max(CVarLumenScreenProbeTemporalMaxRayDirections.GetValueOnRenderThread(), 1);
+	ScreenProbeParameters.bSupportsHairScreenTraces = LumenScreenProbeGather::SupportsHairScreenTraces() ? 1u : 0u;
+	ScreenProbeParameters.TargetFormatQuantizationError = Lumen::GetLightingQuantizationError();
+
+	FRDGTextureDesc DownsampledDepthDesc(FRDGTextureDesc::Create2D(ScreenProbeParameters.ScreenProbeAtlasBufferSize, PF_R32_UINT, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
+	ScreenProbeParameters.ScreenProbeSceneDepth = GraphBuilder.CreateTexture(DownsampledDepthDesc, TEXT("Lumen.ScreenProbeGather.ScreenProbeSceneDepth"));
+
+	FRDGTextureDesc DownsampledNormalDesc(FRDGTextureDesc::Create2D(ScreenProbeParameters.ScreenProbeAtlasBufferSize, PF_R8G8, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
+	ScreenProbeParameters.ScreenProbeWorldNormal = GraphBuilder.CreateTexture(DownsampledNormalDesc, TEXT("Lumen.ScreenProbeGather.ScreenProbeWorldNormal"));
+
+	FRDGTextureDesc DownsampledSpeedDesc(FRDGTextureDesc::Create2D(ScreenProbeParameters.ScreenProbeAtlasBufferSize, PF_R16_UINT, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
+	ScreenProbeParameters.ScreenProbeWorldSpeed = GraphBuilder.CreateTexture(DownsampledSpeedDesc, TEXT("Lumen.ScreenProbeGather.ScreenProbeWorldSpeed"));
+
+	FRDGTextureDesc DownsampledWorldPositionDesc(FRDGTextureDesc::Create2D(ScreenProbeParameters.ScreenProbeAtlasBufferSize, PF_A32B32G32R32F, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
+	ScreenProbeParameters.ScreenProbeTranslatedWorldPosition = GraphBuilder.CreateTexture(DownsampledWorldPositionDesc, TEXT("Lumen.ScreenProbeGather.ScreenProbeTranslatedWorldPosition"));
+
+
+	FBlueNoise BlueNoise = GetBlueNoiseGlobalParameters();
+	ScreenProbeParameters.BlueNoise = CreateUniformBufferImmediate(BlueNoise, EUniformBufferUsage::UniformBuffer_SingleDraw);
+	
+	{
+		FScreenProbeDownsampleDepthUniformCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FScreenProbeDownsampleDepthUniformCS::FParameters>();
+		PassParameters->RWScreenProbeSceneDepth = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeSceneDepth));
+		PassParameters->RWScreenProbeWorldNormal = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeWorldNormal));
+		PassParameters->RWScreenProbeWorldSpeed = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeWorldSpeed));
+		PassParameters->RWScreenProbeTranslatedWorldPosition = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeTranslatedWorldPosition));
+		PassParameters->View = View.ViewUniformBuffer;
+		PassParameters->SceneTexturesStruct = SceneTextures.UniformBuffer;
+		PassParameters->Substrate = Substrate::BindSubstrateGlobalUniformParameters(View);
+		PassParameters->SceneTextures = SceneTextureParameters;
+		PassParameters->ScreenProbeParameters = ScreenProbeParameters;
+
+		auto ComputeShader = View.ShaderMap->GetShader<FScreenProbeDownsampleDepthUniformCS>(0);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("UniformPlacement DownsampleFactor=%u", ScreenProbeParameters.ScreenProbeDownsampleFactor),
+			ComputePassFlags,
+			ComputeShader,
+			PassParameters,
+			FComputeShaderUtils::GetGroupCount(ScreenProbeParameters.ScreenProbeViewSize, FScreenProbeDownsampleDepthUniformCS::GetGroupSize()));
+	}
+
+	FRDGBufferRef NumAdaptiveScreenProbes = GraphBuilder.CreateBuffer(FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1), TEXT("Lumen.ScreenProbeGather.NumAdaptiveScreenProbes"));
+	FRDGBufferRef AdaptiveScreenProbeData = GraphBuilder.CreateBuffer(FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), FMath::Max<uint32>(ScreenProbeParameters.MaxNumAdaptiveProbes, 1)), TEXT("Lumen.ScreenProbeGather.AdaptiveScreenProbeData"));
+
+	ScreenProbeParameters.NumAdaptiveScreenProbes = GraphBuilder.CreateSRV(FRDGBufferSRVDesc(NumAdaptiveScreenProbes, PF_R32_UINT));
+	ScreenProbeParameters.AdaptiveScreenProbeData = GraphBuilder.CreateSRV(FRDGBufferSRVDesc(AdaptiveScreenProbeData, PF_R32_UINT));
+
+	const FIntPoint ScreenProbeViewportBufferSize = FIntPoint::DivideAndRoundUp(SceneTextures.Config.Extent, (int32)ScreenProbeParameters.ScreenProbeDownsampleFactor);
+	FRDGTextureDesc ScreenTileAdaptiveProbeHeaderDesc(FRDGTextureDesc::Create2D(ScreenProbeViewportBufferSize, PF_R32_UINT, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV | TexCreate_AtomicCompatible));
+	FIntPoint ScreenTileAdaptiveProbeIndicesBufferSize = FIntPoint(ScreenProbeViewportBufferSize.X * ScreenProbeParameters.ScreenProbeDownsampleFactor, ScreenProbeViewportBufferSize.Y * ScreenProbeParameters.ScreenProbeDownsampleFactor);
+	FRDGTextureDesc ScreenTileAdaptiveProbeIndicesDesc(FRDGTextureDesc::Create2D(ScreenTileAdaptiveProbeIndicesBufferSize, PF_R16_UINT, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
+	ScreenProbeParameters.ScreenTileAdaptiveProbeHeader = GraphBuilder.CreateTexture(ScreenTileAdaptiveProbeHeaderDesc, TEXT("Lumen.ScreenProbeGather.ScreenTileAdaptiveProbeHeader"));
+	ScreenProbeParameters.ScreenTileAdaptiveProbeIndices = GraphBuilder.CreateTexture(ScreenTileAdaptiveProbeIndicesDesc, TEXT("Lumen.ScreenProbeGather.ScreenTileAdaptiveProbeIndices"));
+
+	FUintVector4 ClearValues(0, 0, 0, 0);
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenTileAdaptiveProbeHeader)), ClearValues, ComputePassFlags);
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(NumAdaptiveScreenProbes), 0, ComputePassFlags);
+
+	int32 NumAdaptiveProbes = FMath::Clamp(CVarLumenScreenProbeGatherNumAdaptiveProbes.GetValueOnRenderThread(), 0, 64);
+
+	if (ScreenProbeParameters.MaxNumAdaptiveProbes > 0 && NumAdaptiveProbes > 0)
+	{ 
+		const FIntPoint NumSamplesPerUniformProbe2D = LumenScreenProbeGather::GetNumSamplesPerUniformProbe2D(NumAdaptiveProbes);
+		const uint32 NumSamplesPerUniformProbe = NumSamplesPerUniformProbe2D.X * NumSamplesPerUniformProbe2D.Y;
+
+		const FIntPoint AdaptiveProbePlacementMaskSize = FIntPoint::DivideAndRoundUp(SceneTextures.Config.Extent, (int32)ScreenProbeParameters.ScreenProbeDownsampleFactor);
+
+		FRDGTextureRef AdaptiveProbePlacementMask = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(AdaptiveProbePlacementMaskSize, PF_R16_UINT, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV),
+			TEXT("Lumen.ScreenProbeGather.AdaptiveProbePlacementMask"));
+
+		const FIntPoint NumUniformScreenProbes = FIntPoint::DivideAndRoundDown(View.ViewRect.Size(), (int32)ScreenProbeParameters.ScreenProbeDownsampleFactor);
+		const FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(NumUniformScreenProbes * NumSamplesPerUniformProbe2D, FScreenProbeAdaptivePlacementMarkCS::GetGroupSize());
+
+		// Mark probes to be placed
+		{
+			FScreenProbeAdaptivePlacementMarkCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FScreenProbeAdaptivePlacementMarkCS::FParameters>();
+			PassParameters->RWAdaptiveProbePlacementMask = GraphBuilder.CreateUAV(AdaptiveProbePlacementMask);
+			PassParameters->ScreenProbeGatherCommonParameters = ScreenProbeGatherCommonParameters;
+			PassParameters->ScreenProbeParameters = ScreenProbeParameters;
+			PassParameters->SceneTexturesStruct = SceneTextures.UniformBuffer;
+			PassParameters->SceneTextures = SceneTextureParameters;
+			PassParameters->Substrate = Substrate::BindSubstrateGlobalUniformParameters(View);
+			PassParameters->ScreenProbeParameters = ScreenProbeParameters;
+
+			FScreenProbeAdaptivePlacementMarkCS::FPermutationDomain PermutationVector;
+			PermutationVector.Set<FScreenProbeAdaptivePlacementMarkCS::FNumSamplesPerUniformProbe>(NumSamplesPerUniformProbe);
+			auto ComputeShader = View.ShaderMap->GetShader<FScreenProbeAdaptivePlacementMarkCS>(PermutationVector);
+
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("AdaptivePlacementMark %dx%d", NumSamplesPerUniformProbe2D.X, NumSamplesPerUniformProbe2D.Y),
+				ComputePassFlags,
+				ComputeShader,
+				PassParameters,
+				GroupCount);
+		}
+
+		// Spawn probes in previously marked locations
+		{
+			FScreenProbeAdaptivePlacementSpawnCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FScreenProbeAdaptivePlacementSpawnCS::FParameters>();
+			PassParameters->RWScreenProbeSceneDepth = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeSceneDepth));
+			PassParameters->RWScreenProbeWorldNormal = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeWorldNormal));
+			PassParameters->RWScreenProbeWorldSpeed = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeWorldSpeed));
+			PassParameters->RWScreenProbeTranslatedWorldPosition = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenProbeTranslatedWorldPosition));
+			PassParameters->RWNumAdaptiveScreenProbes = GraphBuilder.CreateUAV(FRDGBufferUAVDesc(NumAdaptiveScreenProbes, PF_R32_UINT));
+			PassParameters->RWAdaptiveScreenProbeData = GraphBuilder.CreateUAV(FRDGBufferUAVDesc(AdaptiveScreenProbeData, PF_R32_UINT));
+			PassParameters->RWScreenTileAdaptiveProbeHeader = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenTileAdaptiveProbeHeader));
+			PassParameters->RWScreenTileAdaptiveProbeIndices = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenTileAdaptiveProbeIndices));
+			PassParameters->AdaptiveProbePlacementMask = AdaptiveProbePlacementMask;
+			PassParameters->ScreenProbeGatherCommonParameters = ScreenProbeGatherCommonParameters;
+			PassParameters->ScreenProbeParameters = ScreenProbeParameters;
+			PassParameters->SceneTexturesStruct = SceneTextures.UniformBuffer;
+			PassParameters->SceneTextures = SceneTextureParameters;
+			PassParameters->Substrate = Substrate::BindSubstrateGlobalUniformParameters(View);
+			PassParameters->ScreenProbeParameters = ScreenProbeParameters;
+
+			FScreenProbeAdaptivePlacementSpawnCS::FPermutationDomain PermutationVector;
+			PermutationVector.Set<FScreenProbeAdaptivePlacementSpawnCS::FNumSamplesPerUniformProbe>(NumSamplesPerUniformProbe);
+			auto ComputeShader = View.ShaderMap->GetShader<FScreenProbeAdaptivePlacementSpawnCS>(PermutationVector);
+
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("AdaptivePlacementSpawn"),
+				ComputePassFlags,
+				ComputeShader,
+				PassParameters,
+				GroupCount);
+		}
+	}
+	else
+	{
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(AdaptiveScreenProbeData), 0, ComputePassFlags);
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.ScreenTileAdaptiveProbeIndices)), ClearValues, ComputePassFlags);
+	}
+
+	FRDGBufferRef ScreenProbeIndirectArgs = GraphBuilder.CreateBuffer(FRDGBufferDesc::CreateIndirectDesc<FRHIDispatchIndirectParameters>((uint32)EScreenProbeIndirectArgs::Max), TEXT("Lumen.ScreenProbeGather.ScreenProbeIndirectArgs"));
+
+	{
+		FSetupAdaptiveProbeIndirectArgsCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FSetupAdaptiveProbeIndirectArgsCS::FParameters>();
+		PassParameters->RWScreenProbeIndirectArgs = GraphBuilder.CreateUAV(FRDGBufferUAVDesc(ScreenProbeIndirectArgs, PF_R32_UINT));
+		PassParameters->ScreenProbeParameters = ScreenProbeParameters;
+
+		auto ComputeShader = View.ShaderMap->GetShader<FSetupAdaptiveProbeIndirectArgsCS>(0);
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("SetupAdaptiveProbeIndirectArgs"),
+			ComputePassFlags,
+			ComputeShader,
+			PassParameters,
+			FIntVector(1, 1, 1));
+	}
+
+	ScreenProbeParameters.ProbeIndirectArgs = ScreenProbeIndirectArgs;
+
+	bool bIsHistoryValid = false;
+	if (View.ViewState)
+	{
+		ensureMsgf(SceneTextures.Velocity->Desc.Format != PF_G16R16, TEXT("Lumen requires 3d velocity.  Update Velocity format code."));
+
+		const FScreenProbeGatherTemporalState& ScreenProbeGatherState = View.ViewState->Lumen.ScreenProbeGatherState;
+		const EPixelFormat LightingDataFormat = Lumen::GetLightingDataFormat();
+		const EPixelFormat ShortRangeAOFormat = LumenShortRangeAO::GetTextureFormat();
+
+		if (GLumenScreenProbeTemporalFilter != 0
+			&& !View.bCameraCut
+			&& !View.bPrevTransformsReset
+			&& !GLumenScreenProbeClearHistoryEveryFrame
+			&& ScreenProbeGatherState.LumenGatherCvars == GLumenGatherCvars
+			&& !LumenCardRenderer.bPropagateGlobalLightingChange)
+		{
+			bIsHistoryValid = true;
+		}
+	}
+
+	FRDGTextureRef BRDFProbabilityDensityFunction = nullptr;
+	FRDGBufferSRVRef BRDFProbabilityDensityFunctionSH = nullptr;
+	ScreenProbeGatherScreenData(GraphBuilder, View, SceneTextures, FrameTemporaries, BRDFProbabilityDensityFunction, BRDFProbabilityDensityFunctionSH, ScreenProbeParameters, bIsHistoryValid, ComputePassFlags);
+
+	const LumenRadianceCache::FRadianceCacheInputs RadianceCacheInputs = LumenScreenProbeGatherRadianceCache::SetupRadianceCacheInputs(View);
+
+	FRadianceCacheConfiguration RadianceCacheConfiguration;
+	RadianceCacheConfiguration.bSkyVisibility = CVarScreenProbeGatherRadianceCacheSkyVisibility.GetValueOnRenderThread() != 0;
+
+	if (LumenScreenProbeGather::UseRadianceCache())
+	{
+		// Using !View.IsInstancedSceneView() to skip actual secondary stereo views only, View.ShouldRenderView() returns false for empty views as well
+		if (!ShouldUseStereoLumenOptimizations() || !View.IsInstancedSceneView())
+		{
+			const bool bTranslucencyVolumeShareRadianceCacheWithOpaque = LumenTranslucencyVolumeRadianceCache::ShareWithOpaque();
+
+			FMarkUsedRadianceCacheProbes GraphicsMarkUsedRadianceCacheProbesCallbacks;
+			FMarkUsedRadianceCacheProbes ComputeMarkUsedRadianceCacheProbesCallbacks;
+
+			FRDGTextureRef RadianceProbeIndirectionTexture = nullptr;
+			if (FrameTemporaries.ScreenProbeGatherRadianceCacheIndirectionTextures.IsValidIndex(ViewIndex))
+			{
+				RadianceProbeIndirectionTexture = FrameTemporaries.ScreenProbeGatherRadianceCacheIndirectionTextures[ViewIndex];
+			}
+
+			ComputeMarkUsedRadianceCacheProbesCallbacks.AddLambda([ComputePassFlags](
+				FRDGBuilder& GraphBuilder,
+				const FViewInfo& View,
+				const LumenRadianceCache::FRadianceCacheMarkParameters& RadianceCacheMarkParameters)
+				{
+					MarkUsedProbesForVisualize(GraphBuilder, View, RadianceCacheMarkParameters, ComputePassFlags);
+				});
+
+			// Mark radiance caches for screen probes
+			ComputeMarkUsedRadianceCacheProbesCallbacks.AddLambda([&SceneTextures, &ScreenProbeParameters, ComputePassFlags](
+				FRDGBuilder& GraphBuilder,
+				const FViewInfo& View,
+				const LumenRadianceCache::FRadianceCacheMarkParameters& RadianceCacheMarkParameters)
+				{
+					ScreenGatherMarkUsedProbes(
+						GraphBuilder,
+						View,
+						SceneTextures,
+						ScreenProbeParameters,
+						RadianceCacheMarkParameters,
+						ComputePassFlags);
+				});
+
+			if (CVarLumenTranslucencyVolume.GetValueOnRenderThread() && bTranslucencyVolumeShareRadianceCacheWithOpaque)
+			{
+				const FLumenTranslucencyLightingVolumeParameters VolumeParameters = GetTranslucencyLightingVolumeParameters(GraphBuilder, View);
+
+				ComputeMarkUsedRadianceCacheProbesCallbacks.AddLambda([&SceneTextures, VolumeParameters, ComputePassFlags](
+					FRDGBuilder& GraphBuilder,
+					const FViewInfo& View,
+					const LumenRadianceCache::FRadianceCacheMarkParameters& RadianceCacheMarkParameters)
+					{
+						MarkRadianceProbesUsedByTranslucencyVolume(
+							GraphBuilder,
+							View,
+							VolumeParameters,
+							RadianceCacheMarkParameters,
+							LumenTranslucencyVolumeRadianceCache::GetClipmapBias(),
+							ComputePassFlags);
+					});
+			}
+
+			// Mark radiance caches for hair strands
+			if (HairStrands::HasViewHairStrandsData(View))
+			{
+				ComputeMarkUsedRadianceCacheProbesCallbacks.AddLambda([ComputePassFlags](
+					FRDGBuilder& GraphBuilder,
+					const FViewInfo& View,
+					const LumenRadianceCache::FRadianceCacheMarkParameters& RadianceCacheMarkParameters)
+					{
+						HairStrandsMarkUsedProbes(
+							GraphBuilder,
+							View,
+							RadianceCacheMarkParameters,
+							ComputePassFlags);
+					});
+			}
+
+			if (!RadianceProbeIndirectionTexture && Lumen::UseLumenTranslucencyRadianceCacheReflections(ViewFamily))
+			{
+				const FSceneRenderer& SceneRenderer = *this;
+				FViewInfo& ViewNonConst = View;
+
+				GraphicsMarkUsedRadianceCacheProbesCallbacks.AddLambda([&SceneTextures, &SceneRenderer, &ViewNonConst](
+					FRDGBuilder& GraphBuilder,
+					const FViewInfo& View,
+					const LumenRadianceCache::FRadianceCacheMarkParameters& RadianceCacheMarkParameters)
+					{
+						LumenTranslucencyReflectionsMarkUsedProbes(
+							GraphBuilder,
+							SceneRenderer,
+							ViewNonConst,
+							SceneTextures,
+							&RadianceCacheMarkParameters);
+					});
+			}
+
+			LumenRadianceCache::TInlineArray<LumenRadianceCache::FUpdateInputs> InputArray;
+			LumenRadianceCache::TInlineArray<LumenRadianceCache::FUpdateOutputs> OutputArray;
+
+			InputArray.Add(LumenRadianceCache::FUpdateInputs(
+				RadianceCacheInputs,
+				RadianceCacheConfiguration,
+				View,
+				nullptr,
+				nullptr,
+				MoveTemp(GraphicsMarkUsedRadianceCacheProbesCallbacks),
+				MoveTemp(ComputeMarkUsedRadianceCacheProbesCallbacks),
+				RadianceProbeIndirectionTexture));
+
+			OutputArray.Add(LumenRadianceCache::FUpdateOutputs(
+				View.ViewState->Lumen.RadianceCacheState,
+				RadianceCacheParameters));
+
+			// Add the Translucency Volume radiance cache to the update so its dispatches can overlap
+			if (!bTranslucencyVolumeShareRadianceCacheWithOpaque)
+			{
+				LumenRadianceCache::FUpdateInputs TranslucencyVolumeRadianceCacheUpdateInputs = GetLumenTranslucencyGIVolumeRadianceCacheInputs(
+					GraphBuilder,
+					View,
+					FrameTemporaries,
+					ComputePassFlags);
+
+				if (TranslucencyVolumeRadianceCacheUpdateInputs.IsAnyCallbackBound())
+				{
+					InputArray.Add(TranslucencyVolumeRadianceCacheUpdateInputs);
+					OutputArray.Add(LumenRadianceCache::FUpdateOutputs(
+						View.ViewState->Lumen.TranslucencyVolumeRadianceCacheState,
+						TranslucencyVolumeRadianceCacheParameters));
+				}
+			}
+
+			LumenRadianceCache::UpdateRadianceCaches(
+				GraphBuilder,
+				FrameTemporaries,
+				InputArray,
+				OutputArray,
+				Scene,
+				ViewFamily,
+				SceneTextures,
+				LumenCardRenderer.bPropagateGlobalLightingChange,
+				ComputePassFlags);
+
+			if (bTranslucencyVolumeShareRadianceCacheWithOpaque)
+			{
+				TranslucencyVolumeRadianceCacheParameters = RadianceCacheParameters;
+			}
+
+			if (Lumen::UseLumenTranslucencyRadianceCacheReflections(ViewFamily))
+			{
+				View.GetOwnLumenTranslucencyGIVolume().RadianceCacheInterpolationParameters = RadianceCacheParameters;
+
+				extern float GLumenTranslucencyReflectionsRadianceCacheReprojectionRadiusScale;
+				extern float GLumenTranslucencyVolumeRadianceCacheClipmapFadeSize;
+				View.GetOwnLumenTranslucencyGIVolume().RadianceCacheInterpolationParameters.RadianceCacheInputs.ReprojectionRadiusScale = GLumenTranslucencyReflectionsRadianceCacheReprojectionRadiusScale;
+				View.GetOwnLumenTranslucencyGIVolume().RadianceCacheInterpolationParameters.RadianceCacheInputs.InvClipmapFadeSize = 1.0f / FMath::Clamp(GLumenTranslucencyVolumeRadianceCacheClipmapFadeSize, .001f, 16.0f);
+			}
+		}
+		else
+		{
+			RadianceCacheParameters = View.GetLumenTranslucencyGIVolume().RadianceCacheInterpolationParameters;
+		}
+	}
+
+	if (LumenScreenProbeGather::UseImportanceSampling(View))
+	{
+		GenerateImportanceSamplingRays(
+			GraphBuilder,
+			View,
+			SceneTextures,
+			RadianceCacheParameters,
+			BRDFProbabilityDensityFunction,
+			BRDFProbabilityDensityFunctionSH,
+			ScreenProbeParameters,
+			ComputePassFlags);
+	}
+
+	const EPixelFormat LightingDataFormat = Lumen::GetLightingDataFormat();
+	
+	const FIntPoint ScreenProbeTraceBufferSize = ScreenProbeParameters.ScreenProbeAtlasBufferSize * ScreenProbeParameters.ScreenProbeTracingOctahedronResolution;
+	FRDGTextureDesc TraceRadianceDesc(FRDGTextureDesc::Create2D(ScreenProbeTraceBufferSize, LightingDataFormat, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
+	ScreenProbeParameters.TraceRadiance = GraphBuilder.CreateTexture(TraceRadianceDesc, TEXT("Lumen.ScreenProbeGather.TraceRadiance"));
+	ScreenProbeParameters.RWTraceRadiance = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(ScreenProbeParameters.TraceRadiance));
+
+	ScreenProbeParameters.TraceHit = GraphBuilder.CreateTexture(
+		FRDGTextureDesc::Create2D(ScreenProbeTraceBufferSize, PF_R32_UINT, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV),
+		TEXT("Lumen.ScreenProbeGather.TraceHit"));
+	ScreenProbeParameters.RWTraceHit = GraphBuilder.CreateUAV(ScreenProbeParameters.TraceHit);
+
+	TraceScreenProbes(
+		GraphBuilder, 
+		Scene,
+		View, 
+		FrameTemporaries,
+		GLumenGatherCvars.TraceMeshSDFs != 0 && Lumen::UseMeshSDFTracing(ViewFamily.EngineShowFlags),
+		SceneTextures,
+		LightingChannelsTexture,
+		RadianceCacheParameters,
+		ScreenProbeParameters,
+		MeshSDFGridParameters,
+		ComputePassFlags);
+	
+	FScreenProbeGatherParameters GatherParameters;
+	FilterScreenProbes(GraphBuilder, View, SceneTextures, ScreenProbeParameters, GatherParameters, ComputePassFlags);
+
+	if (LumenScreenProbeGather::UseShortRangeAmbientOcclusion(ViewFamily.EngineShowFlags, View.FinalPostProcessSettings.LumenAmbientOcclusionIntensity))
+	{
+		const FVector2f MaxScreenTraceFraction = FVector2f(ScreenProbeParameters.ScreenProbeDownsampleFactor * 2.0f) / FVector2f(View.ViewRect.Size());
+		const uint32 DownsampleFactor = LumenShortRangeAO::GetDownsampleFactor();
+		ScreenSpaceBentNormalParameters = ComputeScreenSpaceShortRangeAO(GraphBuilder, Scene, View, FrameTemporaries, SceneTextures, LightingChannelsTexture, BlueNoise, MaxScreenTraceFraction, DownsampleFactor, ScreenProbeParameters.ScreenTraceNoFallbackThicknessScale, ComputePassFlags);
+	}
+
+	const FIntPoint EffectiveResolution = Substrate::GetSubstrateTextureResolution(View, SceneTextures.Config.Extent);
+	const FIntPoint EffectiveViewExtent = FrameTemporaries.ViewExtent;
+	const uint32 ClosureCount = Substrate::GetSubstrateMaxClosureCount(View);
+
+	FRDGTextureRef DiffuseIndirect = FrameTemporaries.DiffuseIndirect.CreateSharedRT(
+		GraphBuilder, 
+		FRDGTextureDesc::Create2DArray(EffectiveResolution, LightingDataFormat, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV, ClosureCount),
+		EffectiveViewExtent,
+		TEXT("Lumen.ScreenProbeGather.DiffuseIndirect"));
+
+	FRDGTextureRef LightIsMoving = FrameTemporaries.LightIsMoving.CreateSharedRT(
+		GraphBuilder,
+		FRDGTextureDesc::Create2DArray(EffectiveResolution, PF_R8, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV, ClosureCount),
+		EffectiveViewExtent,
+		TEXT("Lumen.ScreenProbeGather.LightIsMoving"));
+
+	const bool bSupportBackfaceDiffuse = GLumenScreenProbeSupportTwoSidedFoliageBackfaceDiffuse != 0;
+	FRDGTextureRef BackfaceDiffuseIndirect = nullptr;
+
+	if (bSupportBackfaceDiffuse)
+	{
+		FRDGTextureDesc BackfaceDiffuseIndirectDesc = FRDGTextureDesc::Create2DArray(EffectiveResolution, LightingDataFormat, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV, ClosureCount);
+		BackfaceDiffuseIndirect = FrameTemporaries.BackfaceDiffuseIndirect.CreateSharedRT(GraphBuilder, BackfaceDiffuseIndirectDesc, EffectiveViewExtent, TEXT("Lumen.ScreenProbeGather.BackfaceDiffuseIndirect"));
+	}
+
+	FRDGTextureDesc RoughSpecularIndirectDesc = FRDGTextureDesc::Create2DArray(EffectiveResolution, LightingDataFormat, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV, ClosureCount);
+	FRDGTextureRef RoughSpecularIndirect = FrameTemporaries.RoughSpecularIndirect.CreateSharedRT(GraphBuilder, RoughSpecularIndirectDesc, EffectiveViewExtent, TEXT("Lumen.ScreenProbeGather.RoughSpecularIndirect"));
+
+	FLumenUpsampleParameters UpsampleParameters;
+	{
+		const int32 IntegrateDownsampleFactor = LumenScreenProbeGather::GetIntegrateDownsampleFactor(View);
+		const int32 ShortRangeAODownsampleFactor = LumenShortRangeAO::GetDownsampleFactor();
+
+		UpsampleParameters.DownsampledSceneDepth = FrameTemporaries.StochasticLighting.DownsampledSceneDepth2x2.GetRenderTarget();
+		UpsampleParameters.DownsampledSceneWorldNormal = FrameTemporaries.StochasticLighting.DownsampledWorldNormal2x2.GetRenderTarget();
+		UpsampleParameters.IntegrateViewMin = FIntPoint::DivideAndRoundUp(View.ViewRect.Min, IntegrateDownsampleFactor);
+		UpsampleParameters.IntegrateViewSize = FIntPoint::DivideAndRoundUp(View.ViewRect.Size(), IntegrateDownsampleFactor);
+		UpsampleParameters.DownsampledBufferInvSize = FVector2f(1.0f) / FIntPoint::DivideAndRoundUp(SceneTextures.Config.Extent, FMath::Max(IntegrateDownsampleFactor, ShortRangeAODownsampleFactor));
+		UpsampleParameters.ScreenProbeGatherStateFrameIndex = LumenScreenProbeGather::GetStateFrameIndex(View.ViewState);
+	}
+
+	InterpolateAndIntegrate(
+		GraphBuilder,
+		SceneTextures,
+		View,
+		FrameTemporaries,
+		ScreenProbeParameters,
+		GatherParameters,
+		UpsampleParameters,
+		ScreenSpaceBentNormalParameters,
+		GetViewPipelineState(View).ReflectionsMethod,
+		DiffuseIndirect,
+		LightIsMoving,
+		BackfaceDiffuseIndirect,
+		RoughSpecularIndirect,
+		ComputePassFlags);
+
+	// Set for DiffuseIndirectComposite
+	if (LumenShortRangeAO::ShouldApplyDuringIntegration())
+	{
+		ScreenSpaceBentNormalParameters.ShortRangeAOMode = 0;
+		ScreenSpaceBentNormalParameters.ShortRangeAOTexture = nullptr;
+	}
+
+	UpdateHistoryScreenProbeGather(
+		GraphBuilder,
+		View,
+		ViewIndex,
+		SceneTextures,
+		FrameTemporaries,
+		ScreenProbeGatherCommonParameters,
+		UpsampleParameters,
+		ScreenSpaceBentNormalParameters,
+		bIsHistoryValid,
+		DiffuseIndirect,
+		LightIsMoving,
+		BackfaceDiffuseIndirect,
+		RoughSpecularIndirect,
+		ComputePassFlags);
+
+	FSSDSignalTextures DenoiserOutputs;
+	DenoiserOutputs.Textures[0] = DiffuseIndirect;
+	DenoiserOutputs.Textures[1] = bSupportBackfaceDiffuse ? BackfaceDiffuseIndirect : SystemTextures.Black;
+	DenoiserOutputs.Textures[2] = RoughSpecularIndirect;
+
+	if (GVarLumenScreenProbeGatherDebug.GetValueOnRenderThread() != 0)
+	{
+		FScreenProbeGatherDebugCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FScreenProbeGatherDebugCS::FParameters>();
+		PassParameters->RWSceneColor = GraphBuilder.CreateUAV(SceneTextures.Color.Target);
+		PassParameters->ScreenProbeGatherCommonParameters = ScreenProbeGatherCommonParameters;
+		PassParameters->ScreenProbeParameters = ScreenProbeParameters;
+		PassParameters->SceneTexturesStruct = SceneTextures.UniformBuffer;
+		PassParameters->Substrate = Substrate::BindSubstrateGlobalUniformParameters(View);
+		PassParameters->VisualizeProbePlacement = GVarLumenScreenProbeGatherDebugProbePlacement.GetValueOnRenderThread();
+
+		auto ComputeShader = View.ShaderMap->GetShader<FScreenProbeGatherDebugCS>();
+
+		const FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(View.ViewRect.Size(), FScreenProbeGatherDebugCS::GetGroupSize());
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("ScreenProbeGatherDebug"),
+			ComputeShader,
+			PassParameters,
+			GroupCount);
+	}
+
+	// Sample radiance caches for hair strands lighting. Only used wht radiance cache is enabled
+	if (LumenScreenProbeGather::UseRadianceCache() && HairStrands::HasViewHairStrandsData(View))
+	{
+		RenderHairStrandsLumenLighting(GraphBuilder, Scene, View);
+	}
+
+	return DenoiserOutputs;
+}
+
+</textarea></div></section>
+<section class="card"><h2>0. 输入输出契约</h2><div class="body grid2"><pre><code><span class="code-line blue">FSceneTextures / FrameTemporaries / LightingChannelsTexture / View</span>
+<span class="code-line blue">MeshSDFGridParameters / RadianceCacheParameters</span>
+<span class="code-line blue">ScreenSpaceBentNormalParameters / TranslucencyVolumeRadianceCacheParameters</span>
+<span class="code-line yellow">return FSSDSignalTextures</span></code></pre><div class="note"><h3>说明</h3><p>作用：这一分支把当前 View 的屏幕 probe gather 结果转换成 Composite 可消费的 signal textures。</p><p>共同点：和其他 Final Gather 分支一样，它必须返回 <span class="inline">FSSDSignalTextures</span>。</p><p>不同点：它额外产出 Screen Probe 相关的 radiance、history、short-range AO、Radiance Cache 参数。</p></div></div></section>
+<section class="card"><h2>1. 早退和 Debug 初始化</h2><div class="body grid2"><pre><code><span class="code-line red">check(ShouldRenderLumenDiffuseGI(Scene, View));</span>
+<span class="code-line red">if (!GLumenScreenProbeGather) return black outputs;</span>
+<span class="code-line green">FScreenProbeGatherCommonParameters ScreenProbeGatherCommonParameters;</span>
+<span class="code-line green">ShaderPrint::SetEnabled(...)</span></code></pre><div class="note"><h3>说明</h3><p>作用：确认此函数只在 Lumen diffuse GI 生效时运行；如果 CVar 禁用 ScreenProbeGather，则返回黑色占位输出。</p><p>共同点：所有后续阶段都依赖 <span class="inline">ScreenProbeGatherCommonParameters</span> 和有效的 View。</p><p>不同点：Debug 开关只影响可视化，不改变主输出契约。</p></div></div></section>
+<section class="card"><h2>2. ScreenProbeParameters 初始化</h2><div class="body grid2"><pre><code><span class="code-line blue">ScreenProbeTracingOctahedronResolution = GetTracingOctahedronResolution(View);</span>
+<span class="code-line blue">ScreenProbeGatherOctahedronResolution = GetGatherOctahedronResolution(...);</span>
+<span class="code-line blue">ScreenProbeDownsampleFactor = GetScreenDownsampleFactor(View, SceneTextures);</span>
+<span class="code-line blue">ScreenProbeViewSize / AtlasViewSize / AtlasBufferSize</span>
+<span class="code-line cyan">ScreenProbeRayDirectionFrameIndex = StateFrameIndex % TemporalMaxRayDirections;</span></code></pre><div class="note"><h3>说明</h3><p>作用：把“屏幕上要放多少 probe、每个 probe 多少方向、采样点如何随时间变化”编码进统一参数包。</p><p>共同点：后续 placement、trace、filter、integrate 都共享同一份 <span class="inline">FScreenProbeParameters</span>。</p><p>不同点：质量档位、ReferenceMode、jitter 固定开关会改变分辨率和时间采样行为。</p></div></div></section>
+<section class="card"><h2>3. Uniform / Adaptive Probe Placement</h2><div class="body grid2"><pre><code><span class="code-line green">FScreenProbeDownsampleDepthUniformCS</span>
+<span class="code-line orange">FScreenProbeAdaptivePlacementMarkCS</span>
+<span class="code-line orange">FScreenProbeAdaptivePlacementSpawnCS</span>
+<span class="code-line cyan">FSetupAdaptiveProbeIndirectArgsCS</span></code></pre><div class="note"><h3>说明</h3><p>作用：先按 downsampled screen tile 放 uniform probes，再在插值不可靠处补 adaptive probes，最后生成后续 pass 使用的 indirect args。</p><p>共同点：所有 probe 都会被统一计入 <span class="inline">GetNumScreenProbes</span> 和 <span class="inline">ProbeIndirectArgs</span>。</p><p>不同点：Adaptive placement 可关闭；关闭后只清空相关资源，不生成额外 probes。</p></div></div></section>
+<section class="card"><h2>4. History 判断 + Screen Data Gather</h2><div class="body grid2"><pre><code><span class="code-line cyan">bIsHistoryValid = TemporalFilter && !CameraCut && Cvars unchanged</span>
+<span class="code-line green">ScreenProbeGatherScreenData(...)</span>
+<span class="code-line blue">BRDFProbabilityDensityFunction</span>
+<span class="code-line blue">BRDFProbabilityDensityFunctionSH</span></code></pre><div class="note"><h3>说明</h3><p>作用：判断是否可以复用历史，并为每个 probe 收集 BRDF/PDF、disocclusion 和历史累积状态。</p><p>共同点：无论是否使用 importance sampling，BRDF/PDF 数据都是后续采样和滤波的基础输入。</p><p>不同点：history 无效时不会读取旧的 fast update 历史，disocclusion 空域滤波也可能关闭。</p><p><span class="inline">ScreenProbeGatherScreenData</span> 是 trace 前的侦察兵，为每个 probe 算 BRDF PDF 与 disocclusion。<a href="LumenScreenProbeGatherScreenData_ConvergenceAnnotated.html">↳ 下钻：① ScreenProbeGatherScreenData 解析</a></p></div></div></section>
+<section class="card"><h2>5. Radiance Cache Update</h2><div class="body grid2"><pre><code><span class="code-line orange">if (LumenScreenProbeGather::UseRadianceCache())</span>
+<span class="code-line green">ScreenGatherMarkUsedProbes(...)</span>
+<span class="code-line green">MarkRadianceProbesUsedByTranslucencyVolume(...)</span>
+<span class="code-line green">HairStrandsMarkUsedProbes(...)</span>
+<span class="code-line green">LumenRadianceCache::UpdateRadianceCaches(...)</span></code></pre><div class="note"><h3>说明</h3><p>作用：把当前屏幕 probes 会用到的世界空间 radiance cache probes 标记出来，并按预算渐进更新。</p><p>共同点：Radiance Cache 作为远处光照和 fallback 缓存，服务于后续 trace 和采样。</p><p>不同点：立体渲染、半透明体积、hair strands 都会增加不同的 mark 回调；Radiance Cache 可关闭。</p><p><span class="inline">UpdateRadianceCaches</span> 内部是一整套 clipmap + 持久缓存 + 预算重追的流水线。<a href="LumenRadianceCache_ConvergenceAnnotated.html">↳ 下钻：Radiance Cache 更新流水线解析</a></p></div></div></section>
+<section class="card"><h2>6. Importance Sampling + Trace</h2><div class="body grid2"><pre><code><span class="code-line orange">if (UseImportanceSampling(View)) GenerateImportanceSamplingRays(...)</span>
+<span class="code-line green">TraceRadiance / TraceHit</span>
+<span class="code-line green">TraceScreenProbes(...)</span>
+<span class="code-line orange">Screen Trace / HWRT / Mesh SDF / Global SDF / Radiance Cache</span></code></pre><div class="note"><h3>说明</h3><p>作用：决定每个 probe 朝哪些方向采样，并对这些方向执行多后端 trace，写出方向 radiance 和 hit 数据。</p><p>共同点：所有 trace 后端最终都汇聚到 <span class="inline">TraceRadiance</span> 和 <span class="inline">TraceHit</span>。</p><p>不同点：trace 后端按平台和配置分叉，可能是屏幕空间、硬件 RT、Mesh SDF、Global SDF 或 Radiance Cache fallback。</p><p>这一步实际拆成两个子阶段：<span class="inline">GenerateImportanceSamplingRays</span> 定方向、<span class="inline">TraceScreenProbes</span> 发线追踪（多后端级联，含硬件光追）。<a href="LumenGenerateImportanceSamplingRays_ConvergenceAnnotated.html">↳ 下钻：② 重要性采样</a> <a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">↳ 下钻：③ TraceScreenProbes 多后端追踪</a> <a href="LumenHardwareRayTracing_ConvergenceAnnotated.html">↳ 下钻：Hardware Ray Tracing 后端</a></p></div></div></section>
+<section class="card"><h2>7. Filter + ShortRangeAO</h2><div class="body grid2"><pre><code><span class="code-line green">FilterScreenProbes(...)</span>
+<span class="code-line cyan">CompositeTraces / CalculateMoving / TemporalFilter / SpatialFilter</span>
+<span class="code-line orange">if (UseShortRangeAmbientOcclusion(...)) ComputeScreenSpaceShortRangeAO(...)</span></code></pre><div class="note"><h3>说明</h3><p>作用：把 trace 方向结果变成可插值的 probe radiance，并用时域/空域滤波降低噪声；短程 AO 补充小尺度遮蔽。</p><p>共同点：滤波后都会得到 <span class="inline">FScreenProbeGatherParameters</span>，供 integrate 使用。</p><p>不同点：Temporal filter、Spatial filter、Extra AO、ShortRangeAO 都是可配置分支。</p><p><span class="inline">FilterScreenProbes</span> 把稀疏噪声 trace 磨成平滑 probe radiance（时域/空域滤波 + 转 irradiance）。<a href="LumenFilterScreenProbes_ConvergenceAnnotated.html">↳ 下钻：④ FilterScreenProbes 降噪</a></p></div></div></section>
+<section class="card"><h2>8. Allocate Outputs + InterpolateAndIntegrate</h2><div class="body grid2"><pre><code><span class="code-line yellow">DiffuseIndirect</span>
+<span class="code-line yellow">LightIsMoving</span>
+<span class="code-line yellow">BackfaceDiffuseIndirect</span>
+<span class="code-line yellow">RoughSpecularIndirect</span>
+<span class="code-line green">InterpolateAndIntegrate(...)</span></code></pre><div class="note"><h3>说明</h3><p>作用：创建 Composite 需要的最终屏幕空间输出纹理，并把 filtered probe radiance 按材质 BRDF 积分成 diffuse GI 和 rough specular GI。</p><p>共同点：不管之前 trace/filter 怎么分叉，最终都必须写出 <span class="inline">DiffuseIndirect</span> 和 <span class="inline">RoughSpecularIndirect</span>。</p><p>不同点：Backface diffuse 和 Integrate downsample 都是条件分支，Substrate closure 数会影响 texture array 层数。</p><p><span class="inline">InterpolateAndIntegrate</span> 为每个屏幕像素插值邻近 probe 并按 BRDF 积分，从稀疏 probe 落回全屏。<a href="LumenInterpolateAndIntegrate_ConvergenceAnnotated.html">↳ 下钻：⑤ InterpolateAndIntegrate</a></p></div></div></section>
+<section class="card"><h2>9. UpdateHistory + Return</h2><div class="body"><a class="tag" href="LumenUpdateHistoryScreenProbeGather_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>下钻：UpdateHistoryScreenProbeGather 全屏时域去噪专题（主文档 + 函数附录）</a></div><div class="body grid2"><pre><code><span class="code-line cyan">UpdateHistoryScreenProbeGather(...)</span>
+<span class="code-line yellow">DenoiserOutputs.Textures[0] = DiffuseIndirect;</span>
+<span class="code-line yellow">DenoiserOutputs.Textures[1] = BackfaceDiffuseIndirect or Black;</span>
+<span class="code-line yellow">DenoiserOutputs.Textures[2] = RoughSpecularIndirect;</span>
+<span class="code-line yellow">return DenoiserOutputs;</span></code></pre><div class="note"><h3>说明</h3><p>作用：把当前帧 GI 结果写入 history，并组装 <span class="inline">FSSDSignalTextures</span> 返回给上层。</p><p>共同点：Composite 只认这套输出契约。</p><p>不同点：Textures[3] 不在本函数里填，通常由上游反射阶段补 Lumen Reflections / SSR / fallback。<a href="LumenReflections_ConvergenceAnnotated.html">↳ 下钻：RenderLumenReflections 镜面反射链路</a></p></div></div></section>
+<section class="card"><h2>汇聚/发散总表</h2><div class="body"><table class="table"><tr><th>阶段</th><th>类型</th><th>代表符号</th><th>意义</th></tr><tr><td>ScreenProbeParameters</td><td>汇聚</td><td>FScreenProbeParameters</td><td>所有后续 pass 的统一参数包</td></tr><tr><td>Adaptive Placement</td><td>发散</td><td>AdaptivePlacementMark/Spawn</td><td>可选补充非均匀探针</td></tr><tr><td>History</td><td>发散</td><td>bIsHistoryValid</td><td>决定是否可复用上一帧</td></tr><tr><td>Radiance Cache</td><td>发散</td><td>UpdateRadianceCaches</td><td>可选持久世界空间缓存</td></tr><tr><td>Importance Sampling</td><td>发散</td><td>GenerateImportanceSamplingRays</td><td>可选生成结构化重要性采样方向</td></tr><tr><td>Trace</td><td>发散</td><td>TraceScreenProbes</td><td>多后端 trace 汇聚为 TraceRadiance/TraceHit</td></tr><tr><td>Filter</td><td>汇聚</td><td>FilterScreenProbes</td><td>trace 结果变成可积分的 probe radiance</td></tr><tr><td>Integrate</td><td>汇聚</td><td>InterpolateAndIntegrate</td><td>生成 Diffuse/RoughSpecular 输出</td></tr><tr><td>Return</td><td>汇聚</td><td>FSSDSignalTextures</td><td>交给 Composite 消费</td></tr></table></div></section>
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note"><h3>骨架</h3><p>RenderLumenScreenProbeGather 是默认 Screen Probe Gather 分支的完整调度函数。它先建立屏幕 probe 采样结构，再生成 trace 输入，随后 trace、filter、integrate，最终返回 Composite 所需的三路主要 signal。</p><p>这个函数本身不是某一个算法的全部细节，而是把一组 RDG pass 按依赖关系组织起来。</p></div><div class="note"><h3>阅读建议</h3><p>先记住四个大汇聚点：<span class="inline">FScreenProbeParameters</span>、<span class="inline">TraceRadiance/TraceHit</span>、<span class="inline">FScreenProbeGatherParameters</span>、<span class="inline">FSSDSignalTextures</span>。之后再逐个展开 ScreenData、Trace、Filter、Integrate。</p></div></div></section>
+<script>document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});</script>
+</main></body></html>

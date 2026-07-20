@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>GenerateImportanceSamplingRays 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:760px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>GenerateImportanceSamplingRays 代码解析</h1><div class="subtitle">RenderLumenScreenProbeGather 的第二个子阶段。它接手上一阶段产出的 BRDF PDF，再可选叠加"入射光照 PDF"，然后对每个 probe 的固定光线预算做结构化重要性采样：剔除无关方向、把预算细分到重要方向。这一步不追光线，只决定"每根光线该往哪射"——正是低预算 GI 的核心调度环节。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚点</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散点</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/参数</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>groupshared/排序细分</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>早退/门禁</span></div></section>
+
+<section class="card"><h2>一眼看懂：GenerateImportanceSamplingRays 汇聚/发散骨架</h2><div class="body flow"><div class="node branch"><strong>可选 LightingPDF</strong><small>历史+Radiance Cache 估入射光。</small></div><div class="node blue"><strong>读 BRDF PDF</strong><small>SH 求值 或 纹理 Load。</small></div><div class="node orange"><strong>PDF 合成</strong><small>可选 BRDF×Lighting。</small></div><div class="node cyan"><strong>并行排序</strong><small>按 PDF 升序 O(N²) 计数排序。</small></div><div class="node cyan"><strong>结构化细分</strong><small>3 低 PDF 换 1 高 PDF 细分成 4。</small></div><div class="node green"><strong>固定预算</strong><small>始终 TracingRes² 根光线。</small></div><div class="node out"><strong>RayInfosForTracing</strong><small>PackRayInfo(texel,level)。</small></div><div class="node out"><strong>供 Trace 使用</strong><small>下阶段按此射线。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦 <span class="inline">ScreenProbeGenerateRaysCS</span> 的重要性采样内核；C++ dispatcher（两趟 pass 编排）、<span class="inline">ScreenProbeComputeLightingProbabilityDensityFunctionCS</span> 的光照 PDF 估计、以及 PackRayInfo/排序 helper 放在函数附录。</p><a class="tag" href="LumenGenerateImportanceSamplingRays_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 GenerateImportanceSamplingRays 函数算法附录</a></div></section>
+
+<section class="card"><h2>完整源码对照（GenerateRays Shader）</h2><div class="body"><p>以下是 ScreenProbeGenerateRaysCS 的完整 shader 源码。ComputeLightingPDF 与 C++ dispatcher 见函数附录。</p><span class="source-path">Engine/Shaders/Private/Lumen/LumenScreenProbeImportanceSampling.usf</span><textarea class="codebox large" readonly spellcheck="false">// Stores a RayInfo indirection entry for each ray to trace of a Screen Probe, used by tracing passes 
+RWTexture2D<uint> RWStructuredImportanceSampledRayInfosForTracing;
+
+Texture2D<float> BRDFProbabilityDensityFunction;
+Texture2D<float> LightingProbabilityDensityFunction;
+float MinPDFToTrace;
+
+#define GENERATE_RAYS_NUM_TOTAL_THREADS (GENERATE_RAYS_THREADGROUP_SIZE * GENERATE_RAYS_THREADGROUP_SIZE)
+groupshared uint2 RaysToRefine[GENERATE_RAYS_NUM_TOTAL_THREADS * 2];
+groupshared uint NumRaysToSubdivide;
+
+uint2 PackRaySortInfo(uint2 TexelCoord, uint Level, float PDF)
+{
+	return uint2((TexelCoord.x & 0xFF) | ((TexelCoord.y & 0xFF) << 8) | ((Level & 0xFF) << 16), asuint(PDF));
+}
+
+void WriteRay(uint2 ScreenProbeCoord, uint2 TracingRayCoord, uint2 SourceTexelCoord, uint SourceLevel)
+{
+	if (TracingRayCoord.x != INVALID_TRACING_COORD)
+	{
+		uint2 TraceBufferCoord = GetTraceBufferCoord(ScreenProbeCoord, TracingRayCoord);
+		RWStructuredImportanceSampledRayInfosForTracing[TraceBufferCoord] = PackRayInfo(SourceTexelCoord, SourceLevel);
+	}
+}
+
+[numthreads(GENERATE_RAYS_THREADGROUP_SIZE, GENERATE_RAYS_THREADGROUP_SIZE, 1)]
+void ScreenProbeGenerateRaysCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 DispatchThreadId : SV_DispatchThreadID,
+	uint3 GroupThreadId : SV_GroupThreadID)
+{
+	uint UniformLevel = firstbithigh(MaxImportanceSamplingOctahedronResolution / ScreenProbeTracingOctahedronResolution);
+	uint2 ScreenProbeAtlasCoord = GroupId.xy;
+	uint ScreenProbeIndex = ScreenProbeAtlasCoord.y * ScreenProbeAtlasViewSize.x + ScreenProbeAtlasCoord.x;
+
+	float SceneDepth = GetScreenProbeDepth(ScreenProbeAtlasCoord);
+
+	if (ScreenProbeIndex < GetNumScreenProbes() 
+		&& ScreenProbeAtlasCoord.x < ScreenProbeAtlasViewSize.x 
+		&& SceneDepth > 0)
+	{
+		{
+			uint2 TexelCoord = GroupThreadId.xy;
+			uint MipSize = ScreenProbeTracingOctahedronResolution;
+
+			if (all(TexelCoord < MipSize))
+			{
+#if BRDF_PDF_SPHERICAL_HARMONIC
+				uint SHBaseIndex = (ScreenProbeAtlasCoord.y * ScreenProbeAtlasViewSize.x + ScreenProbeAtlasCoord.x) * NUM_PDF_SH_COEFFICIENTS;
+				FThreeBandSHVector BRDF;
+				BRDF.V0.x = BRDFProbabilityDensityFunctionSH[SHBaseIndex + 0];
+				// ... 读入 9 个 SH 系数 ...
+				BRDF.V2.x = BRDFProbabilityDensityFunctionSH[SHBaseIndex + 8];
+
+				float2 ProbeUV = (TexelCoord + float2(.5f, .5f)) / float(MipSize);
+				float3 WorldConeDirection = EquiAreaSphericalMapping(ProbeUV);
+				FThreeBandSHVector DirectionSH = SHBasisFunction3(WorldConeDirection);
+				float PDF = max(DotSH3(BRDF, DirectionSH), 0);
+#else
+				uint PDFUpsampleFactor = MipSize / ScreenProbeBRDFOctahedronResolution;
+				float PDF = BRDFProbabilityDensityFunction.Load(int3(ScreenProbeAtlasCoord * ScreenProbeBRDFOctahedronResolution + TexelCoord / PDFUpsampleFactor, 0));
+#endif
+
+#if IMPORTANCE_SAMPLE_LIGHTING
+				float LightingPDF = LightingProbabilityDensityFunction.Load(int3(ScreenProbeAtlasCoord * MipSize + TexelCoord, 0));
+
+				bool bNotCulledByBRDF = PDF >= MinPDFToTrace;
+				float LightingPDFScale = LightingPDF * (MipSize * MipSize);
+				PDF *= LightingPDFScale;
+
+				// If this ray was not culled by the BRDF, make sure it doesn't get culled by the lack of incoming lighting
+				if (bNotCulledByBRDF)
+				{
+					PDF = max(PDF, MinPDFToTrace);
+				}
+#endif
+				RaysToRefine[TexelCoord.y * MipSize + TexelCoord.x] = PackRaySortInfo(TexelCoord, UniformLevel, PDF);
+			}
+		}
+
+		GroupMemoryBarrierWithGroupSync();
+
+		uint ThreadIndex = GroupThreadId.y * ScreenProbeTracingOctahedronResolution + GroupThreadId.x;
+		uint NumRaysToTrace = ScreenProbeTracingOctahedronResolution * ScreenProbeTracingOctahedronResolution;
+
+		uint SortedOffset = ScreenProbeTracingOctahedronResolution * ScreenProbeTracingOctahedronResolution;
+		uint RayIndex = ThreadIndex;
+
+		// Sort the rays by ascending PDF
+		// O(N^2) simple parallel sort
+		if (RayIndex < NumRaysToTrace)
+		{
+			uint2 RayTexelCoord; uint RayLevel; float SortKey;
+			UnpackRaySortInfo(RaysToRefine[RayIndex], RayTexelCoord, RayLevel, SortKey);
+
+			uint NumSmaller = 0;
+			// Count how many items have a smaller key, insert self into correct position
+			for (uint OtherRayIndex = 0; OtherRayIndex < NumRaysToTrace; OtherRayIndex++)
+			{
+				uint2 OtherRayTexelCoord; uint OtherRayLevel; float OtherSortKey;
+				UnpackRaySortInfo(RaysToRefine[OtherRayIndex], OtherRayTexelCoord, OtherRayLevel, OtherSortKey);
+
+				if (OtherSortKey < SortKey || (OtherSortKey == SortKey && OtherRayIndex > RayIndex))
+				{
+					NumSmaller++;
+				}
+			}
+			// Move this entry into its sorted position
+			RaysToRefine[NumSmaller + SortedOffset] = RaysToRefine[RayIndex];
+		}
+
+		NumRaysToSubdivide = 0;
+		GroupMemoryBarrierWithGroupSync();
+
+		if (UniformLevel > 0)
+		{
+			// For each 3 rays with PDF < threshold, refine matching high PDF ray
+			uint MergeThreadIndex = ThreadIndex % 3;
+			uint MergeIndex = ThreadIndex / 3;
+			uint RayIndexToRefine = max((int)NumRaysToTrace - (int)MergeIndex - 1, 0);
+			uint RayIndexToMerge2 = MergeIndex * 3 + 2;
+
+			if (RayIndexToMerge2 < RayIndexToRefine)
+			{
+				uint2 RayTexelCoord2; uint RayLevel2; float PDF2;
+				UnpackRaySortInfo(RaysToRefine[SortedOffset + RayIndexToMerge2], RayTexelCoord2, RayLevel2, PDF2);
+
+				// Only continue if our packet of 3 are all below the trace threshold
+				if (PDF2 < MinPDFToTrace)
+				{
+					uint2 OriginalRayTexelCoord; uint OriginalRayLevel; float OriginalPDF;
+					UnpackRaySortInfo(RaysToRefine[SortedOffset + RayIndexToRefine], OriginalRayTexelCoord, OriginalRayLevel, OriginalPDF);
+
+					// Reassign this ray to a new subdivided texel (finer octahedron level)
+					RaysToRefine[SortedOffset + ThreadIndex] = PackRaySortInfo(OriginalRayTexelCoord * 2 + uint2((MergeThreadIndex + 1) % 2, (MergeThreadIndex + 1) / 2), OriginalRayLevel - 1, 0.0f);
+
+					if (MergeThreadIndex == 0)
+					{
+						InterlockedAdd(NumRaysToSubdivide, 1);
+					}
+				}
+			}
+
+			GroupMemoryBarrierWithGroupSync();
+
+			if (ThreadIndex < NumRaysToSubdivide)
+			{
+				uint RayIndexToSubdivide = NumRaysToTrace - ThreadIndex - 1;
+				uint2 OriginalRayTexelCoord; uint OriginalRayLevel; float OriginalPDF;
+				UnpackRaySortInfo(RaysToRefine[SortedOffset + RayIndexToSubdivide], OriginalRayTexelCoord, OriginalRayLevel, OriginalPDF);
+				RaysToRefine[SortedOffset + RayIndexToSubdivide] = PackRaySortInfo(OriginalRayTexelCoord * 2, OriginalRayLevel - 1, 0.0f);
+			}
+		}
+
+		GroupMemoryBarrierWithGroupSync();
+
+		if (ThreadIndex < NumRaysToTrace)
+		{
+			uint2 RayTexelCoord; uint RayLevel; float RayPDF;
+			UnpackRaySortInfo(RaysToRefine[SortedOffset + ThreadIndex], RayTexelCoord, RayLevel, RayPDF);
+
+			uint2 RayCoord = uint2(ThreadIndex % ScreenProbeTracingOctahedronResolution, ThreadIndex / ScreenProbeTracingOctahedronResolution);
+			WriteRay(ScreenProbeAtlasCoord, RayCoord, RayTexelCoord, RayLevel);
+		}
+	}
+}
+</textarea></div></section>
+
+<section class="card"><h2>0. 这个阶段要产出什么</h2><div class="body grid2"><pre><code><span class="code-line yellow">RWTexture2D&lt;uint&gt; RWStructuredImportanceSampledRayInfosForTracing;</span>
+<span class="code-line yellow">// 每根光线一个 PackRayInfo(SourceTexelCoord, SourceLevel)</span>
+<span class="code-line yellow">// = 该光线在 octahedron 上的方向 + 采样精度层级</span></code></pre>
+<div class="note"><h3>说明</h3><p>输出是一张 <span class="inline">RayInfosForTracing</span> 纹理：每个 probe 有固定 <span class="inline">TracingOctahedronResolution²</span> 个 slot，每个 slot 存一根待追踪光线的"源 texel 坐标 + 精度层级"。</p><p>关键在于——光线总数固定不变（预算恒定），但它们指向的方向不再是均匀的。经过本阶段，光线被<span class="inline">重新分配</span>：不重要方向合并/丢弃，重要方向被细分到更高精度层级。下阶段 Trace 只需照着这张表射线即可。</p><p>这正对应你最初的问题——预算有限时，与其均匀撒网，不如把每一根光线都用在刀刃上。</p></div></div></section>
+
+<section class="card"><h2>1. 可选前置：ComputeLightingPDF（入射光照概率）</h2><div class="body grid2"><pre><code><span class="code-line orange">if (bImportanceSampleLighting)   // r.Lumen...ImportanceSampleIncomingLighting</span>
+<span class="code-line blue">#if PROBE_RADIANCE_HISTORY   // 重投影上一帧 probe radiance</span>
+<span class="code-line blue">    Lighting = 邻域历史 radiance 的位置加权插值</span>
+<span class="code-line blue">#if RADIANCE_CACHE           // 无历史时采样世界空间缓存</span>
+<span class="code-line blue">    Lighting += SampleRadianceCacheInterpolated(...)</span>
+<span class="code-line green">PDF = Luminance(Lighting);  // 亮度即重要性</span>
+<span class="code-line yellow">RWLightingProbabilityDensityFunction[...] = PDF / PDFSum;  // 归一化</span></code></pre>
+<div class="note"><h3>说明</h3><p>只有开启 <span class="inline">bImportanceSampleLighting</span> 时才跑这趟。它为每个 probe 的每个方向估一个"入射光照亮度"，归一化成 lighting PDF。</p><p><span class="note-label diff">不同点</span>光照估计有两个来源：<span class="inline">PROBE_RADIANCE_HISTORY</span> 时把上一帧 probe radiance 重投影到当前帧、按位置权重插值邻域；否则/或补充时用 <span class="inline">RADIANCE_CACHE</span> 采样世界空间缓存。都拿不到就退化成 1（各向同性）。这里的世界空间缓存就是与 ③ 共用的那套 Radiance Cache。<a href="LumenRadianceCache_ConvergenceAnnotated.html">↳ 下钻：Radiance Cache 解析</a></p><p>核心思想：不仅要看"表面朝哪"（BRDF），还要看"哪个方向真的有光进来"（Lighting）。两者相乘才是最优采样分布——避免把光线射向朝着表面但其实一片漆黑的方向。</p></div></div></section>
+
+<section class="card"><h2>2. 读 BRDF PDF 并合成最终采样 PDF</h2><div class="body grid2"><pre><code><span class="code-line orange">#if BRDF_PDF_SPHERICAL_HARMONIC   // 与上一阶段的表示法呼应</span>
+<span class="code-line blue">    PDF = max(DotSH3(BRDF_SH, DirectionSH), 0);   // SH 按方向求值</span>
+<span class="code-line orange">#else</span>
+<span class="code-line blue">    PDF = BRDFProbabilityDensityFunction.Load(...);  // 纹理直接采</span>
+<span class="code-line orange">#if IMPORTANCE_SAMPLE_LIGHTING</span>
+<span class="code-line green">    PDF *= LightingPDF * (MipSize*MipSize);   // BRDF × Lighting</span>
+<span class="code-line green">    if (bNotCulledByBRDF) PDF = max(PDF, MinPDFToTrace);  // 保护</span>
+<span class="code-line cyan">RaysToRefine[...] = PackRaySortInfo(TexelCoord, UniformLevel, PDF);</span></code></pre>
+<div class="note"><h3>说明</h3><p><span class="note-label common">汇聚</span>不论 BRDF 用 SH 还是纹理表示（沿用上一阶段 <span class="inline">ScreenProbeGatherScreenData</span> 的产物，<a href="LumenScreenProbeGatherScreenData_ConvergenceAnnotated.html">↳ 上一阶段：① ScreenProbeGatherScreenData</a>），这里都归一为"每个方向 texel 一个标量 PDF"，打包进 groupshared <span class="inline">RaysToRefine</span>。</p><p><span class="note-label diff">不同点</span>开 <span class="inline">IMPORTANCE_SAMPLE_LIGHTING</span> 时把 BRDF PDF 乘上 lighting PDF，得到联合重要性；否则只按 BRDF。</p><p>那句 <span class="inline">if (bNotCulledByBRDF) PDF = max(PDF, MinPDFToTrace)</span> 是一道保险：只要 BRDF 认为这个方向重要，就算当前估计的入射光很暗也不能把它彻底剔除——因为光照估计基于历史/缓存，可能滞后或错过新出现的光源。</p></div></div></section>
+
+<section class="card"><h2>3. 并行排序：按 PDF 升序</h2><div class="body grid2"><pre><code><span class="code-line cyan">// O(N^2) 计数排序：每个线程数"有多少个比我小"，直接算出自己的名次</span>
+<span class="code-line cyan">for (OtherRayIndex ...) if (OtherKey &lt; SortKey || 平局用 index 破) NumSmaller++;</span>
+<span class="code-line cyan">RaysToRefine[NumSmaller + SortedOffset] = RaysToRefine[RayIndex];</span></code></pre>
+<div class="note"><h3>说明</h3><p>把所有光线按 PDF 从小到大排序，用的是一种无需线程间协作的并行计数排序：每个线程遍历全体、统计"比自己 key 小的个数"，这个个数就是自己的最终名次，直接写到该位置。</p><p>平局时用原始索引破除（<span class="inline">OtherRayIndex &gt; RayIndex</span>），保证排序稳定、无重复占位。O(N²) 在这里可接受，因为 N = TracingOctahedronResolution² 很小（典型 8×8=64）。</p><p>排序目的：让"低 PDF 光线"集中在数组前段、"高 PDF 光线"集中在后段，方便下一步"拿前段的低价值光线去细分后段的高价值光线"。</p></div></div></section>
+
+<section class="card"><h2>4. 结构化细分：3 换 1，把预算搬向重要方向</h2><div class="body grid2"><pre><code><span class="code-line green">if (UniformLevel &gt; 0) {</span>
+<span class="code-line green">  // 每 3 根低 PDF 光线，对应细分 1 根高 PDF 光线为 4 个子 texel</span>
+<span class="code-line green">  RayIndexToRefine = NumRaysToTrace - MergeIndex - 1;  // 从高 PDF 端取</span>
+<span class="code-line green">  RayIndexToMerge2 = MergeIndex*3 + 2;                 // 从低 PDF 端取 3 个</span>
+<span class="code-line green">  if (PDF2 &lt; MinPDFToTrace)   // 这 3 根确实都不值得单独 trace</span>
+<span class="code-line green">    RaysToRefine[...] = 高PDF方向 * 2 + 子偏移, Level-1;  // 细分到更高精度</span>
+<span class="code-line yellow">WriteRay(...) // 固定 NumRaysToTrace 根，一根不多一根不少</span></code></pre>
+<div class="note"><h3>说明</h3><p>这是整个阶段的灵魂——<span class="inline">结构化重要性采样（Structured Importance Sampling）</span>。</p><p>思路：octahedron 有多个精度层级（<span class="inline">UniformLevel</span>）。一根光线可以被细分成 4 根覆盖更精细的方向（<span class="inline">Level-1</span> = 更高分辨率）。预算固定，所以"细分 1 根高 PDF 光线（变 4 根）"必须"回收 3 根低 PDF 光线"来补偿——正好 3 换 1，总数不变。</p><p><span class="inline">MergeThreadIndex/MergeIndex</span> 的取模运算把线程按 3 个一组配对：每组盯住排序后低端的 3 根低价值光线，若它们的 PDF 都低于 <span class="inline">MinPDFToTrace</span>，就把它们重新指派为"从高端某根高 PDF 光线细分出的 4 个子方向"之三，剩下一个由该高 PDF 光线自身占位。<span class="note-label common">汇聚</span>无论怎么细分，最终 <span class="inline">WriteRay</span> 写出的光线总数始终等于固定预算，Trace 阶段拿到的永远是密度自适应但数量恒定的方向表。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>环节</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>1 线程组 = 1 probe，固定光线预算 TracingRes²</td><td><span class="note-label common">汇聚</span></td><td>无论怎么采样，光线总数恒定，是整个方案的硬约束。</td></tr>
+<tr><td>PDF → RaysToRefine → 排序 → 细分 → WriteRay</td><td><span class="note-label common">汇聚</span></td><td>统一的"打包-排序-再分配-输出"骨架。</td></tr>
+<tr><td>bImportanceSampleLighting</td><td><span class="note-label diff">发散</span></td><td>是否跑 ComputeLightingPDF 前置 pass，并在合成时乘 lighting PDF。</td></tr>
+<tr><td>BRDF_PDF_SPHERICAL_HARMONIC</td><td><span class="note-label diff">发散</span></td><td>BRDF PDF 用 SH 求值 vs 纹理 Load，与上一阶段表示法一致。</td></tr>
+<tr><td>PROBE_RADIANCE_HISTORY / RADIANCE_CACHE</td><td><span class="note-label diff">发散</span></td><td>lighting PDF 的光照来源：历史重投影 vs 世界空间缓存。</td></tr>
+<tr><td>UniformLevel &gt; 0 的细分</td><td><span class="note-label diff">发散</span></td><td>仅在允许多层级时执行 3 换 1 细分，否则均匀分布。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><div class="note"><h3>说明</h3><p>GenerateImportanceSamplingRays 是 Screen Probe Gather 的"预算调度官"。上一阶段告诉它"表面在乎哪些方向"（BRDF PDF），它再可选叠加"哪些方向真有光"（Lighting PDF），合成联合重要性，然后在固定光线预算下做<span class="inline">结构化重采样</span>：剔除低价值方向、把回收的预算细分到高价值方向。</p><p>它直接回答了你最初的命题——"预算只够几帧一根光线该怎么办"。UE 的答案是：不改变光线总数，而是用 BRDF×Lighting 的联合 PDF 做自适应密度分配，让稀缺的光线永远指向"既朝着表面、又真有光进来"的方向。</p><p>下一站：<span class="inline">TraceScreenProbes</span> 会拿这张 RayInfosForTracing 表，按每根光线的方向与精度层级，走多后端（Screen/HWRT/SDF/RadianceCache）实际追踪 incoming radiance。C++ 两趟 pass 编排与 ComputeLightingPDF 细节见函数附录。</p></div>
+<a class="tag" href="LumenGenerateImportanceSamplingRays_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 GenerateImportanceSamplingRays 函数算法附录</a>
+<a class="tag" href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 RenderLumenScreenProbeGather 主文档</a></div></section>
+</main>
+</body></html>

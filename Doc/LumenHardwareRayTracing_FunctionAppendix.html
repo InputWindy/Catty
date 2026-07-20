@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Lumen Hardware Ray Tracing 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Lumen Hardware Ray Tracing 函数算法附录</h1><div class="subtitle">配合主文档使用。展开 FLumenHardwareRayTracingShaderBase 基类、Inline/RayGen 派发对比、三种 HitLightingMode 决策链、Hit Lighting 各细分 CVar、SharedParameters 清单、稳健性 bias、各消费者文件映射与函数关系表。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenHardwareRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 HWRT 主文档</a><a class="tag" href="LumenTraceScreenProbes_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>消费者：③ TraceScreenProbes</a><a class="tag" href="LumenReflections_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>消费者：反射</a><a class="tag" href="UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenHardwareRayTracingCommon.cpp · LumenHardwareRayTracingCommon.h</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#Base">FLumenHardwareRayTracingShaderBase 基类</a><a href="#Dispatch">Inline vs RayGen 派发</a><a href="#Mode">GetHitLightingMode 决策链</a><a href="#Hit">Hit Lighting 细分开关</a><a href="#Shared">SharedParameters 清单</a><a href="#Robust">稳健性 bias / 自交规避</a><a href="#Consumers">各消费者文件映射</a><a href="#Rel">函数关系表</a></div></section>
+
+<section id="Base" class="card"><h2>1. FLumenHardwareRayTracingShaderBase 基类</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 所有 HWRT shader 都继承它（派生自 FGlobalShader）
+// 核心是把"派发类型 + Surface Cache 采样模式"翻译成编译期宏
+
+void ModifyCompilationEnvironment(Params, ShaderDispatchType,
+                                  SurfaceCacheSampling, OutEnv) {
+    OutEnv.SetDefine("SURFACE_CACHE_FEEDBACK",
+        Sampling != AlwaysResidentPagesWithoutFeedback ? 1 : 0);
+    OutEnv.SetDefine("SURFACE_CACHE_HIGH_RES_PAGES",
+        Sampling == HighResPages ? 1 : 0);
+    OutEnv.SetDefine("LUMEN_HARDWARE_RAYTRACING", 1);
+    OutEnv.SetDefine("VF_SUPPORTS_PRIMITIVE_SCENE_DATA", 1);
+    if (ShaderDispatchType == Inline) {              // 仅 Inline
+        OutEnv.SetDefine("LUMEN_HARDWARE_INLINE_RAYTRACING", 1);
+        OutEnv.CompilerFlags.Add(CFLAG_InlineRayTracing);
+    }
+}
+
+// Inline 且不用 TG64 -&gt; 强制 Wave32（1:1 thread group : wave）
+void ModifyCompilationEnvironmentInternal(Type, UseTG64, OutEnv) {
+    if (Type==Inline &amp;&amp; !UseTG64) OutEnv.CompilerFlags.Add(CFLAG_Wave32);
+}
+
+FIntPoint GetThreadGroupSizeInternal(Type, UseTG64) {
+    if (Type==Inline) return UseTG64 ? (64,1) : (32,1);
+    return (1,1);                                    // RayGen 用 1x1
+}
+
+bool ShouldCompilePermutation(Params, Type) {
+    if (Type==Inline) return RayTracingEnabled &amp;&amp; SupportsRT
+                            &amp;&amp; SupportsInlineRT(Platform);
+    else              return ShouldCompileRayTracingShaders(Platform);
+}
+bool UseThreadGroupSize64(Platform) {
+    return !UseThreadGroupSize32() &amp;&amp; RHISupportsWaveSize64(Platform);
+}</textarea><div class="note"><h3>说明</h3><p>基类的职责就一句话：把运行期的两个选择（<b>派发类型</b> Inline/RayGen、<b>Surface Cache 采样档</b>）落成编译期宏与 permutation，从而每个消费者的 shader 只需继承它、填自己的参数结构即可。</p><p><span class="note-label common">共同点</span>所有 <span class="inline">Lumen*HardwareRayTracing.cpp</span> 的 shader 都走这套 ModifyCompilationEnvironment / ShouldCompilePermutation，宏名一致。</p><p><span class="note-label diff">不同点</span>Inline 要求 <span class="inline">CFLAG_InlineRayTracing</span> + Wave32/64 且 thread group 严格 1:1 映射 wave；RayGen thread group 固定 (1,1)，靠光追管线自身调度。</p></div></div></section>
+
+<section id="Dispatch" class="card"><h2>2. Inline vs RayGen 派发对比</h2><div class="body"><table class="table"><thead><tr><th>维度</th><th>Inline（Compute）</th><th>RayGen（RT Pipeline）</th></tr></thead><tbody>
+<tr><td>门禁</td><td><span class="inline">GRHISupportsInlineRayTracing</span></td><td><span class="inline">GRHISupportsRayTracingShaders</span> + <span class="inline">GRHISupportsRayTracingDispatchIndirect</span></td></tr>
+<tr><td>着色器类型</td><td>普通 CS 内 TraceRayInline</td><td>RGS + ClosestHit + AnyHit + Miss</td></tr>
+<tr><td>Thread Group</td><td>32 或 64（1:1 映射 wave）</td><td>(1,1)</td></tr>
+<tr><td>派发方式</td><td>Dispatch / DispatchIndirect</td><td>必须 DispatchIndirect（Lumen 要求）</td></tr>
+<tr><td>着色能力</td><td>只能 SurfaceCache</td><td>可 Hit Lighting（命中点跑材质 + 阴影线）</td></tr>
+<tr><td>SER</td><td>不适用</td><td>可用（重排材质求值）</td></tr>
+<tr><td>选择函数</td><td colspan="2"><span class="inline">UseHardwareInlineRayTracing</span>：优先 Inline；<span class="inline">CVarLumenUseHardwareRayTracingInline!=0 || !IsRayGenSupported()</span></td></tr>
+</tbody></table><div class="note"><h3>说明</h3><p>只要不需要 Hit Lighting，就优先 Inline（省掉 RT pipeline 调度）。<span class="inline">UseHardwareInlineRayTracing</span> 的逻辑里有个兜底：即使 CVar 关了 Inline，只要 RayGen 也不支持，仍强制走 Inline——因为总得有一条能跑的路径。</p></div></div></section>
+
+<section id="Mode" class="card"><h2>3. GetHitLightingMode 决策链</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">EHitLightingMode GetHitLightingMode(View, DiffuseIndirectMethod) {
+    if (!IsRayGenSupported())                       // 没 RGS
+        return SurfaceCache;                        //   只能采缓存
+    if (DiffuseIndirectMethod != Lumen)             // 独立反射(非 Lumen GI)
+        return HitLightingForReflections;           //   强制给反射开小灶
+
+    int Mode = CVarLumenHardwareRayTracingLightingMode;   // 0/1/2
+    // 后处理体积可覆盖：
+    if (PP.LumenRayLightingMode == SurfaceCache
+        || !IsHardwareRayTracedHitLightingSupported())    // 可缩放禁用
+        Mode = SurfaceCache;
+    else if (PP == HitLightingForReflections) Mode = 2;
+    else if (PP == HitLighting)               Mode = 1;
+
+    return Clamp(Mode, 0, MAX-1);
+}
+
+// IsHardwareRayTracedHitLightingSupported =
+//     IsRayGenSupported() && CVar...HitLighting.Allowed != 0
+//   -&gt; Hit Lighting 是可缩放项，低画质档整体禁用</textarea><div class="note"><h3>说明</h3><p>着色模式的最终值经过三重收敛：<b>硬件能力</b>（无 RGS → SurfaceCache）→ <b>用途</b>（独立反射强制 ForReflections）→ <b>CVar + 后处理体积覆盖 + 可缩放开关</b>。默认 0（SurfaceCache）覆盖绝大多数场景。</p><p><span class="note-label diff">不同点</span>LightingMode 1（HitLighting）连 GI 命中都重着色，最贵；2 只给反射重着色，GI 仍用缓存——这是画质/成本的折中档。</p></div></div></section>
+
+<section id="Hit" class="card"><h2>4. Hit Lighting 细分开关</h2><div class="body"><table class="table"><thead><tr><th>函数 / CVar</th><th>默认</th><th>作用</th></tr></thead><tbody>
+<tr><td>UseHitLightingDirectLighting</td><td>1</td><td>命中点是否算直接光（否则从 Surface Cache 取）</td></tr>
+<tr><td>GetHitLightingShadowMode</td><td>2 Soft</td><td>阴影线模式：0 无 / 1 硬 / 2 面积软阴影</td></tr>
+<tr><td>UseHitLightingSkylight</td><td>2</td><td>无阴影天光：0 关 / 1 开 / 2 仅独立反射</td></tr>
+<tr><td>UseReflectionCapturesForHitLighting</td><td>0</td><td>命中点是否叠加 Reflection Capture</td></tr>
+<tr><td>UseHitLightingForceOpaque</td><td>false</td><td>强制命中不透明（跳过 AHS，快但错待 masked 材质）</td></tr>
+<tr><td>GetHitLightingShadowTranslucencyMode</td><td>1 Masked</td><td>阴影线对半透明/masked 的处理粒度</td></tr>
+<tr><td>UseShaderExecutionReordering</td><td>true</td><td>SER：按命中材质重排线程，提升 wave 一致性</td></tr>
+</tbody></table><div class="note"><h3>说明</h3><p>这些全是 <span class="inline">ECVF_Scalability</span> 项——Hit Lighting 本就昂贵，每个子特性都能单独降级。<span class="inline">UseHitLightingSkylight</span> 的值 2 很典型："只有独立 Lumen 反射（非完整 GI）时才补天光"，因为那条路径最在意反射的天空表现。</p></div></div></section>
+
+<section id="Shared" class="card"><h2>5. SetLumenHardwareRayTracingSharedParameters 清单</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 所有消费者绑同一套 FSharedParameters：
+SceneTextures / SceneTexturesStruct / Substrate      // 场景 GBuffer
+TLAS         = Layer(Base)      // 近场 BVH（checkf 必须存在）
+FarFieldTLAS = Layer(FarField)  // 远场 BVH
+
+// 光照数据（Hit Lighting 用）
+LightGridParameters  = View.RayTracingLightGridUniformBuffer
+ReflectionCapture    = View.ReflectionCaptureUniformBuffer
+ForwardLightStruct   = View.ForwardLightingResources.ForwardLightUniformBuffer
+
+// Inline 绑定数据
+HitGroupData                 = SRV(LumenHardwareRayTracingHitDataBuffer)
+LumenHardwareRayTracingUniformBuffer
+RayTracingSceneMetadata      = SRV(InlineRayTracingBindingDataBuffer)
+RWInstanceHitCountBuffer     = GetRayTracingInstanceHitCountUAV()
+NaniteRayTracing             = Nanite::GRayTracingManager.GetUniformBuffer()
+
+// Lumen 命中取光照 + 稳健性
+TracingParameters            = TracingParameters   // = Surface Cache atlas/页表
+MaxTraversalIterations       = max(CVar, 1)
+MinTraceDistanceToSampleSurfaceCache
+SurfaceCacheSamplingDepthBias
+MeshSectionVisibilityTest
+FarFieldBias                 = GetFarFieldBias()</textarea><div class="note"><h3>说明</h3><p>这份共享参数是 HWRT 的"公共插座"：无论谁来追踪，都拿到同样的两层 TLAS、同样的光照数据、同一份 Surface Cache atlas。<span class="inline">checkf(View.HasRayTracingScene())</span> 说明调用前必须已在 <span class="inline">Lumen::AnyLumenHardwareRayTracingPassEnabled()</span> 里登记，否则 TLAS 不存在直接断言。</p><p><span class="note-label common">共同点</span><span class="inline">TracingParameters</span> 就是 <a href="LumenSurfaceCache_ConvergenceAnnotated.html">Surface Cache</a> 的 atlas + 页表，命中后采样光照即读它。</p></div></div></section>
+
+<section id="Robust" class="card"><h2>6. 稳健性 bias / 自交规避</h2><div class="body"><table class="table"><thead><tr><th>CVar / 函数</th><th>默认</th><th>解决的问题</th></tr></thead><tbody>
+<tr><td>MaxTraversalIterations</td><td>8192</td><td>遍历上限防超时；不完整 miss 当命中黑面，不完整 hit 当命中</td></tr>
+<tr><td>GetAvoidSelfIntersectionsMode</td><td>3 Auto</td><td>0 关 / 1 Retrace 跳首个背面 / 2 AHS 跳所有背面 / 3 按平台自动选</td></tr>
+<tr><td>GetHardwareRayTracingPullbackBias</td><td>8.0</td><td>屏幕 trace 续接 HWRT 时往回拉，防续接缝隙漏命中</td></tr>
+<tr><td>GetFarFieldBias</td><td>500</td><td>远场追踪起点偏置，避免与近场重叠自交</td></tr>
+<tr><td>MinTraceDistanceToSampleSurfaceCache</td><td>10.0</td><td>命中太近不采缓存，防 texel 命中自己的反馈环</td></tr>
+<tr><td>SurfaceCacheSamplingDepthBias</td><td>10.0</td><td>命中点投影到卡片的深度容差，权衡吻合度 vs 漏光</td></tr>
+<tr><td>MeshSectionVisibilityTest</td><td>1</td><td>运行期测 mesh section 可见性（半透明段自动隐藏）</td></tr>
+</tbody></table><div class="note"><h3>说明</h3><p>这堆旋钮都在解同一类根因：<b>BVH 光追几何与光栅几何不完全吻合</b>。<span class="inline">AvoidSelfIntersectionsMode==3</span> 会按 <span class="inline">GRHIGlobals.RayTracing.SupportsInlinedCallbacks</span> 在 AHS/Retrace 间自动选最快实现。<span class="inline">GetRayTracedNormalModeName</span>：0=SDF、非 0=Geometry，标示命中法线来源。</p></div></div></section>
+
+<section id="Consumers" class="card"><h2>7. 各消费者文件映射</h2><div class="body"><table class="table"><thead><tr><th>消费者文件</th><th>用途</th><th>对应链路文档</th></tr></thead><tbody>
+<tr><td>LumenScreenProbeHardwareRayTracing.cpp</td><td>漫反射 GI 的 probe 世界追踪</td><td><a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">③ TraceScreenProbes</a></td></tr>
+<tr><td>LumenReflectionHardwareRayTracing.cpp</td><td>镜面反射追踪</td><td><a href="LumenReflections_ConvergenceAnnotated.html">RenderLumenReflections</a></td></tr>
+<tr><td>LumenRadianceCacheHardwareRayTracing.cpp</td><td>Radiance Cache probe 追踪</td><td><a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a></td></tr>
+<tr><td>LumenSceneDirectLightingHardwareRayTracing.cpp</td><td>Surface Cache 直接光阴影线</td><td><a href="LumenSurfaceCache_ConvergenceAnnotated.html">Surface Cache</a></td></tr>
+<tr><td>LumenShortRangeAOHardwareRayTracing.cpp</td><td>近距环境光遮蔽</td><td>—</td></tr>
+<tr><td>LumenTranslucencyVolumeHardwareRayTracing.cpp</td><td>半透明体积 GI</td><td>—</td></tr>
+<tr><td>LumenVisualizeHardwareRayTracing.cpp</td><td>Lumen 可视化调试</td><td>—</td></tr>
+</tbody></table><div class="note"><h3>说明</h3><p>七个消费者各建自己的 dispatch，但都继承本页 <span class="inline">FLumenHardwareRayTracingShaderBase</span> + 绑同一份 <span class="inline">FSharedParameters</span>。看某条链路怎么用硬件追踪，从对应文件入手即可；它们的差异只在"追踪目标 / 输出缓冲 / 少量 permutation"，公共骨架完全一致。</p></div></div></section>
+
+<section id="Rel" class="card"><h2>函数关系表</h2><div class="body"><table class="table"><tr><th>函数</th><th>类型</th><th>职责</th></tr><tr><td>Lumen::UseHardwareRayTracing</td><td>门禁</td><td>总开关，否则回退软件 Global SDF</td></tr><tr><td>IsInlineSupported / IsRayGenSupported</td><td>能力查询</td><td>硬件是否支持 Inline / RayGen</td></tr><tr><td>UseHardwareInlineRayTracing</td><td>派发选择</td><td>是否走 Inline（否则 RayGen）</td></tr><tr><td>GetHitLightingMode</td><td>着色选择</td><td>SurfaceCache / HitLighting / ForReflections</td></tr><tr><td>IsHardwareRayTracedHitLightingSupported</td><td>门禁</td><td>Hit Lighting 是否可用（可缩放）</td></tr><tr><td>IsUsingRayTracingLightingGrid</td><td>门禁</td><td>是否需构建 RT Light Grid</td></tr><tr><td>SetLumenHardwareRayTracingSharedParameters</td><td>参数绑定</td><td>填两层 TLAS + 光照 + Surface Cache</td></tr><tr><td>FLumenHardwareRayTracingShaderBase</td><td>基类</td><td>编译期宏 / permutation / thread group</td></tr><tr><td>GetAvoidSelfIntersectionsMode</td><td>稳健性</td><td>自交规避策略选择</td></tr><tr><td>UseShaderExecutionReordering</td><td>性能</td><td>SER 材质求值重排</td></tr></table></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>
