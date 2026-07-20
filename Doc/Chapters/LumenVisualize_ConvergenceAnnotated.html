@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Lumen 可视化 / 调试 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:760px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Lumen 可视化 / 调试 · 把不可见的中间态画出来</h1><div class="subtitle">Lumen 有大量<b>中间数据</b>平时看不见：Surface Cache 里烘的是什么、哪些卡片本帧被更新、探针铺在哪、SDF 追踪打到哪、GI 累积了几帧……出问题时（漏光、发暗、闪烁、掉帧）如果只能盯最终画面就无从下手。Lumen 因此内建了一整套<b>可视化模式</b>（<span class="inline">r.Lumen.Visualize</span> 25 种模式 + Overview 拼图）：把这些不可见的中间态<b>直接画到屏幕上</b>——Surface Cache 覆盖率、卡片权重、直接/间接光、更新热力、探针位置、追踪射线……本页讲清这套调试系统怎么组织：可视化模式表、软件 vs 硬件追踪两条可视化路径、Overview 多格拼图、以及追踪射线/探针/统计等辅助工具。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/输出</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/模式分派</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/参数</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>追踪后端</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>屏幕输出</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁</span></div></section>
+
+<section class="card"><h2>一眼看懂：可视化分派</h2><div class="body flow"><div class="node gate"><strong>r.Lumen.Visualize</strong><small>25 种模式门禁。</small></div><div class="node blue"><strong>SetupVisualizeParameters</strong><small>组织公共参数。</small></div><div class="node orange"><strong>Overview?</strong><small>单模式 or 多格拼图。</small></div><div class="node gate"><strong>ShouldVisualizeHWRT?</strong><small>软件 vs 硬件。</small></div><div class="node cyan"><strong>SDF 剔除追踪</strong><small>CullMeshObjects→trace。</small></div><div class="node cyan"><strong>HWRT VisualizeRGS</strong><small>可含 HitLighting。</small></div><div class="node green"><strong>写 SceneColor</strong><small>UAV 输出到画面。</small></div><div class="node out"><strong>MiscVisualization</strong><small>射线/探针/统计。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"这套调试系统的整体组织"与两条可视化路径。各细节——25 种 VISUALIZE_MODE 完整表、Overview 拼图的 tile 布局、SetupVisualizeParameters、软件路径的 CullMeshObjectsToViewGrid、HWRT 路径的 HitLighting 模式、RenderVisualizeTraces 射线可视化、Radiance Cache / Radiosity 探针可视化、DumpStats 统计——放在函数附录。</p><a class="tag" href="LumenVisualize_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 Lumen 可视化函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：调试系统怎么挂进渲染</h2><div class="body"><p>主入口有两条：<span class="inline">VisualizeLumenScene</span>（后处理阶段，把整屏替换成某个可视化模式）与 <span class="inline">FDeferredShadingSceneRenderer::RenderLumenMiscVisualizations</span>（叠加式调试：追踪射线、探针、统计 dump）。可视化并不新建数据，而是<b>复用生产管线的同一套设施</b>：读同一份 <a href="LumenSurfaceCache_ConvergenceAnnotated.html">Surface Cache</a>、走同一套 <a href="LumenDistanceField_ConvergenceAnnotated.html">SDF 剔除追踪</a>或 <a href="LumenHWRTConsumers_ConvergenceAnnotated.html">HWRT</a>、查同一份 <a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a>——只是把结果<b>可视化</b>而非用于着色。这保证"看到的就是生产时真正用的数据"。</p></div></section>
+
+<section class="card"><h2>完整源码对照（可视化分派骨架）</h2><div class="body"><p>入口 ~1600 行。下面是<b>忠实骨架</b>（保留真实函数名 / CVar / VISUALIZE_MODE，省略 tile 布局与参数细节）。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenVisualize.cpp · LumenVisualizeHardwareRayTracing.cpp · LumenVisualizeRadianceCache.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ========== 可视化模式（r.Lumen.Visualize，与 LumenVisualize.h 同步） ==========
+// 0 Disable | 1 Overview | 2 Performance Overview | 3 Lumen Scene
+// 4 Reflection View | 5 Surface Cache Coverage | 6 Geometry normals
+// 7 Dedicated Reflection Rays | 8 Albedo | 9 Normals | 10 Emissive
+// 11 Card weights | 12 Direct lighting | 13 Indirect lighting
+// 14 Local Position(HWRT) | 15 Velocity(HWRT) | 16/17 光照更新
+// 18/19 Last used (hi-res) pages | 20 Card tile shadow downsample
+// 21 Card sharing ID | 22 fast update amount | 23/24 累积帧数
+
+// ========== 整屏可视化 ==========
+void VisualizeLumenScene(Scene, GraphBuilder, ..., VisualizeMode, VisualizeTileIndex, ...) {
+    SceneColorUAV = CreateUAV(Output.Texture);
+    SetupVisualizeParameters(..., VisualizeMode, VisualizeTileIndex, NumOverviewTilesPerRow, VisualizeParameters);
+    GetLumenCardTracingParameters(..., UseSurfaceCacheFeedback(ShowFlags), TracingParameters);
+
+    if (Lumen::ShouldVisualizeHardwareRayTracing(Family)) {
+        // 路径 A：硬件 RT 可视化（Lumen Scene / Reflection View 可含 HitLighting）
+        bool bWithHitLighting = (Mode==LUMEN_SCENE || Mode==REFLECTION_VIEW);
+        LumenVisualize::VisualizeHardwareRayTracing(..., Output.Texture, bWithHitLighting, ...);
+    } else {
+        // 路径 B：软件 SDF 可视化
+        CullMeshObjectsToViewGrid(...);      // 复用生产的 froxel 剔除
+        // 逐屏幕像素 sphere trace mesh SDF -> 采 Surface Cache -> 写 SceneColor
+    }
+}
+
+// ========== 叠加式调试（不替换整屏，画在场景上） ==========
+void FDeferredShadingSceneRenderer::RenderLumenMiscVisualizations(...) {
+    if (IsLumenFeatureAllowedForView && bAnyLumenActive) {
+        RenderVisualizeTraces(...);                      // 把追踪射线画成线段
+    }
+    RenderLumenRadianceCacheVisualization(...);          // 画 Radiance Cache 探针
+    RenderLumenRadiosityProbeVisualization(...);         // 画 Radiosity 探针
+    if (GLumenSceneDumpStats)
+        LumenSceneData.DumpStats(..., bDumpMeshDistanceFields, ...);  // 控制台打统计
+}</textarea></div></section>
+
+<section class="card"><h2>1. 25 种模式：把每一层中间态单独画出来</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 按"想排查什么问题"分组：
+// —— Surface Cache 内容对不对？
+//     8 Albedo / 9 Normals / 10 Emissive / 11 Card weights
+//     5 Surface Cache Coverage（哪里没被卡片覆盖 -> 漏光根源）
+// —— 光照对不对？
+//     12 Direct lighting / 13 Indirect lighting / 3 Lumen Scene
+//     4 Reflection View / 7 Dedicated Reflection Rays
+// —— 性能/更新问题？（掉帧、闪烁）
+//     2 Performance Overview / 16-17 光照更新热力
+//     18-19 Last used pages / 22 fast update / 23-24 累积帧数
+//     20 Card tile shadow downsample / 21 Card sharing ID
+// —— 几何/HWRT 专属？
+//     6 Geometry normals / 14 Local Position / 15 Velocity</textarea><div class="note"><h3>说明</h3><p>25 种模式本质是把 Lumen 管线的<b>每一层中间数据</b>都开一个"探针窗口"。排查思路很直接：<b>漏光</b>先看 5（Surface Cache Coverage，覆盖不到的地方就会漏）；<b>发暗/发灰</b>看 12/13 分离直接光和间接光；<b>闪烁/拖影</b>看 23/24（累积帧数）和 16/17（更新热力）；<b>掉帧</b>看 2（Performance Overview）和 18/19（页面驻留）。每个模式对应源码里一个 <span class="inline">VISUALIZE_MODE_*</span> 常量（与 <span class="inline">LumenVisualize.h</span> 同步）。</p><p><span class="note-label common">共同点</span>所有模式都复用生产管线读到的真实数据，不另建缓存——所见即所用。</p></div></div></section>
+
+<section class="card"><h2>2. 两条可视化路径：软件 SDF vs 硬件 RT</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ShouldVisualizeHardwareRayTracing(Family) 决定走哪条
+
+// 路径 B（软件）：和生产追踪同源
+//   CullMeshObjectsToViewGrid：把 mesh SDF 剔进 froxel 网格
+//     GVisualizeLumenSceneGridPixelSize(32)
+//   逐像素 sphere trace mesh SDF（GVisualizeLumenSceneTraceMeshSDFs）
+//   命中 -> 采 Surface Cache（HiResSurface 可选高分辨率页）
+//   GVisualizeLumenSceneTraceRadianceCache：也可可视化 RC
+
+// 路径 A（硬件）：VisualizeHardwareRayTracing
+//   Lumen Scene / Reflection View 模式可带 HitLighting
+//     -> 在命中点求真实材质，可视化更接近"真值"
+//   其余模式仍读 Surface Cache</textarea><div class="note"><h3>说明</h3><p>可视化的追踪后端和生产完全一致：能用硬件 RT 就走 <span class="inline">VisualizeHardwareRayTracing</span>，否则走软件路径（<span class="inline">CullMeshObjectsToViewGrid</span> froxel 剔除 + 逐像素 sphere trace mesh SDF）。这条设计很重要——因为 <b>Lumen Scene / Reflection View</b> 模式在 HWRT 下可以开 <span class="inline">HitLighting</span>，直接在命中点求真实材质，让你看到"如果开了 hit lighting 反射会是什么样"，是对比软件缓存 vs 硬件真值的利器。</p><p><span class="note-label common">共同点</span>软件路径的 froxel 剔除 + sphere trace 与 <a href="LumenDistanceField_ConvergenceAnnotated.html">Distance Field</a> 生产追踪逐函数对应。</p></div></div></section>
+
+<section class="card"><h2>3. Overview 拼图 + 叠加式调试</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Overview（模式 1 / 2）：一屏多格
+//   NumOverviewTilesPerRow + VisualizeTileIndex
+//   StochasticLightingVisualize::GetTileOutputView
+//     -> 把屏幕切成小格，每格渲染一个不同的可视化模式
+//   一眼同时看 Albedo/Normal/DirectLight/IndirectLight...
+
+// 叠加式（不替换整屏，画在真实场景上）：
+//   RenderVisualizeTraces：把【追踪射线】画成 3D 线段
+//     -> 直观看到 ray 从哪出发、打到哪、被什么挡住
+//   RenderLumenRadianceCacheVisualization：画 RC 探针位置/网格
+//   RenderLumenRadiosityProbeVisualization：画 Radiosity 探针
+//   DumpStats：往控制台 dump 场景卡片/SDF/剔除统计</textarea><div class="note"><h3>说明</h3><p>两种展示形态互补。<b>Overview 拼图</b>（模式 1/2）把屏幕切成多格，每格画一个不同模式，一屏同时看 albedo/normal/直接光/间接光，快速定位"哪一层出了问题"。<b>叠加式调试</b>则不替换画面，而是把 3D 辅助信息画到真实场景上：<span class="inline">RenderVisualizeTraces</span> 把追踪射线画成线段（看 ray 走向与命中）、探针可视化画出 Radiance Cache / Radiosity 探针的空间分布、<span class="inline">DumpStats</span> 往控制台打卡片/SDF/剔除的数量统计。</p><p><span class="note-label diff">不同点</span>整屏模式回答"这一层数据长什么样"；叠加式回答"射线/探针在空间里怎么分布"——一个看值、一个看几何。</p></div></div></section>
+
+<section class="card"><h2>4. 怎么用它排查典型问题</h2><div class="body"><table class="table"><thead><tr><th>现象</th><th>先看的模式</th><th>诊断逻辑</th></tr></thead><tbody>
+<tr><td>漏光（光穿墙）</td><td>5 Surface Cache Coverage</td><td>覆盖率黑洞 = 卡片没覆盖到 = 追踪采不到光</td></tr>
+<tr><td>间接光发暗/发灰</td><td>13 Indirect / 3 Lumen Scene</td><td>看 GI 本身还是 Surface Cache 烘错了</td></tr>
+<tr><td>反射发糊/发暗</td><td>4 Reflection View / 7 Reflection Rays</td><td>对比软件缓存 vs HitLighting 真值</td></tr>
+<tr><td>闪烁 / 拖影</td><td>23/24 累积帧数 · 16/17 更新</td><td>累积不足或更新太频繁</td></tr>
+<tr><td>掉帧</td><td>2 Performance Overview · 18/19 pages</td><td>页面驻留/更新开销过大</td></tr>
+<tr><td>ray 走向可疑</td><td>叠加 RenderVisualizeTraces</td><td>直接看线段命中点</td></tr>
+</tbody></table><div class="note"><h3>说明</h3><p>这张表是把前面所有章节的知识"反过来用"：懂了 Surface Cache 就知道漏光要看覆盖率、懂了时域累积就知道闪烁要看累积帧数、懂了 HitLighting 就知道反射发糊要对比真值。可视化系统的价值正在于此——它是<b>验证你对前面所有机制理解是否正确的实验台</b>。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>环节</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>r.Lumen.Visualize（25 模式）</td><td><span class="note-label diff">发散</span></td><td>选哪一层中间态可视化。</td></tr>
+<tr><td>ShouldVisualizeHardwareRayTracing</td><td><span class="note-label diff">发散</span></td><td>软件 SDF vs 硬件 RT 路径。</td></tr>
+<tr><td>SetupVisualizeParameters</td><td><span class="note-label common">汇聚</span></td><td>统一组织可视化公共参数。</td></tr>
+<tr><td>Overview tile 布局</td><td><span class="note-label diff">发散</span></td><td>一屏多格分派不同模式。</td></tr>
+<tr><td>写 SceneColor UAV</td><td><span class="note-label common">汇聚</span></td><td>所有整屏模式的统一输出。</td></tr>
+<tr><td>RenderLumenMiscVisualizations</td><td><span class="note-label common">汇聚</span></td><td>叠加式射线/探针/统计。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><div class="note"><h3>一句话</h3><p>Lumen 的中间态平时不可见，出问题时无从下手，所以它内建了一整套<b>可视化调试系统</b>：<span class="inline">r.Lumen.Visualize</span> 提供 25 种模式把每一层数据（Surface Cache 覆盖率、albedo/法线、直接/间接光、更新热力、累积帧数……）单独画到屏幕，Overview 还能一屏多格并排看；追踪后端与生产同源（软件 SDF 或 HWRT，后者可开 HitLighting 看真值）；此外 <span class="inline">RenderLumenMiscVisualizations</span> 提供叠加式的射线/探针/统计工具。它不新建数据、只可视化生产管线真正用的数据——是验证前面所有机制、排查漏光/发暗/闪烁/掉帧的实验台。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenVisualize_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本章函数算法附录</a><a class="tag" href="LumenSurfaceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>Surface Cache（覆盖率来源）</a><a class="tag" href="LumenDistanceField_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>Distance Field（软件可视化追踪）</a><a class="tag" href="LumenHWRTConsumers_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>HWRT 消费者（硬件可视化）</a><a class="tag" href="LumenRadianceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>Radiance Cache（探针可视化）</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

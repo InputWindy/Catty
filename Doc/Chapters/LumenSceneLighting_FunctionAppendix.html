@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Surface Cache 光照烘焙 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Surface Cache 光照烘焙 函数算法附录</h1><div class="subtitle">配合主文档使用。展开直接光的异步收光（<span class="inline">BeginGatherLumenLights</span>）、逐 tile 剔光（<span class="inline">CullDirectLightingTiles</span>）、屏内/屏外双阴影两个 CS、施光批处理，以及 Radiosity 六个 CS（BuildTiles / IndirectArgs / Trace / SpatialFilter / ConvertToSH / Integrate）的各自职责与关键 CVar。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenSceneLighting_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 光照烘焙 主文档</a><a class="tag" href="LumenSurfaceCache_FunctionAppendix.html"><span class="dot" style="background:var(--purple)"></span>母主题：Surface Cache 函数附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneDirectLighting.cpp · LumenRadiosity.cpp · LumenSceneLighting.cpp</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#Gather">1. BeginGatherLumenLights 异步收光</a><a href="#Cull">2. CullDirectLightingTiles 逐 tile 剔光</a><a href="#Shadow">3. 屏内 / 屏外双阴影</a><a href="#Apply">4. BatchDirectLighting 施光</a><a href="#Radiosity">5. Radiosity 六个 CS</a><a href="#CVar">6. 关键 CVar 速查</a><a href="#Rel">函数关系表</a></div></section>
+
+<section id="Gather" class="card"><h2>1. BeginGatherLumenLights：异步收集影响卡片的光源</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// FDeferredShadingSceneRenderer::BeginGatherLumenLights(TaskData, ...)
+//   在渲染早期启动一个【异步任务】，与主渲染线程 overlap：
+//   遍历场景灯光 -> 过滤出"会影响 Lumen 场景"的光
+//   -> 打包成 GatheredLights（含类型/强度/衰减/是否投影/light function）
+
+// 产出 FLumenDirectLightingTaskData：
+//   携带 GatheredLights 与每盏光的 shadow 设置，
+//   在 RenderDirectLightingForLumenScene 里被消费
+
+// 与 Light Function Atlas 协作：
+//   UpdateLightFunctionAtlasTask 完成后才能采样 light function</textarea><div class="note"><h3>说明</h3><p>收光被拆成<b>异步任务</b>是为了把 CPU 端的灯光遍历/裁剪与 GPU 主渲染重叠。产物 <span class="inline">GatheredLights</span> 是后续所有直接光 pass 的输入清单。</p><p><span class="note-label diff">不同点</span>这里收的是"影响世界卡片"的光（含屏外），比普通延迟着色收的"影响屏幕像素"的光范围更大。</p></div></div></section>
+
+<section id="Cull" class="card"><h2>2. CullDirectLightingTiles：逐 card tile 挑光</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// static void CullDirectLightingTiles(..., GatheredLights, ...)
+//   RDG_EVENT_SCOPE(GraphBuilder, "CullTiles %d lights", GatheredLights.Num());
+
+// 对每个 card tile：
+//   评估每盏光对它的贡献（强度 * 距离衰减 * 朝向）
+//   按贡献排序，保留至多 MaxLightsPerTile 盏
+//     r.LumenScene.DirectLighting.MaxLightsPerTile (默认8, 可4/8/16/32)
+//   结果写进 per-tile 光源列表（供施光 pass 读）
+
+// CullToTileDepthRange (默认1)：
+//   先算每个 tile 的深度范围，用它做更紧的光源-tile 相交测试
+//   -> 剔掉"包围球碰到 tile 但实际深度不重叠"的光
+
+// UseLightTilesPerLightType()：按光源类型分桶组织 tile 列表</textarea><div class="note"><h3>说明</h3><p>逐 tile 剔光把"每块卡片只与少数几盏相关光作用"落地，避免每个卡片 texel 都遍历全部灯光。<span class="inline">MaxLightsPerTile</span> 直接决定内存与耗时上限。</p><p><span class="note-label common">共同点</span>与延迟渲染的 tiled/clustered light culling 同构：先建 per-tile 光表，再着色时只读本 tile 的表。</p></div></div></section>
+
+<section id="Shadow" class="card"><h2>3. 屏内 / 屏外双阴影</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 屏内阴影（表面在镜头视锥内，有 shadow map 可用）：
+//   class FLumenDirectLightingShadowMaskFromLightAttenuationCS
+//     从 LightAttenuation / 已渲染 shadow map 采样遮挡
+//   class FLumenDirectLightingShadowMaskFromLightAttenuationWithLightFunctionCS
+//     继承 FMaterialShader：额外乘 Light Function（gobo/投影仪）
+
+// 屏外阴影（镜头外的卡片没有 shadow map）：
+//   class FLumenSceneDirectLightingTraceDistanceFieldShadowsCS
+//     沿"卡片 texel -> 光源"方向步进距离场求遮挡：
+//       TraceMeshSDFs=1 -> 追 Mesh SDF（逐网格，精度高）
+//       TraceMeshSDFs=0 -> 追 Global SDF（合并体，快但糙）
+//     OffscreenShadowingTraceStepFactor(默认5) 控步长
+//     MeshSDF.ShadowRayBias(默认2.0) 防自遮挡
+//   +CloudTransmittance(默认1)：可用时叠加体积云透射</textarea><div class="note"><h3>说明</h3><p>阴影遮罩是直接光的核心难点。两个 CS 对应两种数据可得性：<b>屏内</b>蹭现成 shadow map（几乎免费），<b>屏外</b>只能追距离场（较贵但覆盖全世界）。结果都写成 per-texel 的 shadow mask，供施光 pass 相乘。</p><p><span class="note-label diff">不同点</span>屏外阴影只需要"路上有无遮挡"的二值/软遮挡，不需要像 ③ 那样求命中点的完整光照，因此可用低精度 Global SDF 换速度。硬件 RT 版见 <a href="LumenSceneLighting_ConvergenceAnnotated.html">F · HWRT 消费者</a> 里的 <span class="inline">LumenSceneDirectLightingHardwareRayTracing.cpp</span>。</p></div></div></section>
+
+<section id="Apply" class="card"><h2>4. BatchDirectLighting：把光 × 阴影施加到卡片</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// class FLumenCardBatchDirectLightingCS : public FGlobalShader
+//   逐 card tile / 逐 texel：
+//   for (Light : 本 tile 光表) {
+//       Radiance = EvaluateLight(Light, texel 世界位置/法线)   // 标准光照
+//       ShadowFactor = 采样上一步算出的 shadow mask
+//       Accum += Radiance * ShadowFactor
+//   }
+//   RWDirectLightingAtlas[texel] = Accum
+
+// 之所以叫 "Batch"：一次 dispatch 把 tile 内多盏光批量累加，
+//   而非每盏光一趟全屏 pass -> 大幅减少 dispatch 次数</textarea><div class="note"><h3>说明</h3><p>施光是直接光的汇聚点：读 per-tile 光表 + 各光的 shadow mask，逐 texel 累加出 <span class="inline">DirectLightingAtlas</span>。批处理（一次 dispatch 处理 tile 内全部光）是性能关键。</p><p><span class="note-label common">共同点</span>"批量累加多光源"与延迟渲染的 tiled deferred lighting 相同；差别只是这里的着色目标是世界卡片 texel。</p></div></div></section>
+
+<section id="Radiosity" class="card"><h2>5. Radiosity 六个 Compute Shader</h2><div class="body"><table class="table"><tr><th>CS / Pass</th><th>职责</th><th>关键点</th></tr>
+<tr><td>FBuildRadiosityTilesCS</td><td>从 card tile 构建 radiosity tile</td><td>ProbeSpacing≥4 时每 probe 一个子 tile；否则回退整块 card tile</td></tr>
+<tr><td>FLumenRadiosityIndirectArgsCS</td><td>为后续 pass 计算 dispatch 间接参数</td><td>区分软件/硬件 RT 的线程组大小</td></tr>
+<tr><td>FLumenRadiosityDistanceFieldTracingCS<br>／FLumenRadiosityHardwareRayTracing[RGS\|CS]</td><td>每 probe 沿半球追踪</td><td>软件追 Global/Mesh SDF；命中读上帧 Final → TraceRadianceAtlas；MaxRayIntensity 去萤火虫</td></tr>
+<tr><td>FLumenRadiositySpatialFilterProbeRadiance</td><td>可选：probe 辐射空间滤波</td><td>PlaneWeighting / ProbeOcclusion 降噪但可能漏光</td></tr>
+<tr><td>FLumenRadiosityConvertToSH</td><td>方向性 trace 结果 → 球谐</td><td>写持久 ProbeSH{Red,Green,Blue}Atlas</td></tr>
+<tr><td>FLumenRadiosityIntegrateCS</td><td>邻近 probe SH 积分到卡片 texel</td><td>TemporalAccumulation + NumFramesAccumulated；平面权重/遮挡插值 → IndirectLightingAtlas</td></tr>
+</table><div class="note"><h3>说明</h3><p>六个 CS 是一条"建 probe → 追踪 → 降噪 → 压缩表示 → 积分回卡片"的微型 probe GI 管线。用 <b>SH</b> 压缩方向辐射、用<b>时域累积</b>压噪声，让低分辨率半球采样也能得到平滑间接光。<span class="inline">bUseProbeOcclusion</span> 打开时用命中距离做遮挡测试，进一步防漏光（软追精度不足时默认关）。</p></div></div></section>
+
+<section id="CVar" class="card"><h2>6. 关键 CVar 速查</h2><div class="body"><table class="table"><tr><th>CVar</th><th>默认</th><th>作用</th></tr>
+<tr><td>r.LumenScene.DirectLighting</td><td>1</td><td>是否为 Surface Cache 算直接光</td></tr>
+<tr><td>r.LumenScene.DirectLighting.MaxLightsPerTile</td><td>8</td><td>每 tile 保留光源数（4/8/16/32）</td></tr>
+<tr><td>r.LumenScene.DirectLighting.OffscreenShadowing.TraceMeshSDFs</td><td>1</td><td>屏外阴影追 Mesh SDF(1) 还是 Global SDF(0)</td></tr>
+<tr><td>r.LumenScene.DirectLighting.CullToTileDepthRange</td><td>1</td><td>用 tile 深度范围收紧剔光</td></tr>
+<tr><td>r.LumenScene.DirectLighting.CloudTransmittance</td><td>1</td><td>可用时叠加体积云阴影</td></tr>
+<tr><td>r.LumenScene.Radiosity</td><td>1</td><td>是否启用 Radiosity（多次反弹间接光）</td></tr>
+<tr><td>r.LumenScene.Radiosity.ProbeSpacing</td><td>4</td><td>probe 间距（Surface Cache texel）</td></tr>
+<tr><td>r.LumenScene.Radiosity.HemisphereProbeResolution</td><td>4</td><td>半球一维追踪线数（实际 N×N）</td></tr>
+<tr><td>r.LumenScene.Radiosity.SpatialFilterProbes</td><td>1</td><td>是否空间滤波 probe 辐射</td></tr>
+</table></div></section>
+
+<section id="Rel" class="card"><h2>函数关系表</h2><div class="body"><table class="table"><tr><th>函数</th><th>类型</th><th>职责</th></tr>
+<tr><td>BeginGatherLumenLights</td><td>准备（异步）</td><td>收集影响卡片的光源 → GatheredLights</td></tr>
+<tr><td>RenderDirectLightingForLumenScene</td><td>入口</td><td>清理 → 剔光 → 阴影 → 施光</td></tr>
+<tr><td>CullDirectLightingTiles</td><td>剔除</td><td>逐 tile 挑至多 MaxLightsPerTile 盏光</td></tr>
+<tr><td>ShadowMaskFromLightAttenuation[WithLightFunction]CS</td><td>阴影</td><td>屏内：采 shadow map / light function</td></tr>
+<tr><td>TraceDistanceFieldShadowsCS</td><td>阴影</td><td>屏外：追 Mesh/Global SDF 求遮挡</td></tr>
+<tr><td>FLumenCardBatchDirectLightingCS</td><td>施光</td><td>光×阴影批量累加 → DirectLightingAtlas</td></tr>
+<tr><td>LumenRadiosity::AddRadiosityPass</td><td>入口</td><td>Radiosity 六阶段总编排</td></tr>
+<tr><td>FLumenRadiosityIntegrateCS</td><td>积分</td><td>probe SH → 卡片 + 累帧 → IndirectLightingAtlas</td></tr>
+<tr><td>Lumen::CombineLumenSceneLighting</td><td>合成</td><td>材质×(D+I)+Emissive → FinalLightingAtlas</td></tr>
+</table></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

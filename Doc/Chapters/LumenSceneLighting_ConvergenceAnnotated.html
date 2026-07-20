@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Surface Cache 光照烘焙 · Direct Lighting + Radiosity 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:760px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Surface Cache 光照烘焙 · Direct Lighting + Radiosity（打光那半）</h1><div class="subtitle">Surface Cache 主文档把"光照烘焙"作为流水线 B 一笔带过，本页深入其内部：<span class="inline">RenderLumenSceneLighting</span> 如何把已捕获的材质卡片"打上光"。它分三步——<b>直接光</b>（逐卡片 tile 剔光 + 屏内阴影图 + 屏外 SDF/RT 阴影 → <span class="inline">DirectLightingAtlas</span>）、<b>Radiosity</b>（卡片半球追踪读上帧 Final → SH → <span class="inline">IndirectLightingAtlas</span>，构成无限反弹）、<b>Combine</b>（材质 × (直接+间接) + 自发光 → <span class="inline">FinalLightingAtlas</span>）。这三步喂出的 Final atlas，正是 ①~⑤、Radiance Cache、反射命中时采样的那份数据。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/合成</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/预算分支</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/参数</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>持久化/复用</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁</span></div></section>
+
+<section class="card"><h2>一眼看懂：光照烘焙的三步 + Radiosity 六阶段</h2><div class="body flow"><div class="node blue"><strong>材质 Atlas</strong><small>流水线 A 已就绪。</small></div><div class="node orange"><strong>选页预算</strong><small>Direct / Indirect 各选页。</small></div><div class="node branch"><strong>Direct Lighting</strong><small>剔光→阴影→施光。</small></div><div class="node out"><strong>DirectLightingAtlas</strong><small>逐卡片直接光。</small></div><div class="node branch"><strong>Radiosity</strong><small>半球追踪→SH→积分。</small></div><div class="node out"><strong>IndirectLightingAtlas</strong><small>一次反弹（累帧）。</small></div><div class="node merge"><strong>Combine</strong><small>Alb·(D+I)+Emissive。</small></div><div class="node out"><strong>FinalLightingAtlas</strong><small>对外发布。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"直接光 / Radiosity / Combine"三步的整体编排与关键设计（逐 tile 剔光、屏内屏外双阴影、半球 probe → SH、时域累积、无限反弹闭环）。各细节——<span class="inline">BeginGatherLumenLights</span> 异步收光、<span class="inline">CullDirectLightingTiles</span> 逐 tile 光源列表、屏内 <span class="inline">ShadowMaskFromLightAttenuation</span> 与屏外 <span class="inline">TraceDistanceFieldShadows</span>、Radiosity 六个 CS 各自职责、SH 卷积与 <span class="inline">Integrate</span> 累帧公式——放在函数附录。</p><a class="tag" href="LumenSceneLighting_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 光照烘焙 函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：它在 Surface Cache 里的位置</h2><div class="body"><p>本页是 <a href="LumenSurfaceCache_ConvergenceAnnotated.html">Surface Cache 主文档</a>「流水线 B」的展开。调用链：<span class="inline">FDeferredShadingSceneRenderer::RenderLumenSceneLighting</span>（<span class="inline">LumenSceneLighting.cpp</span>）在材质捕获（流水线 A）之后、GI 追踪之前执行，先 <span class="inline">BuildCardUpdateContext</span> 为直接光/间接光各选一批本帧要重烘的卡片页，再依次调 <span class="inline">RenderDirectLightingForLumenScene</span>（<span class="inline">LumenSceneDirectLighting.cpp</span>）与 <span class="inline">RenderRadiosityForLumenScene</span>（<span class="inline">LumenRadiosity.cpp</span>），最后由 <span class="inline">Lumen::CombineLumenSceneLighting</span> 合成 <span class="inline">FinalLightingAtlas</span>。Radiosity 追踪时会命中别的卡片并读<b>上一帧</b>的 Final，这就是"无限反弹"的物理来源。</p></div></section>
+
+<section class="card"><h2>完整源码对照（三步骨架）</h2><div class="body"><p>三个入口合计数千行，含大量光源收集、tile 剔除、indirect args、SH 卷积样板。下面是<b>忠实骨架</b>（保留真实函数名 / RDG_EVENT / atlas 名，省略上传与 permutation 细节，完整实现见源码文件）。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneLighting.cpp · LumenSceneDirectLighting.cpp · LumenRadiosity.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ========== 顶层编排：RenderLumenSceneLighting ==========
+void FDeferredShadingSceneRenderer::RenderLumenSceneLighting(FRDGBuilder&amp; GraphBuilder,
+    const FLumenSceneFrameTemporaries&amp; FrameTemporaries, const FLumenDirectLightingTaskData* DirectLightingTaskData)
+{
+    if (!bAnyLumenActive) return;
+    const ERDGPassFlags ComputePassFlags = UseAsyncCompute(ViewFamily) ? AsyncCompute : Compute;
+    LumenSceneData.IncrementSurfaceCacheUpdateFrameIndex();
+
+    LumenRadiosity::InitFrameTemporaries(GraphBuilder, LumenSceneData, ViewFamily, Views, RadiosityFrameTemporaries);
+
+    // 分别为"直接光""间接光"挑本帧要重烘的卡片页（各自独立预算）
+    Lumen::BuildCardUpdateContext(GraphBuilder, LumenSceneData, Views, FrameTemporaries,
+        RadiosityFrameTemporaries.bIndirectLightingHistoryValid,
+        DirectLightingCardUpdateContext, IndirectLightingCardUpdateContext, ComputePassFlags);
+
+    RenderDirectLightingForLumenScene(GraphBuilder, FrameTemporaries, DirectLightingTaskData,
+        DirectLightingCardUpdateContext, ComputePassFlags);          // -> DirectLightingAtlas
+
+    RenderRadiosityForLumenScene(GraphBuilder, FrameTemporaries, RadiosityFrameTemporaries,
+        IndirectLightingCardUpdateContext, ComputePassFlags);        // -> IndirectLightingAtlas
+
+    LumenSceneData.bFinalLightingAtlasContentsValid = true;          // Combine 在各 card tile 内完成
+}
+
+// ========== 第一步：直接光（LumenSceneDirectLighting.cpp）==========
+// BeginGatherLumenLights(异步任务)：收集影响 Lumen 场景的光源 -> GatheredLights
+// RenderDirectLightingForLumenScene 内部（概念顺序）：
+void RenderDirectLightingForLumenScene(...)
+{
+    ClearLumenSceneDirectLighting(...);                              // 清 DirectLightingAtlas 待更新页
+
+    // 1) 逐 card tile 剔光：按强度/衰减挑至多 MaxLightsPerTile(默认8) 盏
+    CullDirectLightingTiles(..., GatheredLights, ...);               // 可选 CullToTileDepthRange 收紧
+    RDG_EVENT_SCOPE(GraphBuilder, "CullTiles %d lights", GatheredLights.Num());
+
+    for (Light : GatheredLights) {
+        // 2a) 屏内阴影：从光源的 ShadowMap / LightAttenuation 采样
+        //     FLumenDirectLightingShadowMaskFromLightAttenuationCS
+        //     (+ WithLightFunction 变体：叠加 Light Function 图集)
+        // 2b) 屏外阴影：镜头外的表面没有 shadow map，改追距离场
+        //     FLumenSceneDirectLightingTraceDistanceFieldShadowsCS
+        //     TraceMeshSDFs ? Mesh SDF(高精) : Global SDF(低精、更快)
+        //     (+ 可选云层透射 CloudTransmittance)
+    }
+
+    // 3) 施光：把每盏光 * 其阴影遮罩批量累加到卡片 texel
+    //    FLumenCardBatchDirectLightingCS -> RWDirectLightingAtlas
+}
+
+// ========== 第二步：Radiosity 六阶段（LumenRadiosity.cpp · AddRadiosityPass）==========
+void LumenRadiosity::AddRadiosityPass(...)
+{
+    RDG_EVENT_SCOPE(GraphBuilder, "Radiosity");
+    // (1) BuildRadiosityTiles：从 card tile 生成 radiosity tile（ProbeSpacing 默认4 texel 一个 probe）
+    FComputeShaderUtils::AddPass(..., FBuildRadiosityTilesCS, ...);
+    // (2) IndirectArgs：为后续 pass 准备 dispatch 参数
+    FComputeShaderUtils::AddPass(..., FLumenRadiosityIndirectArgsCS, FIntVector(1,1,1));
+
+    // (3) Trace：每个 probe 沿半球发 HemisphereProbeResolution^2 根线
+    if (UseHardwareRayTracedRadiosity(Family))
+        FLumenRadiosityHardwareRayTracing[RGS|CS]::AddDispatch(...);      // 硬件 RT
+    else
+        FComputeShaderUtils::AddPass(..., FLumenRadiosityDistanceFieldTracingCS, ...); // 软件 Global/Mesh SDF
+    //   命中 -> 读【Surface Cache 上一帧 FinalLightingAtlas】-> RWTraceRadianceAtlas
+    //   MaxRayIntensity 钳制去萤火虫
+
+    // (4) SpatialFilterProbes（可选）：按平面权重/遮挡滤波 probe 辐射
+    if (SpatialFilterProbes) FComputeShaderUtils::AddPass(..., FLumenRadiositySpatialFilterProbeRadiance, ...);
+
+    // (5) ConvertToSH：把方向性 trace 结果卷成球谐，写持久 ProbeSH{Red,Green,Blue}Atlas
+    FComputeShaderUtils::AddPass(..., FLumenRadiosityConvertToSH, ...);
+
+    // (6) Integrate：逐卡片 texel 用邻近 probe SH 积分出间接光，时域累积
+    //     FLumenRadiosityIntegrateCS -> RWIndirectLightingAtlas (+ RadiosityNumFramesAccumulatedAtlas)
+    FComputeShaderUtils::AddPass(..., FLumenRadiosityIntegrateCS, ...);
+}
+
+// ========== 第三步：合成（LumenSceneLighting.cpp · CombineLumenSceneLighting）==========
+void Lumen::CombineLumenSceneLighting(...)
+{
+    // FLumenCardCombineLightingCS 逐 card tile：
+    //   FinalLighting = Albedo * DiffuseColorBoost * (DirectLighting + IndirectLighting) + Emissive
+    // 输入：AlbedoAtlas / EmissiveAtlas / DirectLightingAtlas / IndirectLightingAtlas
+    // 输出：RWFinalLightingAtlas  （供所有 Lumen 追踪命中采样）
+}</textarea></div></section>
+
+<section class="card"><h2>1. 直接光：屏内阴影图 + 屏外距离场阴影的分工</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 问题：卡片是【世界空间】的，很多卡片在镜头视锥之外，
+//   而 shadow map 只覆盖镜头能看到的区域 -> 屏外表面没有阴影信息
+
+// Lumen 的双轨阴影：
+//   屏内(on-screen)：直接采样光源已有的 ShadowMap / LightAttenuation
+//     FLumenDirectLightingShadowMaskFromLightAttenuationCS
+//     +WithLightFunction：再乘 Light Function 图集（投影仪/gobo）
+//   屏外(off-screen)：没有 shadow map，改【追距离场】求遮挡
+//     FLumenSceneDirectLightingTraceDistanceFieldShadowsCS
+//     r.LumenScene.DirectLighting.OffscreenShadowing.TraceMeshSDFs:
+//       1 = 追 Mesh SDF（逐网格、精度高）
+//       0 = 追 Global SDF（合并体、更快但糙）
+
+// 逐 tile 剔光（省掉"这盏灯照不到这块卡片"的计算）：
+//   CullDirectLightingTiles: 按强度*衰减给每个 card tile 挑
+//     至多 MaxLightsPerTile(默认8, 可4/8/16/32) 盏
+//   CullToTileDepthRange: 用 tile 深度范围进一步收紧</textarea><div class="note"><h3>说明</h3><p>直接光最棘手的不是"算光照"，而是<b>阴影从哪来</b>。Surface Cache 是世界空间的，镜头外的卡片同样要打光，但传统 shadow map 只覆盖屏内。Lumen 因此走<b>双轨</b>：屏内蹭现成的 shadow map，屏外退化成<b>距离场光线步进</b>求遮挡——这也解释了为什么 Lumen 强依赖 Mesh/Global SDF（见 <a href="LumenDistanceField_ConvergenceAnnotated.html">B · Distance Field 地基</a>）。</p><p><span class="note-label diff">不同点</span>这里的"屏外阴影追 SDF"与 ③ TraceScreenProbes 追 SDF 是同一套距离场后端，但目的不同：③ 求"光线命中了什么"，这里只求"这条到光源的路上有没有遮挡"（布尔式软阴影）。</p><p><span class="note-label common">共同点</span>"逐 tile 剔光 + 至多 N 盏"与延迟渲染的 tiled/clustered light culling 思路一致，都是先剔除再着色。</p></div></div></section>
+
+<section class="card"><h2>2. Radiosity：卡片级的一次反弹，为何等于无限反弹</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Radiosity 只做【一次反弹】的间接光采集：
+//   从卡片 texel 出发，沿半球发少量低分辨率光线，
+//   命中另一表面 -> 读它【上一帧的 FinalLightingAtlas】
+
+// 为什么一次反弹 = 无限反弹？
+//   第 N 帧的 Indirect 采样了第 N-1 帧的 Final，
+//   而第 N-1 帧的 Final 里已经含了它自己的 Indirect（来自 N-2 帧）……
+//   跨帧递归 -> 收敛成【无限次反弹】的稳态解
+//   代价：一帧延迟 + 需要时域累积去噪
+
+// 六阶段（低分辨率 probe，成本极低）：
+//   BuildRadiosityTiles  每 ProbeSpacing(默认4) texel 布一个半球 probe
+//   IndirectArgs         算后续 dispatch 间接参数
+//   Trace                每 probe 发 HemisphereProbeResolution^2 根线
+//                        (HWRT 或 软件 Global/Mesh SDF)
+//   SpatialFilterProbes  按平面/遮挡权重空间滤波（降噪，可能漏光）
+//   ConvertToSH          方向性辐射 -> 球谐(SH)，存持久 SH atlas
+//   Integrate            邻近 probe SH 积分到卡片 + 时域累积</textarea><div class="note"><h3>说明</h3><p>Radiosity 是 Surface Cache "无限反弹"招牌背后的实际机制，但它自己<b>只算一次反弹</b>——秘诀在于命中时读的是<b>上一帧已经收敛过的 Final</b>。这是一个跨帧的迭代求解器：每帧往稳态解逼近一点，配合时域累积（<span class="inline">RadiosityNumFramesAccumulatedAtlas</span>）压掉噪声。probe 分辨率极低（默认 4 texel 一个、半球 4×4 根线），所以整条管线便宜到可以每帧全场景跑。</p><p><span class="note-label common">共同点</span>"半球 probe → 球谐 → 邻近积分"与 ⑤ InterpolateAndIntegrate、Radiance Cache 的 probe→SH 表示完全同源；"时域累积去噪"与 ④ FilterScreenProbes 的历史滤波同理。</p><p><span class="note-label diff">不同点</span>ScreenProbe 是<b>屏幕空间</b>、给最终像素用；Radiosity probe 是<b>卡片世界空间</b>、只服务于给 Surface Cache 自身补间接光，分辨率与质量要求都低得多。</p></div></div></section>
+
+<section class="card"><h2>3. Combine：材质与三份光照的收敛点</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// FLumenCardCombineLightingCS 逐 card tile：
+//   FinalLighting = Albedo * DiffuseColorBoost
+//                 * (DirectLighting + IndirectLighting)
+//                 + Emissive
+
+// 输入 atlas：
+//   AlbedoAtlas       基础色（流水线 A 捕获）
+//   EmissiveAtlas     自发光（流水线 A 捕获）
+//   DirectLightingAtlas    第一步产出
+//   IndirectLightingAtlas  第二步产出（Radiosity）
+// 输出：
+//   RWFinalLightingAtlas   本帧对外发布，且下一帧被 Radiosity 读回
+
+// 关键：Final 既是【对外契约】（供 ①~⑤/RC/反射命中采样），
+//       又是【Radiosity 的历史输入】-> 闭环</textarea><div class="note"><h3>说明</h3><p>Combine 是三条支路的汇聚点，把材质（Albedo/Emissive）与两份光照（Direct/Indirect）按标准漫反射公式乘加成 <span class="inline">FinalLightingAtlas</span>。这份 atlas 有<b>双重身份</b>：对外是所有 Lumen 追踪命中时的采样目标，对内是下一帧 Radiosity 的历史输入——正是这个自反馈让"一次反弹"滚成"无限反弹"。</p><p><span class="note-label common">共同点</span>与 ⑤ 把 diffuse+specular 合成、DiffuseIndirectComposite 把 GI 合进场景一样，都是"多路光照按物理公式收敛成一张图"的汇聚节点。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>环节</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>BuildCardUpdateContext</td><td><span class="note-label diff">发散</span></td><td>为 Direct / Indirect 各选一批本帧重烘的卡片页。</td></tr>
+<tr><td>CullDirectLightingTiles</td><td><span class="note-label diff">发散</span></td><td>逐 tile 按强度/衰减挑至多 MaxLightsPerTile 盏光。</td></tr>
+<tr><td>屏内 / 屏外阴影</td><td><span class="note-label diff">发散</span></td><td>ShadowMap 采样 vs 距离场步进，按卡片是否在屏内分轨。</td></tr>
+<tr><td>BatchDirectLighting</td><td><span class="note-label common">汇聚</span></td><td>各光×阴影批量累加 → DirectLightingAtlas。</td></tr>
+<tr><td>Radiosity Trace 读上帧 Final</td><td><span class="note-label common">汇聚</span></td><td>命中读历史 Final，构成无限反弹。</td></tr>
+<tr><td>ConvertToSH → Integrate</td><td><span class="note-label common">汇聚</span></td><td>方向辐射卷成 SH，邻近积分 + 累帧 → IndirectLightingAtlas。</td></tr>
+<tr><td>CombineLumenSceneLighting</td><td><span class="note-label common">汇聚</span></td><td>Albedo×(D+I)+Emissive → FinalLightingAtlas。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note"><h3>骨架</h3><p>光照烘焙 = 直接光 + Radiosity + Combine。<b>直接光</b>逐 tile 剔光后，屏内采 shadow map、屏外追距离场，批量施光成 <span class="inline">DirectLightingAtlas</span>；<b>Radiosity</b>用低分辨率半球 probe 追踪、读上帧 Final、卷 SH、累帧积分成 <span class="inline">IndirectLightingAtlas</span>；<b>Combine</b>按 Albedo×(D+I)+Emissive 收敛成 <span class="inline">FinalLightingAtlas</span>。</p><p>Final 的自反馈（Radiosity 读上帧 Final）是"无限反弹"的物理根因。</p></div><div class="note"><h3>阅读建议</h3><p>先记住三步产物：<span class="inline">DirectLightingAtlas</span> / <span class="inline">IndirectLightingAtlas</span> / <span class="inline">FinalLightingAtlas</span>。直接光重点是"屏内/屏外双轨阴影"，Radiosity 重点是"六阶段 + 一次反弹为何等于无限反弹"。屏外阴影依赖的距离场后端见 <a href="LumenDistanceField_ConvergenceAnnotated.html">B</a>，逐 CS 细节见函数附录。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenSceneLighting_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>光照烘焙 函数算法附录</a><a class="tag" href="LumenSurfaceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>母文档：Surface Cache / Lumen Scene</a><a class="tag" href="LumenDistanceField_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>依赖：Distance Field 地基（屏外阴影 / Radiosity 软追）</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

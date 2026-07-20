@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>HWRT 各消费者具体实现 · 硬件光追后端全景</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:820px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>HWRT 各消费者具体实现 · 硬件光追后端全景</h1><div class="subtitle">前面 <a href="LumenHardwareRayTracing_ConvergenceAnnotated.html">硬件光追总览</a>讲的是"Lumen 为什么以及如何接入硬件 RT"。本页往下钻一层：Lumen 里有<b>五个不同消费者</b>各自实现了一份 HWRT 追踪——Screen Probe、Reflections、Radiance Cache、Scene Direct Lighting、Short Range AO——它们全都继承同一个 <span class="inline">FLumenHardwareRayTracingShaderBase</span>，共享同一套<b>材质 hit group</b>（CHS/AHS/MS）、同一套 <b>Inline vs RayGen</b> 分派、同一套 <b>SurfaceCache vs HitLighting</b> 命中着色策略、以及同一套<b>防自相交</b>与 <b>SER</b> 优化。本页横向拉通这五个消费者，讲清"同一个 HWRT 地基怎么被复用成五份实现"、以及最关键的<b>两遍法</b>（先廉价 SurfaceCache 追、再对需要的命中做完整 HitLighting 重着色）。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>共享基类</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>各消费者</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>分派维度</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>命中着色</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁</span></div></section>
+
+<section class="card"><h2>一眼看懂：一套基类，五个消费者</h2><div class="body flow"><div class="node green"><strong>HardwareRayTracingShaderBase</strong><small>共享基类。</small></div><div class="node orange"><strong>ScreenProbe HWRT</strong><small>GI 主线追踪。</small></div><div class="node orange"><strong>Reflections HWRT</strong><small>反射追踪。</small></div><div class="node orange"><strong>RadianceCache HWRT</strong><small>远场探针追踪。</small></div><div class="node orange"><strong>SceneDirectLighting</strong><small>Surface Cache 阴影。</small></div><div class="node blue"><strong>Inline / RayGen</strong><small>分派二选一。</small></div><div class="node cyan"><strong>SurfaceCache / HitLighting</strong><small>命中着色二选一。</small></div><div class="node out"><strong>材质 HitGroup</strong><small>CHS/AHS/MS 共享。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"五个消费者如何共享同一 HWRT 基类"与两遍法命中着色。各细节——FLumenHardwareRayTracingShaderBase 的 permutation 基座、Inline(RayQuery/Compute) vs RayGen 分派、EHitLightingMode 三态、材质 hit group 的 CHS/AHS/MS、间接 dispatch args、防自相交三模式（Disabled/Retrace/AHS）、SER、FarField occlusion-only——放在函数附录。</p><a class="tag" href="LumenHWRTConsumers_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 HWRT 消费者函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：这五份实现分别服务谁</h2><div class="body"><p>Lumen 的每个"需要追踪"的上层模块都可以选择走软件 SDF 或硬件 RT。当选 HWRT 时，各自落到一份专门的实现文件里：<span class="inline">LumenScreenProbeHardwareRayTracing.cpp</span>（喂 <a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">Screen Probe 追踪</a>）、<span class="inline">LumenReflectionHardwareRayTracing.cpp</span>（喂 <a href="LumenReflections_ConvergenceAnnotated.html">Reflections</a>）、<span class="inline">LumenRadianceCacheHardwareRayTracing.cpp</span>（喂 <a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a> 远场探针）、<span class="inline">LumenSceneDirectLightingHardwareRayTracing.cpp</span>（喂 <a href="LumenSceneLighting_ConvergenceAnnotated.html">Surface Cache 直接光</a>的离屏阴影）、以及 <a href="LumenShortRangeAO_ConvergenceAnnotated.html">Short Range AO</a> 的 HWRT 后端。它们全部依赖 <span class="inline">LumenHardwareRayTracingCommon.h</span> 的公共设施与 <span class="inline">LumenHardwareRayTracingMaterials.cpp</span> 的共享 hit group。</p></div></section>
+
+<section class="card"><h2>完整源码对照（共享基类 + 两遍法骨架）</h2><div class="body"><p>下面是<b>忠实骨架</b>（保留真实类名 / enum / permutation，跨文件综合，省略各消费者独有参数）。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenHardwareRayTracingCommon.h · LumenHardwareRayTracingMaterials.cpp · Lumen{ScreenProbe,Reflection,RadianceCache,SceneDirectLighting}HardwareRayTracing.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ========== 公共设施（LumenHardwareRayTracingCommon.h） ==========
+namespace LumenHardwareRayTracing {
+    enum class EAvoidSelfIntersectionsMode { Disabled, Retrace, AHS };  // 防自相交
+    enum class EHitLightingMode { SurfaceCache, HitLighting, HitLightingForReflections };
+    bool IsInlineSupported();      // RayQuery / inline RT (compute)
+    bool IsRayGenSupported();      // 独立 RayGen shader (RTPSO)
+    bool UseShaderExecutionReordering();  // SER：按命中材质重排线程
+}
+
+// 所有消费者的共同基类（每个 HWRT shader 都继承它）
+class FLumenHardwareRayTracingShaderBase {
+    struct FBasePermutationDomain { /* AvoidSelfIntersections 等公共维度 */ };
+    struct FSharedParameters { /* TLAS / SurfaceCache / 场景绑定 */ };
+    // 宏 DECLARE_LUMEN_RAYTRACING_SHADER + IMPLEMENT_LUMEN_RAYGEN_AND_COMPUTE_
+    //   RAYTRACING_SHADERS 会为每个 shader 同时生成 RGS 版和 CS(inline) 版
+};
+
+// ========== 共享材质 hit group（LumenHardwareRayTracingMaterials.cpp） ==========
+constexpr uint32 NumHitGroups = 2;
+// closesthit=...MaterialCHS anyhit=...MaterialAHS  (SF_RayHitGroup)
+class FLumenHardwareRayTracingMaterialHitGroup;   // 命中材质求值
+class FLumenHardwareRayTracingMaterialMS;         // miss（未命中 -> 天光/远场）
+//   permutation：FAvoidSelfIntersectionsMode / FNaniteRayTracing
+
+// ========== 各消费者 = 基类 + 自己的 RayTracingPass ==========
+class FLumenReflectionHardwareRayTracing : FLumenHardwareRayTracingShaderBase {
+    class FRayTracingPass : ENUM(LumenReflections::ERayTracingPass);  // Default/FarField/HitLighting
+    class FWriteDataForHitLightingPass ...;   // 第一遍是否记录命中数据供第二遍
+    class FRadianceCache / FDistantScreenTraces / FRecursiveReflectionTraces ...;
+};
+class FLumenScreenProbeGatherHardwareRayTracing : FLumenHardwareRayTracingShaderBase {
+    class FRayTracingPass : ENUM(ERayTracingPass){ Default, FarField, HitLighting };
+    class FFarFieldOcclusionOnly ...;  // 远场只做遮挡（省着色）
+};
+
+// ========== 两遍法（Hit Lighting）核心思想 ==========
+// 第一遍（默认，廉价）：TraceMode = SurfaceCache
+//   ray 命中后【直接读 Surface Cache】的预烘焙光照 -> 快，但反射里看不到高频材质
+// 第二遍（可选，HitLighting）：只对"需要精确材质"的命中
+//   重新在命中点【求值真实材质 + 直接光 + 阴影】(用 CHS/AHS 材质 hit group)
+//   GetHitLightingMode() 决定：SurfaceCache / HitLighting / HitLightingForReflections</textarea></div></section>
+
+<section class="card"><h2>1. 一套基类为什么能喂五个消费者</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 共同的东西（全在基类 + Common.h + Materials.cpp）：
+//   - TLAS 绑定、场景 uniform、Surface Cache 采样
+//   - Inline(RayQuery) vs RayGen 两种分派的宏生成
+//   - 防自相交模式、SER、Nanite RT permutation
+//   - 材质 hit group（CHS/AHS/MS）—— 5 个消费者共用同一份
+
+// 不同的东西（各消费者 .cpp 自己加的 permutation）：
+//   ScreenProbe：ERayTracingPass{Default,FarField,HitLighting}
+//                + StructuredImportanceSampling + FarFieldOcclusionOnly
+//   Reflections：+ RecursiveReflection/RefractionTraces（反射套反射）
+//                + DistantScreenTraces + RadianceCacheSkyVisibility
+//   RadianceCache：探针方向的追踪（喂远场缓存）
+//   SceneDirectLighting：Surface Cache 卡片的离屏阴影 ray</textarea><div class="note"><h3>说明</h3><p>Lumen 把"发一根 ray 并处理命中"的所有<b>公共机制</b>沉淀到 <span class="inline">FLumenHardwareRayTracingShaderBase</span> + <span class="inline">Common.h</span> + <span class="inline">Materials.cpp</span> 里：TLAS 绑定、Surface Cache 采样、两种分派方式、材质 hit group、防自相交、SER。每个消费者只需继承基类、加自己特有的 <span class="inline">permutation 维度</span>（比如 Reflections 的"递归反射/折射"、ScreenProbe 的"重要性采样"）。这就是为什么五份实现看起来很像却各有侧重。</p><p><span class="note-label common">共同点</span>五者共用同一材质 hit group（CHS/AHS/MS）和同一 TLAS——一次 BVH 构建喂所有消费者。</p></div></div></section>
+
+<section class="card"><h2>2. Inline vs RayGen：两种发射 ray 的方式</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// IMPLEMENT_LUMEN_RAYGEN_AND_COMPUTE_RAYTRACING_SHADERS(X)
+//   -> 同时生成 XRGS（RayGen）和 XCS（Compute/inline）两个 shader
+
+// Inline（RayQuery，在 compute shader 里）：
+//   IsInlineSupported() -> TraceRayInline
+//   无独立 RTPSO、无 shader table 切换 -> 调度开销小
+//   但命中着色只能在同一 CS 里做（受限，通常配 SurfaceCache）
+
+// RayGen（独立 ray tracing pipeline）：
+//   IsRayGenSupported() -> DispatchRays + shader binding table
+//   能走完整 CHS/AHS 材质 hit group -> HitLighting 必须用它
+//   代价：RTPSO、SBT 管理、可能更高调度开销
+
+// 选择：HitLighting pass 强制 RayGen；纯 SurfaceCache 可用 Inline</textarea><div class="note"><h3>说明</h3><p>同一个 HWRT shader 会被宏同时编译成两个版本：<b>Inline</b>（在 compute shader 里用 RayQuery/TraceRayInline，无独立管线，调度轻）和 <b>RayGen</b>（独立 ray tracing pipeline，配 shader binding table，能跑完整材质 hit group）。规则很清晰：只读 Surface Cache 的廉价追踪可用 Inline；要在命中点求真实材质的 <b>HitLighting</b> 必须用 RayGen（因为要调 CHS/AHS）。</p><p><span class="note-label diff">不同点</span>Inline 省调度但命中着色受限；RayGen 全功能但重。Lumen 按 pass 类型自动选。</p></div></div></section>
+
+<section class="card"><h2>3. 两遍法：SurfaceCache 追 + HitLighting 重着色</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 问题：ray 命中一个表面后，怎么知道那里"有多亮"？
+//   方案 A（SurfaceCache）：直接读那个 mesh 卡片预烘焙的光照
+//     快！但只有 Surface Cache 分辨率的低频信息
+//     -> 反射里看不清高频材质细节、镜面反射发糊
+//   方案 B（HitLighting）：在命中点当场求值材质 + 打直接光 + 采阴影
+//     准！镜面反射清晰，但每个命中都要跑材质 shader -> 贵
+
+// EHitLightingMode:
+//   SurfaceCache              // 全部读缓存（默认，最快）
+//   HitLighting               // GI 命中也重着色
+//   HitLightingForReflections // 只有反射重着色（平衡：反射要清晰）
+
+// 两遍实现：
+//   Pass1: TraceMode=SurfaceCache, WriteDataForHitLightingPass=1
+//          记录命中点信息（位置/材质id）到 buffer
+//   Pass2: 对标记的命中，RayGen + 材质 hit group 重新着色</textarea><div class="note"><h3>说明</h3><p>命中一个表面后有两种取光方式：读该表面预烘焙的 <b>Surface Cache</b>（快，低频，反射会糊）或在命中点<b>当场求值真实材质 + 直接光 + 阴影</b>（<b>HitLighting</b>，准，镜面反射清晰，但贵）。<span class="inline">EHitLightingMode</span> 提供三档，最实用的是 <span class="inline">HitLightingForReflections</span>——<b>只对反射</b>做昂贵的命中重着色（因为镜面反射对材质细节最敏感），GI 部分继续用廉价的 Surface Cache。实现上是<b>两遍</b>：第一遍廉价追并记录命中数据（<span class="inline">WriteDataForHitLightingPass</span>），第二遍只对需要的命中用 RayGen + 材质 hit group 重着色。</p><p><span class="note-label common">共同点</span>命中读 Surface Cache 与软件 SDF 追踪完全一致——HitLighting 只是在其上加的"精修 pass"。</p></div></div></section>
+
+<section class="card"><h2>4. 五个消费者的侧重差异</h2><div class="body"><table class="table"><thead><tr><th>消费者</th><th>追什么</th><th>典型命中着色</th><th>独有 permutation</th></tr></thead><tbody>
+<tr><td>Screen Probe HWRT</td><td>GI 半球方向</td><td>SurfaceCache（低频够用）</td><td>StructuredImportanceSampling / FarFieldOcclusionOnly</td></tr>
+<tr><td>Reflections HWRT</td><td>镜面反射方向</td><td>HitLightingForReflections（要清晰）</td><td>RecursiveReflection/RefractionTraces / DistantScreenTraces</td></tr>
+<tr><td>RadianceCache HWRT</td><td>远场探针方向</td><td>SurfaceCache</td><td>探针原子级追踪</td></tr>
+<tr><td>SceneDirectLighting HWRT</td><td>Surface Cache 卡片 → 光源</td><td>阴影可见性（不着色）</td><td>离屏阴影 ray</td></tr>
+<tr><td>ShortRangeAO HWRT</td><td>近距离短 ray</td><td>只判遮挡</td><td>NumPixelRays 短光线</td></tr>
+</tbody></table><div class="note"><h3>说明</h3><p>虽同源，但各消费者对"命中后做什么"要求不同：<b>反射</b>最挑剔（要 HitLighting 保清晰）；<b>GI/远场</b>读 Surface Cache 就够（低频）；<b>直接光阴影</b>和 <b>AO</b> 甚至只需要"命中了没有"（可见性布尔，连着色都不做，最省）。这解释了为什么 Reflections 的 permutation 最复杂、而 Direct Lighting / AO 的最简单。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>环节</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>FLumenHardwareRayTracingShaderBase</td><td><span class="note-label common">汇聚</span></td><td>五消费者共享基类与公共 permutation。</td></tr>
+<tr><td>材质 hit group（CHS/AHS/MS）</td><td><span class="note-label common">汇聚</span></td><td>共用同一份命中/未命中着色。</td></tr>
+<tr><td>Inline vs RayGen</td><td><span class="note-label diff">发散</span></td><td>按 pass 与硬件支持分派。</td></tr>
+<tr><td>EHitLightingMode 三态</td><td><span class="note-label diff">发散</span></td><td>SurfaceCache / HitLighting / ForReflections。</td></tr>
+<tr><td>AvoidSelfIntersections 三模式</td><td><span class="note-label diff">发散</span></td><td>Disabled / Retrace / AHS。</td></tr>
+<tr><td>各消费者独有 permutation</td><td><span class="note-label diff">发散</span></td><td>反射递归、远场遮挡等。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><div class="note"><h3>一句话</h3><p>Lumen 的硬件光追不是一份代码，而是<b>一套基类 + 五份消费者实现</b>：Screen Probe、Reflections、Radiance Cache、Scene Direct Lighting、Short Range AO 全都继承 <span class="inline">FLumenHardwareRayTracingShaderBase</span>，共享同一材质 hit group、同一 TLAS、同一 Inline/RayGen 分派与防自相交/SER 优化，只在自己的 permutation 上做差异化。最关键的设计是<b>两遍法命中着色</b>：默认全部廉价读 Surface Cache，只对反射这类挑剔场景用 HitLighting pass 在命中点重新求值真实材质——用一套地基，按需付费。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenHWRTConsumers_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本章函数算法附录</a><a class="tag" href="LumenHardwareRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>硬件光追总览（上层）</a><a class="tag" href="LumenReflections_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>Reflections（HitLighting 主用户）</a><a class="tag" href="LumenDistanceField_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>Distance Field（软件追踪对照）</a><a class="tag" href="LumenSceneLighting_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>Surface Cache 直接光（阴影 ray）</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

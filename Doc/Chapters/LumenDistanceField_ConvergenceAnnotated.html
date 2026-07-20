@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Distance Field 地基 · Mesh SDF + Global SDF 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:760px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Distance Field 地基 · Mesh SDF + Global SDF（软件 Lumen 的世界表示）</h1><div class="subtitle">③ TraceScreenProbes 里"软件追踪命中了什么"、A 里"屏外阴影/Radiosity 软追"都把距离场当黑盒。本页揭开这个黑盒：Lumen 在没有硬件光追时，靠<b>两级有向距离场</b>表示整个世界几何——<b>Mesh SDF</b>（每个网格离线烘一个体积、按需流送 brick，精度高但要剔除）与 <b>Global SDF</b>（相机为中心的 clipmap，把附近 Mesh SDF 合成进一张稀疏页表体积，采样 O(1) 但较糙）。近处追 Mesh SDF、远处追 Global SDF，就是"软件 Lumen"能光线步进整个场景的物理基础。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/合成</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/分级</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/数据</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>持久化/流送</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁</span></div></section>
+
+<section class="card"><h2>一眼看懂：从网格到可追踪的两级距离场</h2><div class="body flow"><div class="node blue"><strong>Mesh 资产</strong><small>离线烘 SDF brick。</small></div><div class="node cyan"><strong>Streaming</strong><small>按需流送 brick mip。</small></div><div class="node cyan"><strong>Object Buffers</strong><small>上传变换/包围盒。</small></div><div class="node orange"><strong>Object Cull</strong><small>剔进网格/froxel。</small></div><div class="node green"><strong>Composite</strong><small>合成进 clipmap 页。</small></div><div class="node out"><strong>Global SDF</strong><small>相机中心 clipmap。</small></div><div class="node branch"><strong>近场 Mesh SDF</strong><small>逐对象、精度高。</small></div><div class="node branch"><strong>远场 Global SDF</strong><small>O(1) 采样、较糙。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"两级距离场为什么这样分工"与整体数据流（烘焙→流送→上传→剔除→合成→采样）。各细节——Mesh SDF brick 布局与 <span class="inline">DistanceFieldStreaming</span>、<span class="inline">UpdateDistanceFieldObjectBuffers</span> 对象上传、Global SDF clipmap 增量更新与 <span class="inline">CompositeObjectsIntoPagesCS</span> 稀疏页表、<span class="inline">CullMeshSDFObjectsForViewCS</span> froxel 剔除、以及 ray march 采样细节——放在函数附录。</p><a class="tag" href="LumenDistanceField_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 Distance Field 函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：谁依赖它</h2><div class="body"><p>距离场是 Lumen <b>软件追踪路径</b>的世界表示（硬件 RT 路径改用 BVH，见 <a href="LumenHardwareRayTracing_ConvergenceAnnotated.html">HWRT</a>）。三个上游消费者：<a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">③ TraceScreenProbes</a> 软追时近场追 Mesh SDF、远场追 Global SDF；<a href="LumenSceneLighting_ConvergenceAnnotated.html">A · 直接光屏外阴影</a>沿"卡片→光源"追 SDF 求遮挡；<a href="LumenSceneLighting_ConvergenceAnnotated.html">A · Radiosity 软追</a>同样用它。它由 <span class="inline">FScene</span> 每帧在 GI 之前更新：<span class="inline">FDistanceFieldSceneData</span> 维护 Mesh SDF 对象与流送，<span class="inline">UpdateGlobalDistanceFieldVolume</span> 增量重建 clipmap。它<b>不依赖 Lumen</b>，是更底层的通用几何表示（也服务 DFAO、DF 软阴影）。</p></div></section>
+
+<section class="card"><h2>完整源码对照（两级距离场骨架）</h2><div class="body"><p>四个文件合计近八千行，含大量 brick 分配、页表管理、GPU cull 样板。下面是<b>忠实骨架</b>（保留真实类名/函数名与 clipmap/page 术语，省略上传与 permutation 细节）。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/DistanceFieldObjectManagement.cpp · DistanceFieldStreaming.cpp · GlobalDistanceField.cpp · Lumen/LumenMeshSDFCulling.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ========== 第一级：Mesh Distance Field（逐网格） ==========
+// 离线：每个 StaticMesh 烘一个有向距离场，切成 brick（小体积块），
+//   多 mip；运行时按相机距离/可见性【流送】需要的 brick（DistanceFieldStreaming.cpp）
+
+// 每帧：把可见 Mesh SDF 对象的元数据上传 GPU
+void FDistanceFieldSceneData::UpdateDistanceFieldObjectBuffers(FRDGBuilder&amp; GraphBuilder, ...)
+{
+    RDG_EVENT_SCOPE(GraphBuilder, "UpdateDistanceFieldObjectBuffers");
+    if (!ObjectBuffers) ObjectBuffers = new FDistanceFieldObjectBuffers();
+    // 处理新增/移除的图元实例
+    ProcessPrimitiveUpdate(/*bIsAddOperation*/ true, ...);
+    ProcessPrimitiveUpdate(/*bIsAddOperation*/ false, ...);
+    // 每个对象上传：WorldToVolume 变换、VolumePositionExtent、
+    //   ExpandSurfaceDistance、brick 图集地址、包围盒……
+    //   UploadObjectData[0..N] = { WorldPos.High, 变换行, extent, ... }
+}
+
+// ========== 第二级：Global Distance Field（相机为中心 clipmap） ==========
+// 结构：GAOGlobalDistanceFieldNumClipmaps (默认4) 层同心 clipmap，
+//   每层分辨率相同但覆盖范围翻倍（clipmap 越外越糙）
+//   相机移动时 clipmap【滚动】(toroidal)，只重算露出来的边条
+
+void UpdateGlobalDistanceFieldVolume(FRDGBuilder&amp; GraphBuilder, ..., FGlobalDistanceFieldInfo&amp; Info)
+{
+    // 每帧只更新 GAOGlobalDistanceFieldClipmapUpdatesPerFrame (默认2) 层
+    for (Clipmap : 本帧要更新的层) {
+        // 1) 把落在该 clipmap 的 Mesh SDF 对象【剔进 object grid page】
+        //    -> 稀疏：只有"附近有几何"的 page 才分配
+        // 2) 合成：把这些对象的距离场 min-merge 进 page atlas
+        FCompositeObjectsIntoObjectGridPagesCS(...);   // 先建每 page 的对象列表
+        FCompositeObjectsIntoPagesCS(...);             // 再把对象 SDF 合成进 page
+        //    +FComposeParentDistanceField：继承上一层 clipmap 填空
+        //    +FCompositeCoverageAtlas：记录覆盖度，供空 page 快速跳过
+    }
+    // 产出：PageTableTexture + PageAtlas + CoverageAtlas -> GlobalDistanceFieldParameters
+    Info.UpdateParameterData(MaxOcclusionDistance, bLumenEnabled, LumenSceneViewDistance, PreViewTranslation);
+}
+
+// ========== Lumen 侧：近场 Mesh SDF 的 froxel 剔除 ==========
+// LumenMeshSDFCulling.cpp：追踪前把 Mesh SDF 对象剔进屏幕 froxel 网格，
+//   使每根光线只测试"它所在 froxel 附近"的少数对象
+class FCullMeshSDFObjectsForViewCS { /* THREADGROUP_SIZE=64 */ };  // 视锥粗剔
+// 再按 froxel grid 精剔 -> GridCulledMeshSDFObjectIndicesArray / StartOffsetArray
+void SetupLumenMeshSDFTracingParameters(...);   // 绑定剔除结果供 ③ 软追使用
+
+// ========== 采样（shader 侧，概念）：两级如何配合 ==========
+//   near:  遍历本 froxel 剔除后的 Mesh SDF 列表，逐对象 ray march（精确）
+//   far :  直接采 Global SDF clipmap（选覆盖当前点的最小 clipmap），O(1)
+//   命中判据：distance <= 阈值；法线 = SDF 梯度</textarea></div></section>
+
+<section class="card"><h2>1. 为什么用距离场，而不是直接追三角形</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 有向距离场(SDF)：空间每点存"到最近表面的有符号距离"
+//   >0 在外, <0 在内, =0 在表面
+// 好处：可做【sphere tracing】——每步能安全前进"当前距离"那么远，
+//   不必像三角形求交那样测试每个面 -> 无需 BVH、对硬件无要求
+
+// 朴素问题：全场景一个高分辨率 SDF -> 显存爆炸
+// Lumen 的两级答案：
+//   Mesh SDF：分辨率跟着单个网格，精确；但对象多时要剔除
+//   Global SDF：相机为中心的粗 clipmap，把附近网格合并成一张，
+//               采样 O(1)，覆盖远处，代价是丢细节
+
+// 分工：近处要精度 -> Mesh SDF；远处只要大致遮挡 -> Global SDF</textarea><div class="note"><h3>说明</h3><p>距离场是"不用 BVH 也能追世界"的关键：sphere tracing 每步可前进"当前到最近表面的距离"，天然跳过空白区域，无需逐三角形求交。这让 Lumen 在<b>不支持硬件光追</b>的硬件上也能跑 GI。代价是它是<b>近似几何</b>（低分辨率、丢薄物体），所以软件 Lumen 的漏光/丢细节大多源于此。</p><p><span class="note-label diff">不同点</span>硬件 RT 路径追的是精确三角形 BVH（见 <a href="LumenHardwareRayTracing_ConvergenceAnnotated.html">HWRT</a>），命中精确但依赖 RT 硬件；软件路径追 SDF，全平台可用但较糙。这是 Lumen "同一套上层、两套追踪后端"的分水岭。</p></div></div></section>
+
+<section class="card"><h2>2. Mesh SDF：逐网格的精确表示 + 流送</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 离线烘焙：每个 StaticMesh 生成一个体积距离场，
+//   切成固定大小 brick，建多个 mip
+
+// 运行时流送（DistanceFieldStreaming.cpp）：
+//   按相机距离/屏幕占比决定每个网格要驻留哪些 brick / 哪个 mip
+//   -> 远处网格只留低 mip brick，省显存（类似虚拟纹理）
+
+// 每帧上传对象元数据（UpdateDistanceFieldObjectBuffers）：
+//   ProcessPrimitiveUpdate：处理本帧新增/移除的图元
+//   每对象：WorldToVolume 变换 + VolumePositionExtent
+//           + brick 图集地址 + 包围盒（供剔除）
+
+// 追踪时逐对象 march：变换到该对象体积空间 -> 采 brick SDF</textarea><div class="note"><h3>说明</h3><p>Mesh SDF 是<b>逐网格</b>的高精度表示，像"几何版的虚拟纹理"：brick 按需流送、远处降 mip。它精确到能表达单个网格的凹凸，但代价是"对象多时不能每根线都遍历所有对象"——于是需要第 4 节的剔除。</p><p><span class="note-label common">共同点</span>"brick 流送 + mip 降级"与 Surface Cache 的"卡片页按预算驻留"、虚拟纹理的按需加载同属"只驻留看得到/用得到的那部分"的思路。</p></div></div></section>
+
+<section class="card"><h2>3. Global SDF：相机为中心的 clipmap 合成</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 结构：NumClipmaps(默认4) 层同心立方 clipmap
+//   同分辨率、范围逐层翻倍 -> 近处密、远处疏
+//   相机为中心，随相机滚动(toroidal addressing)
+
+// 增量更新（省成本的关键）：
+//   ClipmapUpdatesPerFrame(默认2)：每帧只全量重算 2 层，
+//     其余层只更新"相机移动后新露出的边条"
+
+// 合成（把 Mesh SDF 融进 clipmap）：
+//   CompositeObjectsIntoObjectGridPagesCS：为每个 page 建对象列表
+//   CompositeObjectsIntoPagesCS：把对象 SDF min-merge 进 page atlas
+//     ComposeParentDistanceField：用外层 clipmap 填未覆盖处
+//     稀疏页表：只有"附近有几何"的 page 才分配 -> 省显存
+
+// 产出：PageTableTexture + PageAtlas + CoverageAtlas</textarea><div class="note"><h3>说明</h3><p>Global SDF 把"附近所有网格"合并成一张<b>相机中心的粗距离场</b>，采样只需查页表 + 采一次 atlas（O(1)），非常适合远场追踪与大范围遮挡查询。三大省钱技巧：<b>clipmap 分级</b>（远处糙）、<b>增量更新</b>（每帧只重算 2 层 + 滚动边条）、<b>稀疏页表</b>（空区不分配 page）。</p><p><span class="note-label common">共同点</span>clipmap 分级 + 相机中心滚动，与 Radiance Cache 的 3D clipmap probe 布局是同一套空间数据结构思路。</p><p><span class="note-label diff">不同点</span>Mesh SDF 追踪要遍历对象列表（成本随对象数涨），Global SDF 采样是固定成本（与对象数无关）——这正是"远场换成 Global SDF"的动机。</p></div></div></section>
+
+<section class="card"><h2>4. LumenMeshSDFCulling：让近场追踪只测试附近对象</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 问题：近场追 Mesh SDF，若每根线都遍历场景所有对象 -> O(线数×对象数)
+
+// LumenMeshSDFCulling.cpp 两步剔除：
+//   1) FCullMeshSDFObjectsForViewCS (THREADGROUP_SIZE=64)：
+//      视锥 + 距离粗剔 -> 本视图相关的 Mesh SDF 对象子集
+//   2) 按屏幕 froxel grid 精剔：
+//      每个 froxel 记录"与它相交的对象索引列表"
+//      -> GridCulledMeshSDFObjectIndicesArray
+//         GridCulledMeshSDFObjectStartOffsetArray
+//      （Heightfield 对象走并列的一套）
+
+// SetupLumenMeshSDFTracingParameters(...)：
+//   把剔除结果绑定给 ③ 软件追踪 -> 每根线只测本 froxel 的少数对象</textarea><div class="note"><h3>说明</h3><p>这一步是 Mesh SDF 能用于实时追踪的前提：把"逐线×逐对象"降成"逐线×本 froxel 少数对象"。剔除结果按屏幕 froxel 网格组织，与 ③ 的屏幕 probe 布局对齐，追踪 shader 直接读本 froxel 的对象列表。</p><p><span class="note-label common">共同点</span>froxel 网格剔除与 A 的"逐 card tile 剔光"、延迟渲染的 clustered culling 完全同构：先把"谁影响谁"预计算成 per-cell 列表，再着色/追踪时只读本 cell。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>环节</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>Mesh SDF 离线烘焙 / 流送</td><td><span class="note-label diff">发散</span></td><td>逐网格独立 SDF，按距离流送 brick / 降 mip。</td></tr>
+<tr><td>UpdateDistanceFieldObjectBuffers</td><td><span class="note-label common">汇聚</span></td><td>所有可见对象元数据统一上传 GPU buffer。</td></tr>
+<tr><td>Object Cull → Grid Page</td><td><span class="note-label diff">发散</span></td><td>把对象剔进 clipmap page / froxel grid。</td></tr>
+<tr><td>CompositeObjectsIntoPages</td><td><span class="note-label common">汇聚</span></td><td>多个 Mesh SDF min-merge 成 Global SDF 页。</td></tr>
+<tr><td>近场 Mesh SDF / 远场 Global SDF</td><td><span class="note-label diff">发散</span></td><td>追踪按距离分级选后端。</td></tr>
+<tr><td>SetupLumenMeshSDFTracingParameters</td><td><span class="note-label common">汇聚</span></td><td>剔除结果统一绑定给软件追踪。</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note"><h3>骨架</h3><p>距离场是软件 Lumen 的世界表示，分两级：<b>Mesh SDF</b>（逐网格离线烘焙、brick 流送、每帧上传对象元数据，精确但需 froxel 剔除）与 <b>Global SDF</b>（相机中心 4 层 clipmap，把附近 Mesh SDF 合成进稀疏页表体积，增量更新，采样 O(1) 但较糙）。追踪时近场追 Mesh SDF、远场追 Global SDF。</p><p>它是 ③ 软追、A 屏外阴影/Radiosity 软追的共同地基，不依赖 Lumen。</p></div><div class="note"><h3>阅读建议</h3><p>先抓两级分工："精确但要剔除" vs "O(1) 但糙"。再看三条数据流：Mesh SDF 的<b>烘焙→流送→上传</b>、Global SDF 的<b>剔除→合成→clipmap</b>、Lumen 的<b>froxel 剔除→绑定追踪</b>。sphere tracing 与 brick/page 布局细节见函数附录。硬件 RT 的对照见 <a href="LumenHardwareRayTracing_ConvergenceAnnotated.html">HWRT</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenDistanceField_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>Distance Field 函数算法附录</a><a class="tag" href="LumenTraceScreenProbes_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>上游消费者：③ TraceScreenProbes（软追）</a><a class="tag" href="LumenSceneLighting_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>上游消费者：A 直接光屏外阴影 / Radiosity 软追</a><a class="tag" href="LumenHardwareRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>对照：硬件 RT 追踪后端</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>
