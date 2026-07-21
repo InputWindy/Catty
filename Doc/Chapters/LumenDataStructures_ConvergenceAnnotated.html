@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>数据结构与内存布局参考 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:660px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>数据结构与内存布局参考 · Lumen 的资源全景</h1><div class="subtitle">这是一份<b>横切参考</b>：把散落在各主题里的核心数据结构、GPU buffer/atlas 布局、编码位宽、常量集中成一张速查表。四大块：① <b>Surface Cache 侧</b>（FLumenCardPageData / 四张 atlas / 卡片 OBB）；② <b>Distance Field 侧</b>（FDistanceFieldVolumeData / 稀疏 mip / brick + indirection）；③ <b>Final Gather 侧</b>（探针 SH / Radiance Cache clipmap 间接寻址）；④ <b>打包编码</b>（法线 10bit、FLightSample 位域、距离编码）。用途：读其它主题时随手查"这个结构长什么样、占多少位、在哪张 buffer"。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--blue)"></span>Surface Cache</span><span class="tag"><span class="dot" style="background:var(--green)"></span>Distance Field</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>Final Gather/RC</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>打包编码</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>常量</span><span class="tag"><span class="dot" style="background:var(--red)"></span>间接寻址</span></div></section>
+
+<section class="card"><h2>一眼看懂：四大数据域</h2><div class="body flow"><div class="node blue"><strong>FLumenSceneData</strong><small>场景级总账。</small></div><div class="node blue"><strong>CardPageData</strong><small>页→物理 atlas。</small></div><div class="node blue"><strong>4×Atlas</strong><small>Depth/Alb/Nrm/Emi。</small></div><div class="node green"><strong>VolumeData</strong><small>Mips+Streamable。</small></div><div class="node green"><strong>Brick+间接</strong><small>7³稀疏+indirection。</small></div><div class="node cyan"><strong>Probe SH</strong><small>SH3 = 9 系数。</small></div><div class="node red"><strong>RC clipmap</strong><small>三级间接寻址。</small></div><div class="node orange"><strong>打包位域</strong><small>10bit/14bit…。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档给"结构全景 + 关系图"。逐结构的字段级细节——FLumenCardPageData 每字段、FLumenCardOBB、FDistanceFieldVolumeData 的 AlwaysLoadedMip/StreamableMips、FSparseDistanceFieldMip、RadianceCache clipmap indirection 三级、SH 系数布局、各处打包位宽——放在函数附录。</p><a class="tag" href="LumenDataStructures_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 数据结构 字段级附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：为什么值得单开一篇讲数据</h2><div class="body"><p>Lumen 的复杂度很大一部分不在算法本身，而在<b>数据如何组织</b>：同一份表面信息要能被光照烘焙写、被追踪采、被降噪读；同一个网格既有卡片布局又有距离场。这些结构跨了 CPU（FLumenSceneData 调度）、GPU buffer（CardPageData/atlas）、离线资产（VolumeData/CardBuildData）三个世界，字段位宽和索引方式直接决定性能与显存。本页把它们抽出来平铺对比，避免在每个算法主题里重复解释"这个 buffer 是啥"。所有结构名/位宽取自源码，字段级明细见附录。</p></div></section>
+
+<section class="card"><h2>完整源码对照（核心结构速览）</h2><div class="body"><p>三大域的代表结构（保留真实符号，省略部分字段）。</p><span class="source-path">LumenSceneData.h · LumenCardCommon.ush · DistanceFieldAtlas.h · MeshCardBuild.h · LumenRadianceCache.h</span><textarea class="codebox large" readonly spellcheck="false">// ===== Surface Cache 侧 =====
+struct FLumenCardPageData {          // GPU：每个卡片页一条
+    uint2  PhysicalAtlasCoord;       // 在物理 atlas 的位置
+    float4 CardUVRect;               // 卡片内 UV 范围
+    uint   CardIndex;                // 属于哪张卡片
+    // ... ResLevel / SizeInPages
+};
+// 四张世界空间 atlas（各自格式）：
+//   DepthAtlas    BC4   (单通道)
+//   AlbedoAtlas   BC7   (8bit/通道)
+//   NormalAtlas   BC5   (10bit/通道 + 1bit valid)
+//   EmissiveAtlas BC6H  (HDR)
+// FinalLightingAtlas：合成后供追踪采样
+
+struct FLumenCardBuildData {         // 离线烘焙产物
+    TLumenCardOBB OBB;               // 有向包围盒
+    uint AxisAlignedDirectionIndex;  // 0..5 六方向
+};
+
+// ===== Distance Field 侧 =====
+struct FDistanceFieldVolumeData {
+    TArray<FSparseDistanceFieldMip> Mips; // NumMips=3
+    int32 AlwaysLoadedMip;                // 最粗 mip 常驻
+    TArray<uint8> StreamableMips;         // 细 mip 按需流送
+};
+// 稀疏：UniqueDataBrickSize=7 (+1 border ->8^3)
+//       indirection 表定位 brick，空区不存
+//       MaxIndirectionDimension = 1024
+
+// ===== Final Gather / Radiance Cache 侧 =====
+// 屏幕探针：SH3 = NUM_LIGHTING_SH_COEFFICIENTS = 9
+// Radiance Cache：clipmap 三级间接寻址
+//   ProbeIndirection -> PhysicalProbe -> Atlas
+</textarea></div></section>
+
+<section class="card"><h2>1. Surface Cache：页表 + 四 atlas + OBB</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 逻辑层级：
+// FLumenSceneData (CPU 总账)
+//   └ Cards[]        每 primitive 的卡片集
+//       └ CardPages[]  卡片切成的页
+//           └ 物理 atlas 的一块矩形区域
+
+// FLumenCardPageData (GPU buffer 一条/页)
+//   PhysicalAtlasCoord + CardUVRect
+//   -> shader 靠它把"逻辑卡片 UV"换算成
+//      "物理 atlas texel"
+
+// 四张 atlas 尺寸相同、一一对应
+//   同一 texel 在四张里是同一表面点的
+//   depth/albedo/normal/emissive</textarea><div class="note"><h3>说明</h3><p>Surface Cache 是三层间接：CPU 的 <span class="inline">FLumenSceneData</span> 记账（哪些卡片在场景里、页表分配），GPU 的 <span class="inline">FLumenCardPageData</span> buffer 把每个卡片页映射到物理 atlas 坐标，四张<b>格式各异</b>的 atlas 存实际数据。四张 atlas 空间对齐——同一 texel 索引在四张里就是同一表面点的不同属性，采样时一次算坐标、四次采样。</p><p>OBB（<span class="inline">TLumenCardOBB</span>）来自离线烘焙，运行时决定"世界空间的点落到卡片的哪个 UV"。位宽细节（法线 10bit+valid、albedo 8bit）见附录。</p></div></div></section>
+
+<section class="card"><h2>2. Distance Field：稀疏 mip + brick 间接</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// FDistanceFieldVolumeData
+//   Mips[0..2]           3 级
+//   AlwaysLoadedMip      最粗，常驻内存
+//   StreamableMips       细 mip，按需流送
+
+// FSparseDistanceFieldMip
+//   IndirectionTable     每格 -> brick 索引 或 空
+//   BrickData            实际 7^3 距离值（PF_G8）
+//   DistanceFieldToVolumeScaleBias 坐标变换
+
+// 采样：世界坐标 -> volume 局部
+//   -> indirection 查 brick -> 三线性插 brick 内</textarea><div class="note"><h3>说明</h3><p>距离场的内存关键是"<b>稀疏 + 分级流送</b>"。<span class="inline">FDistanceFieldVolumeData</span> 有 3 级 mip：最粗的 <span class="inline">AlwaysLoadedMip</span> 常驻（保证任何时候都能粗略追踪），细节 <span class="inline">StreamableMips</span> 按镜头距离流送。每级是一个 <span class="inline">FSparseDistanceFieldMip</span>：<span class="inline">IndirectionTable</span> 把体积网格映射到 brick 索引（空区映射到"无"直接返回远距离），<span class="inline">BrickData</span> 存 <span class="inline">7³</span> 的量化距离。</p><p>采样两步：世界坐标转 volume 局部 → indirection 定位 brick → brick 内三线性插值。1 texel border 保证插值不跨 brick。这套的生产端见 <a href="LumenOfflineBake_ConvergenceAnnotated.html">离线烘焙</a>。</p></div></div></section>
+
+<section class="card"><h2>3. Final Gather / RC：SH + clipmap 间接</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 屏幕探针 radiance 压缩：
+//   SH3  NUM_LIGHTING_SH_COEFFICIENTS = 9
+//   或 Octahedral 方向图
+// Radiosity：2-band SH（4 系数）
+
+// Radiance Cache clipmap 三级间接寻址：
+//   1) ProbeIndirectionTexture[clipmap][x][y][z]
+//        -> 逻辑 probe 是否分配、物理索引
+//   2) PhysicalProbe -> Atlas tile 坐标
+//   3) Atlas 存 probe 的方向 radiance/irradiance
+// clipmap：近处高密度，远处每级翻倍覆盖</textarea><div class="note"><h3>说明</h3><p>Final Gather 的数据核心是<b>用 SH 压方向光照</b>：屏幕探针漫反射用 SH3（9 系数）、Radiosity 用更省的 2-band SH（4 系数），少量系数就能表达平滑的半球辐照度。</p><p>Radiance Cache 是世界空间稀疏 probe，用 <b>clipmap 三级间接寻址</b>：先查 <span class="inline">ProbeIndirection</span>（某 clipmap 格子有没有分配 probe、物理索引是几），再由物理索引定位 atlas tile，最后采 tile 里的方向 radiance。clipmap 分级让近处 probe 密、远处稀疏。间接寻址使"稀疏分配 + 动态复用"成为可能——生命周期管理见 <a href="LumenFinalGatherGPU_FunctionAppendix.html">Final Gather GPU 附录</a>。</p></div></div></section>
+
+<section class="card"><h2>核心常量 / 位宽速查表</h2><div class="body"><table class="table"><thead><tr><th>域</th><th>符号 / 常量</th><th>值 / 位宽</th></tr></thead><tbody>
+<tr><td>Surface Cache</td><td>TILE_SIZE / BORDER_SIZE</td><td>8 / 1</td></tr>
+<tr><td>Surface Cache</td><td>Normal / Albedo 编码</td><td>10bit/通道+1bit valid / 8bit</td></tr>
+<tr><td>Surface Cache</td><td>atlas 格式</td><td>BC4/BC7/BC5/BC6H</td></tr>
+<tr><td>光照优先级</td><td>PRIORITY_HISTOGRAM_SIZE</td><td>8</td></tr>
+<tr><td>直接光</td><td>FLightSample（LightIndex/Type/Shadow/Weight）</td><td>14 / 2 / 1 / 16 bit</td></tr>
+<tr><td>Final Gather</td><td>NUM_LIGHTING_SH_COEFFICIENTS</td><td>9（SH3）</td></tr>
+<tr><td>Radiosity</td><td>SH band</td><td>2-band（4 系数）</td></tr>
+<tr><td>Radiance Cache</td><td>NUM_DIRECTION_BINS_2D</td><td>8</td></tr>
+<tr><td>反射降噪</td><td>TemporalMaxFramesAccumulated</td><td>60</td></tr>
+<tr><td>Distance Field</td><td>UniqueDataBrickSize / BrickSize</td><td>7 / 8（+1 border）</td></tr>
+<tr><td>Distance Field</td><td>BandSizeInVoxels / NumMips</td><td>4 / 3</td></tr>
+<tr><td>Distance Field</td><td>MaxIndirectionDimension</td><td>1024</td></tr>
+<tr><td>Mesh Cards</td><td>NumAxisAlignedDirections / MaxCardsPerMesh</td><td>6 / 32</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>把 Lumen 的数据结构横切来看，会发现一条贯穿的设计哲学：<b>间接寻址 + 稀疏存储 + 定点压缩</b>。间接寻址（CardPageData→atlas、indirection→brick、ProbeIndirection→物理 probe）让逻辑地址和物理存储解耦，从而支持动态分配/复用/流送；稀疏存储（窄带 brick、按需 probe）只为"表面附近/镜头看得到"的部分花显存；定点压缩（BC 块压缩、PF_G8 距离、SH 系数、位域打包）把每个字段压到刚好够用的位宽。这三招叠加，才让 Lumen 能在有限显存里表示整个场景的全局光照。这张速查表是读其它算法主题的"字典"。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="LumenDataStructures_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇字段级附录</a><a class="tag" href="LumenSurfaceCacheGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>Surface Cache GPU</a><a class="tag" href="LumenOfflineBake_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>离线烘焙</a><a class="tag" href="LumenFinalGatherGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>Final Gather GPU</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>

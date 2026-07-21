@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Reflections & 公共追踪 GPU 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Reflections & 公共追踪 GPU 函数算法附录</h1><div class="subtitle">配合主文档使用。逐一展开反射生成射线的 GGX 采样、追踪级联入口、三段降噪各自的核心公式，以及全 Lumen 共享的 cone march 结构体与函数。所有符号取自 Engine/Shaders/Private/Lumen/ 下的 .usf / .ush。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenReflectionsGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 Reflections GPU 主文档</a><a class="tag" href="LumenFinalGatherGPU_FunctionAppendix.html"><span class="dot" style="background:var(--purple)"></span>对照：Final Gather GPU 附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">LumenReflections.usf · LumenReflectionTracing.usf · LumenReflectionResolve.usf · LumenReflectionDenoiserTemporal.usf · LumenReflectionDenoiserSpatial.usf · LumenReflectionCommon.ush · LumenTracingCommon.ush · LumenScreenTracing.ush · GlobalDistanceFieldShared.ush</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#gen">1. ReflectionGenerateRaysCS</a><a href="#raydata">2. FRayData / 编码</a><a href="#trace">3. Trace 级联入口</a><a href="#resolve">4. LumenReflectionResolveCS</a><a href="#temporal">5. DenoiserTemporal</a><a href="#spatial">6. DenoiserSpatial</a><a href="#cone">7. FConeTraceInput / cone march</a><a href="#voxel">8. ConeTraceLumenSceneVoxels</a><a href="#Rel">函数关系表</a></div></section>
+
+<section id="gen" class="card"><h2>1. ReflectionGenerateRaysCS</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenReflections.usf (524 行)
+void ReflectionGenerateRaysCS(...) {
+    float4 GGXSample =
+        ImportanceSampleVisibleGGX(E, Roughness, V, N);
+    float3 RayDir = reflect(-V, GGXSample.xyz);
+    float ConeAngle = 1.0 / max(GGXSample.w, 0.0001);
+}
+// ReflectionTileClassificationBuildListsCS 先分类
+// RadianceCacheMinRoughness = 0.0
+// RadianceCacheMaxRoughness = 0.8
+// MinTraceDistance = 100
+// MaxTraceDistance = 10000</textarea><div class="note"><h3>说明</h3><p>用 <span class="inline">ImportanceSampleVisibleGGX</span>（可见法线分布 VNDF）依粗糙度采样半程向量、反射得到射线方向。<span class="inline">ConeAngle = 1/max(PDF, 0.0001)</span> 把 PDF 转成锥角——PDF 低（方向稀疏/粗糙）则锥宽，追踪采更高预滤波 mip。粗糙度超过 <span class="inline">RadianceCacheMaxRoughness=0.8</span> 的部分交给 Radiance Cache 兜底而非逐像素追踪。</p></div></div></section>
+
+<section id="raydata" class="card"><h2>2. FRayData / 编码</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenReflectionCommon.ush (343 行)
+#define REFLECTION_THREADGROUP_SIZE_2D 8
+struct FRayData {
+    float3 Direction;
+    float  PDF;
+    float  ConeHalfAngle;
+    float  RadianceCacheMaxTraceDistance;
+};
+uint  EncodeRayDistance(float HitDistance, bool bHit);
+float DecodeRayDistance(uint Encoded, out bool bHit);</textarea><div class="note"><h3>说明</h3><p>反射射线的公共数据契约。<span class="inline">FRayData</span> 打包方向、PDF、锥角与 Radiance Cache 最大追踪距离，是生成→追踪→降噪各 pass 之间传递的载体。命中距离用 <span class="inline">EncodeRayDistance/DecodeRayDistance</span> 打包（把"是否命中"位与距离压进一个 uint），节省带宽。线程组 2D 尺寸 8×8。</p></div></div></section>
+
+<section id="trace" class="card"><h2>3. Trace 级联入口</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenReflectionTracing.usf (959 行)
+ReflectionClearTracesCS
+ReflectionTraceScreenTexturesCS   // 屏幕 HZB
+ReflectionCompactTracesCS         // 压实未命中
+ReflectionSortTracesByMaterialCS  // 按材质排序
+ReflectionTraceMeshSDFsCS         // 近场 Mesh SDF
+ReflectionTraceVoxelsCS           // 远场 Global SDF
+// REFLECTION_THREADGROUP_SIZE_1D = 64
+// REFLECTION_TRACE_THREADGROUP_SIZE_1D = 32/64
+// MinReflectionConeAngle = 0.00001f</textarea><div class="note"><h3>说明</h3><p>与 Final Gather 同构的级联：屏幕→压实→（排序）→MeshSDF→Voxel。反射独有 <span class="inline">ReflectionSortTracesByMaterialCS</span>：按命中材质排序，让 warp 内采样相似材质提升相干。<span class="inline">MinReflectionConeAngle=0.00001</span> 是纯镜面（roughness≈0）时的锥角下限，防止除零并保持锐利。</p></div></div></section>
+
+<section id="resolve" class="card"><h2>4. LumenReflectionResolveCS</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenReflectionResolve.usf (658 行)
+[numthreads(8, 8, 1)]
+void LumenReflectionResolveCS(...) {
+    // NUM_SPATIAL_RECONSTRUCTION_SAMPLES 邻居
+    // SpatialReconstructionKernelRadius 半径
+    for (i in samples) {
+        float2 E = Hammersley16(i, N, Random);
+        float2 p = UniformSampleDiskConcentric(E);
+        float W = GGXWeight(NeighborRay, ThisPixelBRDF);
+        Sum += NeighborRadiance * W; WSum += W;
+    }
+    Out = Sum / max(WSum, 1e-6);
+}</textarea><div class="note"><h3>说明</h3><p>空间重建：把邻域像素的射线按"相对本像素 BRDF lobe"的 GGX 权重加权聚合。数学上是用邻居样本帮本像素完成镜面积分的蒙特卡洛估计——同 lobe 的不同方向样本，几何正确。采样偏移用 <span class="inline">Hammersley16</span> 低差异序列 + <span class="inline">UniformSampleDiskConcentric</span> 映射到圆盘，在 <span class="inline">SpatialReconstructionKernelRadius</span> 内均匀铺开。这是三段降噪里唯一"重建/补积分"的一段，后两段只是平滑。</p></div></div></section>
+
+<section id="temporal" class="card"><h2>5. DenoiserTemporal</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenReflectionDenoiserTemporal.usf (586 行)
+#define SHARED_TILE_BORDER 2
+#define SHARED_TILE_SIZE   12
+[numthreads(8,8,1)]
+void LumenReflectionDenoiserTemporalCS(...) {
+    // groupshared 缓存 12x12（8+2border）做邻域统计
+    float3 Mean, Var; // YCoCg 空间
+    float3 AABBmin = Mean - Var*TemporalNeighborhoodClampScale;
+    float3 AABBmax = Mean + Var*TemporalNeighborhoodClampScale;
+    History = clamp(History, AABBmin, AABBmax);
+    float Alpha = 1.0/(NumFrames + (bReconstructed?4:0));
+    Out = lerp(History, Current, Alpha);
+}
+// TemporalMaxFramesAccumulated = 60
+// 双历史：hit-based / surface-based</textarea><div class="note"><h3>说明</h3><p>时域累积。用 <span class="inline">groupshared</span> 缓存 12×12 tile（8 + 2 border）供邻域统计，在 <span class="inline">YCoCg</span> 空间算 3×3 均值/方差组成 AABB，把历史 clamp 进去防鬼影（<span class="inline">ClampScale=0.5</span>）。混合系数 <span class="inline">Alpha=1/(NumFrames + reconstructed?4:0)</span>——刚被 Resolve 重建过的像素额外 +4 加速收敛，最多累 60 帧。<b>双历史</b>分别按命中点（hit-based，适合光滑反射跟随命中物）与按表面（surface-based，适合粗糙反射跟随本表面）重投影，按可靠性择优。</p></div></div></section>
+
+<section id="spatial" class="card"><h2>6. DenoiserSpatial</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenReflectionDenoiserSpatial.usf (213 行)
+void LumenReflectionDenoiserSpatialCS(...) {
+    // SpatialFilterKernelRadius = 3, NumSamples = 16
+    for (each sample) {
+        float Wd = exp2(-DepthWeightScale*Pow2(dDepth)); //=10
+        float Wn = 1 - saturate(NormalAngle/LobeHalfAngle);
+        float Wl = exp2(-abs(dLum)/max(Stddev,eps));
+        float W = Wd * Wn * Wl;
+        Sum += Neighbor*W; WSum += W;
+    }
+    Out = Sum/WSum;
+}</textarea><div class="note"><h3>说明</h3><p>空域收尾滤波，仅当时域累积帧数不足时权重更大（方差自适应）。三重权重<b>相乘</b>：<span class="inline">DepthWeight=exp2(-10·ΔDepth²)</span> 保深度边、<span class="inline">NormalWeight=1-saturate(angle/lobeHalfAngle)</span> 保法线边（锥角随粗糙度）、<span class="inline">LuminanceWeight=exp2(-ΔLum/stddev)</span> 保高光边。任一维不一致该邻居权重就趋零，从而只在同几何同材质区域平滑，不糊边。3 半径 16 样本。</p></div></div></section>
+
+<section id="cone" class="card"><h2>7. FConeTraceInput / cone march</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenTracingCommon.ush（全 Lumen 共享）
+struct FRayCone { float SpreadAngle; float Width; };
+struct FConeTraceInput {
+    float3 ConeOrigin;
+    float3 ConeDirection;
+    float  ConeAngle;      // 锥半角
+    float  MinTraceDistance, MaxTraceDistance;
+    float  StepFactor;     // 步进系数
+};
+struct FConeTraceResult {
+    float3 Lighting;
+    float  Transparency;   // 累积透过率(软遮蔽)
+    float  OpaqueHitDistance;
+};
+// LumenScreenTracing.ush: TraceScreen(HZB 步进)</textarea><div class="note"><h3>说明</h3><p>cone march 是 Lumen 所有追踪链路（反射/屏幕探针/Radiance Cache/可视化）的公共底座。<span class="inline">FConeTraceInput</span> 描述一个圆锥：起点、方向、锥角、追踪距离区间、步进系数。追踪沿锥轴步进，锥随距离变宽 → 采样越来越高的 mip（预滤波），既抗锯齿又用少量步数覆盖大范围。<span class="inline">FConeTraceResult</span> 返回累积光照、透过率（软遮蔽/部分透明）与命中距离。<span class="inline">FRayCone</span> 的 SpreadAngle/Width 记录锥随程扩张。</p></div></div></section>
+
+<section id="voxel" class="card"><h2>8. ConeTraceLumenSceneVoxels</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// GlobalDistanceFieldShared.ush
+void ConeTraceLumenSceneVoxels(FConeTraceInput In,
+                               inout FConeTraceResult Out) {
+    float t = In.MinTraceDistance;
+    while (t < In.MaxTraceDistance) {
+        float3 P = In.ConeOrigin + In.ConeDirection * t;
+        float d = SampleGlobalDistanceField(P); // SDF 距离
+        float ConeRadius = t * tan(In.ConeAngle);
+        if (d < ConeRadius) {
+            // 命中：按 mip=log2(ConeRadius) 采 voxel 光照
+            Out.Lighting += SampleVoxelLighting(P, mip);
+            break;
+        }
+        t += max(d, ConeRadius) * In.StepFactor; // 空球步进
+    }
+}</textarea><div class="note"><h3>说明</h3><p>远场 voxel 追踪的核心：<b>SDF 空球步进（sphere tracing）</b>。每步用 Global Distance Field 采到最近表面距离 <span class="inline">d</span>，直接跳 <span class="inline">d</span> 那么远（空区快速跨越）。当 <span class="inline">d < ConeRadius</span>（锥半径，随距离线性增大）判定命中，按 <span class="inline">mip=log2(ConeRadius)</span> 采预滤波的 voxel 光照。锥越宽 mip 越高——这就是 cone trace 相比纯 ray trace 的省钱之处：一条锥等效一束光线，用 mip 预积分代替超采样。这套是反射与 Final Gather 远场兜底共用的同一函数。</p></div></div></section>
+
+<section id="Rel" class="card"><h2>函数关系表</h2><div class="body"><table class="table"><thead><tr><th>阶段</th><th>函数 / 文件</th><th>产出 / 下游</th></tr></thead><tbody>
+<tr><td>分类</td><td>ReflectionTileClassificationBuildListsCS</td><td>粗糙度 tile 列表 → indirect dispatch</td></tr>
+<tr><td>发射线</td><td>ReflectionGenerateRaysCS (LumenReflections.usf)</td><td>FRayData（方向/PDF/锥角）</td></tr>
+<tr><td>追踪</td><td>ReflectionTrace* (LumenReflectionTracing.usf)</td><td>命中 radiance + 编码距离</td></tr>
+<tr><td>cone march</td><td>ConeTraceLumenSceneVoxels (GlobalDistanceFieldShared.ush)</td><td>被上面追踪调用的公共步进</td></tr>
+<tr><td>降噪①</td><td>LumenReflectionResolveCS</td><td>空间重建（GGX 加权补积分）</td></tr>
+<tr><td>降噪②</td><td>LumenReflectionDenoiserTemporalCS</td><td>YCoCg clamp + 60 帧累积</td></tr>
+<tr><td>降噪③</td><td>LumenReflectionDenoiserSpatialCS</td><td>深度/法线/亮度三权重双边 → 干净反射</td></tr>
+</tbody></table></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>

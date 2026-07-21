@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>性能与调试实战 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:660px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>性能与调试实战 · 命令、可视化、瓶颈定位</h1><div class="subtitle">前面各主题讲"Lumen 怎么工作"，本页讲"<b>Lumen 出问题时怎么查、跑不动时怎么调</b>"。三块：① <b>可视化命令</b>（<span class="inline">r.Lumen.Visualize</span> / ViewMode，直接看 Surface Cache/追踪/反射）；② <b>性能瓶颈定位</b>（GPU Profiler 里 Lumen 各 pass 的耗时、常见热点与对应 CVar）；② <b>画质问题排障</b>（漏光/鬼影/噪声/间接光缺失对应到哪个环节）。这是一份<b>实战速查</b>，把前面所有算法知识落到"改哪个 CVar、看哪个可视化"。所有命令/CVar 取自源码。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--cyan)"></span>可视化</span><span class="tag"><span class="dot" style="background:var(--red)"></span>瓶颈热点</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>CVar 调参</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>画质问题</span><span class="tag"><span class="dot" style="background:var(--green)"></span>解决方向</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>Profiler</span></div></section>
+
+<section class="card"><h2>一眼看懂：排障三步走</h2><div class="body flow"><div class="node cyan"><strong>可视化定位</strong><small>看是哪一层的问题。</small></div><div class="node blue"><strong>Profiler 分解</strong><small>ProfileGPU 看耗时。</small></div><div class="node red"><strong>识别热点</strong><small>SurfaceCache?追踪?降噪?</small></div><div class="node yellow"><strong>CVar 调参</strong><small>对症降质/提质。</small></div><div class="node orange"><strong>画质对照</strong><small>漏光/鬼影/噪声。</small></div><div class="node green"><strong>验证收敛</strong><small>改完再看可视化。</small></div><div class="node purple"><strong>边界排查</strong><small>velocity/GBuffer?</small></div><div class="node out"><strong>定档</strong><small>质量/性能平衡。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档给"排障方法论 + 常用命令速查"。逐命令细节——各 Visualize 模式看什么、关键 CVar 的作用与取值范围、每个 Lumen pass 在 Profiler 里的名字与典型占比、画质问题到 CVar 的完整映射表——放在函数附录。</p><a class="tag" href="LumenPerfDebug_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 性能调试 命令速查附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：为什么 Lumen 排障要"分层看"</h2><div class="body"><p>Lumen 是多层缓存 + 多级追踪 + 多段降噪的复杂系统，一个画面问题可能出在任何一层。盲目调 CVar 只会按下葫芦浮起瓢。正确姿势是<b>先用可视化定位到层</b>，再针对那一层调参：间接光整体缺失/发暗 → 大概率 Surface Cache 没覆盖到（Mesh Cards 问题，看 <span class="inline">r.Lumen.Visualize.CardPlacement</span>）；间接光有但噪 → Final Gather 采样/降噪不足；反射脏/闪 → 反射降噪；漏光 → Global DF 精度或 Surface Cache 分辨率；鬼影 → velocity/时序（外部边界，见 <a href="LumenSystemBoundaries_ConvergenceAnnotated.html">系统边界</a>）。本页把"症状 → 层 → 命令/CVar"这条链路做成速查，是前面所有主题的实战出口。</p></div></section>
+
+<section class="card"><h2>完整源码对照（常用可视化与 Profiler 命令）</h2><div class="body"><p>最常用的一组排障命令（控制台输入）。</p><span class="source-path">控制台命令 · r.Lumen.* CVar · ProfileGPU</span><textarea class="codebox large" readonly spellcheck="false">// ===== 可视化：看 Lumen 内部状态 =====
+r.Lumen.Visualize 1                 // 开启 Lumen 可视化叠加
+ViewMode > Lumen > Overview         // 编辑器菜单：总览
+r.Lumen.Visualize.CardPlacement 1   // 看 Mesh Cards 覆盖（漏面=红）
+Visualize > LumenScene              // 看 Surface Cache 实际内容
+Visualize > GlobalDistanceField     // 看远场 SDF（追踪目标）
+Visualize > LumenSurfaceCache       // 看 atlas 各属性
+
+// ===== 性能分解 =====
+ProfileGPU                          // 单帧 GPU 耗时树（找 Lumen* pass）
+stat GPU                            // 实时 GPU 分类耗时
+r.Lumen.ScreenProbeGather.Visualize... // 探针放置密度
+
+// ===== 常用降质换性能 CVar =====
+r.Lumen.ScreenProbeGather.DownsampleFactor  // 探针更稀 -> 快
+r.Lumen.ScreenProbeGather.RadianceCache 1   // 开远场缓存兜底
+r.Lumen.Reflections.DownsampleFactor        // 反射半分辨率
+r.Lumen.DiffuseIndirect.Allow 1             // 总开关
+r.Lumen.TraceMeshSDFs.Allow 1               // 近场 SDF 追踪开关
+r.LumenScene.SurfaceCache.Resolution        // Surface Cache 分辨率
+</textarea></div></section>
+
+<section class="card"><h2>1. 可视化：先定位到层</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 分层可视化对应的"看什么"：
+
+// LumenScene / SurfaceCache
+//   -> 表面材质缓存对不对（漏卡=黑）
+// CardPlacement
+//   -> Mesh Cards 覆盖（红=没卡片，会漏间接光）
+// GlobalDistanceField
+//   -> 远场追踪几何是否准（漏光根源）
+// LumenOverview
+//   -> 一屏看 GI/反射/探针综合状态
+
+// 经验：先 Overview，再针对性开单项</textarea><div class="note"><h3>说明</h3><p>可视化是排障第一步，目的是把问题<b>归到某一层</b>。<span class="inline">LumenScene</span>/<span class="inline">SurfaceCache</span> 可视化直接显示表面缓存内容——如果某物体在这里是黑的/缺失，说明卡片没捕获到它，间接光自然缺。<span class="inline">CardPlacement</span> 用颜色标出 Mesh Cards 覆盖，红色区域是"没有卡片朝这个方向"，是间接光漏洞的直接证据。<span class="inline">GlobalDistanceField</span> 可视化能看出远场几何是否被 SDF 正确表示——漏光常常是这里精度不够。</p></div></div></section>
+
+<section class="card"><h2>2. Profiler：分解 Lumen 各 pass 耗时</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ProfileGPU 里 Lumen 相关 pass（按典型耗时）：
+
+// LumenScreenProbeGather        通常最贵（Final Gather）
+//   ├ TraceScreen / TraceMeshSDFs / TraceVoxels
+//   ├ Temporal / SpatialFilter
+//   └ ConvertToIrradiance
+// LumenReflections              次贵（尤其光滑场景）
+//   ├ GenerateRays / Trace
+//   └ Resolve / Temporal / Spatial
+// LumenSceneLighting            Surface Cache 光照烘焙
+//   ├ DirectLighting / Radiosity
+// UpdateLumenScene              卡片捕获（尖峰在物体变化时）</textarea><div class="note"><h3>说明</h3><p><span class="inline">ProfileGPU</span> 抓单帧 GPU 耗时树，Lumen 的 pass 名都带前缀好找。<b>典型排序</b>：<span class="inline">ScreenProbeGather</span>（Final Gather）通常最贵，其中追踪与滤波占大头；<span class="inline">Reflections</span> 在光滑场景可能反超；<span class="inline">SceneLighting</span>（Surface Cache 光照烘焙）相对稳定；<span class="inline">UpdateLumenScene</span> 平时便宜、但物体大量变化时会尖峰（卡片捕获爆发）。找到最贵的 pass 再决定往哪个方向降质。</p></div></div></section>
+
+<section class="card"><h2>3. 画质问题 → 环节 → CVar 对照</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 症状 -> 责任层 -> 调整方向：
+
+// 间接光缺失/发暗
+//   -> Surface Cache 没覆盖 / 分辨率低
+//   -> 查 CardPlacement，升 SurfaceCache.Resolution
+
+// 漏光（该暗的地方亮）
+//   -> Global DF 精度 / Radiance Cache occlusion
+//   -> 升全局 SDF 分辨率 / 检查 FilterWithGather
+
+// 噪点多
+//   -> Final Gather 采样不足 / 降噪弱
+//   -> 探针密度、开 RadianceCache、加时域帧
+
+// 鬼影/拖影
+//   -> velocity / 时序（外部边界）
+//   -> 查 velocity 是否正确写入</textarea><div class="note"><h3>说明</h3><p>这是本页的核心速查。<b>间接光缺失/发暗</b>几乎总是 Surface Cache 问题（卡片没覆盖或分辨率不够）——先看 CardPlacement。<b>漏光</b>是 Lumen 最常见顽疾，根源多在 Global DF 精度不足（远场 SDF 把该挡光的墙"漏"了）或 Radiance Cache 的 occlusion 处理。<b>噪点</b>是采样/降噪不足，加探针密度或多累几帧。<b>鬼影</b>基本是外部边界问题（velocity 不准），不要在 Lumen 内部找。把症状对到层能省下大量盲调时间。</p></div></div></section>
+
+<section class="card"><h2>常见热点 / CVar 速查表</h2><div class="body"><table class="table"><thead><tr><th>目标</th><th>CVar / 命令</th><th>效果</th></tr></thead><tbody>
+<tr><td>Final Gather 提速</td><td>r.Lumen.ScreenProbeGather.DownsampleFactor↑</td><td>探针更稀疏，省但更糊/噪</td></tr>
+<tr><td>远场兜底</td><td>r.Lumen.ScreenProbeGather.RadianceCache 1</td><td>远处走缓存，省追踪</td></tr>
+<tr><td>反射提速</td><td>r.Lumen.Reflections.DownsampleFactor↑</td><td>反射半/更低分辨率</td></tr>
+<tr><td>Surface Cache 画质</td><td>r.LumenScene.SurfaceCache.Resolution↑</td><td>更清晰间接光，费显存</td></tr>
+<tr><td>近场追踪开关</td><td>r.Lumen.TraceMeshSDFs.Allow</td><td>关则只靠 Global DF（省但糊）</td></tr>
+<tr><td>硬件光追</td><td>r.Lumen.HardwareRayTracing 1</td><td>更准（无 SDF 误差），更贵</td></tr>
+<tr><td>可视化总览</td><td>ViewMode > Lumen > Overview</td><td>一屏诊断</td></tr>
+<tr><td>GPU 耗时</td><td>ProfileGPU / stat GPU</td><td>分解 Lumen 各 pass</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>Lumen 排障的核心心法是<b>"先分层定位，再对症调参"</b>——因为它是缓存×追踪×降噪的多层系统，任何单一画面问题都可能来自不同层，盲调 CVar 只会互相干扰。方法论固定三步：① 用 <span class="inline">Visualize</span> 系列命令把问题归到 Surface Cache / 追踪 / 降噪 / 外部边界某一层；② 用 <span class="inline">ProfileGPU</span> 确认性能瓶颈在哪个 pass；③ 查"症状→层→CVar"表对症下药，改完回到可视化验证。这套流程把前面所有主题的算法知识变成可操作的排障能力：知道 Surface Cache 是世界空间缓存，才懂"间接光延迟长出来"是正常的；知道反射是三段降噪，才懂反射脏该往哪调；知道时域降噪靠 velocity，才懂鬼影要去查外部边界而非 Lumen 本身。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="LumenPerfDebug_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇命令速查附录</a><a class="tag" href="LumenSystemBoundaries_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>系统边界（鬼影/漏光根因）</a><a class="tag" href="LumenFinalGatherGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>Final Gather GPU（噪点相关）</a><a class="tag" href="LumenDataStructures_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>数据结构（显存相关）</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>

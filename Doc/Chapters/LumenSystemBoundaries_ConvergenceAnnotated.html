@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Lumen 与外部系统边界 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:660px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Lumen 与外部系统边界 · 谁喂给 Lumen、Lumen 喂给谁</h1><div class="subtitle">Lumen 不是孤岛。它上游依赖 <b>渲染器主循环</b>（Deferred Shading 的 GBuffer、depth/velocity）、<b>Nanite</b>（几何来源 + 卡片捕获）、<b>Global Distance Field</b>（远场追踪）；下游把 GI/反射结果交给 <b>光照合成</b>与 <b>后处理（TSR/DLSS）</b>。本页梳理这些<b>接缝</b>：数据在什么时机、以什么形式跨过 Lumen 边界。理解边界能回答"为什么 Lumen 要求 Deferred""改了 velocity 为什么鬼影""Nanite 和 Lumen 怎么协作"这类系统级问题。所有接口名取自渲染器源码。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--blue)"></span>上游输入</span><span class="tag"><span class="dot" style="background:var(--green)"></span>下游输出</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>几何/Nanite</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>追踪后端</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>后处理</span><span class="tag"><span class="dot" style="background:var(--red)"></span>时序依赖</span></div></section>
+
+<section class="card"><h2>一眼看懂：Lumen 在帧里的位置</h2><div class="body flow"><div class="node cyan"><strong>Nanite/GBuffer</strong><small>几何 + 材质。</small></div><div class="node blue"><strong>PrePass</strong><small>depth/velocity。</small></div><div class="node red"><strong>UpdateLumenScene</strong><small>卡片捕获窗口。</small></div><div class="node orange"><strong>Lumen GI</strong><small>SurfaceCache→FinalGather。</small></div><div class="node orange"><strong>Lumen 反射</strong><small>三段降噪。</small></div><div class="node green"><strong>光照合成</strong><small>GI+直接光。</small></div><div class="node yellow"><strong>TSR/DLSS</strong><small>时序上采样。</small></div><div class="node yellow"><strong>后处理</strong><small>Bloom/曝光。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档给"系统间接缝的整体图"。逐边界细节——RenderLumenSceneLighting 的调用点、Nanite ShadingBin 如何喂卡片捕获、Global DF 与 Mesh DF 的分工、GBuffer 依赖的具体通道、velocity 对时域降噪的作用、结果如何进 TSR——放在函数附录。</p><a class="tag" href="LumenSystemBoundaries_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 系统边界 接口附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：Lumen 为什么强依赖 Deferred + 时序</h2><div class="body"><p>Lumen 的很多"硬性要求"其实来自它与外部系统的耦合。<b>要求 Deferred Shading</b>：因为屏幕探针追踪、反射解析都要读 GBuffer 的 depth/normal/roughness/albedo——这些是 Deferred 的天然产物，Forward 下没有完整 GBuffer。<b>强依赖时序（velocity）</b>：Screen Probe 时域累积、反射 Temporal 降噪都靠上帧重投影，velocity buffer 不准就鬼影/拖影。<b>与 Nanite 深度协作</b>：Nanite 提供海量几何，Lumen 的卡片捕获用 <span class="inline">LumenCardComputeShader</span> 直接读 Nanite visbuffer/ShadingBin（见 <a href="LumenSurfaceCacheGPU_ConvergenceAnnotated.html">Surface Cache GPU</a>）。<b>依赖 Global Distance Field</b>：远场兜底追踪走全局 SDF，它是场景所有 Mesh DF 的合成。这些边界不是 Lumen 内部选择，而是"要做实时 GI 就必须站在这些系统肩上"。</p></div></section>
+
+<section class="card"><h2>完整源码对照（Lumen 在 Deferred 管线的插入点）</h2><div class="body"><p>渲染器主循环里 Lumen 相关 pass 的调用时序（保留真实符号，简化）。</p><span class="source-path">DeferredShadingRenderer.cpp · Lumen/LumenSceneRendering.cpp</span><textarea class="codebox large" readonly spellcheck="false">void FDeferredShadingSceneRenderer::Render(...) {
+    // ① 几何：Nanite 可见性 + 传统 mesh pass
+    Nanite::RenderVisibilityBuffer(...);
+    RenderPrePass(...);            // depth
+    RenderBasePass(...);           // GBuffer + velocity
+
+    // ② Lumen 场景维护：卡片捕获窗口
+    //    （用 Nanite/材质结果填 Surface Cache atlas）
+    UpdateLumenScene(...);         // -> CopyCapturedCardPage 等
+    RenderLumenSceneLighting(...); // 直接光 + Radiosity 烘进 atlas
+
+    // ③ 光照：直接光阴影
+    RenderShadowDepthMaps(...);
+    RenderLights(...);             // 屏幕空间直接光
+
+    // ④ Lumen GI + 反射（读 GBuffer，写 diffuse/specular）
+    RenderDiffuseIndirectAndAmbientOcclusion(...);
+        // -> ScreenProbeGather（Final Gather）
+    RenderLumenReflections(...);   // -> 三段降噪
+
+    // ⑤ 合成 + 后处理
+    //    GI/反射 与直接光合成 -> TSR/DLSS 时序上采样
+    AddPostProcessingPasses(...);  // 含 TemporalSuperResolution
+}</textarea></div></section>
+
+<section class="card"><h2>1. 上游：GBuffer / Nanite / Global DF 喂 Lumen</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 三大上游输入：
+
+// A. GBuffer（BasePass 产出）
+//    depth / world normal / roughness / albedo
+//    -> 屏幕探针放置、反射 tile 分类、命中重建
+
+// B. Nanite（RenderVisibilityBuffer）
+//    visbuffer + ShadingBin
+//    -> LumenCardComputeShader 直接算材质写 atlas
+//    （Nanite 网格不走传统光栅捕获）
+
+// C. Global Distance Field（场景级合成）
+//    所有 Mesh DF 合成的 clipmap SDF
+//    -> 远场 cone march（ConeTraceLumenSceneVoxels）
+//    velocity buffer -> 时域降噪重投影</textarea><div class="note"><h3>说明</h3><p>Lumen 的三条上游命脉：<b>GBuffer</b> 给屏幕侧的一切"从哪个像素出发、往哪追、命中怎么算 BRDF"提供数据（没有它 Lumen 无法工作，这是必须 Deferred 的根因）。<b>Nanite</b> 是几何来源，且卡片捕获对 Nanite 走专门路径——直接读 visbuffer/ShadingBin 计算材质，而非重新光栅。<b>Global Distance Field</b> 是所有网格 Mesh DF 合成的场景级 clipmap，供远场 sphere tracing 兜底。</p><p>此外 <span class="inline">velocity buffer</span> 虽小但关键：Screen Probe 与反射的时域累积全靠它把当前像素重投影到上帧，velocity 缺失或错误会直接导致鬼影。</p></div></div></section>
+
+<section class="card"><h2>2. 下游：Lumen 结果喂光照合成与后处理</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Lumen 产出两路，进光照合成：
+
+// A. Diffuse Indirect（Final Gather 结果）
+//    ScreenProbe SH3 -> 逐像素 irradiance
+//    * DiffuseAlbedo -> 间接漫反射
+
+// B. Specular（反射结果）
+//    三段降噪后的反射 radiance
+//    与直接光高光合成
+
+// 合成后 -> TSR / DLSS：
+//    时序上采样，进一步平滑 Lumen 的残余噪声
+//    （Lumen 依赖时序上采样收敛低采样噪声）
+// -> Bloom / 曝光 / 色调映射</textarea><div class="note"><h3>说明</h3><p>Lumen 输出两路：<b>Diffuse Indirect</b>（Final Gather 的 SH3 转成逐像素 irradiance，乘 albedo 成间接漫反射）与 <b>Specular</b>（三段降噪后的反射）。它们在光照合成阶段与屏幕空间直接光相加，得到完整光照。</p><p>关键接缝是<b>与 TSR/DLSS 的配合</b>：Lumen 为了实时，屏幕探针/反射都是低采样 + 时空降噪，仍有残余噪声；时序上采样（TSR）在其后再做一层帧间累积，是 Lumen 画质收敛的"最后一公里"。这也是为什么 Lumen 场景关掉 TSR 会明显更噪——两者是设计上配套的。</p></div></div></section>
+
+<section class="card"><h2>3. 硬追踪分支：HWRT 边界</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Lumen 追踪有软/硬两条后端：
+
+// 软件追踪（默认，跨平台）：
+//   Mesh SDF + Global DF cone march
+//   LumenSoftwareRayTracing.ush
+
+// 硬件光追（可选，需 RT 硬件）：
+//   LumenHardwareRayTracingCommon.ush
+//   对接 RHI RayTracing（TLAS/BLAS）
+//   命中后仍采 Surface Cache 取表面光照
+//   -> 更精确（无 SDF 近似误差），但更贵
+
+// 边界：追踪接口统一，后端可切换
+//   Surface Cache 作为"光照数据"两者共用</textarea><div class="note"><h3>说明</h3><p>Lumen 的追踪后端有两条，边界设计得很干净：<b>软件追踪</b>（默认、跨平台）用 Mesh SDF + Global DF 的 cone march；<b>硬件光追 HWRT</b>（需 RT 硬件）对接 RHI 的 TLAS/BLAS 做精确求交。关键在于两者<b>命中后都采同一份 Surface Cache</b> 取表面光照——追踪只负责"射线打到哪"，光照数据是共用的。所以切换软/硬追踪不影响 GI 的其余管线，只改变命中精度与开销。HWRT 无 SDF 近似误差（薄物体/接触阴影更准），但更贵。</p></div></div></section>
+
+<section class="card"><h2>系统边界总表</h2><div class="body"><table class="table"><thead><tr><th>方向</th><th>外部系统</th><th>跨界数据 / 接口</th></tr></thead><tbody>
+<tr><td>上游</td><td>Deferred BasePass</td><td>GBuffer（depth/normal/roughness/albedo）</td></tr>
+<tr><td>上游</td><td>Nanite</td><td>visbuffer + ShadingBin → 卡片捕获</td></tr>
+<tr><td>上游</td><td>Global Distance Field</td><td>场景 clipmap SDF → 远场 cone march</td></tr>
+<tr><td>上游</td><td>Velocity / PrePass</td><td>velocity buffer → 时域降噪重投影</td></tr>
+<tr><td>下游</td><td>光照合成</td><td>Diffuse Indirect + Specular</td></tr>
+<tr><td>下游</td><td>TSR / DLSS</td><td>时序上采样收敛残余噪声</td></tr>
+<tr><td>可切换</td><td>RHI RayTracing</td><td>HWRT 后端（命中仍采 Surface Cache）</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>把 Lumen 放回整帧来看，它是渲染管线中间<b>承上启下的一层</b>：吃 Deferred 的 GBuffer、Nanite 的几何、Global DF 的场景 SDF、velocity 的时序信息，产出 diffuse indirect 与 specular，再交给光照合成与 TSR。它的诸多"限制"（必须 Deferred、依赖 TSR、需要 velocity 准确）本质是这些边界耦合的必然结果，而非任意规定。理解边界的价值在于排障：画面鬼影往往是 velocity/时序问题、间接光缺失可能是 Surface Cache 捕获不到（Mesh Cards 问题）、远处漏光多半是 Global DF 精度——把症状对应到边界，就能快速定位是 Lumen 内部还是外部系统的锅。调试实战见 <a href="LumenPerfDebug_ConvergenceAnnotated.html">性能与调试实战</a>。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="LumenSystemBoundaries_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇接口附录</a><a class="tag" href="LumenSurfaceCacheGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>Surface Cache GPU</a><a class="tag" href="LumenReflectionsGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>Reflections GPU</a><a class="tag" href="LumenPerfDebug_ConvergenceAnnotated.html"><span class="dot" style="background:var(--yellow)"></span>性能与调试实战</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>

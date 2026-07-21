@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Final Gather GPU 算法篇 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:660px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Final Gather GPU 算法篇 · Screen Probe + Radiance Cache 的 .usf 本体</h1><div class="subtitle">中层的 <b>Screen Probe Gather 五阶段</b>（SPG）在 CPU 侧讲的是"调度顺序"。本页下沉到 GPU：屏幕探针追踪、时空滤波、SH 转 irradiance 到底怎么算，以及世界空间 <b>Radiance Cache</b> 的 probe 生命周期与 clipmap 间接寻址。两组 shader：① <span class="inline">LumenScreenProbe*.usf</span>（八面体映射追踪 → 复合散射 → 时域累积 → 空域滤波 → ConvertToIrradiance）；② <span class="inline">LumenRadianceCache*.usf</span>（BRDF 散射到 probe → trace tile 树细分 → 方向 bin 排序 → 追踪 → 6 邻居 clipmap 滤波 → probe 生命周期管理）。所有函数名、常量、权重公式取自源码。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/滤波</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/追踪</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/资源</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>持久化/缓存</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁/预算</span></div></section>
+
+<section class="card"><h2>一眼看懂：Final Gather GPU 两组</h2><div class="body flow"><div class="node orange"><strong>ProbeTracing</strong><small>八面体映射级联追踪。</small></div><div class="node cyan"><strong>CompositeTraces</strong><small>蓝噪声散射。</small></div><div class="node green"><strong>Temporal</strong><small>历史重投影累积。</small></div><div class="node green"><strong>GatherFilter</strong><small>角度权重空域滤波。</small></div><div class="node cyan"><strong>ConvertToIrr</strong><small>SH3(9系数)/OCT。</small></div><div class="node orange"><strong>RC TraceTiles</strong><small>树细分+方向 bin 排序。</small></div><div class="node green"><strong>RC Filter</strong><small>6 邻居 occlusion。</small></div><div class="node cyan"><strong>RC 生命周期</strong><small>probe 分配/回收。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"屏幕探针与世界 probe 各自怎么产出光照"。逐函数细节——每个 CS 的入口/线程组、EquiAreaSphericalMapping 八面体映射、时域权重 PositionWeight、空域角度权重、ConvertToIrradiance 的 SH3/OCT、ConeHalfAngle 公式、方向 bin 排序、probe 分配/回收——放在函数附录。</p><a class="tag" href="LumenFinalGatherGPU_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 Final Gather GPU 函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：GPU 篇与五阶段 CPU 篇的对应</h2><div class="body"><p>本页是 <a href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html">Screen Probe Gather 主流程</a>及其五个子阶段（<a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">③ 追踪</a>、<a href="LumenFilterScreenProbes_ConvergenceAnnotated.html">④ 滤波</a>等）的 <b>GPU 实现下钻</b>。CPU 主题讲"先追踪、再滤波、最后落地"的调度顺序与 tile 分类；本页讲这些 pass 派发的 shader 内部数学：追踪如何用八面体映射编码方向、滤波如何用角度/深度权重、SH 如何压 9 系数。同时补上 <a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a> 的 GPU 侧——它给屏幕探针提供"远场兜底"，两者在 ③ 追踪级联的最后一层汇合。</p></div></section>
+
+<section class="card"><h2>完整源码对照（屏幕探针追踪 + 时域累积骨架）</h2><div class="body"><p>屏幕探针追踪的方向编码与时域历史重投影骨架（保留真实符号）。</p><span class="source-path">Engine/Shaders/Private/Lumen/LumenScreenProbeTracing.usf · LumenScreenProbeFiltering.usf</span><textarea class="codebox large" readonly spellcheck="false">// ===== 八面体映射：把球面方向编码进正方形 tile =====
+// LumenScreenProbeTracing.usf
+// 每个探针是一张 NxN 的方向图，每个 texel 一条射线
+float2 ProbeTexelCenter = (TexelCoord + 0.5) / ProbeTracingResolution;
+float3 WorldConeDirection = EquiAreaSphericalMapping(ProbeTexelCenter);
+// EquiAreaSphericalMapping：等面积八面体映射
+//   保证每个 texel 覆盖等立体角 -> 采样无偏
+
+// ===== 级联追踪：屏幕 → MeshSDF/HWRT → Voxel+RadianceCache =====
+void ScreenProbeTraceScreenTexturesCS(...) {
+    // HZB 级联或 CastScreenSpaceRay 固定步长
+    // 命中 -> EncodeProbeRayDistance 写距离
+}
+// ScreenProbeCompactTracesCS：压实未命中光线，交给下一级更贵的后端
+
+// ===== 时域累积：历史重投影 + 深度权重 =====
+// LumenScreenProbeFiltering.usf
+void ScreenProbeTemporallyAccumulateTraceRadianceCS(...) {
+    // 重投影到上帧探针
+    float RelativeDepthDifference = ...;
+    float PositionWeight = exp2(-10000.0 * Pow2(RelativeDepthDifference));
+    // 深度对不上 -> 权重骤降 -> 丢弃历史（防鬼影）
+    Radiance = lerp(CurrentRadiance, HistoryRadiance, HistoryWeight * PositionWeight);
+}
+</textarea></div></section>
+
+<section class="card"><h2>1. 屏幕探针追踪：八面体映射 + 级联</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeTracing.usf entry points：
+
+// ScreenProbeTraceScreenTexturesCS
+//   屏幕空间追踪：HZB 级联 或 CastScreenSpaceRay 固定步长
+//   最便宜的一层，命中就不用追世界
+
+// TraceMeshSDFs / TraceVoxels
+//   屏内没命中 -> 追 Mesh SDF（近场）-> Voxel Global SDF（远场）
+
+// ScreenProbeCompactTracesCS
+//   每级之间压实未命中光线
+//   （只把还没命中的射线传给下一级更贵的后端）
+
+// 方向编码：EquiAreaSphericalMapping
+//   等面积八面体映射，每 texel 等立体角
+// 距离编码：EncodeProbeRayDistance</textarea><div class="note"><h3>说明</h3><p>屏幕探针是"稀疏放在屏幕上、每个探针发一把射线"的结构。每个探针是一张 N×N 方向图，texel 坐标经 <span class="inline">EquiAreaSphericalMapping</span>（等面积八面体映射）转成世界方向——等面积保证每条射线覆盖相同立体角，采样无偏。</p><p>追踪走<b>从廉价到昂贵的级联</b>：<span class="inline">ScreenProbeTraceScreenTexturesCS</span> 先在屏幕空间追（HZB 或固定步长），命中就收工；未命中的经 <span class="inline">ScreenProbeCompactTracesCS</span> 压实后交给 <span class="inline">TraceMeshSDFs</span>（近场）、再到 <span class="inline">TraceVoxels</span>（远场 Global SDF + Radiance Cache 兜底）。压实是关键优化：每级只处理"还没命中"的射线，避免已命中的浪费下一级昂贵后端。详见 <a href="LumenTraceScreenProbes_ConvergenceAnnotated.html">③ 追踪</a>。</p></div></div></section>
+
+<section class="card"><h2>2. 时空滤波：从噪声到平滑信号</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeFiltering.usf
+
+// ① ScreenProbeCompositeTracesWithScatterCS
+//    蓝噪声抖动，把 trace 结果散射进 radiance 图
+
+// ② ScreenProbeTemporallyAccumulateTraceRadianceCS
+//    历史重投影 + 深度权重：
+//    PositionWeight = exp2(-10000 * RelativeDepthDifference^2)
+
+// ③ ScreenProbeFilterGatherTracesCS
+//    4-tap 十字 或 +8-tap 强滤波
+//    角度权重：
+//    AngleWeight = 1 - saturate(NeighborAngle
+//                    / SpatialFilterMaxRadianceHitAngle)
+
+// ④ ScreenProbeConvertToIrradianceCS
+//    SH3（9 系数）或 Octahedron
+//    NUM_LIGHTING_SH_COEFFICIENTS = 9</textarea><div class="note"><h3>说明</h3><p>追踪结果很稀疏很噪，滤波把它磨平。<b>①</b> <span class="inline">CompositeTracesWithScatterCS</span> 用蓝噪声抖动把射线结果散射进 radiance 图（散射比聚集更 cache 友好）。<b>②</b> 时域累积把当前帧和重投影的历史混合，权重 <span class="inline">PositionWeight = exp2(-10000·ΔDepth²)</span>——深度对不上（disocclusion）时权重骤降，丢弃历史防鬼影。<b>③</b> 空域滤波用 4-tap 十字或 +8-tap 强核，<span class="inline">AngleWeight</span> 按邻居命中方向的夹角衰减（夹角超过 <span class="inline">SpatialFilterMaxRadianceHitAngle</span> 就归零），避免把不同方向的光糊在一起。<b>④</b> <span class="inline">ConvertToIrradianceCS</span> 把 radiance 图压成 SH3（9 系数）或八面体纹理。详见 <a href="LumenFilterScreenProbes_ConvergenceAnnotated.html">④ 滤波</a>。</p></div></div></section>
+
+<section class="card"><h2>3. 重要性采样：固定预算的方向分配</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeImportanceSampling.usf
+
+// ScreenProbeComputeLightingProbabilityDensityFunctionCS
+//   算每个方向的 PDF（BRDF PDF x 可选 Lighting PDF）
+
+// ScreenProbeGenerateRaysCS
+//   O(N^2) 并行排序按 PDF 升序
+//   UniformLevel 细分：每 3 条低 PDF 换 1 条高 PDF
+//   高 PDF 方向细分为 2x2 四条
+
+// LumenScreenProbeGatherScreenData.usf
+//   ScreenProbeGatherScreenDataCS
+//     BRDF PDF + CalcDiffuseTransferSH3 + 并行归约</textarea><div class="note"><h3>说明</h3><p>光线预算是固定的，要花在刀刃上。<span class="inline">ComputeLightingPDF</span> 先算每个方向的价值（BRDF PDF，可乘上帧的 Lighting PDF），<span class="inline">GenerateRaysCS</span> 用 O(N²) 并行排序把方向按 PDF 升序排列，然后做"3 换 1"细分：剔掉 3 条低 PDF 方向、把预算给 1 条高 PDF 方向并细分成 2×2 四条子射线。这样总射线数不变，但都集中到了高价值方向。详见 <a href="LumenGenerateImportanceSamplingRays_ConvergenceAnnotated.html">② 重要性采样</a>。</p></div></div></section>
+
+<section class="card"><h2>4. Radiance Cache：世界空间 probe 缓存</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenRadianceCache.usf —— clipmap 三级间接寻址
+
+// ScatterScreenProbeBRDFToRadianceProbesCS
+//   屏幕探针的 BRDF 需求散射到世界 probe（谁需要就标记）
+
+// GenerateAdaptiveProbeTraceTilesCS
+//   trace tile 树细分（高需求 probe 细分更多 tile）
+// SortProbeTraceTilesCS
+//   按方向 bin 排序，NUM_DIRECTION_BINS_2D = 8
+
+// TraceFromProbesCS
+//   ConeHalfAngle = acosFast(1 - 1/(TraceResolution^2))
+//   逐 trace tile 追世界，采 Surface Cache
+
+// FilterProbeRadianceWithGatherCS
+//   6 邻居 clipmap + 双向 occlusion 测试
+// CalculateProbeIrradianceCS / FixupBordersAndGenerateMipsCS
+
+// LumenRadianceCacheUpdate.usf —— probe 生命周期
+//   ClearProbeFreeListCS / UpdateCacheForUsedProbesCS
+//   AllocateUsedProbesCS</textarea><div class="note"><h3>说明</h3><p>Radiance Cache 是以相机为中心、clipmap 分级的世界空间 probe 缓存，给屏幕探针提供远场兜底。数据流：<span class="inline">ScatterScreenProbeBRDFToRadianceProbesCS</span> 让屏幕探针把"我需要哪个世界 probe"的需求散射标记出来 → <span class="inline">GenerateAdaptiveProbeTraceTilesCS</span> 按需求把 probe 的追踪任务树细分成 trace tile（高需求 probe 分更多 tile）→ <span class="inline">SortProbeTraceTilesCS</span> 按方向 bin（<span class="inline">NUM_DIRECTION_BINS_2D=8</span>）排序改善 trace 一致性 → <span class="inline">TraceFromProbesCS</span> 逐 tile 追世界（<span class="inline">ConeHalfAngle=acosFast(1-1/TraceRes²)</span>）→ <span class="inline">FilterProbeRadianceWithGatherCS</span> 用 6 个 clipmap 邻居 + 双向 occlusion 测试滤波。</p><p><span class="inline">LumenRadianceCacheUpdate.usf</span> 管 probe 生命周期：<span class="inline">ClearProbeFreeListCS</span> 清空闲列表、<span class="inline">UpdateCacheForUsedProbesCS</span> 标记本帧用到的、<span class="inline">AllocateUsedProbesCS</span> 分配。这套"persistent + budget"让 probe 跨帧存活、每帧只重追一小部分。详见 <a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a>。</p><p><span class="note-label common">共同点</span>trace tile 树细分 + 方向 bin 排序的思路，和屏幕探针的重要性采样"把预算集中到高价值方向"是同一哲学——只是一个在世界空间 probe、一个在屏幕探针。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>点</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>EquiAreaSphericalMapping</td><td>发散</td><td>等面积八面体映射编码探针方向</td></tr>
+<tr><td>ScreenProbeCompactTracesCS</td><td>门禁</td><td>级联间压实未命中光线</td></tr>
+<tr><td>PositionWeight (exp2)</td><td>门禁</td><td>深度不匹配丢历史防鬼影</td></tr>
+<tr><td>ScreenProbeConvertToIrradianceCS</td><td>汇聚</td><td>SH3(9系数)/OCT 压方向光照</td></tr>
+<tr><td>SortProbeTraceTilesCS</td><td>汇聚</td><td>方向 bin 排序改善 trace 一致性</td></tr>
+<tr><td>AllocateUsedProbesCS</td><td>持久化</td><td>probe 跨帧存活的分配/回收</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>Final Gather 的 GPU 侧是"稀疏采样 + 时空复用"的极致。<b>屏幕探针</b>用等面积八面体映射编码方向、从屏幕到 Mesh SDF 到 Voxel 级联追踪、每级压实未命中光线；再经蓝噪声散射、深度权重时域累积、角度权重空域滤波，最后压成 SH3（9 系数）或八面体纹理。<b>重要性采样</b>用并行排序把固定预算"3 换 1"集中到高价值方向。<b>Radiance Cache</b> 则是世界空间的 persistent probe 缓存：BRDF 需求散射 → trace tile 树细分 → 方向 bin 排序 → cone 追踪 → 6 邻居 occlusion 滤波 → 生命周期管理，给屏幕探针提供远场兜底。理解这一层，就理解了 Lumen 漫反射 GI 为何能在有限射线预算下产出稳定平滑的间接光——答案是"稀疏追踪的噪声，全靠时空滤波和 SH 压缩磨平"。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenFinalGatherGPU_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>Final Gather GPU 函数附录</a><a class="tag" href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>Screen Probe Gather 主流程</a><a class="tag" href="LumenTraceScreenProbes_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>③ 追踪</a><a class="tag" href="LumenFilterScreenProbes_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>④ 滤波</a><a class="tag" href="LumenRadianceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>Radiance Cache(CPU)</a><a class="tag" href="LumenSurfaceCacheGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--pink)"></span>Surface Cache GPU 篇</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML.replace(/(共同点)：/g,'<span class="note-label common">$1</span>').replace(/(不同点)：/g,'<span class="note-label diff">$1</span>');
+});
+</script>
+</body></html>

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Final Gather GPU 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Final Gather GPU 函数算法附录</h1><div class="subtitle">配合主文档使用。逐一展开屏幕探针追踪的方向编码与级联、时空滤波的权重公式、SH 转 irradiance、以及 Radiance Cache 的 trace tile 树细分、方向 bin 排序、ConeHalfAngle 与 probe 生命周期的 shader 入口、线程组尺寸与核心常量。所有符号取自 Engine/Shaders/Private/Lumen/ 下的 .usf。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenFinalGatherGPU_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 Final Gather GPU 主文档</a><a class="tag" href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>对照：Screen Probe Gather 主流程(CPU)</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">LumenScreenProbeTracing.usf · LumenScreenProbeFiltering.usf · LumenScreenProbeImportanceSampling.usf · LumenScreenProbeGatherScreenData.usf · LumenRadianceCache.usf · LumenRadianceCacheUpdate.usf</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#trace">1. ScreenProbeTraceScreenTexturesCS</a><a href="#compact">2. CompactTraces 级联压实</a><a href="#is">3. ImportanceSampling 生成射线</a><a href="#temporal">4. TemporallyAccumulate 时域</a><a href="#gather">5. FilterGatherTraces 空域</a><a href="#irr">6. ConvertToIrradiance SH3</a><a href="#rctile">7. RC trace tile 树细分</a><a href="#rcsort">8. SortProbeTraceTiles 方向 bin</a><a href="#rctrace">9. TraceFromProbes ConeHalfAngle</a><a href="#rclife">10. probe 生命周期</a><a href="#Rel">函数关系表</a></div></section>
+
+<section id="trace" class="card"><h2>1. ScreenProbeTraceScreenTexturesCS</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeTracing.usf
+// 每个探针 = NxN 方向图，一 texel 一射线
+float2 ProbeTexelCenter = (Coord + 0.5) / ProbeTracingResolution;
+float3 Dir = EquiAreaSphericalMapping(ProbeTexelCenter);
+// 等面积八面体映射 -> 每 texel 等立体角，采样无偏
+
+void ScreenProbeTraceScreenTexturesCS(...) {
+    // 屏幕空间 HZB 级联 或 CastScreenSpaceRay 固定步长
+    // 命中 -> EncodeProbeRayDistance 写距离
+}
+// 后端级联：
+//   TraceMeshSDFs   近场 Mesh SDF
+//   TraceVoxels     远场 Global SDF + RadianceCache 兜底</textarea><div class="note"><h3>说明</h3><p>屏幕探针追踪的入口。方向由 <span class="inline">EquiAreaSphericalMapping</span> 从 texel 坐标解码——等面积映射保证每条射线覆盖相同立体角，积分无偏。追踪从最廉价的屏幕空间开始：HZB 级联或固定步长 <span class="inline">CastScreenSpaceRay</span>，命中即用 <span class="inline">EncodeProbeRayDistance</span> 编码距离；未命中的交给更贵的 <span class="inline">TraceMeshSDFs</span>（近场）与 <span class="inline">TraceVoxels</span>（远场，Radiance Cache 兜底）。</p></div></div></section>
+
+<section id="compact" class="card"><h2>2. CompactTraces 级联压实</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeTracing.usf
+void ScreenProbeCompactTracesCS(...) {
+    // 每级追踪之间：只把"尚未命中"的射线
+    // 紧凑打包进 CompactedTraceTexelData
+    // -> 下一级更贵后端仅处理这些
+}
+// 效果：MeshSDF/Voxel 后端的 dispatch 尺寸
+//       = 剩余未命中射线数，而非全部射线</textarea><div class="note"><h3>说明</h3><p>级联的关键优化。若不压实，每一级后端都要对全部射线 dispatch，已命中的白白浪费。<span class="inline">ScreenProbeCompactTracesCS</span> 在每两级之间把未命中射线紧凑收集，使下一级（更昂贵的 Mesh SDF / Voxel）只对剩余射线发起 dispatch。廉价级先吃掉大部分命中，昂贵级只处理"难啃的骨头"。</p></div></div></section>
+
+<section id="is" class="card"><h2>3. ImportanceSampling 生成射线</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeImportanceSampling.usf
+void ScreenProbeComputeLightingProbabilityDensityFunctionCS(...);
+//   结合 BRDF + 上帧光照，算每方向的 PDF
+
+void ScreenProbeGenerateRaysCS(...) {
+    // O(N^2) 并行排序按 PDF 分配射线预算
+    // "3 换 1"：一个高 PDF 方向细分成 2x2
+    //           从 3 个低 PDF 方向借配额
+}</textarea><div class="note"><h3>说明</h3><p>重要性采样让射线预算集中到"更亮/更有贡献"的方向。先由 <span class="inline">ComputeLightingProbabilityDensityFunctionCS</span> 用 BRDF 与上帧光照估计每个方向的 PDF，再由 <span class="inline">ScreenProbeGenerateRaysCS</span> 做一次 O(N²) 并行排序、按 PDF 重新分配固定的射线总预算。所谓"3 换 1"：把一个高 PDF 方向细分成 2×2 子方向，代价是从 3 个低 PDF 方向各回收一条射线，总数守恒。</p></div></div></section>
+
+<section id="temporal" class="card"><h2>4. TemporallyAccumulate 时域</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeFiltering.usf
+void ScreenProbeTemporallyAccumulateTraceRadianceCS(...) {
+    // 重投影到上帧探针
+    float RelativeDepthDifference = ...;
+    float PositionWeight =
+        exp2(-10000.0 * Pow2(RelativeDepthDifference));
+    // 深度对不上 -> 权重骤降 -> 丢历史（防鬼影）
+    Radiance = lerp(Current, History,
+                    HistoryWeight * PositionWeight);
+}
+// 前置：ScreenProbeCompositeTracesWithScatterCS
+//       蓝噪声抖动散射 trace 结果</textarea><div class="note"><h3>说明</h3><p>时域累积把多帧噪声射线平均成稳定信号。先由 <span class="inline">CompositeTracesWithScatterCS</span> 用蓝噪声抖动把稀疏 trace 散射进 radiance 图，再重投影到上帧探针。<span class="inline">PositionWeight = exp2(-10000·ΔDepth²)</span> 是防鬼影的核心：深度差稍大权重就指数级坍缩到 0，历史被丢弃，避免运动边缘拖影。</p></div></div></section>
+
+<section id="gather" class="card"><h2>5. FilterGatherTraces 空域</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeFiltering.usf
+void ScreenProbeFilterGatherTracesCS(...) {
+    // 邻居探针方向加权
+    float AngleWeight = 1.0 - saturate(
+        NeighborAngle / SpatialFilterMaxRadianceHitAngle);
+    // 命中点方向偏差越大权重越低
+    // -> 只混"看向同一片"的邻居
+}</textarea><div class="note"><h3>说明</h3><p>空域滤波在时域之后，跨邻近探针混合以进一步降噪。权重用<b>命中点角度</b>而非简单距离：<span class="inline">AngleWeight = 1 - saturate(NeighborAngle / MaxRadianceHitAngle)</span>——邻居命中的方向若与本探针偏差过大就不参与，保证只混合"看向同一片几何/光照"的样本，避免把不同表面的光照糊到一起。</p></div></div></section>
+
+<section id="irr" class="card"><h2>6. ConvertToIrradiance SH3</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScreenProbeFiltering.usf
+#define NUM_LIGHTING_SH_COEFFICIENTS 9   // SH3 = 3 band
+void ScreenProbeConvertToIrradianceCS(...) {
+    // 把方向 radiance 图投影成
+    //   SH3（9 系数）或 Octahedral
+}
+// LumenScreenProbeGatherScreenData.usf
+void ScreenProbeGatherScreenDataCS(...) {
+    // 逐像素采探针 SH，CalcDiffuseTransferSH3(N,1)
+    // 点积 -> 该像素漫反射 irradiance
+}</textarea><div class="note"><h3>说明</h3><p>最终把每探针的方向 radiance 压成紧凑表示：<span class="inline">SH3</span>（3 阶球谐 9 系数）或 Octahedral 贴图。落地时 <span class="inline">ScreenProbeGatherScreenDataCS</span> 对每个屏幕像素插值邻近探针的 SH，与 <span class="inline">CalcDiffuseTransferSH3(Normal, 1.0)</span> 做点积得到漫反射 irradiance。SH3 用极小存储换取平滑的半球积分，是漫反射 GI 的标准压缩。</p></div></div></section>
+
+<section id="rctile" class="card"><h2>7. RC trace tile 树细分</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenRadianceCache.usf
+void ScatterScreenProbeBRDFToRadianceProbesCS(...);
+//   屏幕探针 BRDF 需求 -> 标记要用的世界 probe
+
+void GenerateAdaptiveProbeTraceTilesCS(...) {
+    // probe 的方向球面按需细分成 trace tile
+    // 高频/近处方向细分更密（树状）
+}</textarea><div class="note"><h3>说明</h3><p>Radiance Cache 是世界空间的稀疏 probe 缓存，给屏幕探针提供远场兜底。<span class="inline">ScatterScreenProbeBRDFToRadianceProbesCS</span> 把屏幕侧的 BRDF 需求散射标记到相关世界 probe。<span class="inline">GenerateAdaptiveProbeTraceTilesCS</span> 按需把 probe 的方向球面细分成 trace tile——需要更精细的方向细分更密，形成树状自适应结构，避免均匀高分辨率的浪费。</p></div></div></section>
+
+<section id="rcsort" class="card"><h2>8. SortProbeTraceTiles 方向 bin</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenRadianceCache.usf
+#define NUM_DIRECTION_BINS_2D 8
+void SortProbeTraceTilesCS(...) {
+    // 按方向 bin（8x8 方向桶）对 trace tile 排序
+    // -> 同向射线聚在一起
+    // -> 追踪时 warp 内相干，命中缓存友好
+}</textarea><div class="note"><h3>说明</h3><p>GPU 追踪的性能取决于 warp 内射线的相干性。<span class="inline">SortProbeTraceTilesCS</span> 把待追踪 tile 按方向桶（<span class="inline">NUM_DIRECTION_BINS_2D=8</span>，即 8×8 方向分箱）排序，使方向相近的射线在 dispatch 中相邻。同向射线遍历相似的 SDF/voxel 内存区域，显著提升缓存命中与 warp 执行相干性。</p></div></div></section>
+
+<section id="rctrace" class="card"><h2>9. TraceFromProbes ConeHalfAngle</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenRadianceCache.usf
+void TraceFromProbesCS(...) {
+    // 每条 probe 射线是一个 cone
+    float ConeHalfAngle =
+        acosFast(1.0 - 1.0 / (TraceResolution*TraceResolution));
+    // 分辨率越高 -> cone 越细 -> 越精确
+    ... ConeTrace(...) // 走公共 cone march
+}
+void FilterProbeRadianceWithGatherCS(...);
+//   6 邻居 clipmap 滤波 + occlusion
+void CalculateProbeIrradianceCS(...);
+void FixupBordersAndGenerateMipsCS(...);</textarea><div class="note"><h3>说明</h3><p>probe 追踪用 cone 而非纯射线，<span class="inline">ConeHalfAngle = acosFast(1 - 1/TraceRes²)</span>：追踪分辨率越高锥角越细、越精确。追踪后 <span class="inline">FilterProbeRadianceWithGatherCS</span> 用 6 个 clipmap 邻居做带 occlusion 的滤波（防漏光），<span class="inline">CalculateProbeIrradianceCS</span> 算辐照度，<span class="inline">FixupBordersAndGenerateMipsCS</span> 修边并生成 mip 供不同距离采样。cone march 本体见 <a href="LumenReflectionsGPU_FunctionAppendix.html">Reflections GPU 附录·公共追踪</a>。</p></div></div></section>
+
+<section id="rclife" class="card"><h2>10. probe 生命周期</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenRadianceCacheUpdate.usf
+void ClearProbeFreeListCS(...);
+//   初始化空闲 probe 链表
+
+void UpdateCacheForUsedProbesCS(...) {
+    // 本帧被引用的 probe -> 标记 used，刷新寿命
+}
+void AllocateUsedProbesCS(...) {
+    // 新需求的 probe -> 从 free list 分配 clipmap 槽
+    // 长期未用 -> 回收进 free list
+}
+// clipmap 三级间接寻址定位物理槽</textarea><div class="note"><h3>说明</h3><p>Radiance Cache 的 probe 数量有限，靠生命周期管理动态复用。<span class="inline">ClearProbeFreeListCS</span> 建空闲链表；<span class="inline">UpdateCacheForUsedProbesCS</span> 把本帧被引用的 probe 标记 used 并刷新寿命；<span class="inline">AllocateUsedProbesCS</span> 为新需求从 free list 分配 clipmap 物理槽，长期未用的回收。定位物理槽走 clipmap 三级间接寻址（clipmap → indirection → 物理 atlas），兼顾近处高密度与远处稀疏。</p></div></div></section>
+
+<section id="Rel" class="card"><h2>函数关系表</h2><div class="body"><table class="table"><thead><tr><th>阶段</th><th>函数</th><th>产出 / 下游</th></tr></thead><tbody>
+<tr><td>屏幕追踪</td><td>ScreenProbeTraceScreenTexturesCS → CompactTraces → TraceMeshSDFs/TraceVoxels</td><td>每探针方向 radiance（未滤波）</td></tr>
+<tr><td>重要性采样</td><td>ComputeLightingPDF → GenerateRaysCS</td><td>按 PDF 分配的射线方向（追踪前置）</td></tr>
+<tr><td>时空滤波</td><td>CompositeTracesWithScatter → TemporallyAccumulate → FilterGatherTraces</td><td>去噪后的探针 radiance</td></tr>
+<tr><td>落地</td><td>ConvertToIrradianceCS → GatherScreenDataCS</td><td>逐像素漫反射 irradiance（SH3）</td></tr>
+<tr><td>RC 准备</td><td>ScatterBRDFToProbes → GenerateAdaptiveTraceTiles → SortProbeTraceTiles</td><td>排序后的 probe trace tile</td></tr>
+<tr><td>RC 追踪滤波</td><td>TraceFromProbes → FilterWithGather → CalculateIrradiance → FixupBorders</td><td>世界 probe radiance/irradiance + mip</td></tr>
+<tr><td>RC 生命周期</td><td>ClearFreeList → UpdateForUsedProbes → AllocateUsedProbes</td><td>clipmap 物理槽分配/回收</td></tr>
+</tbody></table></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>

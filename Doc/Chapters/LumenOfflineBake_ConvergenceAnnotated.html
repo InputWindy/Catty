@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>离线烘焙 · Mesh Cards / Distance Field 构建 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:660px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>离线烘焙 · Mesh Cards 与 Distance Field 的构建（CPU / 编辑器侧）</h1><div class="subtitle">前面所有主题讲的都是"运行时"。但 Lumen 能在运行时便宜地追踪，靠的是<b>离线烘焙好的两份资产</b>：① <b>Mesh Cards</b>——每个网格 6 方向、最多 32 张卡片的 OBB 布局，靠 Embree 光线投射 + Surfel 聚类生成（<span class="inline">MeshCardRepresentation.cpp</span> / <span class="inline">MeshCardRepresentationUtilities.cpp</span>）；② <b>Mesh Distance Field</b>——稀疏 brick 距离场，靠 Embree point query + intersect 采样、内外判定生成（<span class="inline">MeshDistanceFieldUtilities.cpp</span> / <span class="inline">DistanceFieldAtlas.cpp</span>）。两者都走 DDC（Derived Data Cache）缓存，改网格才重建。本页讲这条离线流水的算法与关键常量，所有符号取自引擎 C++ 源码。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>聚类/汇聚</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>采样/发散</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入网格</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>DDC 缓存</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出资产</span><span class="tag"><span class="dot" style="background:var(--red)"></span>Embree 光追</span></div></section>
+
+<section class="card"><h2>一眼看懂：离线烘焙两条线</h2><div class="body flow"><div class="node blue"><strong>网格三角形</strong><small>LOD0 顶点/索引。</small></div><div class="node red"><strong>Embree 场景</strong><small>rtcIntersect1。</small></div><div class="node orange"><strong>GenerateSurfels</strong><small>6 方向体素化。</small></div><div class="node green"><strong>聚类 Clusters</strong><small>按覆盖率合并。</small></div><div class="node out"><strong>Mesh Cards</strong><small>≤32 张 OBB。</small></div><div class="node red"><strong>PointQuery</strong><small>最近距离+内外。</small></div><div class="node cyan"><strong>稀疏 Brick</strong><small>7³ 唯一 brick。</small></div><div class="node out"><strong>Mesh DF</strong><small>3 mip 距离场。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"两份资产为什么这样烘、算法主干如何走"。逐函数细节——GetAxisAlignedDirection 的 6 方向、GenerateSurfelsForDirection 的 32 采样与可见性剔除、InitClusteringParams、BuildSurfelClusters/LimitClusters、BuildSignedDistanceField 的采样数与内外判定、稀疏 brick 常量、DDC key 生成——放在函数附录。</p><a class="tag" href="LumenOfflineBake_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 离线烘焙 函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：运行时的"便宜"是离线换来的</h2><div class="body"><p>Lumen 运行时能用 Surface Cache 采表面材质、用 Distance Field 做 cone march，前提是这两份数据<b>已经烘好躺在资产里</b>。烘焙发生在导入网格 / 编辑器 cook 阶段，是 CPU 密集的离线过程，产物进 DDC 缓存——只要网格与烘焙参数不变，后续加载直接命中缓存不重算。Mesh Cards 决定"这个网格从哪几个方向能被 Surface Cache 捕获"（见 <a href="LumenMeshCards_ConvergenceAnnotated.html">Mesh Cards 运行时</a>），Mesh Distance Field 决定"射线怎么和这个网格求交"（见 <a href="LumenDistanceField_ConvergenceAnnotated.html">Distance Field 场景表示</a>）。本页是这两者的<b>生产端</b>。共同点是都重度依赖 <span class="inline">Embree</span>（Intel 的 CPU 光追库，<span class="inline">USE_EMBREE</span>）做几何查询，都用 <span class="inline">ParallelFor</span> 并行、都走 DDC。</p></div></section>
+
+<section class="card"><h2>完整源码对照（Mesh Cards 生成主干）</h2><div class="body"><p>从网格到卡片的主干：6 方向各生成 surfel、聚类、限制到 32 张卡片，保留真实符号。</p><span class="source-path">Engine/Source/.../MeshCardRepresentation.cpp · MeshCardRepresentationUtilities.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ===== 卡片方向：6 个轴对齐方向 =====
+// MeshCardRepresentationUtilities.cpp
+namespace MeshCardGen {
+    const int32 NumAxisAlignedDirections = 6;   // ±X ±Y ±Z
+    const int32 MaxCardsPerMesh = 32;
+}
+
+// ===== Surfel：某方向上的一个表面采样点 =====
+struct FSurfel {
+    FIntVector Coord;          // 体素坐标
+    float      MinRayZ;        // 沿方向的最近命中深度
+    float      Coverage;       // 覆盖度
+    float      WeightedCoverage;
+};
+
+// ===== 主干：为每个方向体素化出 surfel，再聚类成卡片 =====
+void BuildMeshCards(...) {
+    for (int32 Dir = 0; Dir < NumAxisAlignedDirections; ++Dir) {
+        // 沿该方向发正交射线穿过网格包围盒
+        // rtcIntersect1 命中 -> 记录 surfel（NumSurfelSamples=32）
+        GenerateSurfelsForDirection(Dir, ...);
+        // 半球 32 射线做背面剔除，算可见性
+        ComputeSurfelVisibility(...);
+    }
+    // 把 surfel 聚成簇（TargetVoxelSize=10, MaxVoxels=64）
+    InitClusteringParams(...);
+    BuildSurfelClusters(...);
+    // 按 WeightedCoverage 排序，裁到 MaxCardsPerMesh=32
+    LimitClusters(...);
+    // 每簇拟合一个 OBB -> FLumenCardBuildData
+    SerializeLOD(...);
+}
+// 入口：GenerateCardRepresentationData(...)
+// TargetNumSurfels ≈ 10000（采样密度目标）
+</textarea></div></section>
+
+<section class="card"><h2>1. Mesh Cards：从 Surfel 到 6 方向卡片</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// MeshCardRepresentation.cpp
+CVarCardRepresentationMinDensity     = 0.2
+CVarCardRepresentationNormalTreshold = 0.25
+
+// GetAxisAlignedDirection() -> 6 方向之一
+// SetCardsFromBounds() -> 用包围盒 6 面初始化 OBB
+
+// MeshCardRepresentationUtilities.cpp
+// GenerateSurfelsForDirection:
+//   NumSurfelSamples = 32
+//   沿方向正交投射，Embree 命中体素化成 surfel
+// ComputeSurfelVisibility:
+//   半球 32 射线，背面剔除
+// InitClusteringParams:
+//   TargetVoxelSize = 10, MaxVoxels = 64
+// LimitClusters: 按 WeightedCoverage 排序裁 32</textarea><div class="note"><h3>说明</h3><p>Mesh Cards 的本质是"把复杂网格近似成几张有向矩形卡片"，供 Surface Cache 从有限方向捕获材质。生成分三步：<b>体素化</b>——沿 6 个轴对齐方向各发正交射线穿过网格，Embree 命中处记为 <span class="inline">FSurfel</span>（含体素坐标、最近深度、覆盖度）；<b>可见性</b>——每个 surfel 用半球 32 射线做背面剔除，剔掉被自身遮挡的面；<b>聚类</b>——把 surfel 按空间/朝向聚成簇，每簇拟合一个 OBB。</p><p>最后 <span class="inline">LimitClusters</span> 按 <span class="inline">WeightedCoverage</span> 排序，只保留贡献最大的 <span class="inline">MaxCardsPerMesh=32</span> 张。<span class="inline">MinDensity=0.2</span> 过滤太稀疏的簇、<span class="inline">NormalThreshold=0.25</span> 控制朝向一致性。产物是 <span class="inline">FLumenCardBuildData</span>（OBB + 方向索引）数组，写进 <span class="inline">FMeshCardsBuildData</span>。</p></div></div></section>
+
+<section class="card"><h2>2. Mesh Distance Field：稀疏 brick 距离场</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// MeshDistanceFieldUtilities.cpp
+UniqueDataBrickSize = 7    // 唯一数据 brick 7^3
+BrickSize           = 8    // 带 1 border -> 8^3
+BandSizeInVoxels    = 4    // 窄带宽度
+NumMips             = 3
+MeshDistanceFieldObjectBorder = 1
+
+// FSparseMeshDistanceFieldAsyncTask::DoWork:
+//   对每个体素中心：
+//   rtcPointQuery  -> 最近三角形距离
+//   rtcIntersect1  -> 半球射线，背面命中 >25% 判 inside
+//   -> 有符号距离（inside 取负）
+//   bUsePointQuery=true, 49 或 576 采样
+// GenerateStratifiedUniformHemisphereSamples
+// QuantizedDistance -> PF_G8 量化存储</textarea><div class="note"><h3>说明</h3><p>Mesh Distance Field 是每个网格的<b>有符号距离场</b>：空间任意点到网格表面的最近距离，负值表示在网格内部。运行时 cone march 靠它做 sphere tracing。烘焙时对每个体素中心：<span class="inline">rtcPointQuery</span> 求最近三角形得到无符号距离，再用 <span class="inline">rtcIntersect1</span> 发半球射线统计背面命中比例——超过 25% 判定该点在网格<b>内部</b>，距离取负。</p><p>存储是<b>稀疏</b>的：只在表面附近的窄带（<span class="inline">BandSizeInVoxels=4</span>）分配 <span class="inline">7³</span> 的唯一数据 brick（带 1 border 后 <span class="inline">8³</span>），远离表面的空区不存。3 级 mip 供不同追踪距离，距离值量化成 <span class="inline">PF_G8</span>（8bit）省内存。用 <span class="inline">ParallelForTemplate</span> 并行处理体素。</p></div></div></section>
+
+<section class="card"><h2>3. DDC 缓存：改网格才重建</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// DistanceFieldAtlas.cpp
+CVarDistFieldRes (MaxPerMeshResolution = 256)
+DefaultVoxelDensity = 0.2
+
+// FDistanceFieldAsyncQueue::Build ->
+//   GenerateSignedDistanceFieldVolumeData
+// CacheDerivedData / BuildDistanceFieldDerivedDataKey
+//   key = 网格 hash + 参数 + 版本 GUID
+// MeshCardRepresentation.cpp:
+//   CARDREPRESENTATION_DERIVEDDATA_VER (GUID)
+//   改算法就 bump GUID -> 全量重烘
+
+// 分辨率随网格尺寸 * DefaultVoxelDensity
+//   上限 MaxPerMeshResolution=256</textarea><div class="note"><h3>说明</h3><p>两份资产都是纯离线派生数据，走 <b>DDC（Derived Data Cache）</b>：由"网格内容 hash + 烘焙参数 + 版本 GUID"算出 key，缓存命中则直接取、不重算。这就是为什么第一次导入网格慢（要烘）、之后秒开。分辨率自适应网格尺寸乘 <span class="inline">DefaultVoxelDensity=0.2</span>，上限 <span class="inline">MaxPerMeshResolution=256</span>，避免小物件浪费、大物件爆内存。</p><p>版本 GUID（如 <span class="inline">CARDREPRESENTATION_DERIVEDDATA_VER</span>）是引擎升级时的开关：改了烘焙算法就 bump GUID，使所有旧缓存失效、触发全量重烘。烘焙走 <span class="inline">FDistanceFieldAsyncQueue</span> 异步队列，不阻塞编辑器主线程。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>类型</th><th>位置</th><th>做什么</th></tr></thead><tbody>
+<tr><td>发散</td><td>GenerateSurfelsForDirection ×6</td><td>6 方向正交射线体素化出 surfel</td></tr>
+<tr><td>发散</td><td>rtcPointQuery + rtcIntersect1（逐体素）</td><td>最近距离 + 内外判定（半球采样）</td></tr>
+<tr><td>汇聚</td><td>BuildSurfelClusters / LimitClusters</td><td>surfel 聚簇，裁到 32 张卡片</td></tr>
+<tr><td>汇聚</td><td>稀疏 brick 打包（窄带 7³）</td><td>只存表面附近，3 mip</td></tr>
+<tr><td>缓存</td><td>CacheDerivedData / DDC key + GUID</td><td>改网格/改算法才重建</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>离线烘焙是 Lumen "空间换时间"策略的<b>生产端</b>：把运行时昂贵的"网格→卡片布局""点→表面距离"预计算成资产。两条线共享同一套工业化基建——Embree CPU 光追做几何查询、ParallelFor 并行、DDC 缓存 + 版本 GUID 管理增量。Mesh Cards 用"体素化 surfel → 聚类 → 6 方向 ≤32 OBB"把任意网格降维成可捕获的有向面片；Mesh Distance Field 用"逐体素 point query + 半球内外判定 → 稀疏窄带 brick"把网格编码成可 sphere-trace 的距离场。理解这里能解释运行时很多常量的来源（6 方向、32 卡上限、3 mip、窄带宽度），也能解释"为什么改了网格要等烘焙"。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="LumenOfflineBake_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="LumenMeshCards_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>Mesh Cards（运行时）</a><a class="tag" href="LumenDistanceField_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>Distance Field 场景表示</a><a class="tag" href="LumenDataStructures_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>数据结构与内存布局</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>

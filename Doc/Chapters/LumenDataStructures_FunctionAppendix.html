@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>数据结构 字段级附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>数据结构 字段级附录</h1><div class="subtitle">配合主文档使用。逐结构展开字段、位宽、索引方式，作为读其它算法主题时的"字典"。所有符号取自 LumenSceneData.h / LumenCardCommon.ush / DistanceFieldAtlas.h / MeshCardBuild.h。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenDataStructures_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 数据结构 主文档</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">LumenSceneData.h · LumenCardCommon.ush · LumenSceneDirectLighting.ush · DistanceFieldAtlas.h · MeshCardBuild.h · LumenRadianceCacheInterface.h</span></div></section>
+
+<section class="card"><h2>结构目录</h2><div class="body toc"><a href="#scene">1. FLumenSceneData</a><a href="#page">2. FLumenCardPageData</a><a href="#card">3. FLumenCard / TLumenCardOBB</a><a href="#light">4. FLightSample 位域</a><a href="#normal">5. 法线 / 距离编码</a><a href="#vol">6. FDistanceFieldVolumeData</a><a href="#mip">7. FSparseDistanceFieldMip</a><a href="#rc">8. Radiance Cache 间接寻址</a><a href="#Rel">结构关系表</a></div></section>
+
+<section id="scene" class="card"><h2>1. FLumenSceneData</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenSceneData.h（CPU 侧总账）
+class FLumenSceneData {
+    TSparseSpanArray<FLumenCard>      Cards;
+    TSparseSpanArray<FLumenCardPage>  CardPages;
+    TArray<FLumenPrimitiveGroup>      PrimitiveGroups;
+    FLumenSurfaceCacheFeedback        Feedback;   // 谁该捕获
+    // 页表分配器、上传缓冲、脏标记 ...
+};</textarea><div class="note"><h3>说明</h3><p>Lumen 场景的 CPU 权威状态。<span class="inline">Cards</span>/<span class="inline">CardPages</span> 用稀疏 span 数组（支持空洞复用索引）。<span class="inline">PrimitiveGroups</span> 把多个 primitive 合并成 Lumen 场景单元。<span class="inline">Feedback</span> 收 GPU 回读，驱动"哪些卡片下帧该捕获"。这个结构每帧被 <span class="inline">UpdateLumenScene</span> 维护，再上传成 GPU buffer 供 shader 用。</p></div></div></section>
+
+<section id="page" class="card"><h2>2. FLumenCardPageData</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenCardCommon.ush（GPU 侧一条/页）
+struct FLumenCardPageData {
+    uint2  PhysicalAtlasCoord;   // 物理 atlas 起点
+    float4 PhysicalAtlasUVRect;  // 物理 UV 范围
+    float2 CardUVToAtlasUVScale;
+    float2 CardUVToAtlasUVBias;  // 逻辑->物理 变换
+    uint   CardIndex;
+    uint   ResLevel;             // 分辨率级别
+    // ...
+};
+FLumenCardPageData GetLumenCardPageData(uint Index);</textarea><div class="note"><h3>说明</h3><p>GPU 追踪命中卡片后，靠这条数据把"逻辑卡片 UV"换算成"物理 atlas texel"。核心是 <span class="inline">CardUVToAtlasUVScale/Bias</span> 这对仿射变换 + <span class="inline">PhysicalAtlasUVRect</span> 裁剪。<span class="inline">ResLevel</span> 记录该页当前分辨率级别（Surface Cache 会按重要性升降分辨率）。<span class="inline">GetLumenCardPageData</span> 是 shader 里的统一访问器。</p></div></div></section>
+
+<section id="card" class="card"><h2>3. FLumenCard / TLumenCardOBB</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// TLumenCardOBB（有向包围盒）
+template<class T> struct TLumenCardOBB {
+    TVector<T> Origin;
+    TVector<T> AxisX, AxisY, AxisZ; // 正交基
+    TVector<T> Extent;              // 半尺寸
+    // WorldToLocal / GetCardSpacePosition ...
+};
+// FLumenCardBuildData（离线产物）
+//   TLumenCardOBB OBB
+//   uint AxisAlignedDirectionIndex  // 0..5
+// FMeshCardsBuildData
+//   FBox Bounds; TArray<FLumenCardBuildData> CardBuildData;</textarea><div class="note"><h3>说明</h3><p><span class="inline">TLumenCardOBB</span> 用原点 + 三个正交轴 + 半尺寸描述一张卡片的世界空间盒子，提供 <span class="inline">WorldToLocal</span> 把世界点投到卡片局部 UV。这是运行时"点→卡片 UV"与离线"卡片布局"的公共几何。<span class="inline">FLumenCardBuildData</span> 是离线烘焙的每卡产物（OBB + 6 方向索引），聚合成 <span class="inline">FMeshCardsBuildData</span> 存进网格资产。</p></div></div></section>
+
+<section id="light" class="card"><h2>4. FLightSample 位域</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenSceneDirectLightingCulling.usf
+struct FLightSample {
+    uint  LightIndex;      // 14 bit （<=16383 灯）
+    uint  LightType;       //  2 bit （方向/点/聚/矩形）
+    bool  bHasShadowMask;  //  1 bit
+    float Weight;          // 16 bit （贡献权重）
+};
+// 打包进 32bit + 16bit
+// MAX_LIGHT_SAMPLES 每 tile 灯上限</textarea><div class="note"><h3>说明</h3><p>直接光剔灯后的紧凑灯样本。<span class="inline">14bit LightIndex</span> 足够覆盖上万灯，<span class="inline">2bit LightType</span> 区分四种灯，<span class="inline">1bit</span> 标记是否有 shadow mask，<span class="inline">16bit Weight</span> 存贡献。整体压进极小空间，让每 tile 的短灯光列表内存友好。下游 <span class="inline">LumenCardBatchDirectLightingCS</span> 解包遍历。详见 <a href="LumenSurfaceCacheGPU_FunctionAppendix.html">Surface Cache GPU 附录</a>。</p></div></div></section>
+
+<section id="normal" class="card"><h2>5. 法线 / 距离编码</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 法线（NormalAtlas，BC5）
+//   10bit/通道 + 1bit valid
+//   只存 XY 切线分量，Z = sqrt(1-X²-Y²) 重建
+
+// 距离场值（BrickData）
+//   float 距离 -> LocalToVolumeScale 归一 [-1,1]
+//   -> QuantizedDistance -> PF_G8（8bit）
+
+// 反射射线命中距离
+//   EncodeRayDistance(dist, bHit) -> uint
+//   高位存 bHit，低位存量化距离</textarea><div class="note"><h3>说明</h3><p>三处典型的定点压缩。<b>法线</b>：单位向量只需存两个分量，Z 由重建得到，故 BC5（双通道）足够，<span class="inline">valid</span> 位标记该 texel 是否有有效表面。<b>距离场</b>：距离先归一化到 [-1,1] 再量化成单字节 <span class="inline">PF_G8</span>，靠窄带 + mip 保证 8bit 精度够用。<b>射线距离</b>：把"命中与否 + 距离"打包进一个 uint，节省追踪结果带宽。</p></div></div></section>
+
+<section id="vol" class="card"><h2>6. FDistanceFieldVolumeData</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// DistanceFieldAtlas.h
+class FDistanceFieldVolumeData {
+    TArray<FSparseDistanceFieldMip> Mips; // NumMips=3
+    int32 AlwaysLoadedMip;   // 最粗 mip 索引，常驻
+    TArray<uint8> StreamableMips; // 细 mip 打包字节流
+    FVector2f DistanceMinMax;     // 反量化范围
+    bool bMostlyTwoSided;
+};</textarea><div class="note"><h3>说明</h3><p>每个网格的距离场资产。3 级 mip，<span class="inline">AlwaysLoadedMip</span>（最粗）随资产常驻内存保证随时可粗追踪，细节 mip 打包进 <span class="inline">StreamableMips</span> 字节流按镜头距离流式加载。<span class="inline">DistanceMinMax</span> 是把 PF_G8 量化值反解回真实距离的范围。<span class="inline">bMostlyTwoSided</span> 标记薄壳网格（内外判定不可靠），影响追踪时的符号处理。</p></div></div></section>
+
+<section id="mip" class="card"><h2>7. FSparseDistanceFieldMip</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// DistanceFieldAtlas.h
+class FSparseDistanceFieldMip {
+    FIntVector IndirectionDimensions; // <=1024
+    int32 NumDistanceFieldBricks;
+    FVector VolumeToVirtualUVScale;
+    FVector VolumeToVirtualUVAdd;
+    FVector2f DistanceFieldToVolumeScaleBias;
+};
+// brick: 7^3 唯一数据 + 1 border = 8^3
+// indirection[x][y][z] -> brick 索引 或 空标记</textarea><div class="note"><h3>说明</h3><p>单级 mip 的稀疏布局元数据。<span class="inline">IndirectionDimensions</span> 是间接表的三维尺寸（≤1024），间接表每格指向一个 brick 或标记为空。<span class="inline">NumDistanceFieldBricks</span> 是实际分配的 brick 数（远小于稠密体积）。两组 scale/bias 负责"世界→volume→brick 内 UV"的坐标链变换。运行时采样先用 <span class="inline">VolumeToVirtualUV*</span> 定位间接表格子，查到 brick 再算 brick 内坐标三线性插值。</p></div></div></section>
+
+<section id="rc" class="card"><h2>8. Radiance Cache 间接寻址</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Radiance Cache 三级间接：
+// ① RadianceProbeIndirectionTexture
+//      [ClipmapIndex][ProbeCoord] -> PhysicalProbeIndex
+//      （未分配 -> INVALID）
+// ② PhysicalProbeIndex
+//      -> RadianceProbeAtlas 里的 tile 坐标
+// ③ Atlas tile：该 probe 的方向 radiance（八面体）
+//      + DepthProbeAtlas（用于 occlusion）
+
+// clipmap：ClipmapWorldExtent 每级翻倍
+// NUM_DIRECTION_BINS_2D = 8（trace tile 排序）</textarea><div class="note"><h3>说明</h3><p>Radiance Cache 的寻址链最长。逻辑 probe 由 (clipmap, 格子坐标) 定位，先查 <span class="inline">IndirectionTexture</span> 得物理索引（可能是 INVALID 表示未分配），再由物理索引映射到 <span class="inline">RadianceProbeAtlas</span> 的 tile，tile 里存八面体方向 radiance 及配套的 depth（做 occlusion 防漏光）。<b>clipmap</b> 让 probe 密度随距离衰减（每级世界范围翻倍）。这套三级间接是"稀疏 probe + 动态分配/回收"的地基——生命周期见 <a href="LumenFinalGatherGPU_FunctionAppendix.html">Final Gather GPU 附录</a>。</p></div></div></section>
+
+<section id="Rel" class="card"><h2>结构关系表</h2><div class="body"><table class="table"><thead><tr><th>层</th><th>结构</th><th>指向 / 被谁用</th></tr></thead><tbody>
+<tr><td>CPU 总账</td><td>FLumenSceneData</td><td>持有 Cards/CardPages，上传成 GPU buffer</td></tr>
+<tr><td>GPU 页表</td><td>FLumenCardPageData</td><td>逻辑 UV → 物理 atlas texel</td></tr>
+<tr><td>几何</td><td>TLumenCardOBB / FLumenCardBuildData</td><td>世界点 → 卡片 UV（离线烘焙产出）</td></tr>
+<tr><td>直接光</td><td>FLightSample（位域）</td><td>剔灯列表 → DirectLighting CS</td></tr>
+<tr><td>距离场资产</td><td>FDistanceFieldVolumeData</td><td>持有 3 mip + streamable</td></tr>
+<tr><td>距离场单级</td><td>FSparseDistanceFieldMip</td><td>indirection → brick（7³）</td></tr>
+<tr><td>Final Gather</td><td>SH3(9) / 八面体</td><td>探针方向光照压缩</td></tr>
+<tr><td>Radiance Cache</td><td>三级间接（Indirection→Physical→Atlas）</td><td>稀疏 probe 寻址</td></tr>
+</tbody></table></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>
