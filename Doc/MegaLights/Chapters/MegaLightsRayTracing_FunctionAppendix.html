@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>MegaLights 追踪 · 后端附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.tag:hover{border-color:var(--cyan);color:#fff}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.legend{display:flex;flex-wrap:wrap;gap:10px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 11px;border-radius:8px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13px}.toc a:hover{border-color:var(--cyan)}.mono{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}.table th{background:#101823}.table code{color:#9ee8ff}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.codebox{margin:10px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#080c12;color:#d7ecff;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre}</style></head><body>
+<header><h1>MegaLights 追踪 · 后端附录</h1><div class="subtitle">配套 <a href="MegaLightsRayTracing_ConvergenceAnnotated.html" style="color:#9ee8ff">追踪与阴影</a> 主文档。列全部追踪 CS/RGS、permutation 与追踪相关 CVar。取自 UE5.8 本地源码 <span class="mono">MegaLightsRayTracing.cpp</span>。</div></header>
+<main>
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#cs">① 追踪阶段 CS/RGS 清单</a>
+<a href="#hwrtperm">② HWRT permutation</a>
+<a href="#cvar">③ 追踪 CVar 全表</a>
+<a href="#vsm">④ VSM 页标记</a>
+</div></section>
+
+<section class="card" id="cs"><h2>① 追踪阶段 CS/RGS 清单</h2><div class="body"><span class="source-path">MegaLightsRayTracing.cpp · IMPLEMENT_GLOBAL_SHADER / IMPLEMENT_MEGALIGHT_RAYGEN_AND_COMPUTE_RAYTRACING_SHADERS</span>
+<table class="table"><thead><tr><th>CS/RGS 类</th><th>入口 · shader 文件</th><th>作用</th></tr></thead><tbody>
+<tr><td><code>FCompactLightSampleTracesCS</code></td><td>CompactLightSampleTracesCS · MegaLightsRayTracing.usf</td><td>压缩有效样本成连续列表</td></tr>
+<tr><td><code>FInitCompactedTraceTexelIndirectArgsCS</code></td><td>InitCompactedTraceTexelIndirectArgsCS · MegaLightsRayTracing.usf</td><td>生成间接派发参数</td></tr>
+<tr><td><code>FHardwareRayTraceLightSamplesCS / RGS</code></td><td>HardwareRayTraceLightSamplesCS/RGS · MegaLightsHardwareRayTracing.usf</td><td>硬件光追（inline/raygen）</td></tr>
+<tr><td><code>FSoftwareRayTraceLightSamplesCS</code></td><td>SoftwareRayTraceLightSamplesCS · MegaLightsRayTracing.usf</td><td>软件 Global SDF 追踪</td></tr>
+<tr><td><code>FVirtualShadowMapTraceLightSamplesCS</code></td><td>VirtualShadowMapTraceLightSamplesCS · MegaLightsVSMTracing.usf</td><td>VSM 深度采样求可见性</td></tr>
+<tr><td><code>FPrintTraceStatsCS</code></td><td>PrintTraceStatsCS · MegaLightsRayTracing.usf</td><td>调试：打印追踪统计</td></tr>
+<tr><td colspan="3" style="color:#a9b4c0">体积变体：<code>FVolumeCompactLightSampleTracesCS</code> / <code>FVolumeHardwareRayTraceLightSamplesCS/RGS</code> / <code>FVolumeSoftwareRayTraceLightSamplesCS</code>（见 #6）</td></tr>
+</tbody></table></div></section>
+
+<section class="card" id="hwrtperm"><h2>② FHardwareRayTraceLightSamples permutation</h2><div class="body"><span class="source-path">MegaLightsRayTracing.cpp L837-844</span>
+<div class="codebox">class FEvaluateMaterials     : SHADER_PERMUTATION_BOOL("MEGA_LIGHTS_EVALUATE_MATERIALS");   // 命中求材质（AnyHit）
+class FLightingChannels      : SHADER_PERMUTATION_BOOL("MEGA_LIGHTS_LIGHTING_CHANNELS");
+class FSupportContinuation   : SHADER_PERMUTATION_BOOL("SUPPORT_CONTINUATION");             // 半透明阴影继续追踪
+class FEnableFarFieldTracing : SHADER_PERMUTATION_BOOL("ENABLE_FAR_FIELD_TRACING");
+class FForceTwoSided         : SHADER_PERMUTATION_BOOL("FORCE_TWO_SIDED");
+class FHairVoxelTraces       : SHADER_PERMUTATION_BOOL("HAIR_VOXEL_TRACES");
+class FDistantScreenTraces   : SHADER_PERMUTATION_BOOL("DISTANT_SCREEN_TRACES");
+class FDebugMode             : SHADER_PERMUTATION_BOOL("DEBUG_MODE");</div>
+<p style="color:#a9b4c0"><span class="inline">FCompactLightSampleTracesCS</span> 的 permutation：<span class="inline">FThreadGroupSize</span>(8/16/32)·<span class="inline">FWaveOpWaveSize</span>(0/32/64)·<span class="inline">FFastClear</span>。软件追踪 <span class="inline">FSoftwareRayTraceLightSamplesCS</span> 有 <span class="inline">FHairVoxelTraces</span>/<span class="inline">FDistantScreenTraces</span>/<span class="inline">FDebugMode</span>。</p></div></section>
+
+<section class="card" id="cvar"><h2>③ 追踪 CVar 全表</h2><div class="body"><span class="source-path">MegaLightsRayTracing.cpp L58-244</span>
+<table class="table"><thead><tr><th>CVar</th><th>作用</th></tr></thead><tbody>
+<tr><td><code>r.MegaLights.HardwareRayTracing</code></td><td>是否启用硬件光追后端</td></tr>
+<tr><td><code>r.MegaLights.HardwareRayTracing.Inline</code></td><td>inline（compute TraceRayInline）vs raygen</td></tr>
+<tr><td><code>r.MegaLights.HardwareRayTracing.EvaluateMaterialMode</code></td><td>命中材质求值模式（见 #4 EMaterialMode）</td></tr>
+<tr><td><code>r.MegaLights.HardwareRayTracing.Bias / EndBias / NormalBias / PullbackBias</code></td><td>光线偏移，平衡自相交/漏光</td></tr>
+<tr><td><code>r.MegaLights.HardwareRayTracing.MaxIterations</code></td><td>遍历最大迭代</td></tr>
+<tr><td><code>r.MegaLights.HardwareRayTracing.MeshSectionVisibilityTest</code></td><td>网格 section 可见性剔除</td></tr>
+<tr><td><code>r.MegaLights.HardwareRayTracing.ForceTwoSided</code></td><td>强制双面（薄几何遮挡）</td></tr>
+<tr><td><code>r.MegaLights.HardwareRayTracing.FarField / .MaxDistance / .Bias</code></td><td>远场追踪代理</td></tr>
+<tr><td><code>r.MegaLights.ScreenTraces</code></td><td>屏内首段追踪开关</td></tr>
+<tr><td><code>r.MegaLights.ScreenTraces.Quality / MaxIterations / MaxDistance / MinimumOccupancy</code></td><td>屏内追踪质量/步进/距离/占用阈值</td></tr>
+<tr><td><code>r.MegaLights.ScreenTraces.RelativeDepthThickness / ...WhenNoFallback / NormalBias</code></td><td>屏内命中容差与偏移</td></tr>
+<tr><td><code>r.MegaLights.DistantScreenTraces / .DepthThreshold / .Length</code></td><td>远距离屏幕追踪</td></tr>
+<tr><td><code>r.MegaLights.VSM.MarkPages</code>（默认 1）</td><td>只标记被采样命中的 VSM 页</td></tr>
+</tbody></table></div></section>
+
+<section class="card" id="vsm"><h2>④ VSM 页标记</h2><div class="body"><span class="source-path">MegaLights.cpp L2020（ViewContext::MarkVSMPages）· MegaLightsRayTracing.cpp L1539（MegaLights::MarkVSMPages）· L1187（FVirtualShadowMapTraceLightSamplesCS）</span>
+<div class="codebox">// 渲染序列（MegaLights.cpp）
+ViewContext.SetupStageTwo(...);
+ViewContext.GenerateSamples(...);       // 先抽样，知道命中哪些光/页
+ViewContext.MarkVSMPages(VirtualShadowMapArray);  // 只标记需要的页
+...
+ViewContext.RayTrace(...);              // 含 FVirtualShadowMapTraceLightSamplesCS</div>
+<p style="color:#a9b4c0"><span class="inline">r.MegaLights.VSM.MarkPages=1</span> 时精确标记；=0 时保守标记所有可能页。标记后 <span class="inline">VirtualShadowMapTraceLightSamplesCS</span> 采样 VSM 深度，结果经 <span class="inline">ShadowMaskBits</span> 参与后续。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 追踪主文档</a><a class="tag" href="MegaLightsShading_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#4 着色与解析</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main></body></html>

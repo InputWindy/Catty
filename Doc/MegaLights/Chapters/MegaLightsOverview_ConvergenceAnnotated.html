@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>MegaLights 总览与管线入口</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.tag:hover{border-color:var(--cyan);color:#fff}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:92px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.gate{border-color:var(--red)}.branch{border-color:var(--orange)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.merge{border-color:var(--green)}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}.table th{background:#101823}.codebox{margin:10px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#080c12;color:#d7ecff;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre}@media(max-width:1100px){.flow{grid-template-columns:1fr 1fr}}</style></head><body>
+<header><h1>MegaLights 总览与管线入口</h1><div class="subtitle">MegaLights 是 UE5.8 的<b>多光源实时阴影</b>方案（实验性）：让"投射阴影的光源"数量对帧开销的影响从"近似线性"压成"近似恒定"。它的做法借鉴离线蒙特卡洛——每像素只<b>随机抽少量光源样本</b>、用<b>光线追踪</b>求可见性、再靠<b>时空去噪</b>把噪声磨平。本篇建立整套书的骨架：它解决什么问题、三种模式如何判定、单帧九个阶段各干什么、三种输入有何差异。所有符号/CVar 均取自 UE5.8 本地源码。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁 / 模式判定</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>分块 / 下采样</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>采样 / 追踪 / 着色</span><span class="tag"><span class="dot" style="background:var(--green)"></span>解析 / 去噪</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>合成 / 可视化</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p>本篇给"为什么 + 数据流骨架"。全部顶层 <span class="inline">r.MegaLights.*</span> CVar（含默认值）、<span class="inline">FMegaLightsParameters</span> 数据流结构体、三种输入差异表、<span class="inline">FMegaLightsViewContext</span> 九阶段方法签名整理在附录。</p><a class="tag" href="MegaLightsOverview_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 总览 CVar 与管线附录</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>一眼看懂：MegaLights 单帧管线</h2><div class="body flow"><div class="node gate"><strong>门禁 / 模式</strong><small>IsEnabled → GetMegaLightsMode</small></div><div class="node branch"><strong>分块 + 下采样</strong><small>TileClassification + DownsampleMode</small></div><div class="node func"><strong>采样 → 追踪 → 着色</strong><small>GenerateSamples → RayTrace → Shade</small></div><div class="node merge"><strong>解析 + 去噪</strong><small>Resolve → Temporal + Spatial</small></div><div class="node out"><strong>合成 / 可视化</strong><small>写回 SceneColor</small></div></div><p style="color:#a9b4c0;margin:14px 0 0">入口在 <span class="inline">FDeferredShadingSceneRenderer::RenderMegaLights(...)</span>，它对每个 View 构造一个 <span class="inline">FMegaLightsViewContext</span>，再走 <span class="inline">RenderMegaLightsViewContext(...)</span> 顺序调各阶段。</p></section>
+
+<section class="card"><h2>为什么需要它：光源数量的诅咒</h2><div class="body"><div class="note"><h3>传统阴影按"光源 × 分辨率"膨胀</h3><p>UE 的传统延迟光照对每个<b>投射阴影</b>的光源都要：渲染一份 shadow map（或 VSM 页）、逐光源做一次全屏施光 pass。光源少时很高效，但一片区域里<b>几十上百个动态光同时投影</b>时，shadow map 渲染 + 施光 pass 数量随光源数线性上涨，很快就成为帧预算的大头。这也是为什么传统项目要严格限制"投影光源"的数量。</p><p><b>MegaLights 换了个思路</b>：不再"每个光源都完整算一遍阴影"，而是把它当成一个<b>蒙特卡洛积分</b>问题——每个像素固定只抽 <span class="inline">NumSamplesPerPixel</span> 个光源样本（默认 4，还会因下采样进一步折算），对样本发光线求可见性，成本只跟"像素数 × 每像素样本数"走，<b>与场景投影光源总数解耦</b>。代价是单帧有噪声，交给时空去噪（Temporal + Spatial）补回来。</p></div></div></section>
+
+<section class="card"><h2>与 Lumen Stochastic Direct Lighting 的关系</h2><div class="body"><div class="note"><h3>同一套内核的两处落地</h3><p><span class="note-label common">共同点</span>MegaLights 与 Lumen 的 <b>Surface Cache 随机直接光照</b>共享同一个求值内核 <span class="inline">MegaLightsRayTracing.ush</span>，本质都是"固定预算抽样 + 光追可见性 + 时域累积去噪"。可以说随机直接光照就是"把 MegaLights 的多光源采样搬进 Surface Cache 世界空间"。</p><p><span class="note-label diff">不同点</span>MegaLights 直接作用于<b>屏幕最终像素</b>（GBuffer / 头发 / 前层半透明），产出直接进 SceneColor；随机直接光照作用于 <b>Surface Cache 世界空间 card texel</b>，产出可跨帧复用的世界空间光照 atlas。本书讲屏幕像素这一侧；世界空间那一侧见 Lumen 篇。</p></div></div></section>
+
+<section class="card"><h2>门禁与模式判定（三级漏斗）</h2><div class="body"><p>MegaLights 能不能开、以什么模式开，由三层判定决定，全部在 <span class="inline">MegaLights.cpp</span>。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/MegaLights/MegaLights.cpp · IsRequested / HasRequiredTracingData / IsEnabled / GetMegaLightsMode</span>
+<div class="note"><h3>① IsRequested · 用户/项目是否请求</h3><p><span class="inline">IsRequested()</span> 要求同时满足：后处理体积开关 <span class="inline">FinalPostProcessSettings.bMegaLights</span>、scalability 允许 <span class="inline">r.MegaLights.Allowed != 0</span>、以及三个 ShowFlag（<span class="inline">Lighting</span> / <span class="inline">DirectLighting</span> / <span class="inline">MegaLights</span>）都开，且该平台已编译 MegaLights shader。项目级默认开关是 <span class="inline">r.MegaLights.EnableForProject</span>（默认 <b>0</b>，实验特性默认关）。</p></div>
+<div class="note" style="margin-top:12px"><h3>② HasRequiredTracingData · 有没有追踪后端</h3><p><span class="inline">HasRequiredTracingData()</span> = <span class="inline">IsHardwareRayTracingSupported()</span> 或 <span class="inline">IsSoftwareRayTracingSupported()</span>。MegaLights 必须要有一条能求可见性的追踪后端。<span class="inline">IsEnabled = IsRequested && HasRequiredTracingData</span>——这是全局总开关，后续几乎所有 <span class="inline">IsUsing*</span> 判定都以它为前提。</p></div>
+<div class="note" style="margin-top:12px"><h3>③ GetMegaLightsMode · 逐光源定模式</h3><p><span class="inline">GetMegaLightsMode(ViewFamily, LightType, bLightAllowsMegaLights, ShadowMethod)</span> 是<b>逐光源</b>调用的：方向光默认被排除（除非 <span class="inline">r.MegaLights.DirectionalLights</span> 打开），且必须 <span class="inline">IsEnabled</span> 且该光源允许 MegaLights。阴影方法为 <span class="inline">Default</span> 时按 <span class="inline">r.MegaLights.DefaultShadowMethod</span> 解析（<b>1→VSM，否则→RayTracing</b>，默认 0 即 RT）。最终返回 <span class="inline">EnabledVSM</span> / <span class="inline">EnabledRT</span> / <span class="inline">Disabled</span> 三选一（RT 分支还要求 <span class="inline">IsRayTracingAllowedForView()</span>）。</p></div>
+<div class="codebox">EMegaLightsMode GetMegaLightsMode(..., uint8 LightType, bool bLightAllowsMegaLights, ShadowMethod)
+{
+    if ((LightType != Directional || CVarDirectionalLights) && IsEnabled(ViewFamily) && bLightAllowsMegaLights)
+    {
+        if (ShadowMethod == Default)
+            ShadowMethod = (GMegaLightsDefaultShadowMethod == 1) ? VirtualShadowMap : RayTracing;
+        if (ShadowMethod == VirtualShadowMap)   return EnabledVSM;
+        else if (View.IsRayTracingAllowedForView()) return EnabledRT;
+    }
+    return Disabled;
+}</div></div></section>
+
+<section class="card"><h2>下采样：把成本再砍一刀</h2><div class="body"><p>确定要跑后，MegaLights 通常不在全分辨率上采样/追踪，而是先<b>降分辨率</b>。<span class="inline">GetDownsampleFactorXY(InputType, Platform)</span> 按 <span class="inline">r.MegaLights.DownsampleMode</span> 返回下采样因子：</p><table class="table"><thead><tr><th>DownsampleMode</th><th>因子 XY</th><th>含义</th></tr></thead><tbody>
+<tr><td>0</td><td>(1,1)</td><td>Disabled，全分辨率</td></tr>
+<tr><td>1</td><td>(2,1)</td><td>Checkerboard 棋盘，横向减半</td></tr>
+<tr><td>2（默认）</td><td>(2,2)</td><td>Half-resolution，1/4 像素数</td></tr>
+</tbody></table><p style="margin-top:12px;color:#a9b4c0">Reference 模式（<span class="inline">GetReferenceShadingPassCount > 1</span>，仅编辑器 PC 用于对比参考）会强制回到 (1,1)。降分辨率的样本最后由 <b>Resolve</b> 阶段重建回全分辨率——这正是后面 tile 分类与去噪要处理的核心。</p></div></section>
+
+<section class="card"><h2>三种输入：一套管线，三个消费者</h2><div class="body"><p>MegaLights 的采样-追踪-着色管线被<b>三种输入</b>复用（<span class="inline">enum class EMegaLightsInput</span>）。它们走同一套 CS，但通过 permutation/前缀区分资源与分辨率。</p><table class="table"><thead><tr><th>输入 EMegaLightsInput</th><th>作用对象</th><th>下采样 CVar</th><th>命名前缀</th></tr></thead><tbody>
+<tr><td><span class="inline">GBuffer</span></td><td>不透明主体像素（最主要路径）</td><td><span class="inline">r.MegaLights.DownsampleMode</span></td><td><span class="inline">MegaLights.*</span></td></tr>
+<tr><td><span class="inline">HairStrands</span></td><td>头发几何（Deep Shadow 之外的直接光）</td><td><span class="inline">r.MegaLights.HairStrands.DownsampleMode</span></td><td><span class="inline">MegaLights.HairStrands.*</span></td></tr>
+<tr><td><span class="inline">FrontLayerTranslucency</span></td><td>前层半透明表面直接光</td><td><span class="inline">r.MegaLights.DownsampleMode</span></td><td><span class="inline">MegaLights.FrontLayerTranslucency.*</span></td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>九个阶段：FMegaLightsViewContext 全貌</h2><div class="body"><p>入口 <span class="inline">RenderMegaLights</span> 对每个 View 构造 <span class="inline">FMegaLightsViewContext</span>，Setup 阶段先跑 <span class="inline">SetupStageOne/Two</span> 建缓冲，随后 <span class="inline">RenderMegaLightsViewContext</span> 顺序调下列阶段。这张表是全书导航图——每个阶段对应后面一到两篇章节。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/MegaLights/MegaLightsInternal.h · class FMegaLightsViewContext（L375+）· MegaLights.cpp L2269-2472</span>
+<table class="table"><thead><tr><th>#</th><th>阶段方法</th><th>做什么</th><th>详见</th></tr></thead><tbody>
+<tr><td>0</td><td><span class="inline">SetupStageOne / SetupStageTwo</span></td><td>准备 HZB、光源数据、直方图/hash 等前置缓冲</td><td>本篇 + 附录</td></tr>
+<tr><td>1</td><td><span class="inline">TileClassificationMark</span></td><td>按材质复杂度把屏幕分块（Simple/Complex/Empty…）</td><td>#4 着色</td></tr>
+<tr><td>2</td><td><span class="inline">GenerateSamples</span></td><td>每像素按 PDF + 蓝噪声抽光源样本</td><td>#2 采样</td></tr>
+<tr><td>3</td><td><span class="inline">MarkVSMPages</span></td><td>标记被采样命中的 VSM 页，只渲染需要的部分</td><td>#3 追踪</td></tr>
+<tr><td>4</td><td><span class="inline">RayTrace</span></td><td>对样本追光线求可见性（HWRT/VSM/Screen）</td><td>#3 追踪</td></tr>
+<tr><td>5</td><td><span class="inline">Resolve</span></td><td>着色 + 把降分辨率样本重建回全分辨率，产 Diffuse/Specular + Confidence</td><td>#4 着色与解析</td></tr>
+<tr><td>6</td><td><span class="inline">DenoiseLighting</span></td><td>时域累积 + 空间滤波去噪，写回输出</td><td>#5 去噪</td></tr>
+<tr><td>7</td><td><span class="inline">Visualize / VisualizeLightComplexity</span></td><td>调试可视化叠加</td><td>本篇 + 附录</td></tr>
+<tr><td>8</td><td><span class="inline">GenerateVolumeSamples / VolumeRayTrace / VolumeResolve</span></td><td>体积光照并列分支</td><td>#6 体积</td></tr>
+</tbody></table>
+<div class="codebox">// MegaLights.cpp · RenderMegaLightsViewContext（简化）
+for (ShadingPassIndex : ReferenceShadingPassCount)
+{
+    ViewContext.TileClassificationMark(ShadingPassIndex, ...);
+    ViewContext.GenerateSamples(LightingChannelsTexture, ShadingPassIndex, ...);
+    ViewContext.GenerateVolumeSamples(...);
+    ViewContext.RayTrace(...);
+    ViewContext.Resolve(...);
+    ViewContext.DispatchDebugTileClassificationPasses(...);
+    ViewContext.DispatchVisualizeLightsPasses(...);
+}
+ViewContext.DenoiseLighting(OutputColorTarget, ...);</div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>MegaLights 是 UE5.8 为"<b>大量动态投影光源</b>"准备的实验性方案：把逐光源阴影（成本随光源数线性膨胀）改成"<b>每像素抽固定数量光源样本 + 光追求可见性 + 时空去噪</b>"，让阴影成本与投影光源总数解耦。它由三级漏斗把关（<span class="inline">IsRequested → HasRequiredTracingData → GetMegaLightsMode</span>，默认关、需 HWRT/SWRT、不含方向光），单帧走"分块 → 下采样 → 采样 → 追踪 → 着色/解析 → 去噪"九个阶段（<span class="inline">FMegaLightsViewContext</span>），并被 GBuffer/HairStrands/FrontLayerTranslucency 三种输入复用。理解了这条骨架，后面每一篇都是往其中某个阶段里钻细节。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="MegaLightsOverview_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>总览 CVar 与管线附录</a><a class="tag" href="MegaLightsSampling_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#2 光源采样</a><a class="tag" href="MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 追踪与阴影</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/共同点：/g,'<span class="note-label common">共同点</span>')
+    .replace(/不同点：/g,'<span class="note-label diff">不同点</span>');
+});
+</script>
+</main></body></html>

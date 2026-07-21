@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>MegaLights 着色 · Tile 附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.tag:hover{border-color:var(--cyan);color:#fff}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.legend{display:flex;flex-wrap:wrap;gap:10px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 11px;border-radius:8px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13px}.toc a:hover{border-color:var(--cyan)}.mono{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}.table th{background:#101823}.table code{color:#9ee8ff}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.codebox{margin:10px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#080c12;color:#d7ecff;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre}</style></head><body>
+<header><h1>MegaLights 着色 · Tile 附录</h1><div class="subtitle">配套 <a href="MegaLightsShading_ConvergenceAnnotated.html" style="color:#9ee8ff">着色与解析</a> 主文档。列 <span class="mono">ETileType</span> 全枚举、着色/解析 CS 与 permutation、EMaterialMode。取自 UE5.8 本地源码 <span class="mono">MegaLightsResolve.cpp · MegaLightsInternal.h</span>。</div></header>
+<main>
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#tile">① ETileType 全枚举</a>
+<a href="#cs">② 着色/解析 CS 清单</a>
+<a href="#perm">③ FShadeLightSamplesCS permutation</a>
+<a href="#mat">④ EMaterialMode</a>
+</div></section>
+
+<section class="card" id="tile"><h2>① ETileType 全枚举</h2><div class="body"><span class="source-path">MegaLightsInternal.h L308-331 · enum class ETileType : uint8</span>
+<div class="codebox">enum class ETileType : uint8
+{
+    SimpleShading                       = TILE_MODE_SIMPLE_SHADING,
+    ComplexShading                      = TILE_MODE_COMPLEX_SHADING,
+    SimpleShading_Rect                  = TILE_MODE_SIMPLE_SHADING_RECT,
+    ComplexShading_Rect                 = TILE_MODE_COMPLEX_SHADING_RECT,
+    SimpleShading_Rect_Textured         = TILE_MODE_SIMPLE_SHADING_RECT_TEXTURED,
+    ComplexShading_Rect_Textured        = TILE_MODE_COMPLEX_SHADING_RECT_TEXTURED,
+    Empty                               = TILE_MODE_EMPTY,
+    // Substrate adaptive 额外类型
+    SingleShading                       = TILE_MODE_SINGLE_SHADING,
+    SingleShading_Rect                  = TILE_MODE_SINGLE_SHADING_RECT,
+    SingleShading_Rect_Textured         = TILE_MODE_SINGLE_SHADING_RECT_TEXTURED,
+    ComplexSpecialShading               = TILE_MODE_COMPLEX_SPECIAL_SHADING,
+    ComplexSpecialShading_Rect          = TILE_MODE_COMPLEX_SPECIAL_SHADING_RECT,
+    ComplexSpecialShading_Rect_Textured = TILE_MODE_COMPLEX_SPECIAL_SHADING_RECT_TEXTURED,
+
+    SHADING_MAX_LEGACY              = TILE_MODE_MAX_LEGACY,
+    SHADING_MAX_SUBSTRATE_BLENDABLE = TILE_MODE_MAX_SUBSTRATE_BLENDABLE,
+    SHADING_MAX_SUBSTRATE_ADAPTIVE  = TILE_MODE_MAX_SUBSTRATE_ADAPTIVE
+};</div>
+<p style="color:#a9b4c0">Legacy 材质只用前 7 个（Simple/Complex × 3 形态 + Empty）；Substrate 材质额外用 Single / ComplexSpecial 系列。permutation 上限用 <span class="inline">SHADING_MAX_SUBSTRATE_ADAPTIVE</span>。<span class="inline">GetShadingTileTypes(InputType, Platform)</span> 按输入类型裁剪实际编译的子集。<span class="inline">IsComplexTileType()</span> 判断是否 Complex 系（头发 complex transmittance 用）。</p></div></section>
+
+<section class="card" id="cs"><h2>② 着色/解析 CS 清单</h2><div class="body"><span class="source-path">MegaLightsResolve.cpp · IMPLEMENT_GLOBAL_SHADER</span>
+<table class="table"><thead><tr><th>CS 类</th><th>入口 · shader 文件</th><th>作用</th></tr></thead><tbody>
+<tr><td><code>FShadeLightSamplesCS</code></td><td>ShadeLightSamplesCS · MegaLightsShading.usf</td><td>逐 tile 施光 + Resolve 重建全分辨率</td></tr>
+<tr><td><code>FVisibleLightHashCS</code></td><td>VisibleLightHashCS · MegaLightsVisibleLightHash.usf</td><td>回写本帧可见光哈希（Guide by History）</td></tr>
+<tr><td><code>FClearResolvedLightingCS</code></td><td>MegaLightsShading.usf</td><td>清理 resolved 缓冲</td></tr>
+<tr><td><code>FMegaLightHairTransmittanceCS</code></td><td>MegaLightsShading.usf</td><td>头发透射</td></tr>
+<tr><td colspan="3" style="color:#a9b4c0">体积变体：<code>FVolumeShadeLightSamplesCS</code>（VolumeShadeLightSamplesCS）/ <code>FVolumeVisibleLightHashCS</code>（见 #6）</td></tr>
+</tbody></table></div></section>
+
+<section class="card" id="perm"><h2>③ FShadeLightSamplesCS permutation</h2><div class="body"><span class="source-path">MegaLightsResolve.cpp L127-134</span>
+<div class="codebox">class FTileType            : SHADER_PERMUTATION_INT("TILE_TYPE", ETileType::SHADING_MAX_SUBSTRATE_ADAPTIVE);
+class FDownsampleFactorX   : SHADER_PERMUTATION_RANGE_INT("DOWNSAMPLE_FACTOR_X", 1, 2);
+class FDownsampleFactorY   : SHADER_PERMUTATION_RANGE_INT("DOWNSAMPLE_FACTOR_Y", 1, 2);
+class FNumSamplesPerPixel1d: SHADER_PERMUTATION_SPARSE_INT("NUM_SAMPLES_PER_PIXEL_1D", 1, 2, 4);
+class FInputType           : SHADER_PERMUTATION_INT("INPUT_TYPE", EMegaLightsInput::Count);
+class FDebugMode           : SHADER_PERMUTATION_BOOL("DEBUG_MODE");
+class FReferenceMode       : SHADER_PERMUTATION_BOOL("REFERENCE_MODE");
+class FHairComplexTransmittance : SHADER_PERMUTATION_BOOL("USE_HAIR_COMPLEX_TRANSMITTANCE");</div>
+<p style="color:#a9b4c0">相比采样 CS，解析 CS 多了 <span class="inline">FDownsampleFactorX/Y</span>——因为 Resolve 要把降采样结果上采回全分辨率，下采样因子必须编进 shader。</p>
+<div class="note"><h3>Resolve 输出</h3><p><span class="inline">RWResolvedDiffuseLighting</span>（float3）· <span class="inline">RWResolvedSpecularLighting</span>（float3）· <span class="inline">RWShadingConfidence</span>（float）。是否输出置信度由 <span class="inline">r.MegaLights.ShadingConfidence</span> + <span class="inline">UseShadingConfidence</span> 控制。这三个 target 直接喂给去噪（#5）。</p></div></div></section>
+
+<section class="card" id="mat"><h2>④ EMaterialMode</h2><div class="body"><span class="source-path">MegaLightsInternal.h L340-344 · MegaLightsRayTracing.cpp L585-2113</span>
+<div class="codebox">enum class EMaterialMode : uint8
+{
+    Disabled,    // 命中即遮挡，最快，忽略 alpha test
+    AHS,         // AnyHitShader：命中求材质做 alpha 遮罩（镂空植被等）
+    RetraceAHS,  // 先快速遮挡，需要时用 any-hit 重追（半透明阴影）
+};</div>
+<table class="table"><thead><tr><th>模式</th><th>HWRT permutation 映射</th><th>用途</th></tr></thead><tbody>
+<tr><td><code>Disabled</code></td><td>—（minimal payload）</td><td>纯不透明遮挡，性能最好</td></tr>
+<tr><td><code>AHS</code></td><td><code>FEvaluateMaterials = true</code></td><td>alpha test / masked 材质正确投影</td></tr>
+<tr><td><code>RetraceAHS</code></td><td><code>FSupportContinuation = true</code></td><td>半透明阴影：命中后继续追踪</td></tr>
+</tbody></table>
+<p style="color:#a9b4c0">由 <span class="inline">r.MegaLights.HardwareRayTracing.EvaluateMaterialMode</span> 选择。raygen 路径下 <span class="inline">RetraceAHS</span> 会额外做一次 continuation retrace。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="MegaLightsShading_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 着色主文档</a><a class="tag" href="MegaLightsDenoise_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 去噪</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main></body></html>

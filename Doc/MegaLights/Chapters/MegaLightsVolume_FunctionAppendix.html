@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>MegaLights 体积 · 附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.tag:hover{border-color:var(--cyan);color:#fff}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.legend{display:flex;flex-wrap:wrap;gap:10px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 11px;border-radius:8px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13px}.toc a:hover{border-color:var(--cyan)}.mono{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}.table th{background:#101823}.table code{color:#9ee8ff}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.codebox{margin:10px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#080c12;color:#d7ecff;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;overflow-x:auto;white-space:pre}</style></head><body>
+<header><h1>MegaLights 体积 · 附录</h1><div class="subtitle">配套 <a href="MegaLightsVolume_ConvergenceAnnotated.html" style="color:#9ee8ff">体积光照</a> 主文档。列全部体积 CVar 默认值、体积 CS 清单、<span class="mono">FVolumeShadeLightSamplesCS</span> permutation、<span class="mono">FMegaLightsVolumeParameters</span> 字段。取自 UE5.8 本地源码 <span class="mono">MegaLights.cpp · MegaLightsResolve.cpp · MegaLightsInternal.h</span>。</div></header>
+<main>
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#cvar">① 体积 CVar 全表（含默认值）</a>
+<a href="#cs">② 体积 CS 清单</a>
+<a href="#perm">③ FVolumeShadeLightSamplesCS permutation</a>
+<a href="#param">④ FMegaLightsVolumeParameters 字段</a>
+<a href="#grid">⑤ Froxel 网格布局</a>
+</div></section>
+
+<section class="card" id="cvar"><h2>① 体积 CVar 全表（含默认值）</h2><div class="body"><span class="source-path">MegaLights.cpp L245-339 · MegaLightsRayTracing.cpp L52/293 · MegaLightsResolve.cpp L39</span>
+<table class="table"><thead><tr><th>CVar</th><th>默认值</th><th>作用</th></tr></thead><tbody>
+<tr><td><code>r.MegaLights.Volume</code></td><td>1</td><td>体积雾/体积光照半透明总开关</td></tr>
+<tr><td><code>r.MegaLights.Volume.Unified</code></td><td>1</td><td>雾与半透明复用一次采样/追踪</td></tr>
+<tr><td><code>r.MegaLights.Volume.DepthDistributionScale</code></td><td>32.0</td><td>切片深度分布缩放（指数 Z）</td></tr>
+<tr><td><code>r.MegaLights.Volume.GridPixelSize</code></td><td>8</td><td>体素 XY 大小（像素）</td></tr>
+<tr><td><code>r.MegaLights.Volume.GridSizeZ</code></td><td>128</td><td>Z 方向体素数</td></tr>
+<tr><td><code>r.MegaLights.Volume.DownsampleMode</code></td><td>2</td><td>0=1x1x1 / 2=半分辨率 2x2x2</td></tr>
+<tr><td><code>r.MegaLights.Volume.HZBOcclusionTest</code></td><td>1</td><td>被 HZB 遮挡的体素跳过计算</td></tr>
+<tr><td><code>r.MegaLights.Volume.NumSamplesPerVoxel</code></td><td>2</td><td>每降采样体素样本数（支持 2/4）</td></tr>
+<tr><td><code>r.MegaLights.Volume.MinSampleWeight</code></td><td>0.1</td><td>剔除影响过小的样本</td></tr>
+<tr><td><code>r.MegaLights.Volume.GuideByHistory</code></td><td>1</td><td>体积历史引导采样</td></tr>
+<tr><td><code>r.MegaLights.Volume.GuideByHistory.Filter</code></td><td>—</td><td>对体积可见光哈希做空间滤波</td></tr>
+<tr><td><code>r.MegaLights.Volume.WorldSpaceTraces</code></td><td>—</td><td>体积世界空间追踪</td></tr>
+<tr><td><code>r.MegaLights.Volume.TraceCompaction.ThreadGroupSize</code></td><td>—</td><td>体积追踪压缩线程组大小</td></tr>
+<tr><td><code>r.MegaLights.TranslucencyVolume</code></td><td>1</td><td>光照半透明体积开关</td></tr>
+<tr><td><code>r.MegaLights.TranslucencyVolume.DownsampleFactor</code></td><td>2</td><td>半透明体积分辨率降采样因子</td></tr>
+<tr><td><code>r.MegaLights.TranslucencyVolume.NumSamplesPerVoxel</code></td><td>2</td><td>每半分辨率体素样本数（支持 2/4）</td></tr>
+</tbody></table></div></section>
+
+<section class="card" id="cs"><h2>② 体积 CS 清单</h2><div class="body"><span class="source-path">MegaLightsSampling.cpp · MegaLightsRayTracing.cpp · MegaLightsResolve.cpp · IMPLEMENT_GLOBAL_SHADER</span>
+<table class="table"><thead><tr><th>CS/RGS 类</th><th>入口 · shader 文件</th><th>作用</th></tr></thead><tbody>
+<tr><td><code>FVolumeGenerateLightSamplesCS</code></td><td>VolumeGenerateLightSamplesCS · MegaLightsVolumeSampling.usf</td><td>逐体素生成光样本</td></tr>
+<tr><td><code>FVolumeCompactLightSampleTracesCS</code></td><td>VolumeCompactLightSampleTracesCS · MegaLightsVolumeRayTracing.usf</td><td>压缩有效体积样本</td></tr>
+<tr><td><code>FVolumeHardwareRayTraceLightSamplesCS / RGS</code></td><td>VolumeHardwareRayTraceLightSamplesCS/RGS · MegaLightsVolumeHardwareRayTracing.usf</td><td>体积硬件光追</td></tr>
+<tr><td><code>FVolumeSoftwareRayTraceLightSamplesCS</code></td><td>VolumeSoftwareRayTraceLightSamplesCS · MegaLightsVolumeRayTracing.usf</td><td>体积软件 SDF 追踪</td></tr>
+<tr><td><code>FVolumeShadeLightSamplesCS</code></td><td>VolumeShadeLightSamplesCS · MegaLightsVolumeShading.usf</td><td>体积施光 + 写 3D 光照缓存</td></tr>
+<tr><td><code>FVolumeVisibleLightHashCS</code></td><td>VolumeVisibleLightHashCS · MegaLightsVisibleLightHash.usf</td><td>回写体积可见光哈希</td></tr>
+<tr><td><code>FVolumeFilterVisibleLightHashCS</code></td><td>VolumeFilterVisibleLightHashCS · MegaLightsFilterVisibleLightHash.usf</td><td>体积哈希空间滤波</td></tr>
+</tbody></table>
+<p style="color:#a9b4c0"><span class="inline">FVolumeHardwareRayTraceLightSamples</span> 继承 <span class="inline">FLumenHardwareRayTracingShaderBase</span>——复用 Lumen 硬件光追基类。GroupSize：<span class="inline">FVolumeShadeLightSamplesCS</span> = 4（3D）。</p></div></section>
+
+<section class="card" id="perm"><h2>③ FVolumeShadeLightSamplesCS permutation</h2><div class="body"><span class="source-path">MegaLightsResolve.cpp L338-346</span>
+<div class="codebox">class FTranslucencyLightingVolume : SHADER_PERMUTATION_BOOL("TRANSLUCENCY_LIGHTING_VOLUME");
+class FResampleVolume         : SHADER_PERMUTATION_BOOL("RESAMPLE_VOLUME");
+class FDownsampleFactor       : SHADER_PERMUTATION_RANGE_INT("VOLUME_DOWNSAMPLE_FACTOR", 1, 2);
+class FNumSamplesPerVoxel1d   : SHADER_PERMUTATION_SPARSE_INT("NUM_SAMPLES_PER_VOXEL_1D", 2, 4);
+class FLightSoftFading        : SHADER_PERMUTATION_BOOL("USE_LIGHT_SOFT_FADING");
+class FDebugMode              : SHADER_PERMUTATION_BOOL("DEBUG_MODE");
+class FReferenceMode          : SHADER_PERMUTATION_BOOL("REFERENCE_MODE");
+class FIndirectVoxelDispatch  : SHADER_PERMUTATION_BOOL("INDIRECT_VOXEL_DISPATCH");</div>
+<p style="color:#a9b4c0"><span class="inline">RemapPermutation</span> 剪枝：<span class="inline">FReferenceMode</span> 强制 <span class="inline">FDownsampleFactor=1</span>；<span class="inline">FTranslucencyLightingVolume</span> 打开时强制 <span class="inline">FLightSoftFading=false</span>。<span class="inline">FParameters</span> 关键输出：<span class="inline">RWVolumeResolvedLighting</span>（雾）+ <span class="inline">RWTranslucencyVolumeResolvedLightingAmbient/Directional</span>（半透明双缓存），限权参数 <span class="inline">MaxShadingWeight</span> / <span class="inline">MaxShadingWeightForHiddenLight</span>。</p></div></section>
+
+<section class="card" id="param"><h2>④ FMegaLightsVolumeParameters 字段</h2><div class="body"><span class="source-path">MegaLightsInternal.h L79-92</span>
+<div class="codebox">SHADER_PARAMETER(float,      VolumeMinSampleWeight)
+SHADER_PARAMETER(int32,      VolumeDownsampleFactorMultShift)
+SHADER_PARAMETER(int32,      VolumeDebugSliceIndex)
+SHADER_PARAMETER(FIntVector, NumSamplesPerVoxel)
+SHADER_PARAMETER(FIntVector, NumSamplesPerVoxelDivideShift)
+SHADER_PARAMETER(FIntVector, DownsampledVolumeViewSize)
+SHADER_PARAMETER(FIntVector, VolumeViewSize)
+SHADER_PARAMETER(FIntVector, VolumeSampleViewSize)
+SHADER_PARAMETER(FVector3f,  VolumeInvBufferSize)
+SHADER_PARAMETER(FVector3f,  MegaLightsVolumeZParams)     // 指数 Z 分布参数
+SHADER_PARAMETER(uint32,     MegaLightsVolumePixelSize)
+SHADER_PARAMETER(FVector3f,  VolumeFrameJitterOffset)     // 时域抖动
+SHADER_PARAMETER(float,      VolumePhaseG)                // HG 相位各向异性</div>
+<p style="color:#a9b4c0"><span class="inline">MegaLightsVolumeZParams</span> 由 <span class="inline">GetVolumeGridZParams → CalculateGridZParams(NearPlane, FarPlane, DepthDistributionScale=32, GridSizeZ=128)</span> 计算，与 Volumetric Fog 同源。</p></div></section>
+
+<section class="card" id="grid"><h2>⑤ Froxel 网格布局</h2><div class="body"><span class="source-path">MegaLights.cpp L1216-1232</span>
+<div class="codebox">// 网格尺寸
+GridSizeXY = ceil(TargetResolution / GridPixelSize=8)
+GridSizeZ  = max(1, r.MegaLights.Volume.GridSizeZ=128)
+// Z 切片：指数分布，近密远疏
+ZParams = CalculateGridZParams(Near, Far, DepthDistributionScale=32, GridSizeZ)
+// 采样时半分辨率降采样（DownsampleMode=2 → 2x2x2）
+DownsampledGridSize = GridSize / DownsampleFactor</div>
+<p style="color:#a9b4c0">渲染入口序列（L2315-2317）：<span class="inline">GenerateVolumeSamples → VolumeRayTrace → VolumeResolve</span>，结果存入 <span class="inline">View.GetOwnMegaLightsVolume()</span>。可在 <span class="inline">AsyncCompute</span>（<span class="inline">VolumeUseAsyncCompute</span>）上与 GBuffer 主管线并行。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend"><a class="tag" href="MegaLightsVolume_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 体积主文档</a><a class="tag" href="MegaLightsSampling_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#2 采样</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main></body></html>
