@@ -21,19 +21,19 @@ r.Lumen.Visualize.CardPlacement 1   // Mesh Cards 覆盖
 Visualize > GlobalDistanceField     // 远场 SDF
 r.Lumen.Visualize.CardGenerationSurfels // surfel 分布</textarea><div class="note"><h3>说明</h3><p><b>Overview</b> 是入口，一屏能大致看出 GI/反射/探针哪块异常。定位到方向后开单项：<span class="inline">LumenScene</span>/<span class="inline">SurfaceCache</span> 查表面缓存、<span class="inline">CardPlacement</span> 查卡片覆盖（红=漏）、<span class="inline">GlobalDistanceField</span> 查远场几何。<span class="inline">CardGenerationSurfels</span> 能看到离线烘焙的 surfel 分布，用于诊断某网格为什么卡片布局不理想。</p></div></div></section>
 
-<section id="prof" class="card"><h2>2. Profiler pass 清单</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ProfileGPU 树里搜这些前缀：
-Lumen.ScreenProbeGather   // Final Gather 主体
+<section id="prof" class="card"><h2>2. Profiler pass 清单</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ProfileGPU 树里搜这些 RDG 事件 scope 名（camelCase）：
+LumenScreenProbeGather    // Final Gather 主体
   .TraceScreen / .TraceMeshSDFs / .TraceVoxels
   .Temporal / .SpatialFilter / .ConvertToIrradiance
-Lumen.Reflections
+LumenReflections
   .GenerateRays / .Trace / .Resolve
   .DenoiserTemporal / .DenoiserSpatial
-Lumen.SceneLighting
+LumenSceneLighting
   .DirectLighting / .Radiosity
-Lumen.UpdateScene         // 卡片捕获（可能尖峰）
-Lumen.RadianceCache       // 远场缓存更新
+LumenSceneUpdate          // 卡片捕获（可能尖峰）
+UpdateWorldRadianceCaches // 远场缓存更新
 
-// stat GPU：实时分类，快速看总占比</textarea><div class="note"><h3>说明</h3><p>ProfileGPU 抓单帧 GPU 耗时树，展开后按上面这些前缀找 Lumen 的 pass。<span class="inline">ScreenProbeGather</span> 下的 <span class="inline">.Trace*</span> 是追踪耗时、<span class="inline">.Temporal/.SpatialFilter</span> 是降噪、<span class="inline">.ConvertToIrradiance</span> 是 SH 落地。<span class="inline">Reflections</span> 分 GenerateRays→Trace→Resolve→两段降噪。<span class="inline">SceneLighting</span>（DirectLighting/Radiosity）与 <span class="inline">UpdateScene</span>（卡片捕获）属于 Surface Cache 侧，平时稳定但物体变化时 UpdateScene 会尖峰。<span class="inline">stat GPU</span> 适合实时粗看总占比，<span class="inline">ProfileGPU</span> 适合抓一帧细分。</p></div></div></section>
+// stat GPU：实时分类，快速看总占比</textarea><div class="note"><h3>说明</h3><p>ProfileGPU 抓单帧 GPU 耗时树，展开后按上面这些 RDG 事件 scope 名（camelCase）找 Lumen 的 pass。<span class="inline">LumenScreenProbeGather</span> 下的 <span class="inline">.Trace*</span> 是追踪耗时、<span class="inline">.Temporal/.SpatialFilter</span> 是降噪、<span class="inline">.ConvertToIrradiance</span> 是 SH 落地。<span class="inline">LumenReflections</span> 分 GenerateRays→Trace→Resolve→两段降噪。<span class="inline">LumenSceneLighting</span>（DirectLighting/Radiosity）与 <span class="inline">LumenSceneUpdate</span>（卡片捕获）属于 Surface Cache 侧，平时稳定但物体变化时 LumenSceneUpdate 会尖峰。<span class="inline">stat GPU</span> 适合实时粗看总占比，<span class="inline">ProfileGPU</span> 适合抓一帧细分。</p></div></div></section>
 
 <section id="quality" class="card"><h2>3. 画质 CVar</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ===== Final Gather 画质 =====
 r.Lumen.ScreenProbeGather.DownsampleFactor  // 探针间距，越小越清晰越贵

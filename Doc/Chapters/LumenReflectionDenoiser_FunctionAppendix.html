@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>反射去噪器 函数附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.tag:hover{border-color:var(--cyan);color:#fff}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse;font-size:14px}.table th,.table td{border:1px solid var(--line);padding:8px 9px;text-align:left;vertical-align:top}.table th{background:#101823}.mono{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#101823;color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan)}</style></head><body>
+<header><h1>反射去噪器 函数附录</h1><div class="subtitle">配合主文档使用。展开三个去噪 CS 的输入/输出、二阶矩→方差机制、tonemap 防 firefly，以及三组 CVar（Temporal / ScreenSpaceReconstruction / BilateralFilter）。所有 shader 入口/字段/CVar 均取自 UE5.8 本地源码。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenReflectionDenoiser_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 反射去噪器 主文档</a><a class="tag" href="LumenReflectionsGPU_FunctionAppendix.html"><span class="dot" style="background:var(--purple)"></span>对照：Reflections GPU 附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">Engine/Shaders/Private/Lumen/LumenReflectionDenoiserClear.usf · LumenReflectionDenoiserTemporal.usf · LumenReflectionDenoiserSpatial.usf · Source/…/LumenReflections.cpp</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#Pass">1. 三个去噪 CS</a><a href="#Temporal">2. Temporal 输入/输出</a><a href="#Spatial">3. Spatial 输入/输出</a><a href="#Var">4. 二阶矩 → 方差</a><a href="#CVar">5. 三组 CVar</a><a href="#Rel">流程关系表</a></div></section>
+
+<section id="Pass" class="card"><h2>1. 三个去噪 CS（按执行顺序）</h2><div class="body"><table class="table"><thead><tr><th>#</th><th>Compute Shader</th><th>职责</th></tr></thead><tbody>
+<tr><td>0</td><td class="mono">LumenReflectionDenoiserClearCS</td><td>为本帧新增/无历史的 tile 清 UAV 与历史缓冲，避免读到脏数据</td></tr>
+<tr><td>1</td><td class="mono">ScreenSpaceReconstruction（Resolve）</td><td>BRDF 重加权空间重建：借邻域已追光线补样本（<span class="inline">r.Lumen.Reflections.ScreenSpaceReconstruction</span> 开关）</td></tr>
+<tr><td>2</td><td class="mono">LumenReflectionDenoiserTemporalCS</td><td>重投影 + 历史累积 + 邻域钳制，写颜色<b>与二阶矩</b></td></tr>
+<tr><td>3</td><td class="mono">LumenReflectionDenoiserSpatialCS</td><td>方差引导双边滤波 + tonemap 防 firefly + 合成半透明/背景可见性</td></tr>
+</tbody></table><div class="note" style="margin-top:12px"><h3>说明</h3><p>都以 <span class="inline">REFLECTION_THREADGROUP_SIZE_2D</span> 为线程组尺寸。Clear 是准备步，真正的去噪主体是 Temporal + Spatial 两步，ScreenSpaceReconstruction 作为时域前的空间补样本。三者共享 <span class="inline">LumenReflectionDenoiserCommon.ush</span> 里的公共逻辑。</p></div></div></section>
+
+<section id="Temporal" class="card"><h2>2. Temporal 输入 / 输出</h2><div class="body"><table class="table"><thead><tr><th>方向</th><th>资源</th><th>用途</th></tr></thead><tbody>
+<tr><td>读</td><td class="mono">VelocityTexture / SceneDepthHistory</td><td>重投影上一帧到本帧</td></tr>
+<tr><td>读</td><td class="mono">ResolvedSpecularLighting / ResolvedReflectionsDepth</td><td>本帧空间重建后的反射与深度</td></tr>
+<tr><td>读</td><td class="mono">SpecularHistoryTexture / NumFramesAccumulatedHistoryTexture</td><td>历史反射 + 已累积帧数</td></tr>
+<tr><td>参数</td><td class="mono">TemporalMaxFramesAccumulated / TemporalNeighborhoodClampScale / HistoryDistanceThreshold</td><td>累积上限 / 邻域钳制强度 / 历史有效距离</td></tr>
+<tr><td>写</td><td class="mono">RWSpecularAndSecondMoment</td><td>累积后的反射颜色 <b>+ 二阶矩</b>（float4）</td></tr>
+<tr><td>写</td><td class="mono">RWNumFramesAccumulated</td><td>更新后的累积帧数</td></tr>
+</tbody></table></div></section>
+
+<section id="Spatial" class="card"><h2>3. Spatial 输入 / 输出</h2><div class="body"><table class="table"><thead><tr><th>方向</th><th>资源</th><th>用途</th></tr></thead><tbody>
+<tr><td>读</td><td class="mono">SpecularLightingAndSecondMomentTexture</td><td>Temporal 产出的颜色 + 二阶矩（据此算方差）</td></tr>
+<tr><td>读</td><td class="mono">NumFramesAccumulatedTexture</td><td>累积帧数（判 disocclusion 强度）</td></tr>
+<tr><td>读</td><td class="mono">FinalThroughputTexture / BackgroundVisibilityTexture</td><td>半透明透射率 / 背景可见性（合成用）</td></tr>
+<tr><td>参数</td><td class="mono">SpatialFilterKernelRadius / NumSamples / DepthWeightScale / MaxDisocclusionFrames</td><td>双边核半径 / 采样数 / 深度权重 / 最大 disocclusion 帧</td></tr>
+<tr><td>写</td><td class="mono">RWSpecularIndirectAccumulated</td><td>去噪后的镜面反射（供 Composite）</td></tr>
+<tr><td>写</td><td class="mono">RWTranslucencyLighting</td><td>合成后的半透明光照</td></tr>
+</tbody></table><div class="note" style="margin-top:12px"><h3>tonemap 防 firefly</h3><p><span class="inline">TonemapLighting(L, Disocclusion) = L / (1 + Disocclusion * Luminance(L))</span>，滤波后 <span class="inline">InverseTonemapLighting</span> 逆回。disocclusion 越大压得越狠——把新露出区域的超亮 firefly 摊平，滤完再还原，避免亮点被平均污染一片。</p></div></div></section>
+
+<section id="Var" class="card"><h2>4. 二阶矩 → 方差：自适应的核心</h2><div class="body"><div class="note"><h3>为什么存"平方"</h3><p>Temporal 累积时同时维护<b>一阶矩（均值 μ）</b>与<b>二阶矩（平方的均值 E[x²]）</b>。方差 = <span class="inline">E[x²] − μ²</span>。有了每像素方差，Spatial 就能<b>按方差自适应</b>：方差大（噪/不稳）→ 加大核半径、多采样、狠滤；方差小（稳定镜面）→ 轻滤保锐。这是现代实时降噪（SVGF 类）的标准套路，把"该糊多少"从固定核变成数据驱动。</p><p><span class="note-label common">共同点</span>与 SVGF/ReSTIR 的方差引导滤波同源——都用时域方差指导空间核。</p><p><span class="note-label diff">不同点</span>Lumen 反射额外把方差与<b>粗糙度</b>关联（镜面即使方差偶尔偏大也要保护锐度），并配合 tonemap 单独处理 disocclusion firefly。</p></div></div></section>
+
+<section id="CVar" class="card"><h2>5. 三组 CVar</h2><div class="body"><table class="table"><thead><tr><th>CVar</th><th>作用</th></tr></thead><tbody>
+<tr><td class="mono">r.Lumen.Reflections.Temporal</td><td>是否启用时域累积</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.Temporal.MaxFramesAccumulated</td><td>历史累积帧数上限</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.Temporal.NeighborhoodClampScale</td><td>邻域钳制强度（防拖影 vs 稳定）</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.Temporal.MaxRayDirections</td><td>时域累积的方向多样性上限</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.Temporal.DistanceThreshold</td><td>历史有效性的距离阈值</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.ScreenSpaceReconstruction</td><td>是否启用 BRDF 重加权空间重建</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.ScreenSpaceReconstruction.NumSamples</td><td>重建采样数（默认 5）</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.ScreenSpaceReconstruction.KernelRadius</td><td>重建核半径（默认 8）</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.ScreenSpaceReconstruction.RoughnessScale</td><td>&gt;1 更激进糊邻居（非物理但更干净）</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.ScreenSpaceReconstruction.MinWeight</td><td>重建最小权重</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.BilateralFilter</td><td>是否启用空间双边滤波</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.BilateralFilter.KernelRadius</td><td>双边核半径</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.BilateralFilter.NumSamples</td><td>双边采样数</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.BilateralFilter.DepthWeightScale</td><td>深度权重缩放</td></tr>
+<tr><td class="mono">r.Lumen.Reflections.DenoiserTonemapRange</td><td>firefly tonemap 的映射范围</td></tr>
+</tbody></table></div></section>
+
+<section id="Rel" class="card"><h2>流程关系表</h2><div class="body"><table class="table"><tr><th>位置</th><th>类型</th><th>说明</th></tr>
+<tr><td>DenoiserClear</td><td>准备</td><td>新 tile 清历史，防脏读</td></tr>
+<tr><td>ScreenSpaceReconstruction</td><td>空间补样</td><td>时域前借邻居 trace 补样本</td></tr>
+<tr><td>Temporal（二阶矩）</td><td>汇聚 + 产信号</td><td>累积压噪，产出方差供空间用</td></tr>
+<tr><td>方差</td><td>控制信号</td><td>驱动 Spatial 自适应滤波强度</td></tr>
+<tr><td>Spatial 双边</td><td>收敛</td><td>方差引导滤波 + tonemap 防 firefly</td></tr>
+<tr><td>BackgroundVisibility / Throughput</td><td>耦合</td><td>顺带合成半透明光照（与光追半透明共用）</td></tr>
+<tr><td>SpecularIndirect</td><td>输出契约</td><td>干净反射，供 DiffuseIndirectComposite</td></tr>
+</table></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/^共同点：/, '<span class="note-label common">共同点</span>')
+    .replace(/^不同点：/, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body></html>
