@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>追踪公共层 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:720px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>追踪公共层 · 所有追踪 pass 共享的参数与工具</h1><div class="subtitle">Screen Probe Gather、Reflections、Translucency、Radiance Cache——这些追踪 pass 看起来各干各的，其实都<b>先调同一批公共函数</b>把"追踪所需的一切"打包好：Surface Cache 的四张 atlas、Global SDF 页表、天光泄漏、高度雾、Feedback 回写缓冲、Mesh SDF 剔除网格……这一层就是 <span class="inline">LumenTracingUtils</span>。本页讲清这个"公共供给层"：<b>GetLumenCardTracingParameters</b>（把 atlas/feedback/雾/天光泄漏一次性塞进 <span class="inline">FLumenCardTracingParameters</span>）、一族<b>追踪参数结构体</b>（Card/MeshSDF/Indirect/Diffuse/HZBScreen）、<b>半球方向采样生成器</b>、<b>Mesh SDF/Heightfield 视锥网格剔除</b>，以及最关键的<b>屏幕空间追踪工具 SetupHZBScreenTraceParameters</b>——它让每条光线在打 SDF/硬件 RT 之前先复用上一帧屏幕颜色。理解这一层，就理解了"Lumen 的每条 trace 到底带着什么上路"。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/打包</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/剔除</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/场景资源</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>持久化/上帧历史</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁/CVar</span></div></section>
+
+<section class="card"><h2>一眼看懂：一次 trace 前的公共准备</h2><div class="body flow"><div class="node blue"><strong>调用方</strong><small>Probe/Refl/TRV。</small></div><div class="node green"><strong>GetLumenCardTracingParameters</strong><small>打包 atlas+feedback。</small></div><div class="node blue"><strong>天光泄漏/高度雾</strong><small>miss 时补天空。</small></div><div class="node cyan"><strong>Feedback UAV</strong><small>回写"采了哪些页"。</small></div><div class="node orange"><strong>CullForCardTracing</strong><small>MeshSDF→视锥网格。</small></div><div class="node func"><strong>SetupDiffuseTracing</strong><small>锥角/步长/距离。</small></div><div class="node cyan"><strong>SetupHZBScreenTrace</strong><small>复用上帧屏幕色。</small></div><div class="node out"><strong>参数就绪</strong><small>交给追踪 shader。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"为什么要有公共层、每条 trace 带着什么上路"。各细节——FLumenCardTracingParameters 全字段、天光泄漏/高度雾/CachedLightingPreExposure 计算、Feedback buffer 的 UAV 与 dummy 回退、FHemisphereDirectionSampleGenerator、三个剔除函数（Cull...ForView / ToViewGrid / ForCardTracing）、SetupLumenDiffuseTracingParameters(ForProbe) 的锥角与距离、SetupHZBScreenTraceParameters 的三源输入选择——放在函数附录。</p><a class="tag" href="LumenTracingUtils_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 追踪公共层 函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：谁在用这一层</h2><div class="body"><p>这一层没有"入口帧"——它是<b>被所有追踪 pass 反复调用的工具箱</b>。<span class="inline">GetLumenCardTracingParameters</span> 被 <a href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html">Screen Probe Gather</a>、<a href="LumenReflections_ConvergenceAnnotated.html">Reflections</a>、<a href="LumenRadianceCache_ConvergenceAnnotated.html">Radiance Cache</a>、Radiosity 等全部调用，因为任何 trace 命中 <a href="LumenSurfaceCache_ConvergenceAnnotated.html">Surface Cache</a> 都要采那四张 atlas、都要往 Feedback 缓冲回写"我采了哪些页"（供 <a href="LumenSurfaceCacheSupply_ConvergenceAnnotated.html">供给侧</a>下帧决定驻留）。<span class="inline">SetupHZBScreenTraceParameters</span> 被 Reflections（软件+硬件）、ScreenProbeTracing、ShortRangeAO 调用——它们都想在打昂贵的 SDF/硬件光线前，先用 HZB 在<b>上一帧的屏幕颜色</b>里试着找命中（最便宜的一档）。所以这一层是"横切"性质：不属于某条链路，而是每条链路都踩的地基。</p></div></section>
+
+<section class="card"><h2>完整源码对照（公共层骨架）</h2><div class="body"><p>GetLumenCardTracingParameters + SetupHZBScreenTraceParameters 的真实骨架（省略 dummy 回退分支细节）。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenTracingUtils.cpp · LumenTracingUtils.h · LumenReflectionTracing.cpp · LumenDiffuseIndirect.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ===== 公共参数打包：所有 trace 命中 Surface Cache 都要这一套 =====
+void GetLumenCardTracingParameters(GraphBuilder, View, LumenSceneData, FrameTemporaries,
+                                   bool bSurfaceCacheFeedback, FLumenCardTracingParameters& Out) {
+    Out.View = View.ViewUniformBuffer;
+    Out.Scene = View.GetSceneUniforms().GetBuffer(GraphBuilder);
+    Out.LumenCardScene = FrameTemporaries.LumenCardSceneUniformBuffer;
+    Out.ReflectionStruct = CreateReflectionUniformBuffer(GraphBuilder, View);
+
+    // 天光泄漏（ray miss 时用天空近似补光，避免纯黑）
+    Out.DiffuseColorBoost = 1.0f / max(PostProcess.LumenDiffuseColorBoost, 1.0f);
+    Out.SkylightLeakingColor = max(PostProcess.LumenSkylightLeaking, 0) * PostProcess.LumenSkylightLeakingTint;
+    Out.SkylightLeakingRoughness = CVarLumenSkylightLeakingRoughness;             // r.Lumen.SkylightLeaking.Roughness=0.3
+    Out.InvFullSkylightLeakingDistance = 1 / clamp(LumenFullSkylightLeakingDistance, .1, MaxTraceDistance);
+    Out.CachedLightingPreExposure = Lumen::GetCachedLightingPreExposure();
+
+    // 高度雾（对 trace 命中的光照施加雾）
+    Out.SampleHeightFog       = CVarLumenSampleHeightFog > 0;                     // r.Lumen.HeightFog=1
+    Out.SampleHeightFogOnGI   = CVarLumenSampleHeightFog>0 && CVarLumenSampleHeightFogOnGI>0; // GI 上默认关
+    Out.MinDistanceForFoggingSky = CVarLumenMinDistanceForFoggingSky;            // 100000
+    Out.FogUniformParameters = CreateFogUniformBuffer(GraphBuilder, View);
+
+    // Feedback 回写缓冲（trace 命中时写"采了哪个页" -> 供给侧下帧读）
+    if (FrameTemporaries.SurfaceCacheFeedbackResources.BufferUAV && bSurfaceCacheFeedback) {
+        Out.RWSurfaceCacheFeedbackBuffer = ...BufferUAV;
+        Out.SurfaceCacheFeedbackBufferSize = ...BufferSize;
+        Out.SurfaceCacheFeedbackBufferTileJitter = ...GetFeedbackBufferTileJitter();  // 抖动采样
+    } else { /* 绑 dummy UAV，Size=0 */ }
+
+    // Surface Cache 四张 atlas（trace 命中查这里）+ 中间光照 atlas
+    Out.AlbedoAtlas/NormalAtlas/EmissiveAtlas/DepthAtlas = OrBlack2DIfNull(...);
+    Out.DirectLightingAtlas/IndirectLightingAtlas/FinalLightingAtlas = OrBlack2DIfNull(...);
+
+    // Global SDF 页表（软件追踪用）
+    Out.GlobalDistanceFieldPageObjectGridBuffer = ...;
+    Out.NumGlobalSDFClipmaps = View.GlobalDistanceFieldInfo.Clipmaps.Num();
+}
+
+// ===== 屏幕空间追踪工具：最便宜的一档，复用上帧屏幕颜色 =====
+FLumenHZBScreenTraceParameters SetupHZBScreenTraceParameters(GraphBuilder, View, SceneTextures, HZBType) {
+    FRDGTextureRef InputColor = SceneTextures.Color.Resolve;   // 默认当前帧
+    // 优先级：CustomSSRInput > TemporalAAHistory(GLumenScreenTracingSource==1) > ScreenSpaceRayTracingInput
+    if (View.PrevViewInfo.CustomSSRInput.IsValid())         InputColor = 上帧 CustomSSR;
+    else if (PrevViewInfo.TemporalAAHistory.IsValid() && src==1) InputColor = 上帧 TAA 历史;
+    else if (PrevViewInfo.ScreenSpaceRayTracingInput.IsValid())  InputColor = 上帧 SSR 输入;
+
+    Parameters.HZBParameters = GetHZBParameters(GraphBuilder, View, HZBType);  // Closest/Furthest HZB
+    // 把上帧屏幕坐标换算成本帧重投影用的 scale/bias（颜色 & 深度分别一套）
+    Parameters.PrevScreenPositionScaleBias = ...;
+    Parameters.PrevScreenPositionScaleBiasForDepth = ...;
+    Parameters.PrevSceneColorPreExposureCorrection = ...;  // 曝光校正
+    return Parameters;
+}</textarea></div></section>
+
+<section class="card"><h2>1. 为什么要有公共层：追踪的"公共契约"</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 观察：Screen Probe / Reflections / Radiance Cache 的 trace shader
+//   命中 Surface Cache 后都要做同样的事：
+//     1) 查 FinalLightingAtlas 取该点光照
+//     2) 处理 ray miss -> 天光泄漏补天空
+//     3) 对结果施加高度雾
+//     4) 往 Feedback 回写"我采了这个页"
+
+// 如果每个 pass 各写一遍 -> 重复 + 容易漂移
+// -> 抽成 FLumenCardTracingParameters（一个 shader param 结构）
+//    + GetLumenCardTracingParameters（一次填满）
+
+// 调用方只需：
+//   FLumenCardTracingParameters TP;
+//   GetLumenCardTracingParameters(..., bFeedback, TP);
+//   PassParams->TracingParameters = TP;   // 塞进自己的 pass</textarea><div class="note"><h3>说明</h3><p>公共层解决的是<b>"每条 trace 命中 Surface Cache 后动作一致"</b>这个事实：查 atlas、天光泄漏补天空、施加高度雾、回写 Feedback——四件事对谁都一样。把它抽成一个 <span class="inline">FLumenCardTracingParameters</span> 结构体 + 一个 <span class="inline">GetLumenCardTracingParameters</span> 填充函数，任何 pass 只需一行就把这套契约带上路，避免每个 pass 各写一遍导致漂移。</p><p><span class="note-label common">共同点</span>与 <a href="LumenSceneLighting_ConvergenceAnnotated.html">光照烘焙</a>共用同一批 atlas 句柄——供给侧写，追踪侧读，靠这个结构体对齐。</p></div></div></section>
+
+<section class="card"><h2>2. 天光泄漏与高度雾：ray miss 的收尾</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 天光泄漏（SkylightLeaking）：
+//   一条 trace 若没命中任何几何（miss）-> 该往哪取光？
+//   -> 用天空近似"漏"一点进来，避免纯黑死角
+//   SkylightLeakingColor = LumenSkylightLeaking * Tint
+//   Roughness=0.3 -> 预滤天光 cubemap，藏掉天空细节
+//   InvFullSkylightLeakingDistance -> 距离越远漏得越足
+
+// 高度雾（HeightFog）：
+//   r.Lumen.HeightFog = 1        -> 对反射施加雾（明显）
+//   r.Lumen.HeightFogOnGI = 0    -> GI 上默认【关】
+//     原因：GI 上雾不明显，且与直接光不匹配
+//   MinDistanceForFoggingSky=100000
+//     -> 让 miss(天空) 的雾量与 MaxTraceDistance 解耦</textarea><div class="note"><h3>说明</h3><p><b>天光泄漏</b>是处理 ray miss 的兜底：一条光线没打到任何几何时，与其返回纯黑，不如让天空"漏"一点进来。用 <span class="inline">Roughness=0.3</span> 预滤天光 cubemap 藏掉太阳等高频，随距离渐强。<b>高度雾</b>则给 trace 命中的光照加雾——但源码里 <span class="inline">HeightFogOnGI</span> 默认关，因为漫反射 GI 上雾几乎看不出、还会与直接光在浓雾场景里失配（天光被雾抹掉）；只有反射上默认开。</p><p><span class="note-label diff">不同点</span>反射施雾（默认开），GI 施雾（默认关）——同一个 HeightFog 机制，两条链路策略相反。</p></div></div></section>
+
+<section class="card"><h2>3. Feedback 回写：追踪侧与供给侧的握手</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 这是【追踪侧】写、【供给侧】读的关键握手：
+//   bSurfaceCacheFeedback 为真时：
+//     RWSurfaceCacheFeedbackBuffer = 真 UAV
+//     TileJitter = GetFeedbackBufferTileJitter()  // 每帧抖动采样点
+//     TileWrapMask = GetFeedbackBufferTileWrapMask()
+//   否则：绑 dummy UAV，Size=0（不回写）
+
+// trace shader 命中某页时：
+//   按 TileJitter 抽样 -> 往 FeedbackBuffer 追加 (CardIndex, ResLevel, PageCoord)
+
+// SurfaceCacheFeedbackResLevelBias += 0.5f
+//   // +0.5 是为了 shader 里 uint->float 取整对齐
+
+// 下一帧：供给侧 UpdateSurfaceCacheFeedback 读走 -> 决定驻留哪些页
+//   （见 Surface Cache 供给侧主题）</textarea><div class="note"><h3>说明</h3><p>这是理解 Surface Cache "按需驻留"的一环：追踪 shader 每命中一个页，就按 <span class="inline">TileJitter</span> 抖动抽样往 <span class="inline">RWSurfaceCacheFeedbackBuffer</span> 追加一条"我用了这个页"。抖动是为了用稀疏采样覆盖全部页而不爆缓冲。<span class="inline">ResLevelBias + 0.5f</span> 是个经典的 uint→float 取整技巧。这些数据下一帧被<a href="LumenSurfaceCacheSupply_ConvergenceAnnotated.html">供给侧</a>的 <span class="inline">UpdateSurfaceCacheFeedback</span> 读走，转成驻留决策——供给和消费在这里闭环。</p></div></div></section>
+
+<section class="card"><h2>4. 剔除三兄弟：把场景几何塞进视锥网格</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 软件追踪 Mesh SDF 前，得先知道"每个屏幕格子附近有哪些 SDF 物体"
+// -> 三个剔除函数（LumenTracingUtils.h 声明，LumenDiffuseIndirect.cpp 实现）：
+
+// CullForCardTracing(...)
+//   总入口：内部调用下面两个，产出 FLumenMeshSDFGridParameters
+
+// CullMeshObjectsToViewGrid(View, Scene, ..., GridPixelsPerCellXY, GridSizeZ, ZParams, OutGrid)
+//   把 Mesh SDF 物体剔进【视锥 3D 网格】（froxel 式）
+//   -> NumGridCulledMeshSDFObjects / StartOffsetArray / IndicesArray
+
+// CullHeightfieldObjectsForView(...)
+//   地形单独剔一遍 -> CulledHeightfieldObjectIndexBuffer
+
+// trace shader 用 CardGridPixelSizeShift + CardGridZParams
+//   -> 从像素坐标算出网格 cell -> 只测该 cell 的候选物体</textarea><div class="note"><h3>说明</h3><p>软件追踪不可能对每条光线遍历场景所有 Mesh SDF。公共层先做一遍<b>视锥网格剔除</b>（froxel：屏幕 XY 分格 + 深度 Z 分层），把每个 cell 附近的 SDF 物体索引预存进 <span class="inline">GridCulled...IndicesArray</span>。追踪时 shader 用 <span class="inline">CardGridZParams</span> 从像素+深度反算出所在 cell，只测该 cell 的候选，避免全场景遍历。地形（Heightfield）因为表示不同单独剔一份（见 <a href="LumenSpecialGeometry_ConvergenceAnnotated.html">特殊几何</a>）。</p></div></div></section>
+
+<section class="card"><h2>5. SetupHZBScreenTrace：最便宜的一档追踪</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Lumen 追踪的分层成本：
+//   ① 屏幕空间 HZB trace（最便宜）：在上帧屏幕颜色里找命中
+//   ② Mesh SDF 软件 trace（中）
+//   ③ Global SDF trace（中）
+//   ④ 硬件 RT（贵）
+// -> 先试 ①，屏幕里能命中就不用打 SDF/RT
+
+// SetupHZBScreenTraceParameters：准备 ① 所需
+//   InputColor 三选一（按优先级）：
+//     CustomSSRInput -> TemporalAAHistory(src==1) -> ScreenSpaceRayTracingInput
+//   HZBType: ClosestHZB（探针追踪保守）/ FurthestHZB
+//   PrevScreenPositionScaleBias：本帧屏幕坐标 -> 上帧 UV 的重投影
+//   PrevSceneColorPreExposureCorrection：跨帧曝光补偿
+
+// 谁用它：Reflections(软/硬)、ScreenProbeTracing、ShortRangeAO</textarea><div class="note"><h3>说明</h3><p>Lumen 的追踪是<b>成本分层</b>的：屏幕空间 HZB trace 最便宜（只在上一帧已渲好的屏幕颜色里走 HZB 步进找命中），命中就省下昂贵的 SDF/硬件光线。<span class="inline">SetupHZBScreenTraceParameters</span> 就是为这一档准备输入——关键是 <b>InputColor 的三源优先级</b>（自定义 SSR 输入 &gt; TAA 历史 &gt; SSR 输入）和<b>跨帧重投影</b>（用 <span class="inline">PrevScreenPositionScaleBias</span> 把本帧屏幕点映射回上帧 UV，并做曝光校正）。这是复用时域信息、把追踪成本压到最低的公共工具。</p><p><span class="note-label common">共同点</span>反射、屏幕探针、短程 AO 都先走这一档——它们共享同一个 setup，只是 HZBType（Closest/Furthest）按需不同。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>点</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>FLumenCardTracingParameters</td><td>契约</td><td>所有追踪 pass 共享的 atlas/feedback/雾/天光泄漏参数束</td></tr>
+<tr><td>GetLumenCardTracingParameters</td><td>汇聚</td><td>一次填满上述结构，避免每 pass 重复</td></tr>
+<tr><td>SkylightLeaking / HeightFog</td><td>收尾</td><td>ray miss 补天空、命中施雾（GI 默认不施）</td></tr>
+<tr><td>RWSurfaceCacheFeedbackBuffer</td><td>握手</td><td>追踪侧写、供给侧读，闭环按需驻留</td></tr>
+<tr><td>CullForCardTracing</td><td>发散</td><td>Mesh SDF/地形剔进视锥网格，供软件追踪查候选</td></tr>
+<tr><td>SetupHZBScreenTraceParameters</td><td>工具</td><td>最便宜追踪档：复用上帧屏幕色 + 重投影</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>"追踪公共层"是 Lumen 里最不起眼却最被反复调用的一层。它把"每条 trace 命中 Surface Cache 后都要做的事"（查四张 atlas、天光泄漏补 miss、高度雾、Feedback 回写）抽成 <b>一个参数结构体 + 一个填充函数</b>，让 Screen Probe、Reflections、Radiance Cache 只需一行就带齐契约；它提供 <b>视锥网格剔除</b>把场景 SDF 预组织成"每格子的候选表"供软件追踪查；它还提供 <b>SetupHZBScreenTraceParameters</b> 这个"最便宜追踪档"的工具，让每条光线先在上一帧屏幕颜色里碰运气、命中就省下 SDF/硬件光线。这一层的价值在于<b>统一契约、消除漂移、共享成本</b>——它不属于任何一条信号链路，而是所有链路共同踩着的地基。看懂它，就看懂了 Lumen 每条 trace"到底带着什么上路、按什么顺序省钱"。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenTracingUtils_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>追踪公共层 函数附录</a><a class="tag" href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>Screen Probe Gather</a><a class="tag" href="LumenReflections_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>Reflections</a><a class="tag" href="LumenSurfaceCacheSupply_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>Surface Cache 供给侧</a><a class="tag" href="LumenDistanceField_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>Distance Field</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML.replace(/(共同点)：/g,'<span class="note-label common">$1</span>').replace(/(不同点)：/g,'<span class="note-label diff">$1</span>');
+});
+</script>
+</body></html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>追踪公共层 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>追踪公共层 函数算法附录</h1><div class="subtitle">配合主文档使用。展开 FLumenCardTracingParameters 全字段、天光泄漏/高度雾/预曝光计算、Feedback UAV 与 dummy 回退、FHemisphereDirectionSampleGenerator、三个剔除函数、SetupLumenDiffuseTracingParameters(ForProbe) 的锥角/距离/步长、SetupHZBScreenTraceParameters 的三源输入与重投影，以及关键 CVar。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenTracingUtils_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 追踪公共层 主文档</a><a class="tag" href="LumenSurfaceCacheSupply_FunctionAppendix.html"><span class="dot" style="background:var(--purple)"></span>对照：供给侧附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenTracingUtils.cpp · LumenTracingUtils.h · LumenReflectionTracing.cpp · LumenDiffuseIndirect.cpp</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#Params">1. FLumenCardTracingParameters 字段</a><a href="#Leak">2. 天光泄漏/高度雾/预曝光</a><a href="#FB">3. Feedback UAV 与 dummy 回退</a><a href="#Hemi">4. FHemisphereDirectionSampleGenerator</a><a href="#Cull">5. 三个剔除函数</a><a href="#Diffuse">6. SetupLumenDiffuseTracingParameters</a><a href="#HZB">7. SetupHZBScreenTraceParameters</a><a href="#CVar">8. 关键 CVar</a><a href="#Rel">函数关系表</a></div></section>
+
+<section id="Params" class="card"><h2>1. FLumenCardTracingParameters 字段</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenTracingUtils.h —— 所有追踪 pass 共享的参数束
+BEGIN_SHADER_PARAMETER_STRUCT(FLumenCardTracingParameters, )
+  // uniform buffers
+  View / Scene / ReflectionStruct / LumenCardScene / FogUniformParameters
+  // 天光泄漏 & 曝光
+  DiffuseColorBoost, SkylightLeakingColor, ReflectionSkylightLeakingAverageAlbedo,
+  SkylightLeakingRoughness, InvFullSkylightLeakingDistance,
+  CachedLightingPreExposure, OneOverCachedLightingPreExposure
+  // 高度雾
+  SampleHeightFog, SampleHeightFogOnGI, MinDistanceForFoggingSky
+  // Feedback + LRU 时间戳
+  RWCardPageLastUsedBuffer, RWCardPageHighResLastUsedBuffer,
+  RWSurfaceCacheFeedbackBufferAllocator, RWSurfaceCacheFeedbackBuffer,
+  SurfaceCacheFeedbackBufferSize/TileWrapMask/TileJitter/ResLevelBias,
+  SurfaceCacheUpdateFrameIndex
+  // Surface Cache atlas（trace 命中查这里）
+  RadiosityNumFramesAccumulatedAtlas, DirectLightingAtlas, IndirectLightingAtlas,
+  FinalLightingAtlas, AlbedoAtlas, NormalAtlas, EmissiveAtlas, DepthAtlas,
+  TileShadowDownsampleFactorAtlasForResampling
+  // Global SDF
+  GlobalDistanceFieldPageObjectGridBuffer(+Size), NumGlobalSDFClipmaps
+END_SHADER_PARAMETER_STRUCT()</textarea><div class="note"><h3>说明</h3><p>这个结构体是<b>追踪的"公共契约"清单</b>：一个 pass 只要 include 它，就自动拿到 Surface Cache 全部 atlas、Feedback 回写 UAV、LRU 时间戳缓冲（<span class="inline">RWCardPageLastUsedBuffer</span>）、天光泄漏/雾参数、Global SDF 页表。<span class="inline">RWCardPageHighResLastUsedBuffer</span> 单独一份是给高分辨率页的 LRU。任何字段变动，所有追踪 pass 一起受益或受累——这既是统一的好处也是耦合的代价。</p></div></div></section>
+
+<section id="Leak" class="card"><h2>2. 天光泄漏/高度雾/预曝光</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// GetLumenCardTracingParameters 里的计算：
+DiffuseColorBoost = 1 / max(LumenDiffuseColorBoost, 1);
+SkylightLeakingColor = max(LumenSkylightLeaking, 0) * LumenSkylightLeakingTint;
+ReflectionSkylightLeakingAverageAlbedo = max(CVarReflectionAverageAlbedo, 0); // 0.25
+SkylightLeakingRoughness = CVarSkylightLeakingRoughness;                       // 0.3
+InvFullSkylightLeakingDistance = 1 / clamp(LumenFullSkylightLeakingDistance, .1, MaxTraceDistance);
+
+CachedLightingPreExposure = Lumen::GetCachedLightingPreExposure();
+OneOverCachedLightingPreExposure = 1 / CachedLightingPreExposure;
+
+SampleHeightFog     = CVarLumenSampleHeightFog > 0;
+SampleHeightFogOnGI = CVarLumenSampleHeightFog > 0 && CVarLumenSampleHeightFogOnGI > 0;
+MinDistanceForFoggingSky = CVarLumenMinDistanceForFoggingSky;                  // 100000</textarea><div class="note"><h3>说明</h3><p><span class="inline">CachedLightingPreExposure</span> 是为了把 Surface Cache 里存的光照值缩放到浮点友好的量级（存时乘、用时除），避免 fp16 atlas 精度问题。反射的天光泄漏还多一个 <span class="inline">ReflectionSkylightLeakingAverageAlbedo=0.25</span>——反射命中点上没有真实材质反照率时用它近似。<span class="inline">SampleHeightFogOnGI</span> 是"两个 CVar 都开"才为真，说明它是在总雾开关之下的二级子开关。</p></div></div></section>
+
+<section id="FB" class="card"><h2>3. Feedback UAV 与 dummy 回退</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// bSurfaceCacheFeedback && FrameTemporaries.SurfaceCacheFeedbackResources.BufferUAV：
+if (有 feedback 资源 && bSurfaceCacheFeedback) {
+    RWSurfaceCacheFeedbackBufferAllocator = ...BufferAllocatorUAV;  // 原子计数器
+    RWSurfaceCacheFeedbackBuffer          = ...BufferUAV;
+    SurfaceCacheFeedbackBufferSize        = ...BufferSize;
+    SurfaceCacheFeedbackBufferTileJitter  = SurfaceCacheFeedback.GetFeedbackBufferTileJitter();
+    SurfaceCacheFeedbackBufferTileWrapMask= Lumen::GetFeedbackBufferTileWrapMask();
+} else {
+    // 绑 dummy（GetDummyFeedbackAllocatorUAV / GetDummyFeedbackUAV），Size=0
+    // -> shader 里 Size==0 分支不回写
+}
+SurfaceCacheFeedbackResLevelBias = GLumenSurfaceCacheFeedbackResLevelBias + 0.5f; // uint->float 取整
+SurfaceCacheUpdateFrameIndex = GetLumenSceneData(View)->GetSurfaceCacheUpdateFrameIndex();</textarea><div class="note"><h3>说明</h3><p>Feedback 是可选的：不需要回写时（例如某些不驱动驻留的 trace）绑一个 dummy UAV 并令 <span class="inline">Size=0</span>，shader 端据此走空分支。<span class="inline">BufferAllocatorUAV</span> 是原子计数器——多线程 append 时用它抢位置。<span class="inline">TileJitter</span> 每帧变，让稀疏回写覆盖到不同页。<span class="inline">SurfaceCacheUpdateFrameIndex</span> 是 LRU 的"当前帧号"，写进 <span class="inline">RWCardPageLastUsedBuffer</span> 作时间戳。</p><p><span class="note-label common">共同点</span>与<a href="LumenSurfaceCacheSupply_FunctionAppendix.html">供给侧附录</a>的 Feedback 打包格式对齐——这里写、那里读。</p></div></div></section>
+
+<section id="Hemi" class="card"><h2>4. FHemisphereDirectionSampleGenerator</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenTracingUtils.h —— 生成追踪光线方向的公共采样器
+class FHemisphereDirectionSampleGenerator {
+    TArray<FVector4f> SampleDirections;
+    float ConeHalfAngle;      // 每个样本代表的锥半角
+    int32 Seed;
+    int32 PowerOfTwoDivisor;  // 样本数向下取到 2 的幂
+    bool  bFullSphere;        // 半球 or 全球
+    bool  bCosineDistribution;// 余弦加权（漫反射用）or 均匀
+
+    void GenerateSamples(TargetNumSamples, PowerOfTwoDivisor, Seed,
+                         bFullSphere=false, bCosineDistribution=false);
+    void GetSampleDirections(out Directions, out NumDirections);
+};</textarea><div class="note"><h3>说明</h3><p>各追踪 pass 需要在半球（或全球）上撒方向发射光线。这个生成器把"撒方向"统一：<span class="inline">bCosineDistribution</span> 为真时按 cosθ 加权（匹配漫反射 BRDF，重要性采样），否则均匀。<span class="inline">ConeHalfAngle</span> 记录每个样本代表的立体角，供后续 cone trace 用。<span class="inline">PowerOfTwoDivisor</span> 把样本数对齐到 2 的幂便于 GPU 分组。CPU 侧生成后上传给 shader。</p></div></div></section>
+
+<section id="Cull" class="card"><h2>5. 三个剔除函数</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 声明在 .h，实现在 LumenDiffuseIndirect.cpp
+void CullForCardTracing(GraphBuilder, Scene, View, FrameTemporaries,
+                        IndirectTracingParameters, out MeshSDFGridParameters, PassFlags);
+//   总入口：产出 FLumenMeshSDFGridParameters
+
+void CullMeshObjectsToViewGrid(View, Scene, FrameTemporaries,
+                        MaxMeshSDFInfluenceRadius, CardTraceEndDistanceFromCamera,
+                        GridPixelsPerCellXY, GridSizeZ, ZParams,
+                        GraphBuilder, out GridParameters, PassFlags);
+//   Mesh SDF -> froxel 网格：NumGridCulledMeshSDFObjects / StartOffsetArray / IndicesArray
+
+void CullHeightfieldObjectsForView(GraphBuilder, Scene, View, FrameTemporaries,
+                        MaxMeshSDFInfluenceRadius, CardTraceEndDistanceFromCamera,
+                        out NumCulledObjects, out CulledObjectIndexBuffer);
+//   地形单独剔（表示不同）
+
+// 网格寻址：CardGridPixelSizeShift + CardGridZParams + CullGridSize</textarea><div class="note"><h3>说明</h3><p><span class="inline">CullForCardTracing</span> 是对外总入口，内部编排另外两个。<span class="inline">CullMeshObjectsToViewGrid</span> 建 froxel（视锥体素）：屏幕按 <span class="inline">GridPixelsPerCellXY</span> 分格、深度按 <span class="inline">GridSizeZ</span> 用 <span class="inline">ZParams</span>（非线性）分层，把每个 SDF 物体按包围盒撒进覆盖的 cell，输出 CSR 式的 <span class="inline">StartOffsetArray + IndicesArray</span>。<span class="inline">MaxMeshSDFInfluenceRadius</span> 决定物体影响膨胀范围，<span class="inline">CardTraceEndDistanceFromCamera</span> 是剔除的远裁剪。</p><p><span class="note-label diff">不同点</span>Mesh SDF 剔进 3D froxel 网格；Heightfield 只出一个平铺索引 buffer——地形是 2.5D，不需要 Z 分层。</p></div></div></section>
+
+<section id="Diffuse" class="card"><h2>6. SetupLumenDiffuseTracingParameters</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenDiffuseIndirect.cpp
+void SetupLumenDiffuseTracingParameters(MaxTraceDistance, OrthoMaxDimension, out P) {
+    P.StepFactor = clamp(GDiffuseTraceStepFactor, .1, 10);       // SDF 步进步长因子
+    P.MinSampleRadius = clamp(GLumenDiffuseMinSampleRadius, .01, 100);
+    P.MinTraceDistance = clamp(GLumenDiffuseMinTraceDistance, .01, 1000);
+    P.MaxTraceDistance = MaxTraceDistance;
+    // 正交相机可用 OrthoMaxDimension override MeshSDF trace 距离
+    P.MaxMeshSDFTraceDistance = clamp(MeshSDFTraceDistance, MinTrace, MaxTrace);
+    P.CardTraceEndDistanceFromCamera = GDiffuseCardTraceEndDistanceFromCamera;
+    P.SurfaceBias = clamp(GLumenGatherCvars.SurfaceBias, .01, 100);
+    P.CardInterpolateInfluenceRadius = clamp(..., .01, 1000);
+    P.HeightfieldMaxTracingSteps = Lumen::GetHeightfieldMaxTracingSteps();
+    P.DiffuseConeHalfAngle = 0.1f;  P.TanDiffuseConeHalfAngle = tan(0.1);
+}
+// ForProbe 变体：SurfaceBias=0（探针无表面偏移），MinTraceDistance 抬高
+//   并接受外部 DiffuseConeHalfAngle（探针锥角按每探针配）</textarea><div class="note"><h3>说明</h3><p>这函数把漫反射追踪的"步长/最短最长距离/表面偏移/锥角"一次配齐。<span class="inline">StepFactor</span> 控 SDF ray march 步长（越大越快越糊）。<span class="inline">SurfaceBias</span> 沿法线推起点，避免自相交。<span class="inline">ForProbe</span> 变体把 <span class="inline">SurfaceBias</span> 归零（探针从空间点发射、没有表面自交问题），改用抬高 <span class="inline">MinTraceDistance</span> 来躲 Mesh SDF 的世界空间误差，并允许每个探针传入自己的锥角。</p><p><span class="note-label diff">不同点</span>逐像素 gather 有 SurfaceBias、固定小锥角；逐探针 gather 无 SurfaceBias、锥角外部指定。</p></div></div></section>
+
+<section id="HZB" class="card"><h2>7. SetupHZBScreenTraceParameters</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenReflectionTracing.cpp
+FLumenHZBScreenTraceParameters SetupHZBScreenTraceParameters(GraphBuilder, View, SceneTextures, HZBType) {
+    InputColor = SceneTextures.Color.Resolve;   // 默认当前帧
+    // 三源优先级选上帧颜色：
+    if (PrevViewInfo.CustomSSRInput.IsValid())                    InputColor = CustomSSRInput.RT[0];
+    else if (PrevViewInfo.TemporalAAHistory.IsValid() && GLumenScreenTracingSource==1) {
+        InputColor = TemporalAAHistory.RT[0];
+        if (ArraySize>1) InputColorSliceIndex = TAA.OutputSliceIndex;   // 多切片 TAA
+    }
+    else if (PrevViewInfo.ScreenSpaceRayTracingInput.IsValid())   InputColor = SSRInput;
+
+    Parameters.HZBParameters = GetHZBParameters(GraphBuilder, View, HZBType); // Closest/Furthest
+    // 上帧颜色重投影 scale/bias（用 PrevColorBufferSize）
+    Parameters.PrevScreenPositionScaleBias = {viewport 换算};
+    // 上帧深度重投影 scale/bias（用 PrevViewInfo.DepthBuffer 尺寸，可能不同）
+    Parameters.PrevScreenPositionScaleBiasForDepth = {...};
+    Parameters.PrevSceneColorPreExposureCorrection = {跨帧曝光比};
+    return Parameters;
+}</textarea><div class="note"><h3>说明</h3><p>核心是<b>决定"在哪张上帧颜色里做屏幕追踪"</b>：优先自定义 SSR 输入（引擎/项目定制），其次 TAA 历史（受 <span class="inline">GLumenScreenTracingSource==1</span> 控制，注意处理多切片），再次 SSR 输入。颜色和深度的重投影 scale/bias <b>分两套</b>算，因为历史颜色缓冲与历史深度缓冲的尺寸/视口可能不同。<span class="inline">HZBType</span>（ClosestHZB 保守 / FurthestHZB 激进）由调用方按用途选——屏幕探针追踪用 Closest 更保守防漏光。</p></div></div></section>
+
+<section id="CVar" class="card"><h2>8. 关键 CVar</h2><div class="body"><table class="table"><thead><tr><th>CVar</th><th>默认</th><th>作用</th></tr></thead><tbody>
+<tr><td>r.Lumen.SkylightLeaking.Roughness</td><td>0.3</td><td>天光泄漏采样 cubemap 的粗糙度（预滤藏细节）</td></tr>
+<tr><td>r.Lumen.SkylightLeaking.ReflectionAverageAlbedo</td><td>0.25</td><td>反射命中点天光泄漏的近似反照率</td></tr>
+<tr><td>r.Lumen.HeightFog</td><td>1</td><td>对 Lumen trace 的光照施加高度雾</td></tr>
+<tr><td>r.Lumen.HeightFogOnGI</td><td>0</td><td>是否对 GI trace 也施雾（默认关，反射才施）</td></tr>
+<tr><td>r.Lumen.HeightFog.MinDistanceForFoggingSky</td><td>100000</td><td>miss(天空) 施雾的最小距离，与 MaxTraceDistance 解耦</td></tr>
+<tr><td>GLumenScreenTracingSource</td><td>-</td><td>=1 时屏幕追踪用 TAA 历史作输入颜色</td></tr>
+<tr><td>GDiffuseTraceStepFactor</td><td>-</td><td>漫反射 SDF ray march 步长因子（.1~10）</td></tr>
+</tbody></table></div></section>
+
+<section id="Rel" class="card"><h2>函数关系表</h2><div class="body"><table class="table"><thead><tr><th>函数</th><th>文件</th><th>角色</th></tr></thead><tbody>
+<tr><td>GetLumenCardTracingParameters</td><td>LumenTracingUtils.cpp</td><td>填满 FLumenCardTracingParameters 公共契约</td></tr>
+<tr><td>FHemisphereDirectionSampleGenerator</td><td>LumenTracingUtils.h</td><td>追踪方向采样（余弦/均匀）</td></tr>
+<tr><td>CullForCardTracing / ToViewGrid / ...ForView</td><td>LumenDiffuseIndirect.cpp</td><td>Mesh SDF/地形剔进视锥网格</td></tr>
+<tr><td>SetupLumenDiffuseTracingParameters(+ForProbe)</td><td>LumenDiffuseIndirect.cpp</td><td>配步长/距离/锥角/表面偏移</td></tr>
+<tr><td>SetupHZBScreenTraceParameters</td><td>LumenReflectionTracing.cpp</td><td>屏幕追踪档：选上帧颜色 + 重投影</td></tr>
+<tr><td>SetupLumenMeshSDFTracingParameters</td><td>LumenTracingUtils.cpp(声明)</td><td>Mesh SDF 追踪参数（距离场对象/图集）</td></tr>
+</tbody></table></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML.replace(/(共同点)：/g,'<span class="note-label common">$1</span>').replace(/(不同点)：/g,'<span class="note-label diff">$1</span>');
+});
+</script>
+</body></html>

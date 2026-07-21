@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>外围与边角特性 代码解析</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(8,minmax(116px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:98px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:660px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note p:nth-of-type(2){color:#ffd7a8}.note p:nth-of-type(3){color:#d8c7ff}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2,.grid3,.flow{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>外围与边角特性 · 半透明前层反射 / 天光 / Scalability / 离线 SDF</h1><div class="subtitle">前面的主题覆盖了 Lumen 的核心链路，但还剩一批"边角料"没讲——它们不构成主干，却决定了 Lumen 在真实项目里的<b>适配范围与画质档位</b>：① <b>Front Layer Translucency 反射</b>（给水面/玻璃这种"薄前层"透明物体一层清晰反射，走反射管线的一个 permutation）；② <b>天光</b>（skylight 作为 ray-miss 兜底与全局补光的角色）；③ <b>Scalability</b>（一堆 <span class="inline">ECVF_Scalability</span> CVar + 两种 Final Gather 方法，让 Lumen 从 Switch 2 一路缩放到工作站）；④ <b>离线 Mesh SDF / 卡片生成</b>（运行时用的距离场和卡片布局其实是烘焙期产出的）。本页把这四块串起来，补齐 Lumen 的全貌。</div></header>
+<main>
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚/合成</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散/追踪</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入/资源</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>持久化/离线</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>输出契约</span><span class="tag"><span class="dot" style="background:var(--red)"></span>门禁/档位</span></div></section>
+
+<section class="card"><h2>一眼看懂：四块边角特性</h2><div class="body flow"><div class="node blue"><strong>透明前层</strong><small>水面/玻璃。</small></div><div class="node orange"><strong>FrontLayer 反射</strong><small>反射管线 permutation。</small></div><div class="node blue"><strong>天光/Skylight</strong><small>miss 兜底补光。</small></div><div class="node gate"><strong>ECVF_Scalability</strong><small>画质档位 CVar。</small></div><div class="node gate"><strong>FinalGatherMethod</strong><small>Irradiance vs Screen Probe。</small></div><div class="node cyan"><strong>离线 Mesh SDF</strong><small>烘焙期生成距离场。</small></div><div class="node cyan"><strong>离线卡片布局</strong><small>MeshCardsBuildData。</small></div><div class="node out"><strong>运行时消费</strong><small>喂给核心链路。</small></div></div></section>
+
+<section class="card"><h2>函数算法附录</h2><div class="body"><p>主文档聚焦"这四块各自补了什么、在何处接入主干"。各细节——FrontLayer 的 permutation 与全分辨率/单 closure 特判、天光泄漏与 skylight 采样、各 ECVF_Scalability CVar 清单、FinalGatherMethod 两法对比、离线 SDF/卡片生成的产物与运行时装配——放在函数附录。</p><a class="tag" href="LumenPeripheralFeatures_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 外围与边角特性 函数算法附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+
+<section class="card"><h2>上下文：它们各挂在主干的哪里</h2><div class="body"><p>四块特性接入主干的位置不同：<b>Front Layer 反射</b>是 <a href="LumenReflections_ConvergenceAnnotated.html">Reflections</a> 的一个 permutation 分支（<span class="inline">FRONT_LAYER_TRANSLUCENCY</span>），复用整条反射追踪/解析管线，只是输入换成透明前层的 GBuffer。<b>天光</b>横切所有追踪（ray miss 时的兜底光，见 <a href="LumenTracingUtils_ConvergenceAnnotated.html">追踪公共层</a>的 SkylightLeaking）与 <a href="LumenSceneLighting_ConvergenceAnnotated.html">Surface Cache 直接光</a>（skylight 作为一个光源烘进 atlas）。<b>Scalability</b> 是一层贯穿全局的 CVar 网，尤其 <span class="inline">r.Lumen.FinalGatherMethod</span> 在 <a href="LumenScreenProbeGather_RenderFlow_ConvergenceAnnotated.html">Screen Probe Gather</a> 与 <a href="LumenAltFinalGather_ConvergenceAnnotated.html">Irradiance Field Gather</a>之间切换整条 GI 主路。<b>离线 SDF/卡片</b>则发生在 cook/build 期，产出 <a href="LumenDistanceField_ConvergenceAnnotated.html">Mesh SDF</a> 与 <a href="LumenSurfaceCacheSupply_ConvergenceAnnotated.html">供给侧</a>装配用的 <span class="inline">FMeshCardsBuildData</span>。</p></div></section>
+
+<section class="card"><h2>完整源码对照（FrontLayer + Scalability 骨架）</h2><div class="body"><p>Front Layer 反射的接入点 + Scalability CVar 清单骨架（保留真实符号）。</p><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenReflections.cpp · Lumen.cpp · LumenTracingUtils.cpp</span><textarea class="codebox large" readonly spellcheck="false">// ===== ① Front Layer Translucency 反射：反射管线的一个分支 =====
+// LumenReflections.cpp
+#include "FrontLayerTranslucency.h"
+class FFrontLayerTranslucency : SHADER_PERMUTATION_BOOL("FRONT_LAYER_TRANSLUCENCY");
+// permutation 域里和 RadianceCache / SpatialReconstruction 等并列
+
+void ...ReflectionTileClassification(..., const FFrontLayerTranslucencyData* FrontLayerData, ...) {
+    const bool bFrontLayer = FrontLayerData && FrontLayerData->IsValid();
+
+    // 前层走【全分辨率】，普通反射走 Substrate 分辨率
+    EffectiveTextureResolution = bFrontLayer ? SceneTextures.Config.Extent
+                                             : Substrate::GetSubstrateTextureResolution(...);
+    // 前层只有【一层 closure】（薄前层，不做多层材质堆叠）
+    TracedClosureCount = (bFrontLayer || Substrate::IsStochasticLightingActive(...)) ? 1u
+                                             : Substrate::GetSubstrateMaxClosureCount(View);
+
+    // tile 分类用的 bitmask 也换成前层自己的
+    LumenTileBitmask = bFrontLayer ? FrontLayerData->StochasticLighting.LumenTileBitmask...
+                                   : FrameTemporaries.StochasticLighting.LumenTileBitmask...;
+
+    // 多 closure overflow 分类：前层/随机光照时跳过（只有一层）
+    ReflectionTileClassificationBuildLists(false);
+    if (Lumen::SupportsMultipleClosureEvaluation(View)
+        && !(bFrontLayer || Substrate::IsStochasticLightingActive(...)))
+        ReflectionTileClassificationBuildLists(true);   // overflow
+}
+
+// ===== ③ Scalability：一层贯穿全局的 CVar 网（Lumen.cpp）=====
+r.Lumen.Supported            (ECVF_ReadOnly)   // 项目级总开关，关了连 shader 都不编
+r.Lumen.AsyncCompute         (ECVF_Scalability) // 用 async compute
+r.Lumen.WaveOps              (ECVF_Scalability) // 用 wave intrinsics
+r.Lumen.ThreadGroupSize32    (ECVF_Scalability) // 32 vs 64 线程组
+r.Lumen.LightingDataFormat   (ECVF_Scalability) // 0=R11G11B10(快) 1=RGBA16 2=RGBA32(参考)
+r.Lumen.FinalGatherMethod    (ECVF_Scalability) // 0=Irradiance Field(中端/Switch2) 1=Screen Probe(高端)
+
+bool DoesRuntimePlatformSupportLumen() {
+    // 硬性门槛：需要 R16_UINT 的 TypedUAVLoad 能力
+    return UE::PixelFormat::HasCapabilities(PF_R16_UINT, EPixelFormatCapabilities::TypedUAVLoad);
+}</textarea></div></section>
+
+<section class="card"><h2>1. Front Layer 反射：给水面/玻璃一层清晰反射</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 问题：透明物体（水面、玻璃）也需要反射
+//   但它们不写不透明 GBuffer -> 主反射管线看不到
+// Front Layer Translucency：把"最靠前的一层透明"单独做成一份 GBuffer
+//   -> 复用 Lumen 反射管线，加个 permutation 分支
+
+// bFrontLayer 时的三个特判：
+//   1) EffectiveTextureResolution = 全分辨率
+//      （不走 Substrate 的降分辨率，前层要清晰）
+//   2) TracedClosureCount = 1
+//      （薄前层只算一层材质，不做多层 closure 堆叠）
+//   3) LumenTileBitmask = 前层自己的分类位图
+//      （tile 分类只跑非 overflow 那一遍）
+
+// 复用：追踪、空间重建、解析全走同一套 Reflections 代码
+//   只是输入 GBuffer 和输出目标换成前层的</textarea><div class="note"><h3>说明</h3><p>透明物体不写不透明 GBuffer，主反射管线看不到它们。<b>Front Layer Translucency</b> 的思路是把"最靠前的一层透明表面"单独渲成一份 GBuffer，然后<b>复用整条 Lumen 反射管线</b>——只加一个 <span class="inline">FRONT_LAYER_TRANSLUCENCY</span> permutation。三个关键特判：走<b>全分辨率</b>（前层反射要清晰，不降采样）、只算<b>一层 closure</b>（薄前层不堆叠多层材质）、用前层自己的 <span class="inline">LumenTileBitmask</span> 分类。这样水面/玻璃能拿到和不透明物体一致质量的 Lumen 反射，而不用另写一套追踪。</p><p><span class="note-label common">共同点</span>追踪/空间重建/解析全和不透明反射共用同一批 shader——只是输入输出换成前层。</p></div></div></section>
+
+<section class="card"><h2>2. 天光：ray miss 的兜底与全局补光</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 天光（Skylight）在 Lumen 里扮演两个角色：
+
+// A) ray-miss 兜底（追踪公共层的 SkylightLeaking）
+//    一条 trace 没命中几何 -> 采天光 cubemap 补光
+//    r.Lumen.SkylightLeaking.Roughness = 0.3（预滤藏细节）
+//    避免室内/遮蔽区纯黑死角
+
+// B) Surface Cache 直接光的一个光源
+//    skylight 作为一个"环境光源"烘进 DirectLightingAtlas
+//    -> 所有命中 Surface Cache 的 trace 间接吃到天光
+
+// 与直接光的一致性：
+//    天光的量级要和场景直接光匹配
+//    否则 GI 会偏亮/偏暗（HeightFogOnGI 默认关也和这有关）</textarea><div class="note"><h3>说明</h3><p>天光在 Lumen 里不是一个独立通道，而是<b>两处复用</b>的环境光：其一，作为<a href="LumenTracingUtils_ConvergenceAnnotated.html">追踪公共层</a>里 ray-miss 的兜底（SkylightLeaking，光线没打到东西时采预滤的天光 cubemap，避免死黑）；其二，作为 <a href="LumenSceneLighting_ConvergenceAnnotated.html">Surface Cache 直接光</a>烘焙时的一个环境光源，让所有间接命中都能吃到天光。它的价值是补上"封闭/遮蔽区域"的最后一点环境亮度，但量级必须和场景直接光匹配，否则 GI 整体偏色。</p></div></div></section>
+
+<section class="card"><h2>3. Scalability：从 Switch 2 到工作站</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// Lumen 用一层 ECVF_Scalability CVar 支撑巨大的硬件跨度：
+
+// 硬性门槛（编译/平台级）：
+//   r.Lumen.Supported = 1   -> 关了连 shader 都不编（省包体/加载）
+//   DoesRuntimePlatformSupportLumen()
+//     -> 需 R16_UINT TypedUAVLoad 能力
+
+// 性能开关（按档自动切）：
+//   r.Lumen.AsyncCompute      -> 空闲队列跑 Lumen
+//   r.Lumen.WaveOps           -> wave intrinsics 加速归约
+//   r.Lumen.ThreadGroupSize32 -> 32/64 线程组按硬件
+//   r.Lumen.LightingDataFormat-> R11G11B10(快)/RGBA16/RGBA32(参考)
+
+// 最重磅：r.Lumen.FinalGatherMethod
+//   0 = Irradiance Field Gather
+//       世界空间 Radiance Cache probe + 预积分 irradiance
+//       更快、质量较低 -> 中端 PC / Switch 2
+//   1 = Screen Probe Gather（默认）
+//       屏幕探针 + 自适应降采样 + 世界 Radiance Cache
+//       更高质量 -> 主机到工作站</textarea><div class="note"><h3>说明</h3><p>Lumen 要覆盖从 Switch 2 到高端工作站的硬件跨度，靠的是分层的 <span class="inline">ECVF_Scalability</span> CVar。最上层是<b>硬门槛</b>：<span class="inline">r.Lumen.Supported</span> 关了连 shader 都不编，运行时还查 <span class="inline">R16_UINT TypedUAVLoad</span> 能力。中层是<b>性能开关</b>（async/waveops/线程组/光照数据格式）随画质档自动切。最重磅的是 <span class="inline">r.Lumen.FinalGatherMethod</span>——它直接切换整条 GI 主路：<b>0=Irradiance Field</b>（世界空间探针预积分，快但糙，面向中端/Switch 2），<b>1=Screen Probe</b>（屏幕探针自适应，高质量，默认）。这是 Lumen 里最大的一个"档位分叉"。</p><p><span class="note-label diff">不同点</span>Irradiance Field 预积分 irradiance、无屏幕探针；Screen Probe 逐屏幕探针追踪 + 自己的时域累积——两条完全不同的 gather 主路。</p></div></div></section>
+
+<section class="card"><h2>4. 离线 Mesh SDF / 卡片：运行时数据的来源</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// 运行时 Lumen 消费两类【离线烘出】的数据：
+
+// A) Mesh Distance Field（Mesh SDF）
+//    cook/build 期为每个静态网格生成体素距离场
+//    -> 存进 DistanceFieldAtlas
+//    运行时软件追踪查它（见 Distance Field 主题）
+
+// B) Mesh Cards 布局（FMeshCardsBuildData）
+//    build 期分析网格 -> 决定放几张卡片、朝向、尺寸
+//    -> 随网格资产一起烘焙
+//    运行时 LumenMeshCards.cpp 只做【装配/合并】
+//       （见 Surface Cache 供给侧主题）
+
+// 关键认知：
+//   Lumen 运行时【不生成】几何表示，只【消费】
+//   离线生成的质量/覆盖度直接决定运行时 GI 质量
+//   -> 网格没生成 SDF/卡片 = Lumen 里"看不见"它</textarea><div class="note"><h3>说明</h3><p>一个容易忽略的事实：Lumen 运行时<b>不生成</b>几何表示，只<b>消费</b>烘焙期的产物。<b>Mesh SDF</b> 在 cook/build 期为每个静态网格算好体素距离场存进 atlas；<b>Mesh Cards 布局</b>（<span class="inline">FMeshCardsBuildData</span>）在 build 期分析网格决定卡片数量/朝向/尺寸，随资产烘焙。运行时的 <a href="LumenSurfaceCacheSupply_ConvergenceAnnotated.html">LumenMeshCards</a> 只做装配合并。这意味着<b>离线生成的质量直接决定运行时 GI 上限</b>——一个网格若没生成 SDF 或卡片，它在 Lumen 里就"隐身"，不参与 GI/反射。这也是为什么调 Lumen 有时要回头查资产的距离场生成设置。</p></div></div></section>
+
+<section class="card"><h2>汇聚点 / 发散点总表</h2><div class="body"><table class="table"><thead><tr><th>点</th><th>类型</th><th>说明</th></tr></thead><tbody>
+<tr><td>FRONT_LAYER_TRANSLUCENCY</td><td>发散</td><td>反射管线 permutation，前层走全分辨率 + 单 closure</td></tr>
+<tr><td>SkylightLeaking / skylight 光源</td><td>兜底</td><td>ray miss 补光 + Surface Cache 直接光烘焙</td></tr>
+<tr><td>r.Lumen.Supported / DoesRuntimePlatformSupportLumen</td><td>门禁</td><td>项目级 + 平台级硬门槛</td></tr>
+<tr><td>r.Lumen.FinalGatherMethod</td><td>档位</td><td>Irradiance Field(0) vs Screen Probe(1) 整路分叉</td></tr>
+<tr><td>Mesh SDF / FMeshCardsBuildData</td><td>离线</td><td>烘焙期生成，运行时只消费</td></tr>
+</tbody></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body"><p>这四块"边角料"共同决定了 Lumen 的<b>适用边界</b>。<b>Front Layer 反射</b>用一个 permutation 让透明前层（水面/玻璃）复用整条反射管线拿到清晰反射，代价是全分辨率+单 closure。<b>天光</b>不是独立通道，而是 ray-miss 兜底与 Surface Cache 直接光两处复用的环境补光，负责消灭死黑。<b>Scalability</b> 是一层贯穿的 CVar 网，从 <span class="inline">r.Lumen.Supported</span> 的硬门槛到 <span class="inline">r.Lumen.FinalGatherMethod</span> 的整路分叉，让 Lumen 从 Switch 2 缩放到工作站。<b>离线 Mesh SDF/卡片</b>则提醒我们：Lumen 运行时只消费烘焙产物，几何表示的质量在 cook 期就定了。理解这四块，才算真正理解 Lumen 不只是"一套算法"，而是"一套能落到各种硬件、各种材质的完整系统"。</p></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body"><a class="tag" href="LumenPeripheralFeatures_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>外围与边角特性 函数附录</a><a class="tag" href="LumenReflections_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>Reflections</a><a class="tag" href="LumenTracingUtils_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>追踪公共层</a><a class="tag" href="LumenSurfaceCacheSupply_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>Surface Cache 供给侧</a><a class="tag" href="LumenDistanceField_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>Distance Field</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML.replace(/(共同点)：/g,'<span class="note-label common">$1</span>').replace(/(不同点)：/g,'<span class="note-label diff">$1</span>');
+});
+</script>
+</body></html>

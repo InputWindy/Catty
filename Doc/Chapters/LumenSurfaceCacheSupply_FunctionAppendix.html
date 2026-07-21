@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Surface Cache 供给侧 函数算法附录</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(330px,.82fr);gap:16px}.codebox{width:100%;height:330px;display:block;border:1px solid #27313d;border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.codebox.large{height:640px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.common{color:#0b1b12;background:#74d99f}.diff{color:#1c1005;background:#ffb86b}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}.toc a{display:inline-block;margin:0 8px 8px 0;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none}.toc a:hover{border-color:var(--cyan);color:#fff}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Surface Cache 供给侧 函数算法附录</h1><div class="subtitle">配合主文档使用。展开 Mesh Cards 生成与合并、Begin/Update 两阶段调度、Feedback buffer 打包格式与距离分桶、FLumenSurfaceCacheAllocator 的装箱/整页分配、LRU 逐出堆、ResampleLumenCards 与 CardCapture 光栅化、GPU 驱动更新，以及关键 CVar。</div></header>
+<main>
+<section class="card"><h2>返回</h2><div class="body"><a class="tag" href="LumenSurfaceCacheSupply_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>返回 Surface Cache 供给侧主文档</a><a class="tag" href="LumenSurfaceCache_FunctionAppendix.html"><span class="dot" style="background:var(--purple)"></span>对照：Surface Cache 附录</a><a class="tag" href="../UE_GI_Lumen_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>总目录</a><span class="source-path">Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp · LumenScene.cpp · LumenMeshCards.cpp · LumenSceneCardCapture.cpp · LumenSurfaceCacheFeedback.cpp · LumenSceneGPUDrivenUpdate.cpp</span></div></section>
+
+<section class="card"><h2>函数目录</h2><div class="body toc"><a href="#Cards">1. Mesh Cards 生成与合并</a><a href="#Sched">2. Begin/Update 两阶段调度</a><a href="#Feedback">3. Feedback 打包与距离分桶</a><a href="#Alloc">4. 页表分配器 FLumenSurfaceCacheAllocator</a><a href="#Evict">5. 请求处理与 LRU 逐出</a><a href="#Capture">6. Resample + CardCapture</a><a href="#GPU">7. GPU 驱动更新</a><a href="#CVar">8. 关键 CVar</a><a href="#Rel">函数关系表</a></div></section>
+
+<section id="Cards" class="card"><h2>1. Mesh Cards 生成与合并</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenMeshCards.cpp
+// FLumenPrimitiveGroup：primitive 分组（可合并多个组件/实例）
+// FLumenMeshCards：一组卡片，PrimitiveGroupIndex 回指分组
+// FLumenCard：单张卡片（OBB + 分辨率等级 + 页映射）
+
+// 合并策略 CVar：
+//   GLumenMeshCardsMergeComponents = 1
+//   GLumenMeshCardsMergeInstances = 0
+//   GLumenMeshCardsMergedCardMinSurfaceArea = 0.05
+//   GLumenMeshCardsMergeInstancesMaxSurfaceAreaRatio = 1.7
+//   GLumenMeshCardsMergedResolutionScale = 0.3
+//   GLumenMeshCardsMergedMaxWorldSize = 10000
+//   GLumenMeshCardsCullFaces = 1</textarea><div class="note"><h3>说明</h3><p>卡片布局本身是<b>离线</b>随网格烘出的 <span class="inline">FMeshCardsBuildData</span>；运行时 <span class="inline">LumenMeshCards.cpp</span> 只做<b>装配与合并</b>：把同 actor 组件（<span class="inline">MergeComponents</span>）或大量实例（<span class="inline">MergeInstances</span>）并成更少的卡片省显存，合并后按 <span class="inline">MergedResolutionScale</span> 降分辨率、按 <span class="inline">MergedMaxWorldSize</span> 限制体积，并 <span class="inline">CullFaces</span> 剔掉没覆盖的面。三级数据结构：PrimitiveGroup → MeshCards → Card。</p></div></div></section>
+
+<section id="Sched" class="card"><h2>2. Begin/Update 两阶段调度</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// FDeferredShadingSceneRenderer::BeginUpdateLumenSceneTasks
+//   per-view: FindLumenSceneData（MGPU 下每 GPU 一份）
+//   !LumenDiffuseIndirect::IsAllowed() -> ReleaseAtlas()
+//   bReallocateAtlas = UpdateAtlasSize()
+//   GLumenSurfaceCacheFeedback -> Lock FeedbackBuffer(GetLatestReadbackBuffer)
+//   UseGPUDrivenUpdate -> Lock SceneReadback(AddOps/RemoveOps)
+//   FrameTemporaries.UpdateSceneTask = 异步(解析 feedback + 处理请求)
+
+// FDeferredShadingSceneRenderer::UpdateLumenScene
+//   UpdateSceneTask.Wait(); Unlock 所有 readback
+//   bReallocateAtlas -> AllocateCardAtlases + ClearLumenSurfaceCacheAtlas
+//   LumenRadiosity::IsEnabled -> AllocateRadiosityCardAtlases
+//   FillFrameTemporaries; UpdateLumenCardSceneUniformBuffer
+//   ResampleLumenCards; UploadPageTable; (GPUDrivenUpdate)
+//   AllocateCardCaptureAtlas; [CardCapture mesh pass]</textarea><div class="note"><h3>说明</h3><p>两阶段的意义在于<b>并行度</b>：Begin 只锁 readback 缓冲并把重 CPU 活派发成 <span class="inline">UpdateSceneTask</span>，与其它渲染准备并行跑；Update 再 <span class="inline">Wait</span> 收口做 GPU 侧工作。<span class="inline">bReallocateAtlas</span> 来自 <span class="inline">UpdateAtlasSize()</span>——只有分辨率/开关变化时才重建 atlas。MGPU 下每个 GPU 维护独立的 <span class="inline">FLumenSceneData</span>。</p></div></div></section>
+
+<section id="Feedback" class="card"><h2>3. Feedback 打包与距离分桶</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// FLumenSceneData::UpdateSurfaceCacheFeedback
+//   FeedbackData.Data[0] = NumElements(header)
+//   每条 2×uint32：
+//     PackedA: CardIndex(低24) | DesiredResLevel(高8)
+//     PackedB: LocalPageCoord.X(8) | .Y(8) | PageHitNum(16)
+
+//   if PageHitNum > GLumenSurfaceCacheFeedbackFeedbackMinPageHits:
+//     已映射 & !bLocked -> UnlockedAllocationHeap.Update(FrameIndex, PageTableIndex)
+//     未映射 -> Distance = OBB 到最近相机距离
+//               Distance += 2500 + 2500*(1 - PageHitNum/FeedbackBufferSize)
+//               Bin = Lumen::GetMeshCardDistanceBin(Distance)
+//               RequestHistogram[Bin]++
+//               SurfaceCacheRequests.Add({CardIndex, ResLevel, LocalPage, Bin})</textarea><div class="note"><h3>说明</h3><p>Feedback 是 GPU→CPU 的紧凑回读：每条两个 uint32 打包了卡索引、期望分辨率、页坐标与命中数。阈值 <span class="inline">FeedbackMinPageHits</span> 过滤噪声。已驻留页只喂 <span class="inline">UnlockedAllocationHeap</span>（LRU 时间戳）；缺失页把"命中越少 → 距离惩罚越大"的公式转成 <span class="inline">DistanceBin</span> 并累加直方图——直方图后续用于在固定预算下从近到远批准请求。</p><p><span class="note-label common">共同点</span>距离分桶直方图与 <a href="LumenRadianceCache_FunctionAppendix.html">Radiance Cache</a> 的 probe 优先级选桶同构。</p></div></div></section>
+
+<section id="Alloc" class="card"><h2>4. 页表分配器 FLumenSurfaceCacheAllocator</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenScene.cpp
+// Init(PageAtlasSizeInPages)
+// Allocate(Page, out Allocation):
+//   if Page.IsSubAllocation():
+//     Bin = GetOrAddBin(Page.SubAllocationSize)
+//     if !Bin.GetBinAllocation(): Bin.AddBinAllocation(AllocatePhysicalAtlasPage())
+//     ElementCoord = BinAllocation.Add()
+//     Offset = PageCoord*PhysicalPageSize + ElementCoord*Bin.ElementSize
+//   else:
+//     PhysicalPageCoord = AllocatePhysicalAtlasPage()
+//     Rect = [coord, coord+1] * PhysicalPageSize
+// Free(Page): sub -> Bin.RemoveBinAllocation; 空了 FreePhysicalAtlasPage
+// IsSpaceAvailable(Card, ResLevel, bSinglePage): 按 MipMapDesc 算需要页数
+// UploadPageTable(...) -> 虚拟页表上传 GPU</textarea><div class="note"><h3>说明</h3><p>分配器把物理 atlas 当作固定尺寸 <span class="inline">PhysicalPageSize</span> 的页网格。<b>子分配</b>（小卡片）走 <span class="inline">FPageBin</span>：同尺寸的小卡片共享一个物理页、内部切格；<b>整页分配</b>（大卡片）直接占一页。<span class="inline">IsSpaceAvailable</span> 先按卡片 mip 描述算出需要多少页，供请求处理时判断是否得逐出/降级。最终 <span class="inline">UploadPageTable</span> 把 CPU 侧虚拟页表映射上传给 GPU 采样。</p></div></div></section>
+
+<section id="Evict" class="card"><h2>5. 请求处理与 LRU 逐出</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// FLumenSceneData::ProcessLumenSurfaceCacheRequests
+//   CaptureAtlasAllocator.Init(GetCardCaptureAtlasSizeInPages())
+//   for Request in SurfaceCacheRequests:
+//     if Request.IsLockedMip():  // 低分辨率常驻页
+//       while !IsPhysicalSpaceAvailable(Card, ResLevel):
+//         if !EvictOldestAllocation(MaxFramesSinceLastUsed=2): break  // LRU
+//       while !bCanAlloc && ResLevel > MinResLevel: --ResLevel        // 降级
+//       if !CaptureAtlasAllocator.IsSpaceAvailable(...): bCanAlloc=false
+//       if bCanAlloc && UpdateStaticMeshes(PrimitiveGroup):
+//         FreeVirtualSurface(旧 mip)
+//         ReallocVirtualSurface(Card, NewResLevel, bLockPages=true)
+//         CopyCardIndex = FindMatchingCardForCopy(CardSharingId) / self
+//         逐页 map -> CardPagesToRender.Add(...)</textarea><div class="note"><h3>说明</h3><p>请求处理是显存取舍的核心。分配失败时的降级顺序：<b>①</b> LRU 逐出（<span class="inline">EvictOldestAllocation</span>，只逐超过 2 帧没用的页，保护刚用过的）；<b>②</b> 逐级降低请求分辨率直到 <span class="inline">MinResLevel</span>；<b>③</b> 还得能塞进本帧的临时 <span class="inline">CaptureAtlasAllocator</span>。成功后 <span class="inline">ReallocVirtualSurface</span> 映射页表，并尽量走 <b>Card Sharing</b>（<span class="inline">FindMatchingCardForCopy</span>）或从自身降采样复制，减少真正的重新捕获。</p><p><span class="note-label diff">不同点</span>Locked（低分辨率常驻）页与 hi-res 请求走不同路径：前者保证基础可见性、后者是命中反馈驱动的按需加载。</p></div></div></section>
+
+<section id="Capture" class="card"><h2>6. Resample + CardCapture</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// ResampleLumenCards（UpdateLumenScene 内）
+//   对重分配的页：从旧持久 atlas 读、写进 CardCaptureAtlas
+//   处理 mip 变化 / 共享卡拷贝 / X 轴翻转（bAxisXFlipped）
+
+// CardCapture 光栅化（LumenSceneCardCapture.cpp）
+//   AllocateCardCaptureAtlas(Size, CardCaptureAtlas, ShaderPlatform)
+//   GPUScene.IsEnabled -> FInstanceCullingContext("LumenCardCapture")
+//     SetupDrawCommands(LumenCardRenderer.MeshDrawCommands)
+//     BuildRenderingCommands(...)
+//   CardCaptureRects[i] = CardPage.CardCaptureAtlasRect (FUintVector4)
+//   SharedView: ForceLowestLOD, MaterialTextureMipBias=0
+//   ClearLumenCardCapture -> 光栅化材质 -> copy 进持久 atlas
+//   DilateOneTexel：边界膨胀一像素防接缝漏色</textarea><div class="note"><h3>说明</h3><p>捕获分两步：<span class="inline">ResampleLumenCards</span> 先把重分配页在旧 atlas 的内容搬进捕获 atlas（换 mip、共享卡、X 翻转都在这处理），保证内容连续不闪；随后用 <span class="inline">GPUScene + FInstanceCullingContext</span> 组织 mesh draw，按每页的 <span class="inline">CardCaptureAtlasRect</span> 把材质光栅化进 <span class="inline">CardCaptureAtlas</span>，强制最低 LOD、关材质 mip bias。<span class="inline">DilateOneTexel</span> 把页边界外扩一像素，避免采样时跨页取到黑边。</p></div></div></section>
+
+<section id="GPU" class="card"><h2>7. GPU 驱动更新</h2><div class="body grid2"><textarea class="codebox" readonly spellcheck="false">// LumenSceneGPUDrivenUpdate.cpp
+// LumenScene::UseGPUDrivenUpdate() 门禁
+// LumenScene::GPUDrivenUpdate(GraphBuilder, Scene, Views, FrameTemporaries)
+//   readback: FLumenSceneReadback::FAddOp / FRemoveOp
+//   ProcessSceneAddOpsReadbackData / ProcessSceneRemoveOpsReadbackData
+//   -> 在 GPU 上做 primitive 增删与卡片 culling，
+//      减少 CPU 逐 primitive 的开销（大世界/大量 instance 时收益大）</textarea><div class="note"><h3>说明</h3><p>传统路径下场景增删与卡片剔除在 CPU 上逐 primitive 做；<b>GPU 驱动更新</b>把这部分搬到 GPU，用 readback 把增删 op 回传 CPU 消费（<span class="inline">ProcessSceneAddOps/RemoveOpsReadbackData</span>）。对开放世界、海量 instance 的场景收益明显——这也是 Begin 阶段要锁 <span class="inline">SceneReadback</span> 的原因。</p></div></div></section>
+
+<section id="CVar" class="card"><h2>8. 关键 CVar 速查</h2><div class="body"><table class="table"><tr><th>CVar / 全局</th><th>默认</th><th>作用</th></tr>
+<tr><td>r.LumenScene.SurfaceCache.Feedback</td><td>1</td><td>开采样反馈驱动驻留</td></tr>
+<tr><td>GLumenSurfaceCacheFeedbackMinPageHits</td><td>—</td><td>反馈命中阈值（过滤噪声）</td></tr>
+<tr><td>GLumenMeshCardsMergeComponents</td><td>1</td><td>合并同 actor 组件</td></tr>
+<tr><td>GLumenMeshCardsMergeInstances</td><td>0</td><td>合并 ISM/HISM 实例</td></tr>
+<tr><td>GLumenMeshCardsMergedResolutionScale</td><td>0.3</td><td>合并后分辨率缩放</td></tr>
+<tr><td>GLumenMeshCardsCullFaces</td><td>1</td><td>剔除无覆盖卡片面</td></tr>
+<tr><td>r.LumenScene.SurfaceCache.CardCapturesPerFrame</td><td>—</td><td>每帧最大卡片捕获数（预算）</td></tr>
+<tr><td>GLumenSceneRecaptureLumenSceneEveryFrame</td><td>0</td><td>调试：每帧全重捕获</td></tr>
+<tr><td>r.LumenScene.UploadEveryFrame</td><td>0</td><td>调试：每帧重传场景</td></tr>
+</table></div></section>
+
+<section id="Rel" class="card"><h2>函数关系表</h2><div class="body"><table class="table"><tr><th>函数 / 类</th><th>文件</th><th>职责</th></tr>
+<tr><td>BeginUpdateLumenSceneTasks</td><td>LumenSceneRendering</td><td>锁 readback + 起异步更新任务</td></tr>
+<tr><td>UpdateLumenScene</td><td>LumenSceneRendering</td><td>atlas 重分配 + 上传 + 卡片捕获</td></tr>
+<tr><td>ProcessLumenSurfaceCacheRequests</td><td>LumenSceneRendering</td><td>分配 / 逐出 / 降分辨率</td></tr>
+<tr><td>UpdateSurfaceCacheFeedback</td><td>LumenSurfaceCacheFeedback</td><td>解析反馈 → 距离分桶请求</td></tr>
+<tr><td>FLumenSurfaceCacheAllocator</td><td>LumenScene</td><td>物理页装箱 / 整页分配</td></tr>
+<tr><td>AllocateCardAtlases</td><td>LumenSurfaceCache</td><td>分配 Albedo/Normal/... atlas</td></tr>
+<tr><td>ResampleLumenCards</td><td>LumenSceneCardCapture</td><td>从旧 atlas 重采样防闪</td></tr>
+<tr><td>LumenScene::GPUDrivenUpdate</td><td>LumenSceneGPUDrivenUpdate</td><td>GPU 侧场景增删/剔除</td></tr>
+</table></div></section>
+
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</main>
+</body></html>

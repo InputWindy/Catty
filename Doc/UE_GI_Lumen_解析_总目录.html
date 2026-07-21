@@ -32,7 +32,7 @@
 </div></div>
 
 </div>
-<div class="side">◀ 横切 · 调试：<b>Lumen Visualize</b> 复用以上全部数据（Surface Cache / 追踪后端 / Radiance Cache），只做可视化，不参与实际着色。</div>
+<div class="side">◀ 横切 · 公共层与外围：<b>追踪公共层</b>（LumenTracingUtils，被中层每条链路复用的参数打包）、<b>外围特性</b>（Front Layer 反射 / 天光 / Scalability / 离线 SDF）、<b>Lumen Visualize</b>（复用以上全部数据只做可视化）。</div>
 
 <div class="note"><h3>阅读导引</h3><p>从<b>底层往顶层</b>读最顺：<span class="inline">底层</span>的四块（距离场 / 硬件光追 / Surface Cache / Radiance Cache）都不产 GI，它们回答的是"世界几何长什么样"和"世界表面有多亮"，每帧 GI 之前就更新好；<span class="inline">中层</span>的三条链路是<b>并列</b>关系——漫反射 GI、镜面反射、半透明体积各自向底层追踪 / 采样，各产一张信号；<span class="inline">顶层</span> Composite 把这些信号合入画面。</p><p>其中<b>漫反射 GI</b> 内部还有一层：<span class="inline">RenderLumenFinalGather</span> 是入口调度，按 CVar 在 <b>Screen Probe Gather（默认主线，含 ①~⑤ 五阶段 + 收尾）</b>、<b>ReSTIR</b>、<b>Irradiance Field</b> 三条路线里选一条走。<b>Short Range AO</b> 是主线积分阶段的子模块。下方章节严格按这张图的层级缩进排布。</p></div>
 </div></section>
@@ -53,11 +53,14 @@
 <div class="entry"><div class="lead"><span class="idx">SC</span><div><h3>Surface Cache / Lumen Scene</h3><div class="en">世界表面光照数据库 · UpdateLumenScene + RenderLumenSceneLighting</div></div></div><div class="desc">Lumen 的"世界表面数据库"：用 Mesh Card 代理网格，把材质（Albedo/Normal/Depth/Emissive）与光照（Direct/Radiosity/Final）烘进世界空间 atlas。所有追踪命中表面时不重算光照，而是查页表采样 FinalLightingAtlas。两条流水线：材质捕获 + 光照烘焙；Radiosity 读上帧 Final =&gt; 无限反弹。</div><div class="links"><a class="main" href="Chapters/LumenSurfaceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenSurfaceCache_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
 
 <div class="sub">
-<span class="level-label l3">下钻 · SC 的光照侧流水线</span>
+<span class="level-label l3">下钻 · SC 的两侧流水线（供给 + 光照）</span>
+<div class="entry"><div class="lead"><span class="idx">SC供</span><div><h3>Surface Cache 供给侧</h3><div class="en">Mesh Cards 装配 + 材质捕获 · LumenMeshCards + SceneCardCapture</div></div></div><div class="desc">SC 主题的另一侧下钻（与 SC+ 光照烘焙并列）：Surface Cache 的<b>供给</b>流水线。Mesh Card 如何从离线 FMeshCardsBuildData 装配、Begin/Update 两阶段调度、Feedback 驱动按需捕获，以及把材质属性（Albedo/Normal/Depth/Emissive）光栅进世界空间 atlas 的全过程。与 SC+ 先后：先有供给侧捕获材质，才能在其上烘光照。</div><div class="links"><a class="main" href="Chapters/LumenSurfaceCacheSupply_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenSurfaceCacheSupply_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
 <div class="entry"><div class="lead"><span class="idx">SC+</span><div><h3>Surface Cache 光照烘焙</h3><div class="en">SceneDirectLighting + Radiosity + CombineLighting</div></div></div><div class="desc">SC 主题的下钻：Surface Cache 的<b>光照</b>侧流水线。直接光（屏内蹭 shadow map / 屏外追距离场）、Radiosity（读上帧 Final 做无限反弹）、以及合成为 FinalLightingAtlas 的全过程。</div><div class="links"><a class="main" href="Chapters/LumenSceneLighting_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenSceneLighting_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
 </div>
 
 <div class="entry"><div class="lead"><span class="idx">RC</span><div><h3>Radiance Cache</h3><div class="en">世界空间辐照度缓存 · UpdateRadianceCaches</div></div></div><div class="desc">以相机为中心、按 clipmap 分级的世界空间 probe 缓存：每帧只在固定预算内重追一小部分 probe（其余复用历史），probe 追进 Surface Cache 取辐照度，滤波后缓存成 atlas 供中层三条链路插值采样。核心：Clipmap（近密远疏）+ Persistent（跨帧存活）+ Budget（优先级直方图选桶）。</div><div class="links"><a class="main" href="Chapters/LumenRadianceCache_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenRadianceCache_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
+
+<div class="entry"><div class="lead"><span class="idx">GEO</span><div><h3>特殊几何表示</h3><div class="en">Heightfield 软件追踪 + Nanite 卡片捕获</div></div></div><div class="desc">主流 Mesh SDF / 三角形之外，两类特殊几何如何进 Lumen 的世界表示：<b>Landscape 地形</b>不做 Mesh SDF，走独立的高度场软件追踪（FLumenHeightfieldGPUData 双精度数据 + SCENE_TRACE_HEIGHTFIELDS permutation）；<b>Nanite 网格</b>用 FLumenCardCS 计算着色器把材质捕获进 Surface Cache 卡片（NaniteLODScaleFactor 控 LOD）。两条旁路各自接入①底层的追踪后端与 Surface Cache。</div><div class="links"><a class="main" href="Chapters/LumenSpecialGeometry_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenSpecialGeometry_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
 </div></section>
 
 <section class="card"><h2>② 中层 · 信号生产（并列的三条链路）</h2><div class="body">
@@ -102,6 +105,13 @@
 <section class="card"><h2>③ 顶层 · 合成入画</h2><div class="body">
 <span class="level-label">最外层 · 把中层所有信号合入场景颜色</span>
 <div class="entry"><div class="lead"><span class="idx">CMP</span><div><h3>DiffuseIndirectComposite</h3><div class="en">DiffuseIndirect + Reflections + AO 合成到 SceneColor</div></div></div><div class="desc">Lumen GI 链路的最外层落点：把中层三条链路产出的漫反射间接光、反射与 AO 合成进场景颜色缓冲，是整条链路的终点，也是理解全局数据流的入口。</div><div class="links"><a class="main" href="Chapters/LumenDiffuseIndirectComposite_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenDiffuseIndirectComposite_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
+</div></section>
+
+<section class="card"><h2>横切 · 公共层与外围特性</h2><div class="body">
+<span class="level-label" style="background:var(--cyan);color:#06201f">不属于单一链路 · 被多条链路复用 / 补齐适配范围</span>
+<div class="note" style="margin-bottom:14px"><h3>这一组在做什么</h3><p>这两块横跨多条链路：<b>追踪公共层</b>是所有追踪 pass 共享的参数打包与工具（天光泄漏、高度雾、Feedback 握手、剔除三兄弟、HZB 屏幕追踪档），被中层每条链路复用；<b>外围与边角特性</b>则补齐 Lumen 的适配范围（Front Layer 反射、天光双角色、Scalability 档位、离线 SDF/卡片生成），不构成主干却决定画质档位与项目适配。</p></div>
+<div class="entry"><div class="lead"><span class="idx">TRC</span><div><h3>追踪公共层</h3><div class="en">所有追踪 pass 共享的参数与工具 · LumenTracingUtils</div></div></div><div class="desc">中层每条追踪链路都要先调 GetLumenCardTracingParameters 打包公共参数：天光泄漏兜底、高度雾、Surface Cache Feedback UAV 握手、四张 atlas 与 Global SDF 页表；再经 CullForCardTracing / CullMeshObjectsToViewGrid / CullHeightfieldObjectsForView 三剔除、SetupLumenDiffuseTracingParameters、SetupHZBScreenTraceParameters（最便宜的屏幕空间追踪档）。是理解各链路“追踪参数从哪来”的公共前置。</div><div class="links"><a class="main" href="Chapters/LumenTracingUtils_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenTracingUtils_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
+<div class="entry"><div class="lead"><span class="idx">外</span><div><h3>外围与边角特性</h3><div class="en">Front Layer 反射 / 天光 / Scalability / 离线 SDF</div></div></div><div class="desc">核心链路之外的一批“边角料”，却决定 Lumen 的适配范围与画质档位：Front Layer Translucency 反射（水面/玻璃薄前层，走反射管线一个 permutation）、天光的双重身份（ray-miss 兜底 + Surface Cache 直接光光源）、一整套 ECVF_Scalability CVar 与 FinalGatherMethod（Irradiance Field vs Screen Probe，从 Switch 2 缩放到工作站）、离线 Mesh SDF / 卡片生成（运行时只消费烘焙产物）。</div><div class="links"><a class="main" href="Chapters/LumenPeripheralFeatures_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>主文档</a><a class="app" href="Chapters/LumenPeripheralFeatures_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>函数附录</a></div></div>
 </div></section>
 
 <section class="card"><h2>横切 · 可视化调试</h2><div class="body">
