@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#2 Cluster 构建与 LOD DAG · 离线构建的核心算法</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><h1>#2 Cluster 构建与 LOD DAG · 离线构建的核心算法</h1><div class="sub">进入离线构建。本篇讲清 Nanite 最精巧的一步：如何把一张任意三角网格<b>切成簇</b>（cluster），再自底向上<b>分组 → 简化 → 再切分</b>，构成一棵 LOD 有向无环图（DAG），使运行时能沿 DAG 做<b>无缝、像素级的 LOD 选择</b>。所有符号取自 UE5.8 本地源码 <span class="inline">NaniteBuilder/Private/Cluster.cpp</span>、<span class="inline">ClusterDAG.cpp</span>、<span class="inline">GraphPartitioner.cpp</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--orange)"></span>切簇/分割</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>分组/简化</span><span class="tag"><span class="dot" style="background:var(--green)"></span>DAG 结构</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>误差/结论</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FCluster</span>、<span class="inline">FClusterGroup</span>、<span class="inline">FClusterDAG</span>、<span class="inline">FGraphPartitioner</span> 全部符号与构建常量，见 <a href="ClusterDAG_FunctionAppendix.html" style="color:#9ee8ff">→ 构建算法附录</a>。</p></div></section>
+
+<section class="card"><h2>第一步：把网格切成簇 <span class="en">Graph partition into clusters</span></h2><div class="body">
+<p>构建从 <span class="inline">FClusterDAG::AddMesh</span> 开始。切簇不是随便切，而是用<b>图分割</b>：把三角形当作图的节点、相邻（共享边）关系当作边，用 METIS 库做多路划分，目标是让每个划分（=一个簇）约 <span class="inline">128</span> 个三角形，且<b>簇内三角形空间上尽量聚在一起、切割边界尽量短</b>（边界短 = 跨簇共享顶点少 = 后续剔除/简化更干净）。</p>
+<div class="note"><h3>FGraphPartitioner：METIS + 空间局部性</h3><p>核心类 <span class="inline">FGraphPartitioner</span>（构造参数 <span class="inline">MinPartitionSize / MaxPartitionSize</span>）先给每个元素算 <b>Morton 码</b>（3D 空间填充曲线，见源码 <span class="inline">BuildLocalityLinks</span>）做基数排序，让空间相邻的元素在数组里也相邻；再用 <b>disjoint set</b> 找连通岛、为邻近但不连通的元素补"locality links"（每元素最多 5 条）。这样喂给 METIS 的图既含真实拓扑邻接、也含空间邻近，划分出的簇更紧凑。<span class="inline">PartitionStrict</span> 严格控制每块大小落在 [Min, Max] 内。</p></div></div></section>
+
+<section class="card"><h2>核心循环：分组 → 简化 → 再切分 <span class="en">The DAG build loop</span></h2><div class="body">
+<p>切出最细一级（LOD0）的簇后，Nanite 反复做下面这套动作，每轮生成更粗的一级，直到只剩一个根：</p>
+<div class="flow">
+<div class="node branch"><strong><span class="step">1</span>分组 Group</strong><small>把相邻簇 8~32 个一组<br>GroupTriangleClusters</small></div>
+<div class="node func"><strong><span class="step">2</span>合并+简化 Simplify</strong><small>组内三角合并成一个网格<br>SimplifyTriangles 减到约一半</small></div>
+<div class="node func"><strong><span class="step">3</span>再切分 Split</strong><small>简化后的网格重新切成<br>≤128 三角的新簇（父簇）</small></div>
+<div class="node out"><strong><span class="step">4</span>记录误差 + 连边</strong><small>ParentLODError 单调递增<br>父簇 ← 子簇组，构成 DAG</small></div>
+</div>
+<div class="note green"><h3>为什么是"组"而不是"单簇"简化</h3><p>关键设计：简化的单位是<b>一组相邻簇（<span class="inline">MinGroupSize=8</span> ~ <span class="inline">MaxGroupSize=32</span>）合并后的网格</b>，而不是单个簇。因为若逐簇简化，簇边界的顶点无法被移除（会撕裂），LOD 越粗边界越僵。把一组簇先<b>合并再简化</b>，组内部的边界就能一起优化掉，只有组与组之间的边界保留——这让粗 LOD 也能均匀减面。简化用 <span class="inline">FCluster::SimplifyTriangles(TargetNumTris, TargetError)</span>（基于二次误差度量的边折叠），目标三角数约为输入的一半（<span class="inline">GetMaxParents</span> ≈ 元素数 / (MaxClusterSize×2)）。简化后再 <span class="inline">Split</span> 切回 ≤128 的簇。</p></div></div></section>
+
+<section class="card"><h2>为什么是 DAG，不是树 <span class="en">DAG, not a tree</span></h2><div class="body">
+<div class="note purple"><h3>分组的重叠造就 DAG</h3><p>如果每轮分组是固定的、互不重叠的，得到的是一棵树——但树有个致命问题：<b>树的边界会在所有 LOD 层持续存在</b>，形成永久裂缝。Nanite 的诀窍是<b>每一级重新分组</b>：这一级的分组边界，到下一级会落在组内部被简化掉。于是一个子簇可能被不同父簇的构建路径影响，形成<b>有向无环图（DAG）</b>而非树。<span class="inline">FClusterGroup</span> 记录一组子簇（<span class="inline">Children: TArray&lt;FClusterRef&gt;</span>）与该组的 <span class="inline">LODBounds / ParentLODError</span>；<span class="inline">FCluster::GroupIndex</span> 记录簇属于哪个 group。这种"层层错位重组"消除了裂缝，是 Nanite 无缝 LOD 的算法根基。</p></div></div></section>
+
+<section class="card"><h2>运行时如何用这棵 DAG：Cut（切割） <span class="en">The cut</span></h2><div class="body">
+<p>DAG 建好后，每个簇都带一个 <span class="inline">LODError</span>（本簇的简化误差）和一个 <span class="inline">ParentLODError</span>（其父级的误差，恒 ≥ 本簇误差）。运行时不需要"选一个 LOD 档"，而是在 DAG 上找一条<b>切割线（cut）</b>：</p>
+<div class="note blue"><h3>Cut 的判据（单调误差保证）</h3><p>对每个簇，运行时把它的 LOD 误差投影到屏幕。规则是：<b>如果本簇的误差在屏幕上够小（可接受）、但它父级的误差太大（不可接受），就选中本簇</b>。形式化即 <span class="inline">ParentError &gt; Threshold ≥ ClusterError</span>。因为误差沿 DAG 向上<b>单调递增</b>，这条判据在整个 DAG 上恰好切出一条连续的、不重不漏的边界——被选中的簇集合正好平铺覆盖整个物体表面，且每个簇的精度都刚好匹配它在屏幕上的大小。构建期的 <span class="inline">FClusterDAG::FindCut(SelectedClusters, SelectedGroups, TargetNumTris, TargetError, TargetOvershoot)</span> 是这套 cut 逻辑的离线版（用于生成 fallback / 光追网格）；运行时版在 GPU 层级遍历里做（见 <a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a>）。</p></div>
+<div class="note green"><h3>这就是"像素级 LOD"的真相</h3><p>没有 popping，是因为相邻簇的误差连续、cut 只在误差跨过阈值处移动一个簇；不受源模型面数影响，是因为 cut 选中的簇数只取决于<b>物体在屏幕上的投影大小</b>，而非源三角总数——远处物体的 cut 落在 DAG 高层（少量粗簇），近处落在底层（大量细簇）。</p></div></div></section>
+
+<section class="card"><h2>与本书其它篇的关系 <span class="en">Cross-topic</span></h2><div class="body">
+<div class="note"><h3>DAG 是全书的地基</h3>
+<p>共同点：本篇产出的 <span class="inline">FCluster</span> / <span class="inline">FClusterGroup</span> 会在 <a href="Encode_ConvergenceAnnotated.html" style="color:#9ee8ff">#3</a> 被编码成 <span class="inline">FPackedCluster</span> 与页；LOD 误差字段（<span class="inline">LODError / ParentLODError</span>）会原样带到 GPU，供 <a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a> 运行时算 cut。</p>
+<p>不同点：本篇是纯 CPU 离线算法（图分割 + 边折叠简化），跑在编辑器/DDC；运行时（#5#6）只是"读"这棵 DAG 做遍历与判据，不再改动几何。</p>
+<p>不同点：与传统 LOD 的离散档位不同，DAG 是<b>连续可切</b>的层级——这是 Nanite 相对传统 LODGroup 的本质区别。</p></div>
+<p style="color:#a9b4c0">下一篇 <a href="Encode_ConvergenceAnnotated.html" style="color:#9ee8ff">#3 编码与页格式</a> 讲这棵 DAG 如何被量化、位打包、装进 32KB/128KB 的 GPU 页。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. 切簇用<b>图分割</b>（METIS + Morton 空间局部性），每簇约 128 三角形，边界尽量短。核心类 <span class="inline">FGraphPartitioner</span>。</p>
+<p>2. DAG 构建循环：<b>分组（8~32 簇）→ 合并简化到约一半 → 再切分成父簇 → 记录单调递增的 ParentLODError</b>，逐级变粗直到根。</p>
+<p>3. 每级<b>重新分组</b>让边界错位、被上层简化掉——这造就了 DAG（而非树），消除 LOD 裂缝。</p>
+<p>4. 运行时在 DAG 上找 <b>cut</b>：<span class="inline">ParentError &gt; Threshold ≥ ClusterError</span>，误差单调保证切出连续无缝的簇集，实现像素级、与源面数无关的 LOD。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="ClusterDAG_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="Overview_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#1 总览</a>
+<a class="tag" href="Encode_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#3 编码与页格式</a>
+<a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#6 集群剔除与光栅化</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

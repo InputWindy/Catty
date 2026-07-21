@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#7 Visibility Buffer 与材质着色 · 延迟材质如何工作</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><h1>#7 Visibility Buffer 与材质着色 · 延迟材质如何工作</h1><div class="sub">运行时管线最后一段：从 <a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a> 写好的 64 位 visibility buffer 出发，反查每像素属于哪个簇/三角形，插值出属性，然后<b>按材质分箱（shade binning）</b>逐材质着色，写进 G-Buffer。本篇讲清 visibility buffer 解码、属性重建、shade binning 三趟（count/reserve/scatter）、以及"每材质每像素只算一次"的延迟材质模型。符号取自 UE5.8 <span class="inline">NaniteShading.cpp</span>、<span class="inline">NaniteShadeBinning.usf</span>、<span class="inline">NaniteExportGBuffer.usf</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--cyan)"></span>VisBuffer 解码</span><span class="tag"><span class="dot" style="background:var(--green)"></span>属性重建</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>shade binning</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>G-Buffer 导出</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">UnpackVisPixel</span>、<span class="inline">FShadingMask</span>、<span class="inline">FNaniteShadingBinMeta</span>、shade binning 各 pass 常量，见 <a href="Shading_FunctionAppendix.html" style="color:#9ee8ff">→ 材质着色附录</a>。</p></div></section>
+
+<section class="card"><h2>难题：小三角形 + 多材质怎么高效着色 <span class="en">The problem</span></h2><div class="body">
+<div class="note red"><h3>传统前向/延迟都不行</h3><p>Nanite 一帧可能有<b>上千万个微小三角形</b>、成百上千种材质。若像传统光栅那样"画每个三角形时顺便执行它的材质着色器"，会有两个致命问题：① 小三角形的 quad 浪费（#6 已解决光栅，但着色仍会浪费）；② 材质着色器频繁切换（每个三角形可能不同材质，GPU 无法批处理）。Nanite 的答案是<b>彻底延迟材质</b>：光栅阶段只写 visibility buffer（#6），着色阶段<b>按材质把像素分箱，同材质的像素批量着色</b>。</p></div></div></section>
+
+<section class="card"><h2>第一步：从 Visibility Buffer 反查 <span class="en">Decode visibility</span></h2><div class="body">
+<p>#6 写进 <span class="inline">VisBuffer64</span> 的每个像素，低 32 位是 payload。解码：</p>
+<div class="codebox"><span class="c">// 从一个 vis 像素解出：深度 + 可见簇索引 + 三角索引</span>
+uint VisibleClusterIndex, TriIndex, DepthInt;
+<span class="f">UnpackVisPixel</span>(VisPixel, DepthInt, VisibleClusterIndex, TriIndex);
+<span class="c">// → 用 VisibleClusterIndex 找到 FVisibleCluster（含 InstanceId/PageIndex/ClusterIndex）</span>
+<span class="c">// → 用 TriIndex（≤128, NANITE_MAX_CLUSTER_TRIANGLES）找到簇内那个三角形的 3 个顶点</span></div>
+<div class="note blue"><h3>有了"哪个三角形"就能重算一切</h3><p>知道了实例、簇、三角形，就能回到 <a href="Encode_ConvergenceAnnotated.html" style="color:#9ee8ff">#3</a> 的页数据里读出这个三角形<b>3 个顶点的位置与属性</b>（法线、UV、颜色——从 Attribute 分区解码），再用像素在三角形内的<b>重心坐标（barycentric）</b>插值出该像素的属性。这一步等价于传统管线里顶点着色器 + 光栅插值做的事，只是<b>延迟到着色阶段、只对可见像素做</b>。簇内三角形 ≤128、顶点 ≤256，索引位数很小。</p></div></div></section>
+
+<section class="card"><h2>第二步：ShadingMask 与 shade binning <span class="en">Shade binning</span></h2><div class="body">
+<p>光栅/导出阶段先给每个像素写一张 <span class="inline">ShadingMask</span>（<span class="inline">PackShadingMask(ShadingBin, ...)</span>）——记录该像素用<b>哪个 shading bin（材质槽）</b>。然后 shade binning 分三趟把像素按 bin 归拢：</p>
+<div class="flow">
+<div class="node branch"><span class="step">1</span><strong>COUNT</strong><small>NANITE_SHADING_BIN_COUNT：统计每个 shading bin 覆盖多少像素</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><span class="step">2</span><strong>RESERVE</strong><small>NANITE_SHADING_BIN_RESERVE：按计数为每个 bin 在输出 buffer 里预留连续范围</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><span class="step">3</span><strong>SCATTER</strong><small>NANITE_SHADING_BIN_SCATTER：把每个像素散布进它所属 bin 的像素列表</small></div>
+</div>
+<div class="note green"><h3>这就是 GPU 版的"计数排序"</h3><p>三趟（count → reserve → scatter）正是经典的 counting sort：先数每桶多少、再定每桶起点、最后各归各位。结果是<b>一张按材质连续排列的像素列表</b>。<span class="inline">FNaniteShadingBinMeta</span> 记录每个 bin 的偏移与数量，<span class="inline">OutShadingBinData</span> 存 meta + 数据（<span class="inline">GetShadingBinMetaOffset/GetShadingBinDataOffset</span>）。还有 GROUP_COUNT/GROUP_RESERVE 做线程组级的粗粒度归拢，减少原子竞争。</p></div></div></section>
+
+<section class="card"><h2>第三步：逐材质批量着色 <span class="en">Per-material shading</span></h2><div class="body">
+<div class="note purple"><h3>每个材质一次 dispatch，只碰自己的像素</h3><p>分箱完成后，对<b>每个 shading bin（材质）发一次 compute dispatch</b>，这个 dispatch 只处理该 bin 列表里的像素。每个像素：解 visibility → 重建属性 → 执行<b>该材质的着色器</b> → 写 G-Buffer（<span class="inline">NaniteExportGBuffer.usf</span> 的 <span class="inline">SHADING_MASK_EXPORT</span> / G-Buffer 导出路径）。因为一个 dispatch 内所有像素<b>共用同一个材质着色器</b>，GPU 能完美批处理、无分支发散、无状态切换。之后就接入引擎标准的延迟光照（含 <a href="../../Lumen/UE_GI_Lumen_解析_总目录.html" style="color:#9ee8ff">Lumen</a>）。<span class="inline">FNaniteShadingCommandContext</span> / <span class="inline">BuildShadingCommands</span>（<span class="inline">NaniteShading.cpp</span>）在 CPU 侧准备这些逐材质命令。</p></div>
+<div class="codebox"><span class="c">// 每材质 dispatch 内，对本 bin 的每个像素：</span>
+FShadingMask Mask = <span class="f">UnpackShadingMask</span>(ShadingMask[PixelPos]);
+<span class="f">UnpackVisPixel</span>(VisPixel, DepthInt, VisibleClusterIndex, TriIndex);
+<span class="c">// 重建属性 → 执行材质 → 写 GBuffer（BaseColor/Normal/Roughness/...）</span></div></div></section>
+
+<section class="card"><h2>为什么这套设计是 Nanite 的必然 <span class="en">Why deferred material</span></h2><div class="body">
+<div class="note"><h3>解耦几何复杂度与着色成本</h3><p>延迟材质让<b>着色成本只与屏幕像素数相关，而与三角形数量无关</b>：无论一个像素背后是 1 个还是 100 个三角形，最终只有最近的那个被着色一次。这与 Nanite "几何复杂度不再是瓶颈"的总目标完全一致——你可以往场景里堆任意多的三角形，着色开销恒定在"屏幕分辨率 × 材质数"这个量级。visibility buffer 是实现它的关键数据结构：<b>把"可见性"与"着色"彻底解耦</b>。</p></div></div></section>
+
+<section class="card"><h2>与本书其它篇的关系 <span class="en">Cross-topic</span></h2><div class="body">
+<div class="note"><h3>着色是像素落地的最后一环</h3>
+<p>共同点：本篇唯一输入是 <a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a> 的 <span class="inline">VisBuffer64</span> + <span class="inline">ShadingMask</span>；重建属性时回读 <a href="Encode_ConvergenceAnnotated.html" style="color:#9ee8ff">#3</a> 的页 Attribute 分区。输出的 G-Buffer 接入引擎延迟光照与 Lumen。</p>
+<p>不同点：#6 决定"每像素是哪个三角形"（可见性），本篇决定"这个三角形什么颜色"（着色）。可见性解算一次，着色按材质批处理。</p>
+<p>不同点：可编程光栅（<a href="ProgRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#8</a>）会让材质在<b>光栅阶段</b>就影响几何（WPO/PDO/曲面细分），而本篇是光栅之后的<b>着色阶段</b>；二者都基于"材质 shader 可参与 Nanite"这一机制。</p></div>
+<p style="color:#a9b4c0">下一篇 <a href="ProgRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#8 可编程光栅化与曲面细分</a> 讲材质如何在光栅阶段就改变几何。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. <b>延迟材质</b>：光栅只写 visibility buffer，着色阶段按材质分箱批量着色——着色成本只与屏幕像素数 × 材质数相关，与三角形数无关。</p>
+<p>2. <b>解码</b>：<span class="inline">UnpackVisPixel</span> 从 64 位取出簇索引 + 三角索引 + 深度，回读页数据取 3 顶点属性，用重心坐标插值出像素属性。</p>
+<p>3. <b>shade binning 三趟</b>：COUNT（数每 bin 像素）→ RESERVE（预留范围）→ SCATTER（散布像素），即 GPU 计数排序，得到按材质连续的像素列表。</p>
+<p>4. <b>逐材质 dispatch</b>：每个 shading bin 一次 dispatch，共用同一材质 shader，无发散无状态切换，重建属性后执行材质写 G-Buffer，接入延迟光照/Lumen。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="Shading_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#6 集群剔除与两路光栅化</a>
+<a class="tag" href="ProgRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#8 可编程光栅化与曲面细分</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#9 Nanite 与阴影 VSM 集成 · 海量几何如何投影阴影</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><h1>#9 Nanite 与阴影 VSM 集成 · 海量几何如何投影阴影</h1><div class="sub">下篇专项第二站：Nanite 的海量三角形<b>投影阴影</b>的问题，靠<b>虚拟阴影贴图（Virtual Shadow Maps, VSM）</b>解决。本篇讲清 VSM 为何是稀疏页表、Nanite 如何把剔除/光栅管线（<a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a>）复用到阴影视图、页缓存与失效机制、以及深度输出的三种投影类型。符号取自 UE5.8 <span class="inline">NaniteEmitShadow.usf</span>、<span class="inline">VirtualShadowMapArray.cpp</span>、<span class="inline">VirtualShadowMapDefinitions.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--cyan)"></span>稀疏页表</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>阴影视图</span><span class="tag"><span class="dot" style="background:var(--green)"></span>页缓存</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>深度输出</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">VSM_PAGE_SIZE</span>、<span class="inline">FVirtualShadowMapArray</span>、页表/缓存符号、<span class="inline">EmitShadowMapPS</span> 全部符号，见 <a href="Shadow_FunctionAppendix.html" style="color:#9ee8ff">→ 阴影集成附录</a>。</p></div></section>
+
+<section class="card"><h2>难题：给上千万三角形做阴影 <span class="en">The problem</span></h2><div class="body">
+<div class="note red"><h3>传统阴影贴图撑不住 Nanite</h3><p>传统 shadow map 每盏灯一张固定分辨率深度图，重新画一遍所有几何。Nanite 场景动辄上千万三角、几十盏灯——每盏灯都重画一遍完整几何，开销爆炸；而且固定分辨率要么近处糊、要么远处浪费。<b>VSM</b> 的思路：把阴影贴图做成一张<b>超高分辨率（16384×16384）的虚拟纹理</b>，但只为<b>真正被采样到的区域分配物理页（128×128）</b>，其余留空。这样"分辨率随距离自适应"且"只画看得见阴影的地方"。</p></div>
+<p>VSM 的稀疏页表思想与虚拟纹理（见 <a href="../../VirtualTexture/UE_VirtualTexture_解析_总目录.html" style="color:#9ee8ff">虚拟纹理书</a>）一脉相承：虚拟地址空间巨大，物理页按需分配、LRU 缓存。</p></div></section>
+
+<section class="card"><h2>核心：把 Nanite 管线复用到阴影视图 <span class="en">Shadow as views</span></h2><div class="body">
+<div class="note blue"><h3>阴影就是"从光源看的另一组视图"</h3><p>Nanite 剔除/光栅管线（<a href="InstanceCull_ConvergenceAnnotated.html" style="color:#9ee8ff">#5</a>/<a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a>）本就设计成<b>多视图并行</b>（<span class="inline">MAX_VIEWS_PER_CULL_RASTERIZE_PASS = 4096</span>）。VSM 把每盏灯的每个 mip/clipmap 层级注册成一个<b>Nanite render view</b>，和主相机视图一起进入同一趟剔除+光栅。光栅结果不是写主 visibility buffer，而是<b>写进 VSM 的物理页</b>（#6 的 <span class="inline">VIRTUAL_TEXTURE_TARGET</span> 分支正是为此）。一次遍历，几何只处理一遍，同时喂主视图和所有阴影视图。</p></div>
+<div class="flow">
+<div class="node branch"><span class="step">1</span><strong>标记需要的页</strong><small>从主相机深度反推：哪些 VSM 页会被采样 → 标记 dirty</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><span class="step">2</span><strong>为脏页建阴影视图</strong><small>每个需渲染的页区域 → 一个 Nanite view（含光源投影矩阵）</small></div>
+<div class="arrow">▶</div>
+<div class="node merge"><span class="step">3</span><strong>Nanite 剔除+光栅</strong><small>与主视图同趟；HZB 用 VSM 物理页 HZB 做遮挡剔除</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><span class="step">4</span><strong>EmitShadow 写深度</strong><small>把光栅深度落进物理页；采样时经页表间接寻址</small></div>
+</div></div></section>
+
+<section class="card"><h2>页缓存：不动的东西不重画 <span class="en">Page caching</span></h2><div class="body">
+<div class="note green"><h3>VSM 的性能关键是缓存复用</h3><p>大多数帧里，静态几何 + 静态光源产生的阴影页<b>完全不变</b>。<span class="inline">FVirtualShadowMapCacheManager</span> 缓存上一帧的物理页，只有当<b>几何移动、光源移动、或页首次被采样</b>时才把相关页标记失效（<span class="inline">InvalidatePages</span>）重画。Nanite 的 <span class="inline">CACHE_AS_STATIC</span> 标志（<a href="InstanceCull_ConvergenceAnnotated.html" style="color:#9ee8ff">#5</a>）把静态实例单独归类，让缓存判断更精准。结果：每帧真正重新光栅的阴影页往往只是一小部分。</p></div>
+<table><tr><th>失效来源</th><th>处理</th></tr>
+<tr><td>几何移动 / 动画</td><td>该实例覆盖的页失效（用移动前后包围盒）</td></tr>
+<tr><td>光源移动</td><td>该光源的 VSM 全部页失效</td></tr>
+<tr><td>页首次被采样</td><td>分配物理页 + 标记需渲染</td></tr>
+<tr><td>WPO/位移几何（#8）</td><td>用保守包围盒判定失效范围</td></tr>
+</table></div></section>
+
+<section class="card"><h2>深度输出：三种投影 <span class="en">EmitShadow depth</span></h2><div class="body">
+<p><a href="Shadow_FunctionAppendix.html" style="color:#9ee8ff">附录</a>里 <span class="inline">EmitShadowMapPS</span> 按 <span class="inline">DEPTH_OUTPUT_TYPE</span> 分三路把 Nanite 的深度转成阴影图深度：</p>
+<div class="codebox"><span class="c">// DEPTH_OUTPUT_TYPE == 0：标准深度，直接用 DeviceZ</span>
+OutDepth = DeviceZ;
+<span class="c">// == 1：正交阴影（方向光 clipmap），关近裁剪，clamp 回近平面</span>
+OutDepth = 1 - saturate(DeviceZ) + DepthBias;
+<span class="c">// == 2：透视阴影（点光/聚光），重投影公式</span>
+OutDepth = ViewToClip22 * (DeviceZ - 1) / (DeviceZ - ViewToClip22) + DepthBias;</div>
+<div class="note purple"><h3>方向光用 clipmap，点光用 cubemap</h3><p>方向光覆盖整个世界，用 <b>clipmap</b>（一圈同心的正交层级，随距离降精度）；点光用 <b>cubemap</b>（6 面）——<span class="inline">EmitCubemapShadowVS/GS/PS</span> 用 <span class="inline">SV_RenderTargetArrayIndex</span> 把每面写进对应数组切片。<span class="inline">DepthBias</span> 消除阴影痤疮（shadow acne）。</p></div></div></section>
+
+<section class="card"><h2>与本书其它篇的关系 <span class="en">Cross-topic</span></h2><div class="body">
+<div class="note"><h3>阴影是"多视图 Nanite"最大的受益者</h3>
+<p>共同点：VSM 完全复用 <a href="InstanceCull_ConvergenceAnnotated.html" style="color:#9ee8ff">#5</a>/<a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a> 的多视图剔除+光栅；#6 的 <span class="inline">VIRTUAL_TEXTURE_TARGET</span> WritePixel 分支就是为写 VSM 物理页而设。稀疏页表思想与虚拟纹理书同源。</p>
+<p>不同点：主视图光栅写 64 位 visibility buffer 供 <a href="Shading_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 着色；阴影视图只关心<b>深度</b>（DEPTH_ONLY），不需要材质着色，故 EmitShadow 只搬深度。</p>
+<p>不同点：主视图每帧全画，VSM 靠<b>页缓存</b>只重画失效页——这是 VSM 相对传统阴影的根本性能优势。</p></div>
+<p style="color:#a9b4c0">下一篇 <a href="RayTracing_ConvergenceAnnotated.html" style="color:#9ee8ff">#10 Nanite 光线追踪</a> 讲 Nanite 几何如何进入光追（BVH 与 fallback mesh）。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. <b>VSM = 阴影版虚拟纹理</b>：16384² 虚拟分辨率，按需分配 128×128 物理页，分辨率随距离自适应，只画被采样到的区域。</p>
+<p>2. <b>复用 Nanite 多视图</b>：每盏灯每层级注册成 Nanite render view，与主视图同趟剔除+光栅，几何只处理一遍；光栅写进 VSM 物理页。</p>
+<p>3. <b>页缓存</b>：静态几何/光源的阴影页跨帧复用，只有移动/失效才重画；<span class="inline">CACHE_AS_STATIC</span> 提升缓存精度。</p>
+<p>4. <b>EmitShadow</b>：按标准/正交/透视三种 DEPTH_OUTPUT_TYPE 转深度；方向光用 clipmap、点光用 cubemap（数组切片）。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="Shadow_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#6 集群剔除与两路光栅化</a>
+<a class="tag" href="RayTracing_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#10 Nanite 光线追踪</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

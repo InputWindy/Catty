@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#5 附录 · 剔除遍历结构</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13.5px}.toc a:hover{border-color:var(--cyan)}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}h3.sec{color:#eaf2ff;border-left:4px solid var(--cyan);padding-left:10px;margin:22px 0 8px}</style></head><body>
+<header><a class="back" href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a> &nbsp;·&nbsp; <a class="back" href="InstanceCull_ConvergenceAnnotated.html">← 回到 #5 主文档</a><h1>#5 附录 · 剔除遍历结构</h1><div class="sub">本附录汇总实例剔除与层级遍历的核心结构、剔除标志与常量。取自 UE5.8 本地源码 <span class="inline">NaniteCullRaster.h</span>、<span class="inline">NaniteHierarchyTraversalCommon.ush</span>、<span class="inline">NaniteDataDecode.ush</span>、<span class="inline">NaniteDefinitions.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#const">剔除常量</a>
+<a href="#flags">剔除标志位</a>
+<a href="#queue">FQueueState / FQueuePassState</a>
+<a href="#visible">FVisibleCluster</a>
+<a href="#config">FConfiguration</a>
+<a href="#renderer">IRenderer / FRasterResults</a>
+<a href="#files">源码文件索引</a>
+</div></section>
+
+<section class="card" id="const"><h2>剔除常量 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteDefinitions.h</span></h2><div class="body">
+<table><tr><th>常量</th><th>值</th><th>含义</th></tr>
+<tr><td><code>NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE</code></td><td>64</td><td>持久化剔除线程组大小</td></tr>
+<tr><td><code>NANITE_MAX_BVH_NODES_PER_GROUP</code></td><td>64 / 4 = 16</td><td>每组处理的 BVH 节点数（组大小 / fanout）</td></tr>
+<tr><td><code>NANITE_MAX_BVH_NODE_FANOUT</code></td><td>4</td><td>每个 BVH 节点最多 4 个子节点</td></tr>
+<tr><td><code>NANITE_MAX_VIEWS_PER_CULL_RASTERIZE_PASS</code></td><td>4096 (1&lt;&lt;12)</td><td>一次剔除+光栅最多处理的视图数</td></tr>
+<tr><td><code>InstanceCull numthreads</code></td><td>64</td><td>实例剔除线程组大小</td></tr>
+</table></div></section>
+
+<section class="card" id="flags"><h2>剔除标志位 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NANITE_CULLING_FLAG_*</span></h2><div class="body">
+<table><tr><th>标志</th><th>值</th><th>含义</th></tr>
+<tr><td><code>NANITE_CULLING_FLAG_TEST_LOD</code></td><td>1&lt;&lt;0</td><td>后续需做 LOD 判据（实例阶段默认打上）</td></tr>
+<tr><td><code>NANITE_CULLING_FLAG_USE_HW</code></td><td>1&lt;&lt;1</td><td>用硬件光栅器（大三角）</td></tr>
+<tr><td><code>NANITE_CULLING_FLAG_CACHE_AS_STATIC</code></td><td>1&lt;&lt;2</td><td>可作为静态几何缓存（VSM/HZB 复用）</td></tr>
+<tr><td><code>NANITE_CULLING_FLAG_ENABLE_WPO</code></td><td>1&lt;&lt;3</td><td>启用世界位置偏移（材质动几何）</td></tr>
+<tr><td><code>NANITE_CULLING_FLAG_FALLBACK_RASTER</code></td><td>1&lt;&lt;4</td><td>用回退光栅路径</td></tr>
+</table></div></section>
+
+<section class="card" id="queue"><h2>FQueueState / FQueuePassState <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteHierarchyTraversalCommon.ush</span></h2><div class="body">
+<div class="codebox"><span class="k">struct</span> FQueuePassState {
+  uint ClusterBatchReadOffset;  <span class="c">// 以 batch 为单位的簇读偏移</span>
+  uint ClusterWriteOffset;      <span class="c">// 以单个簇为单位的写偏移</span>
+  uint NodeReadOffset;
+  uint NodeWriteOffset;
+  int  NodeCount;               <span class="c">// 可能临时保守偏大</span>
+};
+<span class="k">struct</span> FQueueState {
+  uint            TotalClusters;               <span class="c">// 产出候选簇总数（对 MaxCandidateClusters 封顶）</span>
+  uint            AssemblyTransformsWriteOffset;
+  FQueuePassState PassState[2];                <span class="c">// [0]=主趟, [1]=后趟</span>
+};</div>
+<p style="color:#a9b4c0;font-size:13px"><code>GetMaxClusterBatches() = MaxCandidateClusters / NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE</code>。读写偏移用 <code>WaveInterlockedAdd</code> 原子推进，实现无锁工作队列。</p></div></section>
+
+<section class="card" id="visible"><h2>FVisibleCluster <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteDataDecode.ush · 剔除输出单元</span></h2><div class="body">
+<table><tr><th>字段</th><th>说明</th></tr>
+<tr><td><code>Flags</code></td><td>剔除标志（USE_HW / ENABLE_WPO / ...）</td></tr>
+<tr><td><code>ViewId</code></td><td>所属视图（多视图批处理，≤4096）</td></tr>
+<tr><td><code>InstanceId</code></td><td>实例索引（<code>NANITE_MAX_INSTANCES_BITS</code> 位）</td></tr>
+<tr><td><code>PageIndex / ClusterIndex</code></td><td>簇在页数据里的定位</td></tr>
+<tr><td><code>AssemblyTransformIndex</code></td><td>装配（骨骼/组合）变换索引</td></tr>
+<tr><td><code>DepthBucket</code></td><td>深度分桶（排序/光栅调度用）</td></tr>
+<tr><td><code>vPage / vPageEnd (uint2)</code></td><td>虚拟页范围（VSM 软光栅时，最后一页 inclusive）</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px">打包时 <code>WriteBits(RawData, BitPos, VisibleCluster.InstanceId, NANITE_MAX_INSTANCES_BITS)</code> 等逐字段位打包进 <code>VisibleClustersSWHW</code> buffer。</p></div></section>
+
+<section class="card" id="config"><h2>FConfiguration <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteCullRaster.h · 本次剔除行为开关</span></h2><div class="body">
+<table><tr><th>位</th><th>含义</th></tr>
+<tr><td><code>bTwoPassOcclusion</code></td><td>开启两趟遮挡剔除</td></tr>
+<tr><td><code>bUpdateStreaming</code></td><td>本次遍历是否写流送请求</td></tr>
+<tr><td><code>bForceHWRaster</code></td><td>强制硬件光栅</td></tr>
+<tr><td><code>bPrimaryContext / bIsShadowPass</code></td><td>主视图 / 阴影 pass（#9 复用）</td></tr>
+<tr><td><code>bDrawOnlyRootGeometry / bDrawOnlyRayTracingFarField</code></td><td>只画根几何 / 只画光追远场</td></tr>
+<tr><td><code>bIsSceneCapture / bIsReflectionCapture / bIsLumenCapture</code></td><td>各类捕获 pass</td></tr>
+<tr><td><code>bDisableProgrammable</code></td><td>禁用可编程光栅（#8）</td></tr>
+<tr><td><code>HiddenFilterFlags (EFilterFlags)</code></td><td>隐藏过滤标志</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px"><code>SetViewFlags(const FViewInfo&)</code> 从视图信息填充这些位。</p></div></section>
+
+<section class="card" id="renderer"><h2>IRenderer / FRasterResults <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteCullRaster.h</span></h2><div class="body">
+<table><tr><th>符号</th><th>说明</th></tr>
+<tr><td><code>IRenderer::Create(GraphBuilder, Scene, View, ..., RasterContext, Configuration, ViewRect, PrevHZB, VSMArray)</code></td><td>创建剔除+光栅渲染器</td></tr>
+<tr><td><code>DrawGeometry(RasterPipelines, VisibilityQuery, ViewArray, SceneInstanceCullingQuery, InstanceDraws)</code></td><td>驱动剔除+光栅（多重载：视图数组 / 实例列表 / 暴力剔除）</td></tr>
+<tr><td><code>ExtractResults(FRasterResults&)</code></td><td>取出剔除光栅结果</td></tr>
+<tr><td><code>FRasterResults::VisibleClustersSWHW</code></td><td>可见簇列表（软/硬光栅），#6 的输入</td></tr>
+<tr><td><code>FRasterResults::ViewsBuffer</code></td><td>FPackedView 数组 buffer</td></tr>
+<tr><td><code>FRasterResults::MaxNodes / MaxVisibleClusters / MaxCandidatePatches</code></td><td>队列/输出容量上限</td></tr>
+<tr><td><code>FRasterResults::VisBuffer64 / ShadingMask</code></td><td>光栅输出的可见性缓冲与着色掩码（#7）</td></tr>
+</table></div></section>
+
+<section class="card" id="files"><h2>源码文件索引 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">UE5.8 本地</span></h2><div class="body">
+<table><tr><th>文件</th><th>内容</th></tr>
+<tr><td><code>Renderer/Private/Nanite/NaniteCullRaster.h/.cpp</code></td><td>IRenderer / FConfiguration / FRasterContext / 剔除光栅调度</td></tr>
+<tr><td><code>Shaders/Private/Nanite/NaniteInstanceCulling.usf</code></td><td>InstanceCull：视锥+HZB，写候选节点/occluded 实例</td></tr>
+<tr><td><code>Shaders/Private/Nanite/NaniteClusterCulling.usf</code></td><td>NodeCull / ClusterCull / PersistentNodeAndClusterCull</td></tr>
+<tr><td><code>Shaders/Private/Nanite/NaniteHierarchyTraversalCommon.ush</code></td><td>FQueueState / 遍历队列公共逻辑</td></tr>
+<tr><td><code>Shaders/Private/Nanite/NaniteHZBCull.ush</code></td><td>HZB 遮挡测试</td></tr>
+</table></div></section>
+
+</main></body></html>

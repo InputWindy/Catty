@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#1 Nanite 总览 · 虚拟化几何体的设计动机</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><h1>#1 Nanite 总览 · 虚拟化几何体的设计动机</h1><div class="sub">这是全书的地图。Nanite 要回答一个尖锐的问题：<b>当美术想直接用电影级密度的网格（单个模型上千万三角形、整个场景数十亿）时，实时渲染怎么撑得住？</b>本篇讲清 Nanite 的核心理念（虚拟化几何体 + 像素级 LOD）、为什么 cluster 是基本单位、从磁盘到像素的完整数据流全景，以及贯穿全书的关键常量与核心数据结构。所有常量/符号取自 UE5.8 本地源码 <span class="inline">NaniteDefinitions.h</span>、<span class="inline">NaniteResources.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--red)"></span>问题/动机</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>离线构建</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>运行时管线</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>关键常量/结论</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FResources</span>、<span class="inline">FPackedCluster</span>、<span class="inline">FPackedHierarchyNode</span>、全局常量与 CVar 入口，见 <a href="Overview_FunctionAppendix.html" style="color:#9ee8ff">→ 全景与常量附录</a>。</p></div></section>
+
+<section class="card"><h2>传统管线为什么撑不住 <span class="en">The problem</span></h2><div class="body">
+<div class="note red"><h3>三个天花板</h3><p>要把数十亿三角形放进实时渲染，传统管线撞上三堵墙：<b>① Draw call 与剔除开销</b>——每个网格一次 draw call，CPU 提交与剔除随物体数线性爆炸；<b>② 显存</b>——完整几何数据远大于显存，装不下；<b>③ 过绘制与四边形浪费</b>——当三角形小于一个像素时，硬件光栅化以 2×2 quad 为单位着色，一个像素的三角形会浪费 3/4 的着色，还伴随严重 overdraw。传统 LOD 是"离散档位 + CPU 切换"，既有 popping，也无法细到像素级。</p></div>
+<div class="note"><h3>Nanite 的回答：把几何体当成"虚拟纹理"一样虚拟化</h3><p>Nanite 借用了<b>虚拟内存/虚拟纹理</b>的思想（见本文档集 <a href="../../VirtualTexture/UE_VirtualTexture_解析_总目录.html" style="color:#9ee8ff">虚拟纹理书</a>）：几何数据切成固定大小的<b>页（page）</b>，只有<b>当前视角真正需要的那部分</b>才流进显存；LOD 不再是离散档位，而是沿一棵<b>连续的 LOD 层级</b>按屏幕误差选择，做到<b>像素级、无 popping</b>。而剔除与光栅化<b>几乎全部搬到 GPU</b>，CPU 只提交极少的间接派发命令，从根本上摆脱 draw call 天花板。</p></div></div></section>
+
+<section class="card"><h2>核心单位：Cluster（簇 / meshlet） <span class="en">Cluster is everything</span></h2><div class="body">
+<p>Nanite 把网格切成很多小簇，簇是<b>剔除、LOD、光栅化、流送的统一基本单位</b>。UE5.8 里簇的硬上限（源码常量）：</p>
+<table><tr><th>常量</th><th>值</th><th>含义</th></tr>
+<tr><td><code>NANITE_MAX_CLUSTER_TRIANGLES</code></td><td>128 <span style="color:#a9b4c0">(1&lt;&lt;7)</span></td><td>一个簇最多 128 个三角形</td></tr>
+<tr><td><code>NANITE_MAX_CLUSTER_VERTICES</code></td><td>256 <span style="color:#a9b4c0">(1&lt;&lt;8)</span></td><td>一个簇最多 256 个顶点</td></tr>
+<tr><td><code>NANITE_MAX_BVH_NODE_FANOUT</code></td><td>4 <span style="color:#a9b4c0">(1&lt;&lt;2)</span></td><td>层级 BVH 每个节点最多 4 个子节点</td></tr>
+</table>
+<div class="note green"><h3>为什么固定 128 三角形</h3><p>固定小尺寸让簇成为可预测的处理粒度：GPU 一个线程组正好处理一个簇；簇的包围盒可用于视锥/遮挡剔除；簇的"LOD 误差"可单独评估，从而实现<b>簇级别的 LOD 选择</b>——屏幕上远处的物体整簇用粗版本、近处用细版本，粒度远比"整个网格切档"细。这正是"像素级 LOD"能成立的结构基础。运行时的 GPU 结构是 <span class="inline">FPackedCluster</span>（见附录），把顶点数、三角数、位置量化参数、包围盒、LOD 误差、材质信息全部位打包进一个紧凑结构。</p></div></div></section>
+
+<section class="card"><h2>从磁盘到像素：全书数据流全景 <span class="en">The whole pipeline</span></h2><div class="body">
+<div class="flow">
+<div class="node branch"><strong><span class="step">1</span>切簇 + 建 DAG（#2）</strong><small>网格→图分割成簇<br>自底向上简化建 LOD DAG</small></div>
+<div class="node branch"><strong><span class="step">2</span>编码成页（#3）</strong><small>量化/位打包→FPackedCluster<br>装进 32KB/128KB 页</small></div>
+<div class="node func"><strong><span class="step">3</span>流送（#4）</strong><small>根页常驻+流送页按需<br>readback 驱动请求</small></div>
+<div class="node func"><strong><span class="step">4</span>实例剔除+遍历（#5）</strong><small>视锥/HZB 剔实例<br>BVH 层级遍历出候选簇</small></div>
+<div class="node func"><strong><span class="step">5</span>集群剔除+光栅化（#6）</strong><small>两趟 HZB 剔除<br>软/硬光栅→Visibility Buffer</small></div>
+<div class="node out"><strong><span class="step">6</span>着色（#7）</strong><small>shade binning 按材质分箱<br>重建属性→导出 GBuffer</small></div>
+</div>
+<div class="note blue"><h3>一句话读懂这条流水线</h3><p>离线（#2#3）把网格"预先切碎、分好级、压成页"；运行时前半段（#4#5#6）是一台<b>GPU 上的自适应几何选择机</b>——只把"这一帧、这个视角、这个屏幕分辨率下真正看得见且需要这么细"的簇挑出来光栅化；运行时后半段（#7）用延迟着色只对最终可见的像素算一次材质。<b>#6 是整台机器的心脏</b>（源码 <span class="inline">NaniteCullRaster.cpp</span> 单文件 7819 行），也是全书最难的一章。</p></div></div></section>
+
+<section class="card"><h2>Visibility Buffer：Nanite 着色的关键抉择 <span class="en">Why deferred material</span></h2><div class="body">
+<p>Nanite 不在光栅化时执行材质，而是先写一张 <b>Visibility Buffer</b>：每个像素只记录"哪个实例、哪个簇、哪个三角形"，用一个 64 位值编码（含深度）。材质留到后面的 shading pass 再算。</p>
+<div class="note"><h3>为什么值得多这一趟</h3><p>因为三角形小于像素时，<b>在光栅化阶段执行材质会因 2×2 quad 而浪费大量算力</b>。先写 visibility buffer、后按材质<b>分箱（shade binning）</b>着色，能让"每个可见像素只算一次材质"，且把相同材质的像素聚在一起批量执行，对齐 GPU 的执行模型。代价是多一次全屏解析与属性重建（#7 详解）。这是 Nanite 与传统前向/延迟管线在结构上的根本差异。</p></div></div></section>
+
+<section class="card"><h2>资源容器：FResources <span class="en">Where the data lives</span></h2><div class="body">
+<p>每个 Nanite 网格在引擎侧的数据都装在 <span class="inline">Nanite::FResources</span>（<span class="inline">NaniteResources.h</span>）。它分"持久态"（磁盘/内存常驻）与"运行时态"（GPU 注册后回填）：</p>
+<table><tr><th>字段</th><th>作用</th></tr>
+<tr><td><code>RootData</code></td><td>根页数据，随资源加载常驻——保证任何时候都有东西可画</td></tr>
+<tr><td><code>StreamablePages</code> (FByteBulkData)</td><td>其余页，按需流送</td></tr>
+<tr><td><code>HierarchyNodes</code> (FPackedHierarchyNode)</td><td>BVH 层级节点，供运行时遍历</td></tr>
+<tr><td><code>PageStreamingStates / PageDependencies</code></td><td>页流送状态与跨页依赖</td></tr>
+<tr><td><code>NumInputTriangles / NumClusters</code></td><td>源三角数 / 簇数（统计与调试）</td></tr>
+<tr><td><code>RuntimeResourceID / RootPageIndex</code></td><td>运行时注册后回填的 GPU 索引</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px">完整字段见附录。<span class="inline">RootData</span> 常驻、<span class="inline">StreamablePages</span> 按需，这个"根页常驻 + 其余流送"的划分是 #4 流送篇的起点。</p></div></section>
+
+<section class="card"><h2>与本文档集其它范式的关系 <span class="en">Cross-book</span></h2><div class="body">
+<div class="note"><h3>Nanite 之于其它三本书</h3>
+<p>共同点：Nanite 的<b>页流送</b>（#4）与<a href="../../VirtualTexture/UE_VirtualTexture_解析_总目录.html" style="color:#9ee8ff">虚拟纹理书</a>的"页表式流送"是同一个"数据 > 显存"范式——只不过一个流的是几何页、一个流的是纹理页，都靠"当前视角真正需要的那一小部分"决定常驻内容。</p>
+<p>不同点：虚拟纹理靠 GPU 采样<b>反馈</b>决定缺哪页；Nanite 靠<b>层级遍历 + 屏幕误差</b>在 GPU 上直接算出需要哪些簇，不依赖上一帧的反馈回读做几何选择（但流送请求仍走 readback）。</p>
+<p>不同点：Nanite 提供的高密度几何，是<a href="../../MegaLights/UE_MegaLights_解析_总目录.html" style="color:#9ee8ff">MegaLights</a>、Lumen 与整个延迟管线的<b>输入</b>；#9 阴影篇还会看到 Nanite 与 VSM（虚拟纹理书的 clipmap 阴影）如何联手。</p></div>
+<p style="color:#a9b4c0">下一篇 <a href="ClusterDAG_ConvergenceAnnotated.html" style="color:#9ee8ff">#2 Cluster 构建与 DAG</a> 进入离线构建：网格是怎么被切成簇、又是怎么建成可连续选择的 LOD DAG 的。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. Nanite = <b>虚拟化几何体</b>：几何切页按需流送 + 沿连续 LOD 层级做像素级选择 + 剔除/光栅化全搬到 GPU，突破 draw call / 显存 / 小三角形三堵墙。</p>
+<p>2. <b>Cluster（簇）是统一基本单位</b>：≤128 三角形 / ≤256 顶点，是剔除、LOD、光栅化、流送的共同粒度；GPU 结构是 <span class="inline">FPackedCluster</span>。</p>
+<p>3. 数据流六段：切簇建 DAG（#2）→ 编码成页（#3）→ 流送（#4）→ 实例剔除遍历（#5）→ 集群剔除+软/硬光栅到 Visibility Buffer（#6）→ shade binning 延迟着色（#7）。#6 是心脏。</p>
+<p>4. <b>Visibility Buffer + 延迟材质</b>是 Nanite 的关键结构抉择，避免小三角形的 quad 着色浪费。数据装在 <span class="inline">FResources</span>（根页常驻 + 流送页按需）。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="Overview_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="ClusterDAG_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#2 Cluster 构建与 DAG</a>
+<a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#6 集群剔除与光栅化</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

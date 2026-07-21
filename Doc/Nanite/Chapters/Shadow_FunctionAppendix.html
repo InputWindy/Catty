@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#9 附录 · 阴影 VSM 集成结构</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13.5px}.toc a:hover{border-color:var(--cyan)}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}h3.sec{color:#eaf2ff;border-left:4px solid var(--cyan);padding-left:10px;margin:22px 0 8px}</style></head><body>
+<header><a class="back" href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a> &nbsp;·&nbsp; <a class="back" href="Shadow_ConvergenceAnnotated.html">← 回到 #9 主文档</a><h1>#9 附录 · 阴影 VSM 集成结构</h1><div class="sub">本附录汇总 VSM 页表常量、页缓存管理、Nanite 阴影视图注册与深度发射的核心符号。取自 UE5.8 本地源码 <span class="inline">VirtualShadowMapDefinitions.h</span>、<span class="inline">VirtualShadowMapArray.cpp</span>、<span class="inline">VirtualShadowMapCacheManager.cpp</span>、<span class="inline">NaniteEmitShadow.usf</span>。</div></header>
+<main>
+
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#const">VSM 页表常量</a>
+<a href="#array">FVirtualShadowMapArray</a>
+<a href="#cache">页缓存管理</a>
+<a href="#emit">EmitShadow 深度发射</a>
+<a href="#files">源码文件索引</a>
+</div></section>
+
+<section class="card" id="const"><h2>VSM 页表常量 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualShadowMapDefinitions.h</span></h2><div class="body">
+<table><tr><th>常量</th><th>值</th><th>含义</th></tr>
+<tr><td><code>VSM_LOG2_PAGE_SIZE</code></td><td>7</td><td>物理页边长 log2</td></tr>
+<tr><td><code>VSM_PAGE_SIZE</code></td><td>128 (1&lt;&lt;7)</td><td>物理页边长（像素）</td></tr>
+<tr><td><code>VSM_LOG2_LEVEL0_DIM_PAGES_XY</code></td><td>7</td><td>第 0 级每边页数 log2</td></tr>
+<tr><td><code>VSM_LEVEL0_DIM_PAGES_XY</code></td><td>128 (1&lt;&lt;7)</td><td>第 0 级每边 128 页</td></tr>
+<tr><td><code>VSM_MAX_MIP_LEVELS</code></td><td>8</td><td>mip 层级数（LOG2_LEVEL0+1）</td></tr>
+<tr><td><code>VSM_VIRTUAL_MAX_RESOLUTION_XY</code></td><td>16384 (128×128)</td><td>单张虚拟阴影图分辨率</td></tr>
+<tr><td><code>VSM_RASTER_WINDOW_PAGES</code></td><td>4</td><td>光栅窗口页数</td></tr>
+<tr><td><code>VSM_RECEIVER_MASK_SIZE</code></td><td>8 (1&lt;&lt;3)</td><td>接收者掩码尺寸（粗粒度可见性）</td></tr>
+</table></div></section>
+
+<section class="card" id="array"><h2>FVirtualShadowMapArray <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualShadowMapArray.cpp</span></h2><div class="body">
+<table><tr><th>符号</th><th>说明</th></tr>
+<tr><td><code>FVirtualShadowMapArray</code></td><td>一帧内所有 VSM 的集合，持有页表、物理池、HZB</td></tr>
+<tr><td><code>PageTable (RWTexture2D&lt;uint&gt;)</code></td><td>虚拟页 → 物理页的间接寻址表</td></tr>
+<tr><td><code>OutPageTable</code></td><td>页表更新 pass 的输出 UAV</td></tr>
+<tr><td><code>HZBPhysical / GetHZBPhysicalPoolSize()</code></td><td>物理页 HZB，供阴影视图遮挡剔除</td></tr>
+<tr><td><code>DummyPageTableElement = 0xFFFFFFFF</code></td><td>未分配页哨兵值</td></tr>
+<tr><td><code>PageTableRowMask / RowShift</code></td><td>页表行寻址位运算参数</td></tr>
+<tr><td><code>CalcBin(VirtualShadowMapId, MinMipLevel)</code></td><td>按 mip 层级把 VSM 归入渲染 bin（&lt;6 直接，否则 /2）</td></tr>
+</table></div></section>
+
+<section class="card" id="cache"><h2>页缓存管理 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualShadowMapCacheManager.cpp</span></h2><div class="body">
+<table><tr><th>符号</th><th>说明</th></tr>
+<tr><td><code>FVirtualShadowMapCacheManager</code></td><td>跨帧缓存物理页与页表，决定哪些页可复用</td></tr>
+<tr><td><code>PrevUniformParameters</code></td><td>上一帧页表参数（复用判定基准）</td></tr>
+<tr><td><code>InvalidatePages(...)</code></td><td>把几何/光源移动波及的页标记失效重画</td></tr>
+<tr><td><code>FreeHZBPhysicalPool</code></td><td>释放物理 HZB 池</td></tr>
+<tr><td><code>NANITE_CULLING_FLAG_CACHE_AS_STATIC</code> (1&lt;&lt;2)</td><td>Nanite 侧把静态实例归类，提升缓存判定精度</td></tr>
+</table>
+<div class="note"><h3>缓存与失效的平衡</h3><p>缓存越激进，重画越少但失效判定越易漏（残影）；失效越保守，正确但重画越多。VSM 用"移动前后包围盒并集"标记失效页，静态几何走 CACHE_AS_STATIC 缓存路径，动态几何每帧判定。</p></div></div></section>
+
+<section class="card" id="emit"><h2>EmitShadow 深度发射 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteEmitShadow.usf</span></h2><div class="body">
+<table><tr><th>符号</th><th>说明</th></tr>
+<tr><td><code>EmitShadowMapPS</code></td><td>从 Nanite 深度 buffer 搬深度进阴影图；按 DEPTH_OUTPUT_TYPE 分路</td></tr>
+<tr><td><code>DEPTH_OUTPUT_TYPE 0 / 1 / 2</code></td><td>标准 / 正交(clipmap) / 透视(cubemap) 深度转换</td></tr>
+<tr><td><code>EmitCubemapShadowVS / GS / PS</code></td><td>点光 cubemap 6 面发射，用 SV_RenderTargetArrayIndex 选面</td></tr>
+<tr><td><code>ViewToClip22 / DepthBias</code></td><td>透视重投影系数 / 抗阴影痤疮偏置</td></tr>
+<tr><td><code>SourceOffset / ShadowMapID</code></td><td>源深度采样偏移 / 目标 VSM 标识</td></tr>
+<tr><td><code>DepthInt != 0 else discard</code></td><td>空像素丢弃（不覆盖已有页深度）</td></tr>
+</table>
+<div class="codebox"><span class="c">// 透视阴影深度重投影（DEPTH_OUTPUT_TYPE == 2）</span>
+float DeviceZ = asfloat( DepthInt );
+OutDepth = ViewToClip22 * ( DeviceZ - 1 ) / ( DeviceZ - ViewToClip22 ) + DepthBias;</div></div></section>
+
+<section class="card" id="files"><h2>源码文件索引 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">UE5.8 本地</span></h2><div class="body">
+<table><tr><th>文件</th><th>内容</th></tr>
+<tr><td><code>Shaders/Shared/VirtualShadowMapDefinitions.h</code></td><td>VSM_PAGE_SIZE / MIP_LEVELS / 分辨率常量</td></tr>
+<tr><td><code>Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp</code></td><td>页表 / 物理池 / HZB / Nanite 视图注册</td></tr>
+<tr><td><code>.../VirtualShadowMapCacheManager.cpp</code></td><td>跨帧页缓存 / 失效 / InvalidatePages</td></tr>
+<tr><td><code>.../VirtualShadowMapClipmap.cpp</code></td><td>方向光 clipmap 层级构建</td></tr>
+<tr><td><code>.../VirtualShadowMapProjection.cpp</code></td><td>阴影采样投影 / 页表间接寻址</td></tr>
+<tr><td><code>Shaders/Private/Nanite/NaniteEmitShadow.usf</code></td><td>深度发射 / clipmap / cubemap 三路</td></tr>
+</table></div></section>
+
+</main></body></html>

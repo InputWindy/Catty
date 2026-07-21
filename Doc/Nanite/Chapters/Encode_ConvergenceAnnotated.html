@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#3 编码与页格式 · 网格如何变成 GPU 页</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><h1>#3 编码与页格式 · 网格如何变成 GPU 页</h1><div class="sub">离线构建的最后一步：把 <a href="ClusterDAG_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a> 建好的 DAG 压成<b>紧凑、GPU 可直接寻址的页</b>。本篇讲清顶点量化与位打包、页内分区（page sections）布局、把簇装进 32KB/128KB 页的 page assignment、根页与流送页的划分，以及处理跨页引用的 <b>fixup chunk</b>。所有符号取自 UE5.8 本地源码 <span class="inline">NaniteBuilder/Private/Encode/</span>、<span class="inline">NaniteFixupChunk.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--orange)"></span>量化/位打包</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>页布局</span><span class="tag"><span class="dot" style="background:var(--green)"></span>页分配</span><span class="tag"><span class="dot" style="background:var(--red)"></span>fixup 跨页</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FPageSections</span>、<span class="inline">FEncodingInfo</span>、<span class="inline">FBitWriter</span>、<span class="inline">FFixupChunk</span> 全部符号与页布局，见 <a href="Encode_FunctionAppendix.html" style="color:#9ee8ff">→ 编码格式附录</a>。</p></div></section>
+
+<section class="card"><h2>第一步：量化——用尽可能少的位表示几何 <span class="en">Quantization</span></h2><div class="body">
+<p>Nanite 的数据量必须压到极致，否则流送与显存都撑不住。编码的第一件事是<b>量化</b>：不再用 32 位 float，而是按每个簇实际需要的精度用整数位表示。参数记在 <span class="inline">FEncodingInfo</span>：</p>
+<table><tr><th>字段</th><th>作用</th></tr>
+<tr><td><code>BitsPerIndex</code></td><td>三角索引位数（簇内顶点 ≤256，故 ≤8 位）</td></tr>
+<tr><td><code>PosPrecision</code>（位置精度）</td><td>范围 <code>NANITE_MIN_POSITION_PRECISION(-20)</code> ~ <code>MAX(43)</code>，控制位置量化格子大小</td></tr>
+<tr><td><code>NormalPrecision / TangentPrecision</code></td><td>法线 / 切线角度量化位数</td></tr>
+<tr><td><code>UVs[NANITE_MAX_UVS]</code> (FUVInfo: Min + NumBits)</td><td>每套 UV 的最小值与位数</td></tr>
+<tr><td><code>ColorMode / ColorMin / ColorBits</code></td><td>顶点色模式与每通道位数（常量色则不存）</td></tr>
+<tr><td><code>BitsPerAttribute</code></td><td>单顶点全部属性的总位数</td></tr>
+</table>
+<div class="note"><h3>位流写入：FBitWriter</h3><p>量化后的整数用 <span class="inline">FBitWriter::PutBits(Bits, NumBits)</span> 逐字段写进字节流——它把位攒在一个 64 位 <span class="inline">PendingBits</span> 里，凑满 8 位就吐一个字节。<span class="inline">Flush(Alignment)</span> 收尾并按对齐补零。这种<b>非字节对齐的位打包</b>让每个字段只占它真正需要的位数，是 Nanite 高压缩比的来源。<span class="inline">PosPrecision</span> 可以是负数——意味着量化格子比 1 单位还大，用于超大而低细节的几何。</p></div></div></section>
+
+<section class="card"><h2>页的内部布局：FPageSections <span class="en">Page layout</span></h2><div class="body">
+<p>一个 GPU 页不是一堆簇简单拼接，而是<b>按数据类型分区</b>，同类数据连续存放（利于 GPU 并行解码与缓存）。<span class="inline">FPageSections</span> 定义各分区大小，各区 16 字节对齐，从固定的页头（<span class="inline">NANITE_GPU_PAGE_HEADER_SIZE = 16</span> 字节）之后依次排布：</p>
+<div class="codebox"><span class="c">// 页内分区顺序（GetXxxOffset 依次累加）</span>
+Header(16B) → Cluster → ClusterBoneInfluence → VoxelBoneInfluence
+  → MaterialTable → VertReuseBatchInfo → BoneInfluence → BrickData
+  → ExtendedData → DecodeInfo → Index → Position → Attribute</div>
+<div class="note blue"><h3>为什么要分区（SoA 而非 AoS）</h3><p>把所有簇的<b>索引</b>放一起、<b>位置</b>放一起、<b>属性</b>放一起，是典型的结构体数组转数组结构体（SoA）思路。GPU 解码一个页时，光栅化只需要 <span class="inline">Index/Position</span> 分区，材质着色才碰 <span class="inline">Attribute/DecodeInfo</span> 分区——分区让不同阶段<b>只读自己需要的连续内存</b>，避免把整个簇结构拉进缓存。<span class="inline">FPackedCluster</span> 里的各种 <span class="inline">XxxOffset</span> 字段（见 <a href="Overview_FunctionAppendix.html" style="color:#9ee8ff">#1 附录</a>）就是指向这些分区的偏移。<span class="inline">DecodeInfo</span> 分区存的是解码属性所需的元信息（各字段位宽/最小值），GPU transcode 时先读它才能解出属性。</p></div></div></section>
+
+<section class="card"><h2>页分配：把簇装进 32KB / 128KB 页 <span class="en">Page assignment</span></h2><div class="body">
+<p>簇要装箱进页。<span class="inline">NaniteEncodePageAssignment</span> 负责这件事，约束是每页 GPU 尺寸不超过上限：</p>
+<div class="flow">
+<div class="node branch"><strong>根页 Root Page</strong><small>NANITE_ROOT_PAGE_GPU_SIZE = 32KB<br>存 DAG 顶部粗簇<br>随资源常驻，永不换出</small></div>
+<div class="node func"><strong>流送页 Streaming Page</strong><small>NANITE_STREAMING_PAGE_GPU_SIZE = 128KB<br>存其余细簇<br>按需流入（#4）</small></div>
+<div class="node out"><strong>装箱原则</strong><small>同 group/相邻簇尽量同页<br>减少跨页依赖</small></div>
+</div>
+<div class="note green"><h3>根页为什么小而常驻</h3><p>根页只有 32KB（流送页的 1/4），存 DAG 最顶端的少量粗簇。因为<b>任何时候都必须有东西可画</b>——哪怕流送页还没到位，根页保证物体至少有个最粗的版本立即可见（这也是 <span class="inline">FResources::RootData</span> 随资源常驻的原因，见 <a href="Overview_ConvergenceAnnotated.html" style="color:#9ee8ff">#1</a>）。装箱时把<b>同 group、DAG 上相邻的簇尽量放进同一页</b>，因为运行时的 cut 往往同时选中相邻簇——同页能让一次流送就满足一片需求，减少跨页依赖与请求次数。编码时 <span class="inline">FPage::bRelativeEncoding</span> 标记该页是否用相对编码（相对父页做增量，进一步压缩）。</p></div></div></section>
+
+<section class="card"><h2>跨页引用的难题：Fixup Chunk <span class="en">Fixups</span></h2><div class="body">
+<div class="note red"><h3>页可以独立换入换出，但引用怎么办？</h3><p>DAG 的节点/簇会互相引用（父簇指向子簇、层级节点指向簇），但这些引用可能<b>跨页</b>。当一个流送页换入或换出时，指向它的其它页里的引用必须被"修补"（fixup）成正确的 GPU 地址或标记为不可用。这就是 <span class="inline">FFixupChunk</span>（<span class="inline">NaniteFixupChunk.h</span>）的职责。</p></div>
+<table><tr><th>结构</th><th>作用</th></tr>
+<tr><td><code>FFixupChunk::FHeader</code></td><td>Magic + 各类 fixup 数量（GroupFixups / PartFixups / ParentFixups / HierarchyLocations / ReconsiderPages / ClusterIndices）</td></tr>
+<tr><td><code>FGroupFixup</code></td><td>组级修补：<code>PageDependencies</code>(FPageRangeKey) + Flags；该组依赖哪些页</td></tr>
+<tr><td><code>FPartFixup</code></td><td>part 级：PageIndex + 层级位置范围</td></tr>
+<tr><td><code>FParentFixup</code></td><td>父级引用修补：指向 part fixup + 簇索引范围</td></tr>
+<tr><td><code>FHierarchyLocation</code></td><td>层级节点位置：<code>ChildIndex</code>(fanout 位) + <code>NodeIndex</code>，打包成一个 uint32</td></tr>
+</table>
+<div class="note"><h3>安装/卸载时的修补闭环</h3><p>页被安装时置 <span class="inline">NANITE_FIXUP_FLAG_INSTALLED(1)</span>，此时遍历它的 fixup 把层级节点里指向本页簇的引用写成真实 GPU 地址；卸载时反向把这些引用清掉，让运行时遍历不会走进已不在显存的页。<span class="inline">NumReconsiderPages</span> 记录"本页装卸时需要连带重新考虑 fixup 的页"（通常是同组跨页的最后一页）。这套机制让页能<b>真正独立地按需换入换出</b>，是 #4 流送能工作的前提。</p></div></div></section>
+
+<section class="card"><h2>磁盘格式 ↔ GPU 格式 <span class="en">Disk vs GPU</span></h2><div class="body">
+<div class="note purple"><h3>两种格式，一次转码</h3><p>编码产出的是<b>磁盘格式</b>（高度压缩的位流，<span class="inline">FPageStreams</span> 里那些 <span class="inline">Index/Attribute/LowByte/MidByte/HighByte</span> 等字节数组）。运行时页流入后，GPU 上的 <b>transcode</b> pass（<span class="inline">NaniteTranscode.usf</span>，见 <a href="Streaming_ConvergenceAnnotated.html" style="color:#9ee8ff">#4</a>）把磁盘格式解成 GPU 直接寻址的格式（<span class="inline">FPackedCluster</span> + 分区数据）。分开两种格式是为了：磁盘/带宽要最小体积（位打包 + 相对编码），GPU 运行时要可随机寻址（对齐 + 固定布局）。<span class="inline">FEncodingInfo::GpuSizes</span>（<span class="inline">FPageSections</span>）在编码时就算好了转码后各分区的 GPU 尺寸。</p></div></div></section>
+
+<section class="card"><h2>与本书其它篇的关系 <span class="en">Cross-topic</span></h2><div class="body">
+<div class="note"><h3>编码是构建与运行时的桥</h3>
+<p>共同点：本篇的页格式直接决定 <a href="Streaming_ConvergenceAnnotated.html" style="color:#9ee8ff">#4</a> 流送的粒度（页）与 <a href="CullRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a> 光栅化读取的数据布局；fixup 机制是 #4 页换入换出的基础。</p>
+<p>不同点：本篇是离线一次性编码（CPU，写进 DDC / 资源）；运行时只做反向的 GPU transcode，不再重新编码。</p>
+<p>不同点：这里的"页 + 页表 + 按需流送"与<a href="../../VirtualTexture/UE_VirtualTexture_解析_总目录.html" style="color:#9ee8ff">虚拟纹理书</a>的编码/转码高度神似——都是"离线压紧、运行时按页解码"。</p></div>
+<p style="color:#a9b4c0">下一篇 <a href="Streaming_ConvergenceAnnotated.html" style="color:#9ee8ff">#4 资源与流送</a> 讲这些页如何按需流入显存、transcode、并驱动请求闭环。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. <b>量化 + 位打包</b>（<span class="inline">FEncodingInfo</span> + <span class="inline">FBitWriter</span>）：位置/法线/UV/颜色按实际精度用整数位表示，位置精度范围 -20~43，非字节对齐压缩。</p>
+<p>2. 页内<b>按类型分区</b>（<span class="inline">FPageSections</span>，16 字节对齐）：Cluster/Index/Position/Attribute/DecodeInfo 等各区连续，让不同阶段只读所需分区。</p>
+<p>3. <b>页分配</b>：根页 32KB 常驻（DAG 顶部粗簇，保证随时可画）、流送页 128KB 按需；同 group 相邻簇尽量同页。</p>
+<p>4. <b>Fixup chunk</b>（<span class="inline">FFixupChunk</span>）在页安装/卸载时修补跨页引用，是页能独立换入换出的前提。磁盘格式与 GPU 格式分离，运行时靠 transcode 转换。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="Encode_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="ClusterDAG_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#2 Cluster 构建与 DAG</a>
+<a class="tag" href="Streaming_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#4 资源与流送</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>
