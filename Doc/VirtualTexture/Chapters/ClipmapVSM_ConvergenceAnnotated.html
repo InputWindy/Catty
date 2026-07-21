@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#8 VSM Clipmap 案例 · 定向光为什么用 clipmap</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><h1>#8 VSM Clipmap 案例 · 定向光为什么用 clipmap</h1><div class="sub">本篇是 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 理论的第一个 UE 实战案例：<b>虚拟阴影贴图（VSM）如何用 clipmap 处理定向光（太阳光）</b>。有趣的是——VSM 同时用到了本书的<b>两种范式</b>：页表式 VT（阴影页也是虚拟纹理页）+ Clipmap（定向光的层级组织）。本篇聚焦 <span class="inline">FVirtualShadowMapClipmap</span>：定向光为什么必须用 clipmap、层级怎么构建、shader 如何寻址。所有符号/CVar 取自 UE5.8 本地源码 <span class="inline">VirtualShadowMapClipmap.h/.cpp</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--purple)"></span>Clipmap 结构</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>层级构建</span><span class="tag"><span class="dot" style="background:var(--green)"></span>寻址</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>结论</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FVirtualShadowMapClipmap</span>、<span class="inline">FVirtualShadowMapClipmapConfig</span>、<span class="inline">FLevelData</span>、clipmap CVar 全部符号，见 <a href="ClipmapVSM_FunctionAppendix.html" style="color:#9ee8ff">→ VSM Clipmap 函数附录</a>。</p></div></section>
+
+<section class="card"><h2>定向光为什么非用 clipmap 不可 <span class="en">Why directional lights need clipmap</span></h2><div class="body">
+<div class="note purple"><h3>定向光的两难</h3><p>点光/聚光的阴影视锥是有限的——一个立方体或一个锥就框住了。但<b>定向光（太阳）没有位置，光线平行，理论上要覆盖整个可见世界</b>。如果用单张阴影图覆盖到地平线，近处的分辨率会低到没法看；如果只覆盖近处，远处就没阴影。这正是 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> clipmap 要解决的问题——<b>精度需求随距离衰减</b>。传统方案是 CSM（级联阴影图，Cascaded Shadow Maps），VSM 则把它升级成真正的 clipmap：以相机为中心，一叠按 2 的幂递增覆盖半径的层。</p></div>
+<div class="flow">
+<div class="node branch"><strong>近处层（FirstLevel）</strong><small>覆盖半径小、分辨率高<br>脚下的清晰阴影</small></div>
+<div class="node func"><strong>中间层</strong><small>每层半径翻倍<br>RadiiPerLevel = 4</small></div>
+<div class="node out"><strong>远处层（LastLevel）</strong><small>覆盖到地平线<br>分辨率低但够用</small></div>
+</div></div></section>
+
+<section class="card"><h2>VSM = VT + Clipmap 的合体 <span class="en">Two paradigms in one</span></h2><div class="body">
+<div class="note blue"><h3>本书最精彩的交叉点</h3><p>VSM 里，每个 clipmap 层<b>本身是一张虚拟阴影贴图</b>——它的页也走 <a href="VTOverview_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a> 讲的 VT 页表 + 物理池 + 缓存失效那一套（只是物理池存的是深度而非颜色）。所以 VSM 的组织是<b>两层嵌套</b>：外层用 <b>clipmap</b>（第三范式）决定"哪些层、每层覆盖多大范围、中心在哪"；内层用 <b>VT 页表</b>（第二范式）决定"这层里哪些页真的需要渲染、哪些能从上帧缓存复用"。<span class="inline">FVirtualShadowMapClipmap::GetVirtualShadowMapId()</span> 就是把 clipmap 层接到 VSM 的 VT id 上。这印证了 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 的观点：三范式不是互斥的，可以组合。</p></div></div></section>
+
+<section class="card"><h2>层级构建：从 CVar 到 FLevelData <span class="en">Level construction</span></h2><div class="body">
+<p><span class="inline">FVirtualShadowMapClipmapConfig</span> 从 CVar 取配置（源码默认值）：</p>
+<table><tr><th>CVar</th><th>默认</th><th>作用</th></tr>
+<tr><td><code>r.Shadow.Virtual.Clipmap.FirstLevel</code></td><td>6</td><td>最近层的绝对级号；越低近处阴影越清晰，但页数增加</td></tr>
+<tr><td><code>r.Shadow.Virtual.Clipmap.LastLevel</code></td><td>22</td><td>最远层；每加一级最大覆盖半径翻倍</td></tr>
+<tr><td><code>r.Shadow.Virtual.Clipmap.FirstCoarseLevel</code></td><td>15</td><td>从哪级开始标记粗页</td></tr>
+<tr><td><code>r.Shadow.Virtual.Clipmap.LastCoarseLevel</code></td><td>18</td><td>标记粗页到哪级</td></tr>
+</table>
+<div class="note"><h3>每层半径：2 的幂（源码直译）</h3><p>层半径由 <span class="inline">GetLevelRadius(AbsoluteLevel)</span> 决定，源码就一行：</p>
+<div class="codebox"><span class="c">// clipmap 层向下取整，半径要覆盖到 2^(Level+1)</span>
+<span class="k">float</span> FVirtualShadowMapClipmap::<span class="f">GetLevelRadius</span>(<span class="k">float</span> AbsoluteLevel)
+{ <span class="k">return</span> FMath::<span class="f">Pow</span>(2.0f, AbsoluteLevel + 1.0f); }</div>
+<p>所以 FirstLevel=6 → 半径 2⁷=128；每高一级半径翻倍；LastLevel=22 → 2²³ 约 800 万单位（覆盖极远）。绝对级号 <span class="inline">AbsoluteLevel = ClipmapIndex + FirstLevel</span>，级数 = LastLevel − FirstLevel + 1（默认约 17 级）。<span class="inline">LevelData</span> 用 <span class="inline">TInlineAllocator&lt;32&gt;</span> 内联最多 32 级，避免堆分配。</p></div>
+<div class="note blue"><h3>页对齐吸附（snapping）——clipmap 无闪烁的关键</h3><p>源码注释点明：<i>the centers of each of the levels can be different as they are snapped to page alignment at their respective scales</i>。即每层中心<b>不是简单等于相机位置</b>，而是各自吸附到该层尺度下的页边界（<span class="inline">FLevelData::WorldCenter</span>、<span class="inline">CornerOffset</span>、<span class="inline">RelativeCornerOffset</span>）。这正是 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 讲的 toroidal 环形寻址在 VSM 里的落地——相机小幅移动时，只要没跨过页边界，该层根本不用更新；跨过了也只更新新进入的边缘页。这就是为什么 VSM 的定向光阴影移动时几乎不闪、也不需要每帧全量重画。</p></div></div></section>
+
+<section class="card"><h2>Shader 寻址：世界坐标 → 层 → 页 <span class="en">Addressing</span></h2><div class="body">
+<p>每层有独立的投影（<span class="inline">FVirtualShadowMapProjectionShaderData</span>，由 <span class="inline">ComputeProjectionShaderData</span> 生成，含 <span class="inline">ViewToClip</span> + <span class="inline">PreViewTranslation = -WorldCenter</span>）。采样一个世界点的阴影时：</p>
+<div class="flow">
+<div class="node merge"><strong><span class="step">1</span>选层</strong><small>按到 clipmap 原点距离选绝对级<br>log2(dist) 类比 #7 的层选择</small></div>
+<div class="node func"><strong><span class="step">2</span>投影到该层</strong><small>用该层 ViewToClip + WorldCenter<br>算出层内 UV</small></div>
+<div class="node out"><strong><span class="step">3</span>VT 页表查找</strong><small>层内 UV → VSM 页表 → 物理页<br>采深度做阴影比较</small></div>
+</div>
+<div class="note green"><h3>与经典 clipmap 寻址对照</h3><p>这三步几乎就是 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 伪代码的 UE 实现：第 1 步"距离选层"= <span class="inline">log2(DistToCamera/FinestRadius)</span>；第 2 步"层内定位"用每层各自的 <span class="inline">WorldCenter</span>（已吸附）替代简单原点；第 3 步不同——经典 clipmap 是直接 toroidal 取模访问物理纹理，VSM 多套了一层 <b>VT 页表间接</b>，因为它要复用 VSM 的按需分页与缓存（不是所有层的所有页都需要，只画反馈里被采到的）。<span class="inline">WorldToLightViewRotationMatrix</span> 把世界空间转到光源视角（定向光只有旋转、无平移）。</p></div></div></section>
+
+<section class="card"><h2>缓存与失效 <span class="en">Cache & invalidation</span></h2><div class="body">
+<p>VSM clipmap 的每帧增量更新靠 <span class="inline">FVirtualShadowMapPerLightCacheEntry</span>（<span class="inline">PerLightCacheEntry</span>）：</p>
+<table><tr><th>成员/方法</th><th>作用</th></tr>
+<tr><td><code>UpdateClipmap({LightDirection, FirstLevel}, ...)</code></td><td>光方向或 FirstLevel 变了则整体失效</td></tr>
+<tr><td><code>OnPrimitiveRendered(PrimitiveSceneInfo)</code></td><td>非 Nanite 图元过 CPU 剔除时标记（<code>RenderedPrimitives</code> 位数组）</td></tr>
+<tr><td><code>UpdateCachedFrameData()</code></td><td>帧末把缓存数据推回 cache entry</td></tr>
+</table>
+<div class="note"><h3>动态物体失效</h3><p>移动的物体、开了 WPO/动画的几何会让它覆盖的阴影页失效——这与 <a href="RVT_ConvergenceAnnotated.html" style="color:#9ee8ff">#5</a> RVT 的脏区失效思路一致（都是"内容变了→踢页→下帧重画"）。<span class="inline">FirstCoarseLevel/LastCoarseLevel</span> 之间的粗页有性能模式（CVar 值=2）可抑制这类动态失效，用轻微精度换稳定帧率——这是 clipmap 分层带来的调优自由度：远处粗层可以"懒一点"。</p></div></div></section>
+
+<section class="card"><h2>与另外两种范式的关系 <span class="en">Cross-paradigm</span></h2><div class="body">
+<div class="note"><h3>VSM 是三范式的交汇处</h3>
+<p>共同点：VSM 的每个 clipmap 层内部完全是 <a href="VTOverview_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a> 的 VT 机制——页表、物理池、反馈驱动的按需分页、缓存失效，一个不少（只是存深度）。</p>
+<p>不同点：与 <a href="MipStreaming_ConvergenceAnnotated.html" style="color:#9ee8ff">#1</a>/<a href="SVT_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a> 的流送不同，VSM 的阴影页<b>不从磁盘来</b>，是每帧现渲染的深度——这点和 <a href="RVT_ConvergenceAnnotated.html" style="color:#9ee8ff">#5</a> RVT "GPU 现画"更像。</p>
+<p>不同点：clipmap 层的组织（层数、半径、中心吸附）是纯 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 第三范式——由相机/光源位置几何确定，与 VT 的反馈驱动正交。VSM 把两者叠起来：clipmap 管"宏观分层"，VT 管"层内微观分页"。</p></div>
+<p style="color:#a9b4c0">下一篇 <a href="ClipmapLumen_ConvergenceAnnotated.html" style="color:#9ee8ff">#9 Lumen Clipmap</a> 看另一个 clipmap 案例（Radiance Cache + 全局距离场），并与本篇 VSM 做异同对比，收束全书。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. 定向光没有有限视锥、精度随距离衰减，天然适配 clipmap——VSM 用它替代传统 CSM。</p>
+<p>2. VSM = <b>Clipmap（宏观分层）+ VT 页表（层内分页）</b>的合体，是本书两种范式的交汇点。</p>
+<p>3. 层半径 <span class="inline">GetLevelRadius = 2^(Level+1)</span>，级号 = FirstLevel(6)~LastLevel(22)；每层中心<b>吸附到页边界</b>实现 toroidal 增量更新、无闪烁。</p>
+<p>4. 寻址三步：距离选层 → 用该层投影定位层内 UV → VT 页表查物理页采深度。缓存失效同 RVT 脏区思路。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="ClipmapVSM_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="ClipmapTheory_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--purple)"></span>#7 Clipmap 经典理论</a>
+<a class="tag" href="VTOverview_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#2 VT 总览与架构</a>
+<a class="tag" href="ClipmapLumen_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--purple)"></span>#9 Lumen Clipmap 案例</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

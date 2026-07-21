@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#9 Lumen Clipmap 案例 · Radiance Cache + 全局距离场</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><h1>#9 Lumen Clipmap 案例 · Radiance Cache + 全局距离场</h1><div class="sub">本篇是 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 理论的第二个 UE 实战案例，也是全书的收束：<b>Lumen 全局光照如何用 3D clipmap 组织缓存数据</b>。这里 clipmap 从 2D 纹理（VSM）走向 <b>3D 体纹理</b>——辐照度缓存（Radiance Cache）和全局距离场（Global Distance Field）都是以相机为中心的 3D 嵌套金字塔。更妙的是全局距离场同时用到<b>三种范式</b>：clipmap 分层 + 页表分页 + mip 回退。所有符号取自 UE5.8 本地源码 <span class="inline">LumenRadianceCacheInterpolation.h</span>、<span class="inline">GlobalDistanceFieldParameters.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--purple)"></span>3D Clipmap 结构</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>Radiance Cache</span><span class="tag"><span class="dot" style="background:var(--green)"></span>Global Distance Field</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>结论</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FRadianceCacheInputs</span>、<span class="inline">FGlobalDistanceFieldParameterData</span>、<span class="inline">LumenRadianceCache::MaxClipmaps</span>、<span class="inline">GlobalDistanceField::MaxClipmaps</span> 全部符号，见 <a href="ClipmapLumen_FunctionAppendix.html" style="color:#9ee8ff">→ Lumen Clipmap 函数附录</a>。</p></div></section>
+
+<section class="card"><h2>从 2D 阴影到 3D 光照：clipmap 升维 <span class="en">Clipmap goes 3D</span></h2><div class="body">
+<div class="note purple"><h3>为什么 GI 也需要 clipmap</h3><p><a href="ClipmapVSM_ConvergenceAnnotated.html" style="color:#9ee8ff">#8</a> 的 VSM clipmap 是 2D 的（阴影图是屏幕/光源平面）。但全局光照要缓存的是<b>空间中每一点的入射辐照</b>——这是个 3D 场。同样的精度矛盾又出现了：相机附近的间接光需要密集探针（近处反弹清晰），远处只要稀疏采样就够。答案还是 clipmap，只不过升成 <b>3D 体 clipmap</b>：以相机为中心，一叠按幂次递增覆盖体积的立方壳层。Lumen 有两套并行的 3D clipmap——<b>Radiance Cache</b>（辐照度探针）和 <b>Global Distance Field</b>（全局距离场），两者 <span class="inline">MaxClipmaps</span> 都 = 6。</p></div>
+<div class="flow">
+<div class="node branch"><strong>近处 clipmap（0 级）</strong><small>覆盖体积小、探针密<br>脚下间接光清晰</small></div>
+<div class="node func"><strong>中间 clipmap</strong><small>ClipmapDistributionBase<br>控制每级体积增长比</small></div>
+<div class="node out"><strong>远处 clipmap（5 级）</strong><small>覆盖大片场景<br>探针稀疏但够远景</small></div>
+</div></div></section>
+
+<section class="card"><h2>Radiance Cache：3D 探针 clipmap <span class="en">Radiance probe clipmap</span></h2><div class="body">
+<p>辐照度缓存把间接光烘在一叠 3D 探针网格里。<span class="inline">FRadianceCacheInputs</span> 定义 clipmap 的组织（源码字段）：</p>
+<table><tr><th>字段</th><th>含义</th></tr>
+<tr><td><code>RadianceProbeClipmapResolution</code></td><td>每级 clipmap 一边的探针数（3D 网格边长）</td></tr>
+<tr><td><code>NumRadianceProbeClipmaps</code></td><td>clipmap 级数（≤ <code>MaxClipmaps=6</code>）</td></tr>
+<tr><td><code>ClipmapWorldExtent</code></td><td>最细一级 clipmap 的世界半径</td></tr>
+<tr><td><code>ClipmapDistributionBase</code></td><td>每级世界范围的增长底数（幂次分布）</td></tr>
+<tr><td><code>RadianceProbeResolution</code></td><td>单个探针捕捉的辐照图分辨率</td></tr>
+<tr><td><code>ProbeAtlasResolutionInProbes</code></td><td>探针图集一边容纳的探针数</td></tr>
+<tr><td><code>InvClipmapFadeSize</code></td><td>相邻级之间的过渡淡入淡出宽度倒数</td></tr>
+</table>
+<div class="note"><h3>探针寻址：间接纹理（indirection）——又见页表思想</h3><p>探针不是密集存储的——<span class="inline">RadianceProbeIndirectionTexture</span> 是一张 <span class="inline">Texture3D&lt;uint&gt;</span>，作用和 <a href="VTFeedback_ConvergenceAnnotated.html" style="color:#9ee8ff">#3</a> 的 VT 页表<b>一模一样</b>：把 clipmap 里的逻辑探针坐标，映射到探针图集里的物理槽位。没被用到的探针不占物理槽——这就是 clipmap 里嵌套的"按需分配"。<span class="inline">ClipmapCornerTWSAndCellSize[MaxClipmaps]</span> 存每级的世界角点与格子尺寸，shader 靠它把世界坐标换算到 clipmap 格子。<span class="inline">MinRadianceProbeResolution=8</span> 是探针分辨率下限。</p></div></div></section>
+
+<section class="card"><h2>Global Distance Field：三范式合一的极致 <span class="en">Three paradigms in one texture</span></h2><div class="body">
+<div class="note blue"><h3>全书最精彩的收束点</h3><p>全局距离场把整个场景的有向距离烘进一组以相机为中心的 3D clipmap（<span class="inline">GlobalDistanceField::MaxClipmaps=6</span>）。看 <span class="inline">FGlobalDistanceFieldParameterData</span> 的字段，本书<b>三种范式在同一张纹理上全部出现</b>：</p></div>
+<table><tr><th>字段</th><th>对应范式</th><th>说明</th></tr>
+<tr><td><code>TranslatedCenterAndExtent[MaxClipmaps]</code></td><td><span class="pill diff">Clipmap</span></td><td>每级 clipmap 的中心与半径（相机中心嵌套）</td></tr>
+<tr><td><code>PageAtlasTexture</code> + <code>PageTableTexture</code></td><td><span class="pill diff">页表式 VT</span></td><td>距离场也分页！页图集存实际距离，页表做间接寻址</td></tr>
+<tr><td><code>MipTexture</code> + <code>MipFactor</code> / <code>MipTransition</code></td><td><span class="pill diff">Mip</span></td><td>低分辨率 mip 作粗粒度回退，页缺失时兜底</td></tr>
+<tr><td><code>ClipmapSizeInPages</code> / <code>MaxPageNum</code></td><td>—</td><td>每级 clipmap 有多少页、物理页上限</td></tr>
+<tr><td><code>NumGlobalSDFClipmaps</code></td><td>—</td><td>实际启用的 clipmap 级数</td></tr>
+</table>
+<div class="note green"><h3>这就是全书的中心论点</h3><p>全局距离场是本书三范式"可组合"最有力的证据：<b>clipmap 决定"哪一圈"（宏观空间分层，相机中心），页表决定"这圈里哪些格真有数据"（微观按需分页），mip 决定"页还没准备好时用多粗的近似兜底"（精度回退）</b>。三者不是竞争关系，而是三个正交的维度——空间分层 × 按需分页 × 精度层级——叠在一张 <span class="inline">Texture3D&lt;uint&gt;</span> 页表 + <span class="inline">Texture3D</span> 页图集上协同工作。这正回应了 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 结尾的判断。</p></div></div></section>
+
+<section class="card"><h2>寻址：世界坐标 → clipmap 级 → 页 → 距离 <span class="en">Addressing</span></h2><div class="body">
+<div class="flow">
+<div class="node merge"><strong><span class="step">1</span>选 clipmap 级</strong><small>按到相机距离选最细能覆盖的级<br>TranslatedCenterAndExtent 判定</small></div>
+<div class="node func"><strong><span class="step">2</span>算 UV → 查页表</strong><small>TranslatedWorldToUVAddAndMul<br>→ PageTableTexture 取页地址</small></div>
+<div class="node func"><strong><span class="step">3</span>页图集采样</strong><small>页命中→PageAtlasTexture 采距离<br>页缺失→MipTexture 兜底</small></div>
+<div class="node out"><strong><span class="step">4</span>跨级过渡</strong><small>MipTransition 在相邻级<br>间平滑混合避免接缝</small></div>
+</div>
+<div class="note purple"><h3>与经典 clipmap 寻址对照</h3><p>第 1 步"距离选级"完全是 <a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 的 3D 版；第 2 步的 <span class="inline">TranslatedWorldToUVAddAndMul</span> 就是经典 clipmap 的"世界→层内 UV"仿射变换（Add=偏移、Mul=缩放），只是升到 3D；第 3 步多了 VT 页表间接（经典 clipmap 是直接 toroidal 访问，这里为了省显存做了分页）；第 4 步的 <span class="inline">MipTransition</span> 对应 clipmap 层间的 blend region，避免壳层边界硬切。</p></div></div></section>
+
+<section class="card"><h2>Lumen vs VSM：两个 clipmap 案例的异同 <span class="en">Lumen vs VSM</span></h2><div class="body">
+<div class="note"><h3>两个案例横向对比</h3>
+<p>共同点：都以<b>相机为中心</b>组织嵌套金字塔层，精度随距离衰减；都在 clipmap 层内<b>嵌套了 VT 页表间接</b>（VSM 存深度页、Lumen 存探针/距离页），复用"按需分页"省显存；都靠<b>层中心吸附/世界角点</b>做增量更新。</p>
+<p>不同点：维度不同——VSM 是 <b>2D</b>（阴影图在光源平面），Lumen 是 <b>3D</b> 体 clipmap（辐照/距离在空间体积里）。</p>
+<p>不同点：层数不同——VSM 约 17 级（FirstLevel 6~LastLevel 22，每级半径 2ⁿ），Lumen 固定 <span class="inline">MaxClipmaps=6</span>（每级按 ClipmapDistributionBase 幂增）。</p>
+<p>不同点：VSM 只用了 clipmap+页表两范式；Lumen 的全局距离场把 <b>mip 回退</b>也加进来，凑齐了三范式，是组合的极致形态。</p></div></div></section>
+
+<section class="card"><h2>与另外两种范式的关系 <span class="en">Cross-paradigm</span></h2><div class="body">
+<div class="note"><h3>Lumen 是三范式同框的舞台</h3>
+<p>共同点：Lumen 的探针间接纹理、距离场页表，本质就是 <a href="VTOverview_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a>/<a href="VTFeedback_ConvergenceAnnotated.html" style="color:#9ee8ff">#3</a> 讲的 VT 页表——逻辑坐标经一层 uint 间接映射到物理图集。</p>
+<p>不同点：全局距离场的 <span class="inline">MipTexture</span> 用了 <a href="MipStreaming_ConvergenceAnnotated.html" style="color:#9ee8ff">#1</a> 的 mip 思想做兜底——但这里 mip 不是磁盘流送，是运行时生成的粗粒度距离。</p>
+<p>不同点：clipmap 分层（<a href="ClipmapTheory_ConvergenceAnnotated.html" style="color:#9ee8ff">#7</a> 第三范式）是骨架，与 <a href="ClipmapVSM_ConvergenceAnnotated.html" style="color:#9ee8ff">#8</a> VSM 同源，但升到 3D 且级数固定。</p></div>
+<p style="color:#a9b4c0">本篇是全书最后一章——三范式（Mip / VT 页表 / Clipmap）在这里同框收束。回到 <a href="../UE_VirtualTexture_解析_总目录.html" style="color:#9ee8ff">总目录</a> 可俯瞰九主题的完整脉络。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. Lumen 把 clipmap 从 VSM 的 2D 升到 <b>3D 体 clipmap</b>：Radiance Cache（探针）+ Global Distance Field（距离场），两者 <span class="inline">MaxClipmaps=6</span>。</p>
+<p>2. 探针不密集存储——<span class="inline">RadianceProbeIndirectionTexture</span>（Texture3D&lt;uint&gt;）是 VT 页表在 3D 的翻版，按需分配物理槽。</p>
+<p>3. 全局距离场 <span class="inline">FGlobalDistanceFieldParameterData</span> 是<b>三范式合一</b>：Clipmap（TranslatedCenterAndExtent）× 页表（PageAtlas+PageTable）× Mip（MipTexture 兜底），三个正交维度叠在一张纹理上。</p>
+<p>4. 寻址四步：距离选级 → 世界转 UV 查页表 → 页图集采样（缺失走 mip）→ MipTransition 跨级平滑。这是本书三范式可组合论点的最强例证。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="ClipmapLumen_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="ClipmapVSM_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--purple)"></span>#8 VSM Clipmap 案例</a>
+<a class="tag" href="ClipmapTheory_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--purple)"></span>#7 Clipmap 经典理论</a>
+<a class="tag" href="MipStreaming_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--blue)"></span>#1 传统 Mip 流送</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

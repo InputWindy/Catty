@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#7 附录 · Clipmap 术语与三范式对照表</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13.5px}.toc a:hover{border-color:var(--cyan)}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}h3.sec{color:#eaf2ff;border-left:4px solid var(--cyan);padding-left:10px;margin:22px 0 8px}</style></head><body>
+<header><a class="back" href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a> &nbsp;·&nbsp; <a class="back" href="ClipmapTheory_ConvergenceAnnotated.html">← 回到 #7 主文档</a><h1>#7 附录 · Clipmap 术语与三范式对照表</h1><div class="sub">本附录汇总 clipmap 经典术语、奠基论文，以及全书三范式的完整对照总表，供随时查阅。</div></header>
+<main>
+
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#terms">Clipmap 术语表</a>
+<a href="#papers">奠基论文</a>
+<a href="#matrix">三范式对照总表</a>
+<a href="#uecases">UE 里的 clipmap 出场</a>
+</div></section>
+
+<section class="card" id="terms"><h2>Clipmap 术语表</h2><div class="body">
+<table><tr><th>术语</th><th>含义</th></tr>
+<tr><td><b>Clipmap</b></td><td>被裁剪的 mipmap：大级只保留视点附近固定大小窗口</td></tr>
+<tr><td><b>Clip size</b></td><td>每个 clip 层窗口的边长上限；≤ 它的级完整存（mip 层），> 它的级只存窗口（clip 层）</td></tr>
+<tr><td><b>Clip region / clip window</b></td><td>某 clip 层实际保留的、以视点为中心的那块</td></tr>
+<tr><td><b>Mip pyramid（金字塔顶部）</b></td><td>完整存储的粗级，全局可采，作回退</td></tr>
+<tr><td><b>Clip stack（金字塔底部）</b></td><td>只存窗口的细级，叠成栈</td></tr>
+<tr><td><b>Toroidal addressing</b></td><td>环形/卷绕寻址：物理纹理坐标取模复用，相机移动只更新新边缘</td></tr>
+<tr><td><b>L-shaped update</b></td><td>相机平移一格时需重传的新数据区域（横+竖两条，呈 L 形）</td></tr>
+<tr><td><b>Clipmap center</b></td><td>各层的中心，通常随相机（或光源/视点）移动</td></tr>
+<tr><td><b>Nested grids</b></td><td>geometry clipmap 里嵌套的正方形网格环</td></tr>
+<tr><td><b>Morphing</b></td><td>层间几何过渡，消除 LOD 切换 popping</td></tr>
+</table></div></section>
+
+<section class="card" id="papers"><h2>奠基论文</h2><div class="body">
+<table><tr><th>论文</th><th>贡献</th></tr>
+<tr><td><b>Tanner, Migdal, Jones — "The Clipmap: A Virtual Mipmap"</b>, SIGGRAPH 1998</td><td>提出 clipmap：为超大纹理（如 128K²）只存每级视点附近窗口 + 完整粗级；SGI InfiniteReality 硬件支持</td></tr>
+<tr><td><b>Losasso & Hoppe — "Geometry Clipmaps: Terrain Rendering Using Nested Regular Grids"</b>, SIGGRAPH 2004</td><td>把 clipmap 思想用于地形几何：嵌套网格环 + 增量滚动 + morphing</td></tr>
+<tr><td><b>Asirvatham & Hoppe — "Terrain Rendering Using GPU-Based Geometry Clipmaps"</b>, GPU Gems 2</td><td>把 geometry clipmap 更新与渲染搬到 GPU</td></tr>
+</table></div></section>
+
+<section class="card" id="matrix"><h2>★ 三范式对照总表 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">全书核心</span></h2><div class="body">
+<table>
+<tr><th>维度</th><th>① 整级 Mip 流送</th><th>② 页表式 VT</th><th>③ Clipmap</th></tr>
+<tr><td>本书章节</td><td><a href="MipStreaming_ConvergenceAnnotated.html" style="color:#9ee8ff">#1</a></td><td><a href="VTOverview_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a>~<a href="SVT_ConvergenceAnnotated.html" style="color:#9ee8ff">#6</a></td><td><a href="ClipmapVSM_ConvergenceAnnotated.html" style="color:#9ee8ff">#8</a>/<a href="ClipmapLumen_ConvergenceAnnotated.html" style="color:#9ee8ff">#9</a></td></tr>
+<tr><td>换入换出粒度</td><td>整级 mip</td><td>单页 tile</td><td>层的边缘条带（L 形）</td></tr>
+<tr><td>决策信号</td><td>CPU 距离/屏幕大小预测</td><td>GPU feedback 实测</td><td>相机位置几何推导</td></tr>
+<tr><td>决策时机</td><td>事前估算</td><td>事后精确（滞后 1~N 帧）</td><td>每帧确定</td></tr>
+<tr><td>间接寻址</td><td>无</td><td>页表（可能 + 间接纹理）</td><td>层号 + toroidal 取模</td></tr>
+<tr><td>数据来源</td><td>磁盘 bulk data / DDC</td><td>producer（RVT 现画 / SVT 磁盘）</td><td>源纹理 / 场景每帧重采样</td></tr>
+<tr><td>缺数据表现</td><td>用现有粗 mip</td><td>短暂模糊，反馈补齐</td><td>不缺（退更粗层）</td></tr>
+<tr><td>典型用途</td><td>普通材质贴图</td><td>超大/UDIM/地形合成/streaming 巨图</td><td>阴影、全局距离场、辐照度缓存</td></tr>
+<tr><td>UE 关键类</td><td><code>FRenderAssetStreamingManager</code></td><td><code>FVirtualTextureSystem</code></td><td><code>FVirtualShadowMapClipmap</code> / Lumen RadianceCache</td></tr>
+</table></div></section>
+
+<section class="card" id="uecases"><h2>UE 里的 clipmap 出场</h2><div class="body">
+<table><tr><th>场景</th><th>位置</th><th>本书</th></tr>
+<tr><td>Virtual Shadow Map（定向光）</td><td><code>Renderer/Private/VirtualShadowMaps/VirtualShadowMapClipmap.h/.cpp</code></td><td><a href="ClipmapVSM_ConvergenceAnnotated.html" style="color:#9ee8ff">#8</a></td></tr>
+<tr><td>Lumen Radiance Cache</td><td><code>Renderer/Private/Lumen/LumenRadianceCache*</code></td><td><a href="ClipmapLumen_ConvergenceAnnotated.html" style="color:#9ee8ff">#9</a></td></tr>
+<tr><td>Global Distance Field</td><td><code>Renderer/Private/DistanceFieldGlobalIllumination / GlobalDistanceField</code></td><td><a href="ClipmapLumen_ConvergenceAnnotated.html" style="color:#9ee8ff">#9</a> 关联</td></tr>
+</table>
+<div class="note"><h3>说明</h3><p>本篇为理论章，不绑定单一源码文件。UE 的具体 clipmap 实现符号在 <a href="ClipmapVSM_ConvergenceAnnotated.html" style="color:#9ee8ff">#8</a>（VSM，取自 <code>VirtualShadowMapClipmap.h</code> UE5.8 本地）与 <a href="ClipmapLumen_ConvergenceAnnotated.html" style="color:#9ee8ff">#9</a>（Lumen）逐一核验列出。</p></div></div></section>
+
+</main></body></html>

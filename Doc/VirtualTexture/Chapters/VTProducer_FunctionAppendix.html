@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#4 附录 · Producer 接口与页数据结构</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13.5px}.toc a:hover{border-color:var(--cyan)}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}h3.sec{color:#eaf2ff;border-left:4px solid var(--cyan);padding-left:10px;margin:22px 0 8px}</style></head><body>
+<header><a class="back" href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a> &nbsp;·&nbsp; <a class="back" href="VTProducer_ConvergenceAnnotated.html">← 回到 #4 主文档</a><h1>#4 附录 · Producer 接口与页数据结构</h1><div class="sub">本附录汇总生产者接口、请求状态、producer 描述、SVT 离线数据格式、转码/上传缓存与 producer 集合的核心符号。均取自 UE5.8 本地源码 <span class="inline">Engine/Source/Runtime/RenderCore/Public/VirtualTexturing.h</span> 与 <span class="inline">Engine/Source/Runtime/Engine/Private/VT/</span>。</div></header>
+<main>
+
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#ivt">IVirtualTexture</a>
+<a href="#status">EVTRequestPageStatus</a>
+<a href="#finalizer">IVirtualTextureFinalizer</a>
+<a href="#desc">FVTProducerDescription</a>
+<a href="#target">FVTProduceTargetLayer</a>
+<a href="#builtdata">FVirtualTextureBuiltData</a>
+<a href="#codec">FVirtualTextureCodec / Upload</a>
+<a href="#collection">FVirtualTextureProducerCollection</a>
+<a href="#files">源码文件索引</a>
+</div></section>
+
+<section class="card" id="ivt"><h2>IVirtualTexture <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualTexturing.h</span></h2><div class="body">
+<p>页数据生产者接口。框架（<a href="VTFeedback_ConvergenceAnnotated.html" style="color:#9ee8ff">#3</a> 的 Load 请求）只通过它取页数据，不关心背后是 GPU 现画还是磁盘流入。</p>
+<table><tr><th>方法</th><th>说明</th></tr>
+<tr><td><code>RequestPageData(RHICmdList, ProducerHandle, LayerMask, vLevel, vAddress, Priority)</code></td><td>发起请求，返回 <code>FVTRequestPageResult { Status, Handle }</code>；SVT 在此发起磁盘读，Handle 为不透明句柄传给下一步</td></tr>
+<tr><td><code>ProducePageData(RHICmdList, FeatureLevel, Flags, ProducerHandle, LayerMask, vLevel, vAddress, RequestHandle, TargetLayers)</code></td><td>把 tile 像素写进 <code>FVTProduceTargetLayer[]</code>，返回一个 <code>IVirtualTextureFinalizer*</code></td></tr>
+<tr><td><code>IsPageStreamed(vLevel, vAddress) const</code></td><td>该页是否来自流式数据（SVT true / RVT 现画 false）</td></tr>
+<tr><td><code>GatherProducePageDataTasks(ProducerHandle, GraphEvents)</code></td><td>收集本 producer 产出页所依赖的任务图事件，供框架等待</td></tr>
+<tr><td><code>DumpToConsole(bVerbose)</code></td><td>调试转储</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px">系统保证同一 <code>(vLevel, vAddress)</code> 只请求一次，<code>LayerMask</code> 里带上本页需要的所有纹理层，一次产出多层。</p></div></section>
+
+<section class="card" id="status"><h2>EVTRequestPageStatus <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualTexturing.h</span></h2><div class="body">
+<table><tr><th>枚举值</th><th>含义</th></tr>
+<tr><td><code>Invalid</code></td><td>请求无效，永远不会有数据</td></tr>
+<tr><td><code>Saturated</code></td><td>系统某部分满载，暂时发不了；稍后重试可成功（节流关键）</td></tr>
+<tr><td><code>Pending</code></td><td>数据正在产出，还没好；可 produce 但可能阻塞等待</td></tr>
+<tr><td><code>Available</code></td><td>数据已就绪，可立即 produce</td></tr>
+</table>
+<div class="codebox"><span class="c">// 只要 Pending 或 Available，就认为"有数据（可能要等）"</span>
+<span class="k">inline bool</span> <span class="f">VTRequestPageStatus_HasData</span>(EVTRequestPageStatus Status)
+{ <span class="k">return</span> Status == EVTRequestPageStatus::Pending || Status == EVTRequestPageStatus::Available; }</div>
+<p style="color:#a9b4c0;font-size:13px"><code>FVTRequestPageResult</code> 打包 <code>{ EVTRequestPageStatus Status; uint64 Handle; }</code>，Handle 在 <code>ProducePageData</code> 时原样回传。</p></div></section>
+
+<section class="card" id="finalizer"><h2>IVirtualTextureFinalizer <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualTexturing.h</span></h2><div class="body">
+<table><tr><th>方法</th><th>读写约束</th></tr>
+<tr><td><code>RenderFinalize(RHICmdList, System)</code></td><td>不写物理纹理，<b>可采样其它 VT</b>——所有 finalizer 的这一半先跑</td></tr>
+<tr><td><code>Finalize(RHICmdList)</code></td><td><b>写</b>物理纹理但不采它——所有 RenderFinalize 跑完后统一跑</td></tr>
+</table>
+<div class="note"><h3>为什么拆两半</h3><p>RVT 现画一页时可能要采样别的 VT（地形材质引用另一张 VT）。这必须在"还没开始写物理池"的阶段做，否则读写同一批物理页产生 hazard。分相（先全体只读采样，再全体只写）把 GPU barrier 降到最少。</p></div></div></section>
+
+<section class="card" id="desc"><h2>FVTProducerDescription <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualTexturing.h</span></h2><div class="body">
+<table><tr><th>字段</th><th>说明</th></tr>
+<tr><td><code>Name</code></td><td>调试名</td></tr>
+<tr><td><code>Dimensions</code></td><td>维度（2D）</td></tr>
+<tr><td><code>TileSize</code> / <code>TileBorderSize</code></td><td>单页边长 / 页边界像素（用于双线性过滤跨页采样）</td></tr>
+<tr><td><code>BlockWidthInTiles</code> / <code>BlockHeightInTiles</code></td><td>单块的 tile 网格</td></tr>
+<tr><td><code>WidthInBlocks</code> / <code>HeightInBlocks</code></td><td>块网格：普通 VT 为 1×1；UDIM 每块一张图</td></tr>
+<tr><td><code>DepthInTiles</code></td><td>3D VT 的深度</td></tr>
+<tr><td><code>MaxLevel</code></td><td>最大 mip 层</td></tr>
+<tr><td><code>NumTextureLayers</code></td><td>纹理层数（BaseColor/Normal/… 各一层），上限 <code>VIRTUALTEXTURE_SPACE_MAXLAYERS</code></td></tr>
+<tr><td><code>NumPhysicalGroups</code></td><td>physical group 数：同组层共享一次页表查找与 UV</td></tr>
+<tr><td><code>LayerFormat[]</code></td><td>每层像素格式</td></tr>
+<tr><td><code>LayerFallbackColor[]</code></td><td>该层缺数据时的回退色</td></tr>
+<tr><td><code>PhysicalGroupIndex[]</code></td><td>每个纹理层归到哪个 physical group</td></tr>
+<tr><td><code>bPersistentHighestMip</code></td><td>最高（最粗）mip 常驻，保证永远有回退</td></tr>
+<tr><td><code>bContinuousUpdate</code></td><td>是否每帧刷新（RVT 动态内容用）</td></tr>
+<tr><td><code>bNotifyCompleted</code> / <code>bTrackSamplingHistory</code></td><td>产出完成回调 / 追踪每 mip 采样帧号</td></tr>
+<tr><td><code>Priority</code></td><td><code>EVTProducerPriority</code>，高竞争时优先处理</td></tr>
+</table></div></section>
+
+<section class="card" id="target"><h2>FVTProduceTargetLayer <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualTexturing.h</span></h2><div class="body">
+<p><code>ProducePageData</code> 的输出目标，每个纹理层一个：</p>
+<table><tr><th>字段</th><th>说明</th></tr>
+<tr><td><code>TRefCountPtr&lt;IPooledRenderTarget&gt; PooledRenderTarget</code></td><td>目标物理纹理（图集）</td></tr>
+<tr><td><code>FIntVector pPageLocation</code></td><td>页在物理图集里的落点坐标</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px">producer 把 tile 数据写到 <code>PooledRenderTarget</code> 的 <code>pPageLocation</code> 处；框架据此把虚拟页表项指向该物理地址。</p></div></section>
+
+<section class="card" id="builtdata"><h2>FVirtualTextureBuiltData <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualTextureBuiltData.h</span></h2><div class="body">
+<p>SVT 的 on-disc 数据格式。上限 <span class="inline">VIRTUALTEXTURE_DATA_MAXLAYERS = 8</span> 层、<span class="inline">VIRTUALTEXTURE_DATA_MAXMIPS = 16</span>。</p>
+<table><tr><th>成员</th><th>说明</th></tr>
+<tr><td><code>NumLayers / WidthInBlocks / HeightInBlocks / TileSize / TileBorderSize</code></td><td>整体形状</td></tr>
+<tr><td><code>Chunks : TArray&lt;FVirtualTextureDataChunk&gt;</code></td><td>所有 tile 打包进的数据块</td></tr>
+<tr><td><code>TileOffsetData / TileIndexPerChunk / TileIndexPerMip</code></td><td>稀疏 chunk 内定位 tile 偏移的紧凑索引</td></tr>
+<tr><td><code>GetTileMemory / GetTileOffset</code></td><td>取某 tile 数据位置</td></tr>
+</table>
+<h3 class="sec">FVirtualTextureDataChunk</h3>
+<table><tr><th>字段</th><th>说明</th></tr>
+<tr><td><code>UE::FDerivedData DerivedData</code></td><td>可流式引用（编辑器 DDC）</td></tr>
+<tr><td><code>FByteBulkData BulkData</code></td><td>运行时加载的数据</td></tr>
+<tr><td><code>uint32 SizeInBytes / CodecPayloadSize</code></td><td>chunk 大小 / codec 负载大小</td></tr>
+<tr><td><code>uint32 CodecPayloadOffset[MAXLAYERS]</code></td><td>每层 codec 负载在 chunk 内偏移</td></tr>
+<tr><td><code>EVirtualTextureCodec CodecType[MAXLAYERS]</code></td><td>每层用哪种 codec 解码</td></tr>
+</table>
+<div class="note"><h3>tile 按 Morton 序存</h3><p>源码注释：<i>The tiles are stored in Morton order inside the chunks</i>。Z 序曲线让空间相邻的 tile 在文件里也相邻，请求一片区域时磁盘读取局部性好。UDIM 某些 mip 区域为空，用紧凑结构记录稀疏 chunk 里的实际 tile 偏移。</p></div>
+<h3 class="sec">EVirtualTextureCodec（uint8）</h3>
+<table><tr><th>codec</th><th>说明</th></tr>
+<tr><td><code>Black</code></td><td>整页 0,0,0,0</td></tr>
+<tr><td><code>OpaqueBlack</code></td><td>整页 0,0,0,255</td></tr>
+<tr><td><code>White</code></td><td>整页 255,255,255,255</td></tr>
+<tr><td><code>Flat</code></td><td>整页 128,128,255,255（平法线）</td></tr>
+<tr><td><code>RawGPU</code></td><td>GPU 就绪格式（R8G8B8A8 / BC7 / ASTC…），转码开销最小</td></tr>
+<tr><td><code>ZippedGPU_DEPRECATED</code> / <code>Crunch_DEPRECATED</code></td><td>已弃用（压缩变体）</td></tr>
+<tr><td><code>Max</code></td><td>计数哨兵</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px">常量 codec（Black/OpaqueBlack/White/Flat）整页恒定色、不占实际数据——稀疏 VT 里省下大量磁盘与显存。</p></div></section>
+
+<section class="card" id="codec"><h2>FVirtualTextureCodec / 上传缓存 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">UploadingVirtualTexture.h</span></h2><div class="body">
+<p><span class="inline">FVirtualTextureCodec</span> 是转码器，侵入式链表节点（<code>TIntrusiveLinkedList</code>）串成全局 LRU 链：</p>
+<table><tr><th>成员 / 方法</th><th>说明</th></tr>
+<tr><td><code>static void RetireOldCodecs()</code></td><td>回收空闲旧 codec（LRU）</td></tr>
+<tr><td><code>void Init(IMemoryReadStreamRef& HeaderData)</code></td><td>用 chunk 头初始化解码上下文</td></tr>
+<tr><td><code>bool IsCreationComplete() const</code></td><td><code>FCreateCodecTask</code> 是否完成</td></tr>
+<tr><td><code>bool IsIdle() const</code></td><td>创建完成 <b>且</b> 无进行中转码任务，方可回收</td></tr>
+<tr><td><code>void* Contexts[MAXLAYERS]</code></td><td>每层解码上下文</td></tr>
+<tr><td><code>uint32 ChunkIndex / LastFrameUsed</code></td><td>所属 chunk / 最后使用帧（LRU 键）</td></tr>
+<tr><td><code>std::atomic&lt;uint32&gt; TaskRefs</code></td><td>正在用它的转码任务数（<code>BeginTranscodeTask/EndTranscodeTask</code> 增减）</td></tr>
+<tr><td><code>static FVirtualTextureCodec* ListHead / ListTail / NumCodecs</code></td><td>全局 LRU 链表头尾与计数</td></tr>
+</table>
+<div class="codebox"><span class="c">// 结果+状态的两种回传包</span>
+<span class="k">struct</span> FVTCodecAndStatus { <span class="k">const</span> FVirtualTextureCodec* Codec; EVTRequestPageStatus Status; };
+<span class="k">struct</span> FVTDataAndStatus  { IMemoryReadStreamRef Data;      EVTRequestPageStatus Status; };</div>
+<div class="note"><h3>两层缓存</h3><p>一个 chunk 含多个 tile。<b>转码缓存</b>（codec 复用）让同一 chunk 的多个 tile 共享一次解码准备；<b>上传缓存</b>合并小的 GPU 上传、削峰。二者配合 <a href="VTOverview_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a> 的单帧上传预算（<code>MaxSVTPageUploads</code>）做节流。</p></div></div></section>
+
+<section class="card" id="collection"><h2>FVirtualTextureProducerCollection <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">VirtualTextureProducer.h</span></h2><div class="body">
+<table><tr><th>方法 / 机制</th><th>说明</th></tr>
+<tr><td>侵入式双向链表 + 空闲链</td><td><code>AcquireEntry</code>/<code>ReleaseEntry</code> 从空闲链取/还槽位</td></tr>
+<tr><td><code>Magic</code> 校验</td><td>句柄带 Magic 防悬垂访问已回收槽位</td></tr>
+<tr><td><code>LastFramePerMip[]</code></td><td>当 <code>bTrackSamplingHistory=true</code>，记录每 mip 最后被采样帧号</td></tr>
+<tr><td><code>AddDestroyedCallback / RemoveAllCallbacks</code></td><td>producer 销毁时通知引用它的系统安全解绑</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px"><a href="VTOverview_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a> 的 <code>FVirtualTextureSystem::GetFinestSampledMipInLastNFrames</code> 依赖 <code>LastFramePerMip[]</code>，用于残留检测与按需降载。</p></div></section>
+
+<section class="card" id="files"><h2>源码文件索引 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">UE5.8 本地</span></h2><div class="body">
+<table><tr><th>文件</th><th>内容</th></tr>
+<tr><td><code>Runtime/RenderCore/Public/VirtualTexturing.h</code></td><td>IVirtualTexture、IVirtualTextureFinalizer、EVTRequestPageStatus、FVTRequestPageResult、FVTProducerDescription、FVTProduceTargetLayer</td></tr>
+<tr><td><code>Runtime/Engine/Private/VT/VirtualTextureProducer.h</code></td><td>FVirtualTextureProducer、FVirtualTextureProducerCollection</td></tr>
+<tr><td><code>Runtime/Engine/Private/VT/UploadingVirtualTexture.h</code></td><td>FUploadingVirtualTexture、FVirtualTextureCodec、FVTCodecAndStatus、FVTDataAndStatus</td></tr>
+<tr><td><code>Runtime/Engine/Private/VT/VirtualTextureBuiltData.h</code></td><td>FVirtualTextureBuiltData、FVirtualTextureDataChunk、EVirtualTextureCodec</td></tr>
+</table></div></section>
+
+</main></body></html>

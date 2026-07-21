@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#1 附录 · 传统 Texture Streaming 函数与 CVar</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13.5px}.toc a:hover{border-color:var(--cyan)}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}h3.sec{color:#eaf2ff;border-left:4px solid var(--cyan);padding-left:10px;margin:22px 0 8px}</style></head><body>
+<header><a class="back" href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a> &nbsp;·&nbsp; <a class="back" href="MipStreaming_ConvergenceAnnotated.html">← 回到 #1 主文档</a><h1>#1 附录 · 传统 Texture Streaming 函数与 CVar</h1><div class="sub">本附录汇总传统流送的核心类、<span class="inline">FRenderAssetStreamingManager</span> 关键方法、mip 流入状态机接口，以及全部 <span class="inline">r.Streaming.*</span> CVar 默认值。所有条目均取自 UE5.8 本地源码 <span class="inline">Engine/Source/Runtime/Engine/{Private,Public}/Streaming/</span>。</div></header>
+<main>
+
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#classes">核心类清单</a>
+<a href="#manager">管理器关键方法</a>
+<a href="#statemachine">mip 流入状态机</a>
+<a href="#allocators">Allocator / DataProvider 实现</a>
+<a href="#cvars">CVar 全表</a>
+<a href="#files">源码文件索引</a>
+</div></section>
+
+<section class="card" id="classes"><h2>核心类清单</h2><div class="body">
+<table><tr><th>类 / 类型</th><th>文件</th><th>职责</th></tr>
+<tr><td><code>FRenderAssetStreamingManager</code></td><td>StreamingManagerTexture.h</td><td>纹理/网格流送总调度器，实现 <code>UpdateResourceStreaming</code></td></tr>
+<tr><td><code>FStreamingRenderAsset</code></td><td>StreamingTexture.h</td><td>单个可流送资产的运行时状态：常驻/请求/wanted LOD、优先级、预算归属</td></tr>
+<tr><td><code>FRenderAssetStreamingMipCalcTask</code></td><td>AsyncTextureStreaming.h</td><td>后台异步任务：遍历 instance 估算每张纹理的 WantedMips</td></tr>
+<tr><td><code>FStaticTextureInstanceManager</code></td><td>StaticTextureInstanceManager.h</td><td>静态 primitive 的纹理使用/bounds/UV 密度追踪</td></tr>
+<tr><td><code>FDynamicTextureInstanceManager</code></td><td>DynamicTextureInstanceManager.h</td><td>动态（移动）primitive 的实例追踪</td></tr>
+<tr><td><code>FLevelTextureManager</code></td><td>LevelTextureManager.h</td><td>按 Level 组织的纹理实例视图</td></tr>
+<tr><td><code>FStreamableRenderResourceState</code></td><td>StreamableRenderResourceState.h</td><td>描述一个可流送资源的 LOD 数量/常驻数/最大数/AssetLODBias</td></tr>
+<tr><td><code>FTextureStreamIn</code> / <code>FTextureStreamOut</code></td><td>TextureStreamIn.h / TextureStreamOut.h</td><td>驱动单张纹理换入/换出的跨线程状态机</td></tr>
+</table></div></section>
+
+<section class="card" id="manager"><h2>管理器关键方法 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">StreamingManagerTexture.cpp</span></h2><div class="body">
+<table><tr><th>方法</th><th>行</th><th>作用</th></tr>
+<tr><td><code>UpdateResourceStreaming(DeltaTime, bProcessEverything)</code></td><td>1975</td><td>每帧入口。分 stage 摊销：更新状态→异步算 wanted→流送执行</td></tr>
+<tr><td><code>UpdateStreamingRenderAssets(StageIndex, NumStages, bAsync)</code></td><td>1507</td><td>刷新每张 <code>FStreamingRenderAsset</code> 的常驻/请求 LOD 与预算归属</td></tr>
+<tr><td><code>PrepareAsyncTask(bProcessEverything)</code></td><td>786</td><td>打包视图信息、instance 数据给异步 mip 计算任务</td></tr>
+<tr><td><code>StreamRenderAssets(bProcessEverything)</code></td><td>1668</td><td>预算裁剪后，对每张纹理发起 Stream In / Out</td></tr>
+<tr><td><code>ProcessRemovedRenderAssets()</code></td><td>575</td><td>清理已卸载资产</td></tr>
+</table>
+<div class="note"><h3>分帧摊销机制</h3><p><span class="inline">NumRenderAssetProcessingStages = Settings.FramesForFullUpdate</span>；<span class="inline">ProcessingStage</span> 从 0 递增，stage 0 启动异步任务，后续 stage 增量更新（<span class="inline">IncrementalUpdate</span>），最后 stage 完成一轮。<span class="inline">bProcessEverything=true</span> 时同步一次跑完（用于烘焙/命令行）。</p></div></div></section>
+
+<section class="card" id="statemachine"><h2>mip 流入状态机接口</h2><div class="body">
+<h3 class="sec">FTextureMipAllocator（TextureMipAllocator.h）——分配目标显存</h3>
+<table><tr><th>ETickState</th><th>方法</th><th>说明</th></tr>
+<tr><td><code>AllocateMips</code></td><td><code>bool AllocateMips(Context, OutMipInfos, SyncOptions)</code></td><td>为换入的 mip 提供目标内存，填 <code>FTextureMipInfo::DestData</code></td></tr>
+<tr><td><code>UploadMips</code></td><td><code>bool UploadMips(Context, SyncOptions)</code></td><td>释放临时缓冲、上传纹理到 GPU</td></tr>
+<tr><td><code>Done</code></td><td><code>FinalizeMips(Context, SyncOptions)</code></td><td>用新 RHI 纹理替换资源，此后不可取消</td></tr>
+<tr><td>—</td><td><code>Cancel / GetCancelThread</code></td><td>中止并释放临时资源，须在指定线程执行</td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px">线程调度：<code>ETickThread</code> = { Async, Render, None }；<code>AdvanceTo(State, Thread)</code> 推进且校验状态单调不回退。</p>
+
+<h3 class="sec">FTextureMipDataProvider（TextureMipDataProvider.h）——提供 mip 数据</h3>
+<table><tr><th>ETickState</th><th>方法</th><th>说明</th></tr>
+<tr><td><code>Init</code></td><td><code>Init(Context, SyncOptions)</code></td><td>初始化，可多次调用</td></tr>
+<tr><td><code>GetMips</code></td><td><code>int32 GetMips(Context, StartingMipIndex, MipInfos, SyncOptions)</code></td><td>从高到低填 mip；链式，返回下一个 provider 的起始 mip</td></tr>
+<tr><td><code>PollMips</code></td><td><code>PollMips(SyncOptions)</code></td><td>阻塞等数据就绪；出错时触发取消</td></tr>
+<tr><td><code>PostprocessGPUMipData</code></td><td>—</td><td>上传 GPU 后的后处理</td></tr>
+<tr><td><code>CleanUp</code></td><td><code>CleanUp(SyncOptions)</code></td><td>释放更新过程的临时资源</td></tr>
+</table>
+<div class="codebox"><span class="c">// FTextureUpdateSyncOptions：控制下一次 tick 的调度（异步操作用）</span>
+<span class="k">struct</span> FTextureUpdateSyncOptions {
+  <span class="k">bool</span>* bSnooze;              <span class="c">// 让下一 tick 稍后再执行</span>
+  FThreadSafeCounter* Counter; <span class="c">// 操作前 +1、完成后 -1</span>
+  TFunction&lt;<span class="k">void</span>()&gt; RescheduleCallback; <span class="c">// 在指定线程强制重新 tick</span>
+};</div></div></section>
+
+<section class="card" id="allocators"><h2>Allocator / DataProvider 具体实现</h2><div class="body">
+<table><tr><th>实现</th><th>文件</th><th>用途</th></tr>
+<tr><td><code>FTexture2DMipAllocator_AsyncCreate</code></td><td>Texture2DMipAllocator_AsyncCreate.h</td><td>用 <code>RHIAsyncCreateTexture2D</code> 全新创建中间纹理</td></tr>
+<tr><td><code>FTexture2DMipAllocator_AsyncReallocate</code></td><td>Texture2DMipAllocator_AsyncReallocate.h</td><td>用 <code>AsyncReallocateTexture2D</code> 原地扩容</td></tr>
+<tr><td><code>FTexture2DMipAllocator_Virtual</code></td><td>Texture2DMipAllocator_Virtual.h</td><td>基于虚拟纹理内存（硬件 partially resident texture）</td></tr>
+<tr><td><code>FTexture2DMipDataProvider_IO</code></td><td>Texture2DMipDataProvider_IO.h</td><td>运行时从打包 bulk data / .ubulk 磁盘文件读 mip</td></tr>
+<tr><td><code>FTexture2DMipDataProvider_DDC</code></td><td>Texture2DMipDataProvider_DDC.h</td><td>编辑器从 Derived Data Cache 读 mip</td></tr>
+</table>
+<div class="note"><h3>组合关系</h3><p>换入路径 <span class="inline">FTexture2DStreamIn_IO</span> / <span class="inline">_DDC</span> 会把某个 Allocator 和某个 DataProvider 组装起来。例如运行时最常见的是 <b>AsyncReallocate + IO</b>；编辑器无烘焙数据时用 <b>AsyncCreate + DDC</b>。这就是主文档说的"3 种分配 × 2 种数据源自由组合"。</p></div></div></section>
+
+<section class="card" id="cvars"><h2>CVar 全表 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">默认值取自 TextureStreamingHelpers.cpp / StreamingManagerTexture.cpp</span></h2><div class="body">
+<h3 class="sec">开关与预算</h3>
+<table><tr><th>CVar</th><th>默认</th><th>说明</th></tr>
+<tr><td><code>r.TextureStreaming</code></td><td>1</td><td>总开关（0=全部常驻最高 mip）</td></tr>
+<tr><td><code>r.Streaming.PoolSize</code></td><td>-1</td><td>纹理池大小 MB，-1=平台默认</td></tr>
+<tr><td><code>r.Streaming.PoolSizeForMeshes</code></td><td>-1</td><td>&lt;0=网格与纹理共享池</td></tr>
+<tr><td><code>r.Streaming.PoolSizeForVirtualTextures</code></td><td>0</td><td>VT 距离流送池，0=VT 仅靠 GPU 反馈驱动</td></tr>
+<tr><td><code>r.Streaming.UseFixedPoolSize</code></td><td>0</td><td>非零=运行时不允许改池大小</td></tr>
+<tr><td><code>r.Streaming.MaxTempMemoryAllowed</code></td><td>50</td><td>换入换出时的临时内存上限 MB</td></tr>
+</table>
+<h3 class="sec">质量启发式</h3>
+<table><tr><th>CVar</th><th>默认</th><th>说明</th></tr>
+<tr><td><code>r.Streaming.UseNewMetrics</code></td><td>1</td><td>改进的纹素密度度量</td></tr>
+<tr><td><code>r.Streaming.Boost</code></td><td>1.0</td><td>全局 wanted mip 缩放（&gt;1 更清晰）</td></tr>
+<tr><td><code>r.Streaming.MinBoost</code></td><td>0.0</td><td>Boost 下限</td></tr>
+<tr><td><code>r.Streaming.MipBias</code></td><td>0.0</td><td>可扩展性：整体降 N 级 mip</td></tr>
+<tr><td><code>r.Streaming.MaxEffectiveScreenSize</code></td><td>0</td><td>0=实际屏高；&gt;0 钳制竖直屏幕高</td></tr>
+<tr><td><code>r.Streaming.PerTextureBiasViewBoostThreshold</code></td><td>1.5</td><td>限制临时小 FOV 永久拉高质量</td></tr>
+<tr><td><code>r.Streaming.MaxHiddenPrimitiveViewBoost</code></td><td>1.5</td><td>隐藏 primitive 的最大 view boost</td></tr>
+<tr><td><code>r.Streaming.HiddenPrimitiveScale</code></td><td>0.5</td><td>不在视野内降一级 mip</td></tr>
+<tr><td><code>r.Streaming.DropMips</code></td><td>0</td><td>丢弃策略：0 不丢 / 1 丢 cached / 2 丢 cached+hidden / 3-4 no-ref mesh</td></tr>
+<tr><td><code>r.Streaming.HLODStrategy</code></td><td>0</td><td>0 流送 / 1 只 mip0 / 2 禁流送</td></tr>
+</table>
+<h3 class="sec">调度与并行（StreamingManagerTexture.cpp）</h3>
+<table><tr><th>CVar</th><th>说明</th></tr>
+<tr><td><code>r.Streaming.OverlapAssetAndLevelTicks</code></td><td>重叠资产更新与 level tick（PS4/XB1 实测有收益）</td></tr>
+<tr><td><code>r.Streaming.AllowFastForceResident</code></td><td>允许快速强制常驻</td></tr>
+<tr><td><code>r.Streaming.AllowParallelStreamingRenderAssets</code></td><td>并行处理流送资产</td></tr>
+<tr><td><code>r.Streaming.SyncStatesWhenBlocking</code></td><td>阻塞时同步状态</td></tr>
+<tr><td><code>r.Streaming.AmortizeCPUToGPUCopy</code></td><td>分摊 CPU→GPU 拷贝</td></tr>
+<tr><td><code>r.Streaming.MaxNumTexturesToStreamPerFrame</code></td><td>每帧最多流送的纹理数</td></tr>
+</table></div></section>
+
+<section class="card" id="files"><h2>源码文件索引</h2><div class="body">
+<table><tr><th>文件</th><th>内容</th></tr>
+<tr><td><code>Engine/Private/Streaming/StreamingManagerTexture.cpp/.h</code></td><td>总调度器</td></tr>
+<tr><td><code>Engine/Private/Streaming/StreamingTexture.cpp/.h</code></td><td>单资产运行时状态</td></tr>
+<tr><td><code>Engine/Private/Streaming/AsyncTextureStreaming.cpp/.h</code></td><td>异步 wanted mip 计算任务</td></tr>
+<tr><td><code>Engine/Private/Streaming/{Static,Dynamic}TextureInstanceManager.*</code></td><td>纹理实例追踪</td></tr>
+<tr><td><code>Engine/Private/Streaming/TextureMipAllocator.h</code></td><td>显存分配状态机基类</td></tr>
+<tr><td><code>Engine/Public/Streaming/TextureMipDataProvider.h</code></td><td>数据源状态机基类</td></tr>
+<tr><td><code>Engine/Private/Streaming/Texture2DMip{Allocator,DataProvider}_*.h</code></td><td>具体分配 / 数据源实现</td></tr>
+<tr><td><code>Engine/Private/Streaming/TextureStreamingHelpers.cpp</code></td><td>大部分 <code>r.Streaming.*</code> CVar 定义</td></tr>
+<tr><td><code>Engine/Public/Streaming/StreamableRenderResourceState.h</code></td><td>可流送资源 LOD 状态</td></tr>
+</table></div></section>
+
+</main></body></html>

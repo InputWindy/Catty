@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#2 VT 总览与架构 · 页表 / 物理池 / 反馈</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><h1>#2 VT 总览与架构 · 页表 / 物理池 / 反馈三大件</h1><div class="sub">Virtual Texture 把"整级 mip"的粒度进一步细化到<b>固定大小的页（tile）</b>：一张逻辑上巨大的虚拟纹理被切成成千上万个小页，任意时刻只有屏幕真正采样到的那些页常驻显存。要让 shader 能像采普通纹理一样采一张"其实大部分不在显存"的纹理，就需要三个配合的部件——<b>页表</b>（虚拟地址→物理地址）、<b>物理池</b>（有限的常驻页缓存）、<b>反馈</b>（GPU 告诉 CPU 缺哪些页）。本篇讲清这三件如何在 <span class="inline">FVirtualTextureSystem</span> 的单帧流程里协作。所有符号 / CVar 均取自 UE5.8 本地源码。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--cyan)"></span>三大部件</span><span class="tag"><span class="dot" style="background:var(--green)"></span>单帧流程</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>两类 VT</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>结论 / 数据</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的顶层 <span class="inline">r.VT.*</span> CVar 全表、<span class="inline">FVirtualTextureSystem</span> 公开接口、Space / PhysicalSpace 描述结构体，见 <a href="VTOverview_FunctionAppendix.html" style="color:#9ee8ff">→ 架构与 CVar 附录</a>。</p></div></section>
+
+<section class="card"><h2>一眼看懂：三大件如何拼出"虚拟"纹理 <span class="en">Page Table · Physical Pool · Feedback</span></h2><div class="body">
+<div class="flow">
+<div class="node func"><strong>① 虚拟地址空间</strong><small>FVirtualTextureSpace<br>一张页表纹理，记录"虚拟页 → 物理页"的映射<br>TileSize / Dimensions / PageTableFormat</small></div>
+<div class="node func"><strong>② 物理页池</strong><small>FVirtualTexturePhysicalSpace<br>一张定容量的物理纹理 + 页池，只存当前常驻的页<br>SizeInTiles × SizeInTiles 个 tile</small></div>
+<div class="node func"><strong>③ 反馈闭环</strong><small>FVirtualTextureFeedback<br>材质采样时写出"缺页 ID"，GPU 回读交给 CPU 处理</small></div>
+</div>
+<div class="arrow">▼ 采样时：UV → 查页表 → 命中则取物理页；未命中则写反馈，本帧退回更粗的 mip</div>
+<p style="color:#a9b4c0;margin:8px 0 0">类比操作系统的虚拟内存：<b>虚拟纹理</b>=进程的巨大虚拟地址空间，<b>物理池</b>=有限的物理内存，<b>页表</b>=MMU 的地址翻译表，<b>反馈</b>=缺页中断。VT 就是把这套"虚拟内存"思想搬到了纹理采样上。</p></div></section>
+
+<section class="card"><h2>为什么需要 VT：mip 流送还不够省 <span class="en">Motivation</span></h2><div class="body">
+<div class="note"><h3>整级 mip 的浪费</h3><p>回顾 <a href="MipStreaming_ConvergenceAnnotated.html" style="color:#9ee8ff">#1 传统流送</a>：它以整级 mip 为单位。问题是——一面 8K 的地形贴图，即使相机只看到它的一小角，也得把那一级 mip <b>整张</b>换进显存。对于地形、Nanite 世界这类"单张纹理巨大、但每帧只看到局部"的场景，浪费惊人。</p><p>VT 的洞察是：<b>把纹理切成固定大小的小页（如 128×128），只加载屏幕真正踩到的页</b>。看地形一角，就只加载那一角覆盖的十几个页，而不是整级 mip。粒度从"整级 mip"细化到"单页"，这是 VT 相对 mip 流送的根本进步。</p></div>
+<div class="note blue"><h3>代价：采样要多一次间接寻址</h3><p>天下没有免费的午餐。既然物理上"页是散落在物理池里的"，采样时就不能直接用 UV 取纹素，而要先查<b>页表</b>把虚拟 UV 翻译成物理池里的位置，再去物理纹理采样。这次间接寻址是 VT 的固有开销（后续 #3 会展开采样着色器）。此外反馈是滞后一帧的——本帧发现缺页，要等下一帧才可能加载好，所以 VT 也会有短暂的"糊一下"。</p></div></div></section>
+
+<section class="card"><h2>部件①：虚拟地址空间与页表 <span class="en">FVirtualTextureSpace</span></h2><div class="body">
+<p><span class="inline">FVirtualTextureSpace</span> 就是"被一张页表纹理映射的虚拟内存地址空间"（源码注释原文：<i>Virtual memory address space mapped by a page table texture</i>）。它由 <span class="inline">FVTSpaceDescription</span> 描述：</p>
+<table><tr><th>字段</th><th>含义</th></tr>
+<tr><td><code>TileSize</code></td><td>单页边长（纹素），如 128</td></tr>
+<tr><td><code>TileBorderSize</code></td><td>页边界像素（用于跨页过滤，避免接缝）</td></tr>
+<tr><td><code>Dimensions</code></td><td>维度：2D 表面纹理 / 3D 体积</td></tr>
+<tr><td><code>PageTableFormat</code></td><td><code>EVTPageTableFormat::UInt16</code> 或 <code>UInt32</code>——决定页表每项多少位</td></tr>
+<tr><td><code>NumPageTableLayers</code></td><td>页表层数（一组共享同一 UV 的纹理，如 BaseColor+Normal+Roughness 打包成多层）</td></tr>
+<tr><td><code>MaxSpaceSize</code></td><td>虚拟地址空间上限 <code>VIRTUALTEXTURE_MAX_PAGETABLE_SIZE</code></td></tr>
+<tr><td><code>IndirectionTextureSize</code></td><td>页表间接纹理大小（用于把多个 VT 拼进同一 space）</td></tr>
+</table>
+<div class="note red"><h3>16 位页表的地址上限（源码里的硬约束）</h3><p><span class="inline">FVirtualTexturePhysicalSpace::DoesSupport16BitPageTable()</span> 的注释直言：<i>16bit page tables allocate 6bits to address TileX/Y, so can only address tiles from 0-63</i>。也就是 16 位页表 X/Y 各只有 6 位，物理池最多 64×64 个 tile；超过就得用 32 位页表。这解释了为什么 <span class="inline">PageTableFormat</span> 要区分 UInt16/UInt32——小池省页表带宽，大池才用 32 位。</p></div>
+<p>页表本身也是纹理（<span class="inline">PageTable[TextureCapacity]</span>），每层一张。更新页表通过 <span class="inline">QueueUpdate(Layer, vLogSize, vAddress, vLevel, pTileLocation)</span> 排队，再在 <span class="inline">BeginUpdates → ApplyUpdates → EndUpdates</span> 三相里批量写入 GPU（这样能高效生成 barrier）。虚拟地址的分配由 <span class="inline">FVirtualTextureAllocator</span> 负责（见 <a href="VTProducer_ConvergenceAnnotated.html" style="color:#9ee8ff">#4</a>）。</p></div></section>
+
+<section class="card"><h2>部件②：物理页池 <span class="en">FVirtualTexturePhysicalSpace</span></h2><div class="body">
+<p>物理池是"真正存像素的地方"：一张定容量的物理纹理 + 一个跟踪谁占用哪个 tile 的页池（<span class="inline">FTexturePagePool</span>）。由 <span class="inline">FVTPhysicalSpaceDescription</span> 描述：</p>
+<table><tr><th>字段</th><th>含义</th></tr>
+<tr><td><code>TileSize</code></td><td>单页边长，须与 space 匹配</td></tr>
+<tr><td><code>NumLayers</code> / <code>Format[]</code></td><td>物理纹理的层数与每层像素格式（BC7/BC5…）</td></tr>
+<tr><td><code>bCanSplit</code></td><td>池是否可拆分</td></tr>
+<tr><td><code>TileWidthHeight</code>（Ext）</td><td>池边长（多少个 tile）；<code>GetNumTiles = TileWidthHeight²</code></td></tr>
+<tr><td><code>bEnableResidencyMipMapBias</code>（Ext）</td><td>池压力大时自动加 mip bias 降分辨保命</td></tr>
+</table>
+<p>物理地址 <span class="inline">pAddress</span> 是一个线性下标，<span class="inline">GetPhysicalLocation(pAddress)</span> 把它拆成 <span class="inline">(pAddress % SizeInTiles, pAddress / SizeInTiles)</span> 的二维 tile 坐标。页表里存的就是这个物理地址。</p>
+<div class="note blue"><h3>为什么池是"共享"的？</h3><p>物理池按 <span class="inline">FVTPhysicalSpaceDescription</span> 去重——<b>格式/层数/tile 尺寸相同的所有 VT 共用同一个物理池</b>（<span class="inline">AcquirePhysicalSpace</span> 会查已有池）。这样几十张 RVT/SVT 可以挤在同一块显存预算里，谁被采样到谁占页，天然实现了"全局按需"的显存分配。池满时按 LRU 淘汰最久没被采样的页。</p></div></div></section>
+
+<section class="card"><h2>部件③：反馈闭环（本篇只做总览） <span class="en">FVirtualTextureFeedback</span></h2><div class="body">
+<p>反馈是 VT 的"缺页中断"：材质在采样 VT 时，除了返回颜色，还会把"我采到了哪个虚拟页、在哪个 mip"写进一个反馈缓冲。GPU 把这个缓冲回读给 CPU，CPU 分析出"这帧被采样但不在物理池里的页"，据此发起加载。</p>
+<p>这套闭环（反馈缓冲 → 去重 → 请求 → 分配物理页 → 更新页表）是 VT 最核心也最精巧的部分，单独放在 <a href="VTFeedback_ConvergenceAnnotated.html" style="color:#9ee8ff">#3 反馈与页请求</a> 展开。本篇只需记住：<b>VT 是"GPU 反馈驱动"的——它不像 mip 流送那样 CPU 预测，而是等 GPU 告诉它"我真的需要这些页"。</b></p>
+<div class="note"><h3>反馈开关（顶层 CVar，默认值取自源码）</h3>
+<table><tr><th>CVar</th><th>默认</th><th>作用</th></tr>
+<tr><td><code>r.VT.EnableFeedback</code></td><td>1</td><td>处理 GPU 反馈缓冲</td></tr>
+<tr><td><code>r.VT.EnableFeedback.Produce</code></td><td>1</td><td>是否由反馈触发页加载</td></tr>
+<tr><td><code>r.VT.AsyncPageRequestTask</code></td><td>1</td><td>页请求放异步任务</td></tr>
+<tr><td><code>r.VT.SortTileRequestsByPriority</code></td><td>1</td><td>提交前按优先级排序，节流时优先要紧的页</td></tr>
+</table></div></div></section>
+
+<section class="card"><h2>单帧流程：FVirtualTextureSystem::Update <span class="en">Begin → Wait → End → Finalize</span></h2><div class="body">
+<p><span class="inline">FVirtualTextureSystem</span> 是全局单例（<span class="inline">Get()</span>），每帧被场景渲染器驱动。它把一帧的 VT 工作拆成可异步的几段：</p>
+<div class="flow">
+<div class="node merge"><strong><span class="step">1</span>BeginUpdate</strong><small>回读上一帧反馈 → 启动异步任务：FeedbackAnalysis / GatherRequests<br>返回 FVirtualTextureUpdater</small></div>
+<div class="node merge"><strong><span class="step">2</span>WaitForTasks</strong><small>等异步任务算出本帧要加载的页列表（MergedRequestList）</small></div>
+<div class="node merge"><strong><span class="step">3</span>EndUpdate</strong><small>SubmitRequests：让 producer 产出 tile 数据、上传物理池</small></div>
+<div class="node out"><strong><span class="step">4</span>FinalizeRequests</strong><small>写页表更新（虚拟页→新物理页），下帧采样即可命中</small></div>
+</div>
+<div class="note green"><h3>三个异步任务（friend class 揭示了内部结构）</h3><p>头文件里 <span class="inline">FVirtualTextureSystem</span> 把三个任务类声明为 friend：<span class="inline">FFeedbackAnalysisTask</span>（分析反馈缓冲、去重成页列表）、<span class="inline">FAddRequestedTilesTask</span>（合入主动请求的 tile，如 UI 预取）、<span class="inline">FGatherRequestsTask</span>（把各来源请求汇总排序成 <span class="inline">FUniqueRequestList</span>）。这三者在 BeginUpdate 到 EndUpdate 之间并行跑，把重活挪出渲染线程关键路径。</p></div>
+<div class="note blue"><h3>页上传节流（FVirtualTextureUpdateSettings）</h3><p>一帧能加载的页是有预算的，否则突然进入新区域会瞬间卡死。<span class="inline">MaxRVTPageUploads</span> / <span class="inline">MaxSVTPageUploads</span> / <span class="inline">MaxPagesProduced</span> / <span class="inline">MaxGatherTime</span> / <span class="inline">MaxSubmitTime</span> 限制单帧工作量，超出的页排到后续帧。<span class="inline">EnableThrottling(false)</span> 会把这些全设成 99999（如烘焙/截图时要一次性全加载）。RVT 和 SVT 分别有独立的上传预算（<span class="inline">PageUploadBudgetRVT/SVT</span>）。</p></div></div></section>
+
+<section class="card"><h2>两类 VT：RVT 与 SVT <span class="en">Runtime vs Streaming</span></h2><div class="body">
+<p>同一套页表/物理池/反馈框架，按"页数据从哪来"分成两类，后续各有专章：</p>
+<div class="flow">
+<div class="node branch"><strong>RVT · Runtime Virtual Texture</strong><small>页数据运行时用 GPU 现画（地形/贴花渲染进页）<br>见 #5</small></div>
+<div class="node branch"><strong>SVT · Streaming Virtual Texture</strong><small>页数据从磁盘/DDC chunk 流入（离线烘焙好）<br>见 #6</small></div>
+</div>
+<p style="color:#a9b4c0">两者的差别只在 <b>Producer</b>（页数据的生产者）——RVT 的 producer 触发一次场景渲染，SVT 的 producer 触发一次磁盘读取 + 转码。框架其余部分（页表、物理池、反馈、上传）完全共用。Producer 抽象见 <a href="VTProducer_ConvergenceAnnotated.html" style="color:#9ee8ff">#4</a>。</p></div></section>
+
+<section class="card"><h2>与另外两种范式的关系 <span class="en">Cross-paradigm</span></h2><div class="body">
+<div class="note"><h3>VT 在三范式中的位置</h3>
+<p>共同点：和 mip 流送一样，VT 也是"有限显存覆盖超大纹理"，也需要判定"当前该加载哪部分"。</p>
+<p>不同点：粒度从 mip 流送的"整级 mip"细化到"单页 tile"，只加载屏幕真正采样到的页。</p>
+<p>不同点：判定来源从 mip 流送的"CPU 距离预测"变成"GPU 采样反馈"——更精确（GPU 知道每个像素真正采了哪，不用猜），但滞后一帧。</p>
+<p>不同点：采样从"硬件透明"变成"需要页表间接寻址"，多一次查表开销。</p>
+<p>共同点：和 Clipmap 一样，VT 也用了"页表/间接寻址"的思路；区别是 VT 的常驻集由反馈决定（不规则、按需），Clipmap 的常驻集由相机位置确定（规则、每级一张定长图）。</p></div>
+<p style="color:#a9b4c0">下一篇 <a href="VTFeedback_ConvergenceAnnotated.html" style="color:#9ee8ff">#3 反馈与页请求</a> 深入 VT 的灵魂闭环——反馈缓冲怎么编码、怎么去重成页请求、页表怎么更新。</p></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. VT = 把纹理切成固定大小的<b>页</b>，只加载屏幕真正采样到的页，粒度远细于 mip 流送。</p>
+<p>2. 三大件：<span class="inline">FVirtualTextureSpace</span>（页表/虚拟地址）+ <span class="inline">FVirtualTexturePhysicalSpace</span>（物理池/常驻页）+ <span class="inline">FVirtualTextureFeedback</span>（缺页反馈）。类比操作系统虚拟内存。</p>
+<p>3. 单帧由单例 <span class="inline">FVirtualTextureSystem</span> 的 <span class="inline">BeginUpdate → WaitForTasks → EndUpdate → FinalizeRequests</span> 驱动，重活放三个异步任务，页上传有节流预算。</p>
+<p>4. RVT（GPU 现画）与 SVT（磁盘流入）共用同一框架，只在 Producer 处不同。</p></div></div></section>
+
+<section class="card"><h2>关联文档</h2><div class="body legend">
+<a class="tag" href="VTOverview_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>
+<a class="tag" href="MipStreaming_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#1 传统 Mip 流送</a>
+<a class="tag" href="VTFeedback_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#3 反馈与页请求</a>
+<a class="tag" href="VTProducer_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#4 Producer 与页数据</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

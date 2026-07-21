@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#5 附录 · RVT 资产与渲染结构</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13.5px}.toc a:hover{border-color:var(--cyan)}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}h3.sec{color:#eaf2ff;border-left:4px solid var(--cyan);padding-left:10px;margin:22px 0 8px}</style></head><body>
+<header><a class="back" href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a> &nbsp;·&nbsp; <a class="back" href="RVT_ConvergenceAnnotated.html">← 回到 #5 主文档</a><h1>#5 附录 · RVT 资产与渲染结构</h1><div class="sub">本附录汇总 RVT 资产属性、材质类型枚举、producer/finalizer 实现、场景代理、按页渲染 API。均取自 UE5.8 本地源码 <span class="inline">Engine/Source/Runtime/Engine/Classes/VT/</span> 与 <span class="inline">Renderer/.../VT/</span>。</div></header>
+<main>
+
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#asset">URuntimeVirtualTexture</a>
+<a href="#mattype">材质/属性类型枚举</a>
+<a href="#producer">FRuntimeVirtualTextureProducer</a>
+<a href="#finalizer">FRuntimeVirtualTextureFinalizer</a>
+<a href="#proxy">FRuntimeVirtualTextureSceneProxy</a>
+<a href="#render">RenderPages API</a>
+<a href="#files">源码文件索引</a>
+</div></section>
+
+<section class="card" id="asset"><h2>URuntimeVirtualTexture <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">RuntimeVirtualTexture.h</span></h2><div class="body">
+<table><tr><th>属性 / 方法</th><th>默认 / 计算</th><th>说明</th></tr>
+<tr><td><code>TileCount</code></td><td>8</td><td><code>GetTileCount() = 1 &lt;&lt; Clamp(TileCount, 0, MaxLog2)</code></td></tr>
+<tr><td><code>TileSize</code></td><td>2</td><td><code>GetTileSize() = 1 &lt;&lt; Clamp(TileSize+6, 6, 10)</code>（64~1024）</td></tr>
+<tr><td><code>TileBorderSize</code></td><td>2</td><td><code>GetTileBorderSize() = 2 * Clamp(0..4)</code></td></tr>
+<tr><td><code>GetSize()</code></td><td>—</td><td><code>= GetTileCount() * GetTileSize()</code></td></tr>
+<tr><td><code>MaterialType</code></td><td>BaseColor_Normal_Specular</td><td>层布局</td></tr>
+<tr><td><code>bCompressTextures</code></td><td>true</td><td>GPU 压缩格式</td></tr>
+<tr><td><code>bUseLowQualityCompression</code></td><td>false</td><td>RGB565/RGB555A1 替代运行时压缩</td></tr>
+<tr><td><code>bClearTextures</code></td><td>true</td><td>渲染页前清屏</td></tr>
+<tr><td><code>bSinglePhysicalSpace</code></td><td>true</td><td>页表通道打包</td></tr>
+<tr><td><code>bPrivateSpace</code></td><td>true</td><td>私有页表分配</td></tr>
+<tr><td><code>bAdaptive</code></td><td>false</td><td>稀疏自适应页表</td></tr>
+<tr><td><code>bContinuousUpdate</code></td><td>false</td><td>轮转刷新已映射页</td></tr>
+<tr><td><code>RemoveLowMips</code></td><td>0</td><td>裁掉几级低 mip</td></tr>
+<tr><td><code>CustomPriority / bUseCustomPriority</code></td><td>false</td><td>覆盖 producer 相对优先级</td></tr>
+<tr><td><code>CustomMaterialData</code></td><td>—</td><td>float4，材质里可读</td></tr>
+<tr><td><code>LODGroup</code></td><td>TEXTUREGROUP_World</td><td>纹理组</td></tr>
+</table></div></section>
+
+<section class="card" id="mattype"><h2>材质 / 属性类型枚举 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">RuntimeVirtualTextureEnum.h</span></h2><div class="body">
+<p><code>RuntimeVirtualTexture::MaxTextureLayers = 3</code>；<code>MaterialType_NumBits = 3</code>。</p>
+<h3 class="sec">ERuntimeVirtualTextureMaterialType（uint8）</h3>
+<table><tr><th>值</th><th>内容</th></tr>
+<tr><td><code>BaseColor</code></td><td>仅基色</td></tr>
+<tr><td><code>Mask4</code></td><td>4 通道遮罩</td></tr>
+<tr><td><code>BaseColor_Normal_Roughness</code></td><td>本地空间法线，省内存，支持 LQ 压缩</td></tr>
+<tr><td><code>BaseColor_Normal_Specular</code></td><td>基色+法线+粗糙度+高光（默认）</td></tr>
+<tr><td><code>BaseColor_Normal_Specular_YCoCg</code></td><td>基色存 YCoCg，更占内存但质量更好</td></tr>
+<tr><td><code>BaseColor_Normal_Specular_Mask_YCoCg</code></td><td>上者 + 遮罩</td></tr>
+<tr><td><code>WorldHeight</code> / <code>Displacement</code></td><td>世界高度 / 位移</td></tr>
+</table>
+<h3 class="sec">ERuntimeVirtualTextureAttributeType（uint8，≤8）</h3>
+<p><code>BaseColor / Normal / Roughness / Specular / Mask / Mask4 / WorldHeight / Displacement</code>——可组合成上面的完整布局，8bit 掩码。</p>
+<h3 class="sec">ERuntimeVirtualTextureMainPassType（uint8）</h3>
+<table><tr><th>值</th><th>行为</th></tr>
+<tr><td><code>Never</code></td><td>只画进 RVT，不进主通道</td></tr>
+<tr><td><code>Exclusive</code></td><td>无"隐藏图元"Volume 时才进主通道</td></tr>
+<tr><td><code>Always</code></td><td>始终进主通道（既读又写 RVT）</td></tr>
+</table>
+<h3 class="sec">ERuntimeVirtualTextureShaderUniform</h3>
+<p><code>WorldToUVTransform0/1/2</code>、<code>WorldHeightUnpack</code>、<code>_Count</code>——shader 里 VT 采样所需的 uniform 槽。</p></div></section>
+
+<section class="card" id="producer"><h2>FRuntimeVirtualTextureProducer <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">RuntimeVirtualTextureProducer.h</span></h2><div class="body">
+<p><span class="inline">IVirtualTexture</span> 的现画实现（<a href="VTProducer_ConvergenceAnnotated.html" style="color:#9ee8ff">#4</a> 接口）。</p>
+<table><tr><th>方法</th><th>说明</th></tr>
+<tr><td><code>IsPageStreamed(vLevel, vAddress) const</code></td><td>恒 <code>return false</code>——RVT 页非流式</td></tr>
+<tr><td><code>RequestPageData(...)</code></td><td>发起请求，RVT 几乎立即就绪</td></tr>
+<tr><td><code>ProducePageData(...)</code></td><td>返回内部的 <code>FRuntimeVirtualTextureFinalizer*</code></td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px">构造参数：<code>FVTProducerDescription</code>、<code>RuntimeVirtualTextureId</code>、<code>MaterialType</code>、<code>bClearTextures</code>、<code>Scene</code>、<code>UVToWorld</code>、<code>WorldBounds</code>、<code>CustomMaterialData</code>。</p></div></section>
+
+<section class="card" id="finalizer"><h2>FRuntimeVirtualTextureFinalizer <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">RuntimeVirtualTextureProducer.h</span></h2><div class="body">
+<table><tr><th>成员 / 方法</th><th>说明</th></tr>
+<tr><td><code>struct FTileEntry { Targets[MaxTextureLayers]; vAddress; vLevel; }</code></td><td>单个待画 tile 描述</td></tr>
+<tr><td><code>bool IsReady()</code></td><td>渲染一页所需资源是否齐备</td></tr>
+<tr><td><code>void AddTile(FTileEntry&amp;)</code></td><td>把 tile 加入 finalize 队列 <code>Tiles</code></td></tr>
+<tr><td><code>RenderFinalize(GraphBuilder, SceneRenderer)</code></td><td>把队列里的 tile 分批渲染进临时目标（<code>Batches</code>）</td></tr>
+<tr><td><code>Finalize(GraphBuilder)</code></td><td>把各 batch 结果拷贝到物理页最终位置</td></tr>
+</table></div></section>
+
+<section class="card" id="proxy"><h2>FRuntimeVirtualTextureSceneProxy <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">RuntimeVirtualTextureSceneProxy.h</span></h2><div class="body">
+<table><tr><th>方法 / 成员</th><th>说明</th></tr>
+<tr><td><code>Dirty(Bounds, InvalidatePriority)</code></td><td>把世界区域转页矩形累加进 <code>DirtyRects</code></td></tr>
+<tr><td><code>FlushDirtyPages()</code></td><td>踢掉脏页，触发下次采样重画</td></tr>
+<tr><td><code>RequestPreload(Bounds, Level)</code></td><td>主动预热某区域某 mip</td></tr>
+<tr><td><code>MarkUnused() / Release()</code></td><td>共享资产的多组件边缘处理 / 释放（主线程调用后延迟到渲染线程删）</td></tr>
+<tr><td><code>GetUniformParameter(UniformName)</code></td><td>取缓存的 shader uniform</td></tr>
+<tr><td><code>ProducerHandle / AllocatedVirtualTexture / SpaceID</code></td><td>失效与预加载用的句柄</td></tr>
+<tr><td><code>RuntimeVirtualTextureId / SceneIndex</code></td><td>过滤图元 / FScene 索引</td></tr>
+<tr><td><code>bHidePrimitivesInEditor / InGame</code></td><td>主通道隐藏控制</td></tr>
+<tr><td><code>struct FDirtyRect { Rect; InvalidatePriority; }</code></td><td>脏矩形（Union 时取更高优先级）</td></tr>
+</table></div></section>
+
+<section class="card" id="render"><h2>按页渲染 API <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">RuntimeVirtualTextureRender.h</span></h2><div class="body">
+<p>命名空间 <code>RuntimeVirtualTexture</code>。<code>MaxRenderPageBatch = 8</code>。</p>
+<table><tr><th>符号</th><th>说明</th></tr>
+<tr><td><code>bool IsSceneReadyToRender(Scene)</code></td><td>调 RenderPages 前必检</td></tr>
+<tr><td><code>void RenderPages(GraphBuilder, FRenderPageBatchDesc const&amp;)</code></td><td>渲染一批页（一站式）</td></tr>
+<tr><td><code>FBatchRenderContext const* InitPageBatch(...)</code></td><td>建批上下文</td></tr>
+<tr><td><code>void RenderPageBatch(GraphBuilder, Batch)</code></td><td>画批内所有页（对应 RenderFinalize）</td></tr>
+<tr><td><code>void FinalizePageBatch(GraphBuilder, Batch)</code></td><td>把批内页落到物理位置（对应 Finalize）</td></tr>
+</table>
+<h3 class="sec">FRenderPageBatchDesc</h3>
+<table><tr><th>字段</th><th>说明</th></tr>
+<tr><td><code>ISceneRenderer* SceneRenderer</code></td><td>场景渲染器</td></tr>
+<tr><td><code>int32 RuntimeVirtualTextureId</code></td><td>过滤要渲染到本 RVT 的图元</td></tr>
+<tr><td><code>FTransform UVToWorld / FBox WorldBounds</code></td><td>UV↔世界变换与范围</td></tr>
+<tr><td><code>ERuntimeVirtualTextureMaterialType MaterialType / uint8 MaxLevel</code></td><td>层布局 / 最大 mip</td></tr>
+<tr><td><code>bool bClearTextures / bIsThumbnails</code></td><td>清屏 / 缩略图模式</td></tr>
+<tr><td><code>FLinearColor FixedColor / FVector4f CustomMaterialData</code></td><td>固定基色 / 自定义数据</td></tr>
+<tr><td><code>FRenderPageTarget Targets[MaxTextureLayers]</code></td><td>每层物理目标（<code>IPooledRenderTarget*</code>）</td></tr>
+<tr><td><code>int32 NumPageDescs / FRenderPageDesc PageDescs[MaxRenderPageBatch]</code></td><td>批内页数 + 每页描述</td></tr>
+</table>
+<h3 class="sec">FRenderPageDesc</h3>
+<p><code>uint8 vLevel</code>；<code>FBox2D UVRange</code>（VT 空间 UV 范围）；<code>FIntRect DestRect[MaxTextureLayers]</code>（物理纹理 texel 空间目标框）。</p></div></section>
+
+<section class="card" id="files"><h2>源码文件索引 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">UE5.8 本地</span></h2><div class="body">
+<table><tr><th>文件</th><th>内容</th></tr>
+<tr><td><code>Runtime/Engine/Classes/VT/RuntimeVirtualTexture.h</code></td><td>URuntimeVirtualTexture 资产</td></tr>
+<tr><td><code>Runtime/Engine/Classes/VT/RuntimeVirtualTextureVolume.h</code></td><td>ARuntimeVirtualTextureVolume</td></tr>
+<tr><td><code>Runtime/Engine/Public/VT/RuntimeVirtualTextureEnum.h</code></td><td>MaterialType / AttributeType / MainPassType / ShaderUniform 枚举</td></tr>
+<tr><td><code>Runtime/Renderer/Private/VT/RuntimeVirtualTextureProducer.h</code></td><td>Producer + Finalizer 实现</td></tr>
+<tr><td><code>Runtime/Renderer/Private/VT/RuntimeVirtualTextureSceneProxy.h</code></td><td>渲染线程场景代理</td></tr>
+<tr><td><code>Runtime/Renderer/Public/VT/RuntimeVirtualTextureRender.h</code></td><td>RenderPages / 批处理 API</td></tr>
+</table></div></section>
+
+</main></body></html>
