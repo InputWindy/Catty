@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#4 附录 · 着色拒绝函数/颜色空间/CVar</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.toc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13px}.toc a:hover{border-color:var(--cyan)}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:17px}.body{padding:18px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:14px 18px;margin:12px 0}.note h3{margin:0 0 8px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}</style></head><body>
+<header><a class="back" href="../UE_TSR_解析_总目录.html">← 总目录</a><a class="back" href="Reject_ConvergenceAnnotated.html">← #4 主文档</a><h1>#4 附录 · 着色拒绝函数/颜色空间/CVar</h1><div class="sub">RejectShading pass 的 shader 类、拒绝启发式函数、颜色空间函数与 CVar。符号取自 UE5.8 <span class="inline">TemporalSuperResolution.cpp</span>（~958–1078）+ <span class="inline">TSRShadingAnalysis.ush</span> / <span class="inline">TSRColorSpace.ush</span>。</div>
+<div class="toc"><a href="#cs">FTSRRejectShadingCS</a><a href="#measure">MeasureRejection</a><a href="#color">颜色空间</a><a href="#io">输入/输出</a><a href="#cvar">CVar</a><a href="#files">源码文件</a></div></header>
+<main>
+
+<section class="card" id="cs"><h2>FTSRRejectShadingCS · 继承卷积网络 shader</h2><div class="body">
+<div class="codebox"><span class="k">class</span> <span class="f">FTSRRejectShadingCS</span> : <span class="k">public</span> FTSRConvolutionNetworkShader  <span class="c">// ★ 拒绝启发式即卷积网络（见 #7）</span>
+{
+  <span class="k">class</span> FFlickeringDetectionDim  : SHADER_PERMUTATION_BOOL(<span class="s">"DIM_FLICKERING_DETECTION"</span>);
+  <span class="k">class</span> FHistoryResurrectionDim  : SHADER_PERMUTATION_BOOL(<span class="s">"DIM_HISTORY_RESURRECTION"</span>);
+  <span class="k">class</span> FThinGeometryDetectionDim: SHADER_PERMUTATION_BOOL(<span class="s">"DIM_THIN_GEOMETRY_DETECTION"</span>);
+  <span class="k">using</span> FPermutationDomain = TShaderPermutationDomain&lt;
+    FTSRConvolutionNetworkShader::FPermutationDomain,
+    FFlickeringDetectionDim, FHistoryResurrectionDim, FThinGeometryDetectionDim&gt;;
+};</div>
+<table><tr><th>permutation</th><th>作用</th></tr>
+<tr><td><code>DIM_FLICKERING_DETECTION</code></td><td>启用 Moire/闪烁检测（维护并更新 Moire 历史）</td></tr>
+<tr><td><code>DIM_HISTORY_RESURRECTION</code></td><td>在拒绝时也比较复活历史，择优</td></tr>
+<tr><td><code>DIM_THIN_GEOMETRY_DETECTION</code></td><td>结合 #7 薄几何标记调整拒绝</td></tr></table></div></section>
+
+<section class="card" id="measure"><h2>MeasureRejection · 拒绝启发式</h2><div class="body">
+<div class="codebox"><span class="k">void</span> <span class="f">MeasureRejection</span>(
+  tsr_tensor_halfC InputC0, ...,
+  <span class="k">bool</span> bEnableMoireError,
+  <span class="k">out</span> tsr_tensor_half OutRejectionBlendFinal,   <span class="c">// ★ 最终拒绝权重 [0,1]</span>
+  <span class="k">out</span> tsr_tensor_half OutRejectionClampBlend);   <span class="c">// clamp 混合系数</span>
+
+<span class="c">// 关键中间量</span>
+RawClampedEnergy   = abs(ClampedFilteredHistory - FilteredHistory);
+RawRejection       = saturate(1 - max(RawClampedEnergy,0) * rcp(Delta));
+OutRejectionBlendFinal = saturate(1 - max(FilteredClampedEnergy,0) * rcp(Delta));
+FinalBlendFinal    = max(1 - OutRejectionBlendFinal, MinBlendFinal);  <span class="c">// 保底最小混合</span></div>
+<table><tr><th>滤波算子</th><th>作用</th></tr>
+<tr><td><code>Median3x3</code></td><td>3×3 中值滤波，去单像素噪点，避免噪声触发误拒绝</td></tr>
+<tr><td><code>MaxRMinG3x3</code></td><td>形态学：R 通道取邻域 max、G 通道取 min，膨胀拒绝区域使其空间连续</td></tr>
+<tr><td><code>ClampPlus3x3</code></td><td>把闪烁历史 clamp 到当前亮度的 3×3 邻域（十字形）</td></tr>
+<tr><td><code>ShouldSpatialAntiAlias</code></td><td><code>bAliasingIsVisible ∧ (RejectionBlendFinal&lt;0.25 ∨ (disoccluded ∧ ¬resurrect))</code></td></tr>
+<tr><td><code>ComposeTranslucencyForRejection</code></td><td>把模糊半透明合进不透明输入，让拒绝更贴合最终画面</td></tr></table></div></section>
+
+<section class="card" id="color"><h2>TSRColorSpace.ush · HDR 加权</h2><div class="body">
+<table><tr><th>函数</th><th>作用</th></tr>
+<tr><td><code>HdrWeightY(Luma)</code></td><td>亮度 → HDR 权重（压缩高光的数值主导，接近感知均匀）</td></tr>
+<tr><td><code>HdrWeightInvY(LDRLuma)</code></td><td>逆变换</td></tr>
+<tr><td><code>HdrWeight4(Color)</code></td><td>对 3/4 通道颜色取 Luma 后加权</td></tr>
+<tr><td><code>PreExposureCorrectGCS</code></td><td>引导色彩空间的预曝光校正（与 #3 曝光校正配套）</td></tr></table>
+<div class="note blue"><h3>fp16 下限保护</h3><p>源码注释：极亮像素会让 <span class="inline">HdrWeight</span> 在 fp16 下被压成 0（下溢），导致除零/NaN。因此权重被 clamp 到接近 fp16 最小正规正数（约 <span class="inline">0.000061</span>）。这是 16bit ALU（<span class="inline">r.TSR.16BitVALU=1</span>）省带宽带来的必须的数值防护。</p></div></div></section>
+
+<section class="card" id="io"><h2>关键输入 / 输出</h2><div class="body">
+<div class="codebox"><span class="c">// 输入</span>
+Texture2D InputTexture;                       <span class="c">// 当前帧输入（低分辨率）</span>
+Texture2D InputMoireLumaTexture;              <span class="c">// MeasureFlickeringLuma 的产物</span>
+Texture2D ReprojectedHistoryGuideTexture;     <span class="c">// #3 对齐好的历史引导</span>
+Texture2D ReprojectedHistoryMoireTexture;
+Texture2D DecimateMaskTexture;                <span class="c">// #3 的几何失效软掩码</span>
+Texture2D ThinGeometryTexture;                <span class="c">// #7</span>
+<span class="c">// 输出</span>
+RWTexture2D  HistoryRejectionOutput;          <span class="c">// ★ → #5 累积权重</span>
+RWTexture2DArray HistoryGuideOutput;          <span class="c">// 更新后的引导（下一帧）</span>
+RWTexture2DArray HistoryMoireOutput;
+RWTexture2D  AntiAliasMaskOutput;             <span class="c">// → #6 空间 AA</span>
+RWTexture2D  InputSceneColorOutput;           <span class="c">// 预处理输入 → #5</span></div></div></section>
+
+<section class="card" id="cvar"><h2>相关 CVar</h2><div class="body">
+<table><tr><th>CVar</th><th>默认</th><th>作用</th></tr>
+<tr><td><code>r.TSR.ShadingRejection.SampleCount</code></td><td>2</td><td>历史被完全拒绝后重新累积的样本上限</td></tr>
+<tr><td><code>r.TSR.ShadingRejection.Flickering</code></td><td>1</td><td>启用闪烁检测（Moire 历史）</td></tr>
+<tr><td><code>r.TSR.ShadingRejection.Flickering.Period</code></td><td>3</td><td>闪烁判定的帧周期</td></tr>
+<tr><td><code>r.TSR.ShadingRejection.ExposureOffset</code></td><td>0</td><td>拒绝比较时的曝光补偿偏移</td></tr>
+<tr><td><code>r.TSR.RejectionAntiAliasingQuality</code></td><td>3</td><td>历史被拒时空间 AA 的质量（#6）</td></tr>
+<tr><td><code>r.TSR.WaveOps</code></td><td>1</td><td>拒绝卷积用 wave ops 加速</td></tr></table></div></section>
+
+<section class="card" id="files"><h2>源码文件索引</h2><div class="body">
+<table><tr><th>文件</th><th>行数</th><th>内容</th></tr>
+<tr><td><code>TSRRejectShading.usf</code></td><td>953</td><td>着色拒绝主 pass（含半透明合成、闪烁、复活）</td></tr>
+<tr><td><code>TSRShadingAnalysis.ush</code></td><td>644</td><td><code>MeasureRejection</code> / 滤波算子 / <code>ShouldSpatialAntiAlias</code></td></tr>
+<tr><td><code>TSRColorSpace.ush</code></td><td>293</td><td>HDR 加权、亮度、曝光校正</td></tr>
+<tr><td><code>TemporalSuperResolution.cpp</code></td><td>~958–1078</td><td><code>FTSRRejectShadingCS</code> 声明与 dispatch</td></tr></table></div></section>
+
+</main></body></html>
