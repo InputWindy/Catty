@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>UE5.8 渲染方案源码解析 · 文档集首页</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}
+header{padding:40px 36px 28px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#161d2a,#0e131b 60%,#10141c)}
+h1{margin:0 0 12px;font-size:36px;letter-spacing:.02em}
+.subtitle{color:var(--muted);max-width:1180px;line-height:1.8}
+.subtitle b{color:#dbe8f6}
+main{padding:26px 36px 90px;max-width:1320px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 24px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}
+.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}
+.body{padding:20px}
+.stat{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 4px}
+.stat .pill{padding:8px 14px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;font-size:14px}
+.stat .pill b{color:#fff;font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(320px,1fr));gap:18px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.book{position:relative;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;background:linear-gradient(160deg,#131a24,#0e131b);padding:0;overflow:hidden;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s,box-shadow .15s}
+.book:hover{transform:translateY(-3px);box-shadow:0 16px 34px rgba(0,0,0,.34)}
+.book .accent{height:6px;width:100%}
+.book .inner{padding:20px 22px 22px}
+.book .eyebrow{display:inline-block;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;color:var(--muted);letter-spacing:.06em;margin:0 0 8px}
+.book h3{margin:0 0 4px;font-size:22px;color:#eaf2ff}
+.book .en{color:var(--muted);font-family:Consolas,"Cascadia Mono",monospace;font-size:13px}
+.book p{margin:12px 0 14px;color:#c6d4e2;line-height:1.8;font-size:14px}
+.book .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:auto}
+.book .chip{padding:5px 11px;border-radius:999px;background:#0c141d;border:1px solid var(--line);color:#cfe4ff;font-size:12.5px}
+.book .go{display:inline-flex;align-items:center;gap:8px;margin-top:15px;padding:9px 15px;border-radius:999px;border:1px solid rgba(102,227,224,.4);color:#bdf1ef;font-size:14px;font-weight:600;width:max-content}
+.book:hover .go{border-color:var(--cyan);color:#fff}
+.b-nanite .accent{background:linear-gradient(90deg,var(--orange),var(--yellow))}
+.b-nanite .eyebrow{color:var(--orange)}
+.b-vt .accent{background:linear-gradient(90deg,var(--green),var(--cyan))}
+.b-vt .eyebrow{color:var(--green)}
+.b-lumen .accent{background:linear-gradient(90deg,var(--purple),var(--blue))}
+.b-lumen .eyebrow{color:var(--purple)}
+.b-ml .accent{background:linear-gradient(90deg,var(--pink),var(--red))}
+.b-ml .eyebrow{color:var(--pink)}
+.flow{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px}
+@media(max-width:900px){.flow{grid-template-columns:1fr 1fr}}
+.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:14px;min-height:96px}
+.node strong{display:block;margin-bottom:6px;font-size:14.5px}
+.node small{color:var(--muted);font-size:12.5px}
+.n-geo{border-color:var(--orange)}.n-tex{border-color:var(--green)}.n-gi{border-color:var(--purple)}.n-light{border-color:var(--pink)}
+.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}
+.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}
+.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}
+.note a,.book-inline a{color:#9ee8ff}
+.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}
+footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
+</style></head><body>
+<header>
+<h1>UE5.8 渲染方案源码解析 · 文档集</h1>
+<div class="subtitle">这是一套对照 <b>UE5.8 本地源码</b>逐层解析的渲染方案学习文档，目前覆盖四大子系统：<b>Nanite</b>（虚拟化几何）、<b>虚拟纹理</b>（三种"数据大于显存"的流送范式）、<b>Lumen</b>（实时全局光照）、<b>MegaLights</b>（多光源阴影解耦）。每个主题都含一份<span style="color:var(--green)">主文档</span>（设计动机 + 数据流骨架 + 分阶段源码批注）与一份<span style="color:var(--cyan)">函数附录</span>（类 / 函数 / CVar / 结构体 / 常量细节）。所有符号名、常量、CVar 默认值均取自 UE5.8 源码，非二手转述。</div>
+</header>
+<main>
+
+<section class="card"><h2>文档集规模</h2><div class="body">
+<div class="stat">
+<span class="pill"><b>4</b> 本书</span>
+<span class="pill"><b>64</b> 个主题</span>
+<span class="pill"><b>128</b> 篇正文（主文档 + 附录）</span>
+<span class="pill">对照 <b>UE 5.8</b> 源码</span>
+</div>
+</div></section>
+
+<section class="card"><h2>四本书 · 从几何到光照的一条主线</h2><div class="body">
+<div class="grid">
+
+<a class="book b-nanite" href="Nanite/UE_Nanite_解析_总目录.html"><div class="accent"></div><div class="inner">
+<span class="eyebrow">GEOMETRY · 虚拟化几何</span>
+<h3>UE Nanite 源码解析</h3>
+<div class="en">Cluster / LOD DAG · Streaming · Cull &amp; Raster · Shading</div>
+<p>让美术直接用电影级密度网格，引擎运行时做<b>像素级 LOD</b>。横跨离线构建（切簇、建 DAG、编码 GPU 页）、运行时 GPU 驱动管线（流送、两趟剔除、软/硬光栅到 visibility buffer、延迟着色）与专项扩展（可编程光栅、VSM 阴影、光追、体素）。</p>
+<div class="meta"><span class="chip">11 主题 · 23 篇</span><span class="chip">上/中/下三篇</span><span class="chip">运行时心脏 #6</span></div>
+<span class="go">进入总目录 →</span>
+</div></a>
+
+<a class="book b-vt" href="VirtualTexture/UE_VirtualTexture_解析_总目录.html"><div class="accent"></div><div class="inner">
+<span class="eyebrow">TEXTURE · 数据大于显存</span>
+<h3>UE 虚拟纹理源码解析</h3>
+<div class="en">Texture Streaming · Virtual Texture · Clipmap</div>
+<p>当纹理数据<b>远大于显存</b>时，只把当前需要的一小部分放进显存。本书并列对比三种范式：整层 Mip 流送、页表式 Virtual Texture（GPU 反馈按需分页）、以相机为中心的 Clipmap（阴影/距离场/GI 常用）。</p>
+<div class="meta"><span class="chip">9 主题 · 19 篇</span><span class="chip">三范式对照</span><span class="chip">页表式流送</span></div>
+<span class="go">进入总目录 →</span>
+</div></a>
+
+<a class="book b-lumen" href="Lumen/UE_GI_Lumen_解析_总目录.html"><div class="accent"></div><div class="inner">
+<span class="eyebrow">GLOBAL ILLUMINATION · 实时全局光照</span>
+<h3>UE Lumen GI 源码解析</h3>
+<div class="en">Scene 表示 · 漫反射 GI / 反射 / 体积 · Composite</div>
+<p>UE5 的实时全局光照方案，篇幅最大。按数据流分层组织：底层每帧更新世界表示与缓存，中层由漫反射 GI / 镜面反射 / 半透明体积多条链路各自采样，顶层 Composite 合入画面，调试系统横切复用全部数据。</p>
+<div class="meta"><span class="chip">38 主题 · 77 篇</span><span class="chip">篇幅最大</span><span class="chip">数据流分层</span></div>
+<span class="go">进入总目录 →</span>
+</div></a>
+
+<a class="book b-ml" href="MegaLights/UE_MegaLights_解析_总目录.html"><div class="accent"></div><div class="inner">
+<span class="eyebrow">MANY LIGHTS · 多光源阴影解耦</span>
+<h3>UE MegaLights 源码解析</h3>
+<div class="en">Sampling · RT Visibility · Denoise · Volume</div>
+<p>用<b>随机采样 + 光线追踪可见性 + 时空去噪</b>，让"阴影投射光源"的开销与场景光源数量<b>解耦</b>。每像素固定抽几个光源样本、追光线求可见性，再靠时域累积 + 空间滤波把噪声磨平。按 GPU 单帧执行顺序组织。</p>
+<div class="meta"><span class="chip">6 主题 · 13 篇</span><span class="chip">开销与光源数解耦</span><span class="chip">时空去噪</span></div>
+<span class="go">进入总目录 →</span>
+</div></a>
+
+</div></div></section>
+
+<section class="card"><h2>一眼看懂：四本书在渲染管线里的位置</h2><div class="body">
+<div class="flow">
+<div class="node n-geo"><strong>① 几何 Geometry</strong><small><b>Nanite</b> 提供高密度几何，像素级 LOD，输出 visibility buffer 与延迟材质 GBuffer</small></div>
+<div class="node n-tex"><strong>② 纹理 Texture</strong><small><b>虚拟纹理</b> 解决"纹理 > 显存"：页表式按需流送 + Clipmap，喂给材质采样</small></div>
+<div class="node n-gi"><strong>③ 全局光照 GI</strong><small><b>Lumen</b> 用 Nanite fallback mesh 做软件光追，算漫反射 GI / 反射 / 体积光照</small></div>
+<div class="node n-light"><strong>④ 多光源 Lights</strong><small><b>MegaLights</b> 让大量阴影投射光源的开销与数量解耦，与上述系统同帧协作</small></div>
+</div>
+<p style="color:var(--muted);margin:16px 0 0">四本书是<b>并列的四套渲染方案</b>，各有独立总目录，可单独阅读；但它们共享同一套 UE5 渲染世界观，交汇点见下。</p>
+</div></section>
+
+<section class="card"><h2>四本书的交汇点 · 同一套渲染世界观</h2><div class="body"><div class="note book-inline">
+<h3>三处关键连接，串起整个 UE5 渲染</h3>
+<p><b>① 页流送范式（Nanite ↔ 虚拟纹理）：</b>Nanite 的 <span class="inline">#4 流送</span>（几何页）与虚拟纹理书的<b>页表式流送</b>（纹理页）是同一种"数据 > 显存、按需分页进物理池、GPU 反馈驱动请求"的范式——一个流几何、一个流纹理，读完一个再看另一个会非常通透。</p>
+<p><b>② VSM 阴影（Nanite ↔ 虚拟纹理 ↔ MegaLights）：</b>Nanite 的 <span class="inline">#9 阴影</span>直接复用虚拟纹理书 <b>VSM Clipmap</b> 篇的 clipmap 结构——Nanite 提供几何、VSM 提供页表，每个阴影视图就是一个 Nanite view（<span class="inline">NANITE_MAX_VIEWS_PER_CULL_RASTERIZE_PASS = 4096</span> 多视图批处理）。</p>
+<p><b>③ 几何是光照的输入（Nanite → Lumen）：</b>Nanite 提供的高密度几何是 Lumen（软件光追走 Nanite fallback mesh）与整个延迟管线的输入；MegaLights 的光追可见性也在这套几何上求交。建议顺序：先 <b>Nanite 主干（#1~#7）</b>建立几何与延迟着色的直觉，再看虚拟纹理理解流送，然后 Lumen / MegaLights 理解光照。</p>
+</div></div></section>
+
+</main>
+<footer>UE5.8 渲染方案源码解析文档集 · 所有符号名、常量、CVar 默认值均取自 UE5.8 本地源码 · 每主题含主文档（设计动机 + 数据流 + 源码批注）与函数附录（类 / 函数 / CVar / 结构体）。</footer>
+</body></html>
