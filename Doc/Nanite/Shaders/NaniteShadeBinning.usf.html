@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteShadeBinning.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-purple{border-left-color:var(--purple);background:rgba(182,156,255,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.embedded-source{width:100%;height:640px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Shading_ConvergenceAnnotated.html">← 回到 #7 Visibility Buffer 与材质着色</a></div>
+<h1>NaniteShadeBinning.usf 汇聚/发散批注版</h1><div class="subtitle">shade binning 的 GPU 实现：把每像素的材质槽（ShadingMask）<b>按材质分箱</b>成连续列表——一个 GPU 版计数排序。三趟 COUNT / RESERVE / SCATTER <b>共用同一个文件</b>，靠 <span class="inline">SHADING_BIN_PASS</span> 宏切成三个变体（汇聚），各趟职责不同（发散）。<b>说明：本文件完整 1181 行，含大量平台 CMask 写掩码优化 / VRS / VALIDATE / CMASK_CLEAR 分支；下方源码框内嵌</b>三趟的<b>核心内核</b>（COUNT 的 <span class="inline">AllocateElements</span>/<span class="inline">ShadingBinBuildCS</span> 与 RESERVE 的 <span class="inline">ShadingBinReserveCS</span>），逐行真实、略去平台分支。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：三趟计数排序</h2><div class="body flow">
+<div class="node merge"><strong>输入</strong><small>ShadingMask（#6 每像素材质槽）</small></div>
+<div class="arrow">▶</div>
+<div class="node branch"><strong>① COUNT</strong><small>数每个 bin 覆盖多少像素（wave/group 前缀和 + InterlockedAdd）</small></div>
+<div class="arrow">▶</div>
+<div class="node branch"><strong>② RESERVE</strong><small>按计数为每 bin 分配连续范围 + 写每 bin 的 indirect dispatch args</small></div>
+<div class="arrow">▶</div>
+<div class="node branch"><strong>③ SCATTER</strong><small>把每像素落进其 bin 的连续区间</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>输出</strong><small>按材质连续的像素列表 + ShadingDispatchArgs</small></div>
+</div></section>
+
+<section class="card"><h2>核心内核源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（1181 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/Nanite/NaniteShadeBinning.usf · AllocateElements L258 / ShadingBinBuildCS L941 / ShadingBinReserveCS L958</span>
+<textarea class="embedded-source" readonly spellcheck="false">// ============ COUNT 的核心：wave/group 前缀和 + 原子累加各 bin 计数 ============
+void AllocateElements(uint Bin, uint ThreadIndex, uint QuadFullTileCount, uint QuadLooseCount, inout uint FullTileDataOffset, inout uint LooseDataOffset)
+{
+	uint WaveFullTileCount;
+	uint WaveLooseCount;
+	uint WaveFullTileCount_LooseCount;
+	uint PrefixFullTileCount_LooseCount;
+
+	if (bQuadMode)
+	{
+		WaveFullTileCount	= WaveActiveCountBits(QuadFullTileCount != 0);
+		WaveLooseCount		= WaveActiveCountBits(QuadLooseCount != 0);
+
+		FullTileDataOffset	= WavePrefixCountBits(QuadFullTileCount != 0);
+		LooseDataOffset		= WavePrefixCountBits(QuadLooseCount != 0);
+
+		WaveFullTileCount_LooseCount	= (WaveLooseCount << 16) | WaveFullTileCount;
+		PrefixFullTileCount_LooseCount	= (LooseDataOffset << 16) | FullTileDataOffset;
+	}
+	else
+	{
+		const uint FullTileCount_LooseCount = (QuadLooseCount << 16) | QuadFullTileCount;
+		PrefixFullTileCount_LooseCount	= WavePrefixSum(FullTileCount_LooseCount);
+		WaveFullTileCount_LooseCount	= WaveReadLaneAt(PrefixFullTileCount_LooseCount + FullTileCount_LooseCount, WaveGetLaneCount() - 1u);
+
+		WaveFullTileCount		= (WaveFullTileCount_LooseCount &amp; 0xFFFFu);
+		WaveLooseCount			= (WaveFullTileCount_LooseCount >> 16);
+		FullTileDataOffset		= (PrefixFullTileCount_LooseCount &amp; 0xFFFFu);
+		LooseDataOffset			= (PrefixFullTileCount_LooseCount >> 16);
+	}
+
+	uint TotalElements;
+	if (bSingleWave)
+	{
+		uint WaveFullTileOffset = 0;
+		uint WaveLooseOffset = 0;
+		BRANCH
+		if (WaveIsFirstLane())
+		{
+			// 每个 wave 只做一次原子加，把 wave 内计数汇总到该 bin 的全局计数器
+			InterlockedAdd(OutShadingBinScatterCounters[Bin].FullTileElementCount, WaveFullTileCount, WaveFullTileOffset);
+			InterlockedAdd(OutShadingBinScatterCounters[Bin].LooseElementCount, WaveLooseCount, WaveLooseOffset);
+		}
+		FullTileDataOffset += WaveReadLaneFirst(WaveFullTileOffset);
+		LooseDataOffset += WaveReadLaneFirst(WaveLooseOffset);
+		TotalElements = WaveFullTileCount + WaveLooseCount;
+	}
+	else
+	{
+		// 多 wave：先在 group 内汇总（groupshared + barrier），再一次原子加到全局
+		uint WaveFullTileOffset_LooseOffset = 0;
+		BRANCH
+		if (WaveIsFirstLane())
+			InterlockedAdd(GroupFullTileCount_LooseCount, WaveFullTileCount_LooseCount, WaveFullTileOffset_LooseOffset);
+		GroupMemoryBarrierWithGroupSync();
+
+		const uint TotalFullTileCount = GroupFullTileCount_LooseCount &amp; 0xFFFF;
+		const uint TotalLooseCount = GroupFullTileCount_LooseCount >> 16;
+		TotalElements = TotalFullTileCount + TotalLooseCount;
+
+		BRANCH
+		if (ThreadIndex == 0)
+		{
+			InterlockedAdd(OutShadingBinScatterCounters[Bin].FullTileElementCount, TotalFullTileCount, GroupFullTileOffset);
+			InterlockedAdd(OutShadingBinScatterCounters[Bin].LooseElementCount, TotalLooseCount, GroupLooseOffset);
+		}
+		GroupMemoryBarrierWithGroupSync();
+
+		FullTileDataOffset += GroupFullTileOffset + (WaveReadLaneFirst(WaveFullTileOffset_LooseOffset) &amp; 0xFFFFu);
+		LooseDataOffset += GroupLooseOffset + (WaveReadLaneFirst(WaveFullTileOffset_LooseOffset) >> 16);
+		GroupMemoryBarrierWithGroupSync();
+	}
+}
+
+// ============ COUNT 趟入口：一个 tile 一个线程组，Z-order 遍历像素做分箱 ============
+[numthreads(SHADING_BIN_TILE_THREADS, 1, 1)]
+void ShadingBinBuildCS(uint ThreadIndex : SV_GroupIndex, uint2 GroupId : SV_GroupID)
+{
+	uint2 Coord = GroupId.xy * SHADING_BIN_TILE_SIZE;
+	Coord += ZOrder2D(ThreadIndex, 3);
+
+	const bool bSingleWave = WaveGetLaneCount() >= SHADING_BIN_TILE_THREADS;	// 编译期常量
+	BRANCH
+	if(bSingleWave)
+		BinShadingQuad<true>(Coord, ThreadIndex);
+	else
+		BinShadingQuad<false>(Coord, ThreadIndex);
+}
+
+// ============ RESERVE 趟入口：一个 bin 一个线程，定范围 + 写 indirect dispatch args ============
+[numthreads(64, 1, 1)]
+void ShadingBinReserveCS(uint ShadingBin : SV_DispatchThreadID)
+{
+	if (ShadingBin >= ShadingBinCount)
+		return;
+
+	const FNaniteShadingBinMeta ShadingBinMeta = GetShadingBinMeta(ShadingBin);
+	const FNaniteMaterialFlags MaterialFlags = UnpackNaniteMaterialFlags(ShadingBinMeta.MaterialFlags);
+
+	uint BinPixelCount;
+	if (MaterialFlags.bNoDerivativeOps)   // 无导数材质：按 loose 像素粒度
+	{
+		BinPixelCount = OutShadingBinScatterCounters[ShadingBin].LooseElementCount;
+		if (BinPixelCount > 0)
+		{
+			uint RangeStart;
+			InterlockedAdd(OutShadingBinAllocator[0], BinPixelCount, RangeStart);   // 全局分配连续区间
+			OutShadingBinData.Store(GetShadingBinMetaOffset() + (ShadingBin * NANITE_SHADING_BIN_META_BYTES) + NANITE_SHADING_BIN_META_RANGE_START_OFFSET, RangeStart);
+			OutShadingBinData.Store(GetShadingBinMetaOffset() + (ShadingBin * NANITE_SHADING_BIN_META_BYTES) + NANITE_SHADING_BIN_META_ELEMENT_COUNT_OFFSET, BinPixelCount);
+			OutShadingBinScatterRanges[ShadingBin].RangeStart = RangeStart;
+			OutShadingBinScatterRanges[ShadingBin].RangeNum = BinPixelCount;
+			OutShadingBinScatterCounters[ShadingBin].LooseElementCount = 0;
+			OutShadingBinScatterCounters[ShadingBin].FullTileElementCount = 0;
+		}
+	}
+	else   // 常规材质：按 quad 粒度（4 像素/quad，含 helper lane）
+	{
+		const uint BinQuadCount = OutShadingBinScatterCounters[ShadingBin].LooseElementCount;
+		if (BinQuadCount > 0)
+		{
+			uint RangeStart;
+			InterlockedAdd(OutShadingBinAllocator[0], BinQuadCount * 2, RangeStart);
+			// ... 同上：写 range start / count / ranges，清零计数器 ...
+		}
+		BinPixelCount = BinQuadCount * 4u;
+	}
+
+	// 为该 bin 生成 indirect dispatch args：ThreadGroupCountX = ceil(BinPixelCount / GroupSize)
+	uint4 Args;
+	Args.x = DivideAndRoundUp(BinPixelCount, COMPUTE_MATERIAL_GROUP_SIZE);
+	Args.y = 1u; Args.z = 1u; Args.w = 0u;
+	OutShadingDispatchArgs.Store4(ShadingBin * 16u, Args);
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 输入输出契约</h2><div class="body grid2"><pre><code><span class="code-line blue">Texture2D&lt;uint&gt; ShadingMask;                      // 输入：#6 每像素材质槽</span>
+<span class="code-line green">RWByteAddressBuffer OutShadingBinData;             // 输出：meta + 按材质连续的像素列表</span>
+<span class="code-line green">RWStructuredBuffer&lt;...ScatterCounters&gt; OutShadingBinScatterCounters; // 每 bin 计数器</span>
+<span class="code-line green">RWStructuredBuffer&lt;...ScatterRanges&gt;   OutShadingBinScatterRanges;   // 每 bin 连续区间</span>
+<span class="code-line green">RWBuffer OutShadingDispatchArgs;                   // 每 bin 的 indirect dispatch args</span>
+<span class="code-line yellow">#define SHADING_BIN_PASS  → COUNT / RESERVE / SCATTER / VALIDATE / CMASK_CLEAR ...</span></code></pre><div class="note n-blue"><h3>说明</h3><p>唯一实质输入是 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a> 写的 <span class="inline">ShadingMask</span>（每像素一个 shading bin 号）。输出的 <span class="inline">ShadingBinData</span> + <span class="inline">ShadingDispatchArgs</span> 正是 CPU 侧 <a href="../Chapters/Shading_ConvergenceAnnotated.html" class="inline">#7</a> 拿去做逐材质 indirect dispatch 的依据。</p></div></div></section>
+
+<section class="card"><h2>1. 汇聚点：一个文件，三趟复用</h2><div class="body grid2"><pre><code><span class="code-line yellow">#define SHADING_BIN_COUNT   (SHADING_BIN_PASS == NANITE_SHADING_BIN_COUNT)</span>
+<span class="code-line yellow">#define SHADING_BIN_RESERVE (SHADING_BIN_PASS == NANITE_SHADING_BIN_RESERVE)</span>
+<span class="code-line yellow">#define SHADING_BIN_SCATTER (SHADING_BIN_PASS == NANITE_SHADING_BIN_SCATTER)</span>
+<span class="code-line orange">#if SHADING_BIN_COUNT ... ShadingBinBuildCS</span>
+<span class="code-line orange">#elif SHADING_BIN_RESERVE ... ShadingBinReserveCS</span>
+<span class="code-line orange">#elif SHADING_BIN_SCATTER ... ShadingBinScatterCS</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span>三趟是<b>同一份 .usf</b> 用 <span class="inline">SHADING_BIN_PASS</span> 宏编译出的三个 CS 变体，共享 <span class="inline">GetShadingBinMeta</span>、<span class="inline">OutShadingBinScatterCounters</span> 等符号——这与 CPU 侧 <a href="../Chapters/Shading_ConvergenceAnnotated.html" class="inline">#7</a> "同一 <span class="inline">FShadingBinBuildCS</span> 三个 permutation" 完全对应。</p><p><span class="note-label diff">不同点</span>COUNT 只写计数器；RESERVE 定范围 + 写 dispatch args；SCATTER 落位像素。</p></div></div></section>
+
+<section class="card"><h2>2. COUNT：wave/group 前缀和 + 原子累加</h2><div class="body grid2"><pre><code><span class="code-line cyan">WaveFullTileCount = WaveActiveCountBits(QuadFullTileCount != 0);  // wave 内计数</span>
+<span class="code-line cyan">FullTileDataOffset = WavePrefixCountBits(...);                    // wave 内前缀偏移</span>
+<span class="code-line yellow">if (WaveIsFirstLane())                                           // 每 wave 只一次原子</span>
+<span class="code-line yellow">    InterlockedAdd(OutShadingBinScatterCounters[Bin].FullTileElementCount, WaveFullTileCount, ...);</span>
+<span class="code-line orange">// 多 wave 时先 group 内汇总（groupshared + GroupMemoryBarrierWithGroupSync）再一次原子</span></code></pre><div class="note n-green"><h3>说明</h3><p>关键优化：<b>不是每个像素各做一次原子加</b>（会把计数器挤爆），而是先在 wave 内用 <span class="inline">WaveActiveCountBits</span>/<span class="inline">WavePrefixCountBits</span> 归约，<b>每个 wave 只对全局计数器做一次 <span class="inline">InterlockedAdd</span></b>；跨多 wave 的线程组再用 groupshared 汇总后只做一次。像素分两类：<b>full tile</b>（整块 tile 同材质，压缩存）与 <b>loose</b>（零散像素），分别计数。</p></div></div></section>
+
+<section class="card"><h2>3. RESERVE：定范围 + 生成 indirect args</h2><div class="body grid2"><pre><code><span class="code-line yellow">InterlockedAdd(OutShadingBinAllocator[0], BinPixelCount, RangeStart);  // 全局连续分配</span>
+<span class="code-line green">OutShadingBinScatterRanges[ShadingBin].RangeStart = RangeStart;</span>
+<span class="code-line green">OutShadingBinScatterRanges[ShadingBin].RangeNum   = BinPixelCount;</span>
+<span class="code-line yellow">Args.x = DivideAndRoundUp(BinPixelCount, COMPUTE_MATERIAL_GROUP_SIZE);  // 每 bin 的 group 数</span>
+<span class="code-line green">OutShadingDispatchArgs.Store4(ShadingBin * 16u, Args);</span></code></pre><div class="note n-green"><h3>说明</h3><p>一个 bin 一个线程。用 COUNT 算出的计数，向全局分配器 <span class="inline">OutShadingBinAllocator</span> 原子申请一段连续区间（RangeStart/RangeNum），写进 meta；<b>顺便生成该 bin 的 indirect dispatch 参数</b>——<span class="inline">ThreadGroupCountX = ceil(BinPixelCount / COMPUTE_MATERIAL_GROUP_SIZE)</span>。<a href="../Chapters/Shading_ConvergenceAnnotated.html" class="inline">#7</a> 逐材质着色时就是 indirect 读这个 args，一个 bin 一次 dispatch。无导数材质走 loose 像素粒度、常规材质走 quad（×4 像素）粒度。</p></div></div></section>
+
+<section class="card"><h2>4. SCATTER：像素落位</h2><div class="body"><div class="note"><h3>说明</h3><p>第三趟 <span class="inline">SHADING_BIN_SCATTER</span> 复用 <span class="inline">BinShadingQuad</span> 的遍历，但这次把每个像素/quad <b>写入</b> RESERVE 定好的 bin 区间里（用 <span class="inline">OutShadingBinScatterCounters</span> 作为区间内游标，原子自增取位）。三趟跑完，<span class="inline">ShadingBinData</span> 里就是一张<b>按材质连续排列的像素列表</b>——这正是经典 counting sort 的 count→reserve(prefix)→scatter 三步在 GPU 上的落地。</p></div></div></section>
+
+<section class="card"><h2>汇聚/发散总表</h2><div class="body"><table class="table"><tr><th>层级</th><th>类型</th><th>代表符号</th></tr>
+<tr><td>一个文件三变体</td><td>汇聚</td><td>SHADING_BIN_PASS 宏</td></tr>
+<tr><td>输入</td><td>汇聚</td><td>ShadingMask（#6）</td></tr>
+<tr><td>COUNT</td><td>发散</td><td>AllocateElements / WaveActiveCountBits / InterlockedAdd 计数</td></tr>
+<tr><td>RESERVE</td><td>发散</td><td>OutShadingBinAllocator / ScatterRanges / DispatchArgs</td></tr>
+<tr><td>SCATTER</td><td>发散</td><td>像素写入 bin 区间</td></tr>
+<tr><td>输出</td><td>汇聚</td><td>ShadingBinData + ShadingDispatchArgs（→ #7）</td></tr></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>一份 .usf、三趟（COUNT→RESERVE→SCATTER），就是 GPU 计数排序。核心工程点：用 wave/group 归约把海量像素的原子加压到"每 wave/每 group 一次"，避免计数器争用。</p></div><div class="note"><h3>阅读建议</h3><p>先看 <a href="../Chapters/Shading_ConvergenceAnnotated.html" class="inline">#7</a> 的 CPU 编排（AddPass 三次、只改 FBuildPassDim），再回到这里看每趟 GPU 侧做什么。full tile / loose 两类粒度是理解计数与落位的关键。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Shading_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#7 Visibility Buffer 与材质着色（CPU 侧编排本 shader）</a>
+<a class="tag" href="NaniteExportGBuffer.usf.html"><span class="dot" style="background:var(--cyan)"></span>NaniteExportGBuffer.usf（写 ShadingMask + 逐材质导出 G-Buffer）↗</a>
+<a class="tag" href="../Chapters/CullRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#6 集群剔除与两路光栅（产出 ShadingMask）</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/共同点：/g, '<span class="note-label common">共同点</span>')
+    .replace(/不同点：/g, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body>
+</html>
