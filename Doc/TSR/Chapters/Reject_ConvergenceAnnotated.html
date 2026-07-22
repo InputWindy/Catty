@@ -13,24 +13,42 @@
 <div class="note red"><h3>不能简单做邻域 min/max clamp</h3><p>老式 TAA 的抗鬼影是<b>邻域颜色包围盒 clamp</b>：把重投影历史 clamp 到当前帧 3×3 邻域的颜色 min/max 盒子里。简单但粗暴——盒子太紧会丢历史（变糊、闪），太松挡不住鬼影。TSR 的 <span class="inline">RejectShading</span> 换了思路：<b>对"历史引导"和"当前输入"分别做同一套卷积滤波，比较滤波后两者的能量差</b>，差得越多说明着色变化越剧烈、历史越不可信，拒绝权重越高。这是一套连续、空间平滑的启发式，而非硬 clamp。UE5.8 更进一步把这套启发式实现成<b>卷积网络</b>（见 #7），<span class="inline">FTSRRejectShadingCS</span> 直接继承 <span class="inline">FTSRConvolutionNetworkShader</span>。</p></div></div></section>
 
 <section class="card"><h2>MeasureRejection：拒绝启发式的核心 <span class="en">TSRShadingAnalysis.ush</span></h2><div class="body">
-<p>核心函数 <span class="inline">MeasureRejection</span> 的逻辑骨架（简化自源码 494 行起）：</p>
-<div class="codebox"><span class="c">// 1. 对滤波后的历史做邻域 clamp，得到"被约束后的历史"</span>
+<p>核心函数 <span class="inline">MeasureRejection</span> 的完整骨架（取自源码 <span class="inline">~340–377</span> 行，保留真实符号）：</p>
+<div class="codebox"><span class="c">// 1. 用当前输入 3×3 邻域的 min/max 建“颜色包围盒”</span>
+MinMax3x3(Concatenate(FilteredInput, InputC2), <span class="c">/*out*/</span> Min, <span class="c">/*out*/</span> Max);
+tsr_tensor_half FilteredBoxMin = Min[<span class="s">0</span>], FilteredBoxMax = Max[<span class="s">0</span>];
+<span class="c">// 2. ClampError：量化误差 + （响应模式）总变差 + 盒尺寸×滤波权，把盒撑宽</span>
+ClampError = max(BackbufferQuantizationErrorVector, InputC2BoxSize * (FilteringWeight * <span class="s">0.25</span>)) + BackbufferQuantizationErrorVector;
+FilteredBoxMin -= ClampError;  FilteredBoxMax += ClampError;
+<span class="c">// 3. 把重投影历史 clamp 进盒子</span>
+tsr_tensor_half ClampedFilteredHistory = fastClamp(FilteredHistory, FilteredBoxMin, FilteredBoxMax);
+<span class="c">// 4. Delta：归一化尺度 = max(历史与输入的差, 盒尺寸)，自适应容忍度</span>
+tsr_tensor_half Delta = max(abs(FilteredInput - FilteredHistory), BoxSize);
+<span class="c">// 5. clamp 改动量→能量，改动越大 → 历史越不可信</span>
 tsr_tensor_half RawClampedEnergy = abs(ClampedFilteredHistory - FilteredHistory);
-<span class="c">// 2. clamp 改动越大 → 历史与当前差越多 → 拒绝越强。除以 Delta 归一化</span>
-tsr_tensor_half RawRejection = saturate(<span class="s">1.0</span> - max(RawClampedEnergy, <span class="s">0.0</span>) * rcp(Delta));
-<span class="c">// 3. 空间滤波：Median3x3 去噪 + MaxRMinG3x3 形态学，避免单像素噪点乱拒绝</span>
+tsr_tensor_half RawRejection     = saturate(<span class="s">1.0</span> - max(RawClampedEnergy, <span class="s">0.0</span>) * rcp(Delta));
+<span class="c">// 6. 空间滤波：Median3x3 去噪 + MaxRMinG3x3 形态学，防单像素噪点乱拒绝</span>
 Deconcatenate(MaxRMinG3x3(Median3x3(Concatenate(RawClampedEnergy, RawRejection))),
-              /* out */ FilteredClampedEnergy, /* out */ OutRejectionClampBlend);
-<span class="c">// 4. 最终拒绝权重（连续 [0,1]）</span>
+              <span class="c">/*out*/</span> FilteredClampedEnergy, <span class="c">/*out*/</span> OutRejectionClampBlend);
+<span class="c">// 7. 最终拒绝权重（连续 [0,1]）</span>
 OutRejectionBlendFinal = saturate(<span class="s">1.0</span> - max(FilteredClampedEnergy, <span class="s">0.0</span>) * rcp(Delta));</div>
 <div class="flow">
-<div class="node branch"><span class="step">1</span><strong>滤波</strong><small>对历史引导与当前输入各跑卷积滤波（低通 + 形态学），压掉抖动噪声</small></div>
+<div class="node branch"><span class="step">1</span><strong>建包围盒</strong><small>当前输入 3×3 min/max → <code>FilteredBoxMin/Max</code></small></div>
 <div class="arrow">▶</div>
-<div class="node gate"><span class="step">2</span><strong>Clamp 能量</strong><small>把滤波历史 clamp 到当前邻域，测量"被改动了多少"（<code>ClampedEnergy</code>）</small></div>
+<div class="node gate"><span class="step">2</span><strong>撑宽+Clamp</strong><small>加 <code>ClampError</code> 撑宽盒子，再把历史 clamp 进去，测改动量</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><span class="step">3</span><strong>归一化+空间平滑</strong><small><code>1 - Energy/Delta</code>，再 Median/形态学滤波 → <code>RejectionBlendFinal</code></small></div>
+<div class="node func"><span class="step">3</span><strong>归一化+平滑</strong><small><code>1 - Energy/Delta</code>，Median→MaxRMinG → <code>RejectionBlendFinal</code></small></div>
 </div>
-<div class="note blue"><h3>Delta：拒绝的"容忍度"</h3><p><span class="inline">Delta</span> 是归一化尺度——它决定"多大的着色差异算作历史失效"。Delta 由输入的对比度、曝光、量化误差（<span class="inline">HistoryGuideQuantizationError</span> / <span class="inline">SceneColorOutputQuantizationError</span>）等共同决定：<b>本来就该有的差异（量化噪声、HDR 高光的正常波动）不该触发拒绝</b>。这就是为什么 TSR 要在感知均匀的颜色空间里做这件事，且要补偿量化误差——避免把"正常的数值噪声"误判成"着色变化"。</p></div></div></section>
+<div class="note blue"><h3>Delta 与 ClampError：拒绝的“双重容忍度”</h3><p>这里有<b>两层容忍度</b>：① <span class="inline">ClampError</span> 撑宽“包围盒”本身（量化误差 <span class="inline">BackbufferQuantizationErrorVector</span> + 盒尺寸×<span class="inline">FilteringWeight</span>），让盒子宽到足以容纳“本来就该有的差异”；② <span class="inline">Delta = max(|输入−历史|, BoxSize)</span> 是归一化分母，决定“多大的 clamp 改动算作彻底失效”。两者都以 <span class="inline">BoxSize = InputC2BoxSize×FilteringWeight + 2×FilteringWeight×量化误差</span> 为尺度——<b>对比度高的区域盒大、容忍度高；平坦区域盒小、一点变化就拒</b>。这就是为什么高频细节（盒大）能稳定累积，而平滑墙面上一点鬼影就会被抹掉。</p></div></div></section>
+
+<section class="card"><h2>两种拒绝模式：Responsive 与常规 <span class="en">RejectShadingMode</span></h2><div class="body">
+<p>拒绝有两个档位（<span class="inline">RejectShadingMode</span>）。当处于 <span class="inline">REJECT_SHADING_RESPONSIVE</span>（响应式，用于需要快速跟随变化的物体）时，<span class="inline">ClampError</span> 额外叠加一项<b>总变差（total variation）</b>：</p>
+<div class="codebox"><span class="k">if</span> (RejectShadingMode == REJECT_SHADING_RESPONSIVE) {
+  Deconcatenate(abs(TotalVariation3x3(Concatenate(abs(InputC0 - InputC2), InputC2))),
+                <span class="c">/*out*/</span> TotalVarInputDiffC0C2, <span class="c">/*out*/</span> TotalVarInputC2);
+  ClampError = max(ClampError, Blur3x3(min(TotalVarInputDiffC0C2, TotalVarInputC2)));
+}</div>
+<div class="note"><h3>为什么要“响应式”这个档</h3><p>某些内容（快速变化的粒子、UI、高动态物体）宁可<b>少信历史、多信当前帧</b>，以免拖影。响应式模式把“局部总变差”加进容忍度（实际上是把盒子撑得更宽），使这些区域对历史变化更宽容、更快跟随新帧。常规模式则优先稳定（多信历史）。</p></div></div></section>
 
 <section class="card"><h2>颜色空间：在感知均匀的地方比较 <span class="en">TSRColorSpace.ush</span></h2><div class="body">
 <p>直接在线性 HDR 空间比颜色差是不行的：一个 1000 尼特的高光波动 10 尼特，和一个 1 尼特暗部波动 10 尼特，数值差相同，但人眼感知天差地别。TSR 用 <span class="inline">HdrWeight</span> 系列函数把颜色映射到<b>感知/HDR 加权空间</b>再比较：</p>

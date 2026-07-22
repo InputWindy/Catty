@@ -19,6 +19,22 @@
 </div>
 <div class="note red"><h3>为什么被拒的像素需要空间 AA 兜底</h3><p>时序抗锯齿的锯齿消除，靠的是<b>多帧不同 jitter 采样的累积</b>。可一旦某像素历史被 #4 判为不可信（<span class="inline">RejectionBlendFinal &lt; 0.25</span>），它几乎只剩当前单帧一个采样——回到了"没有抗锯齿"的裸露状态，边缘会重新出现锯齿。<span class="inline">SpatialAntiAliasing</span> 就为这些像素做一次<b>纯空间（单帧内）的抗锯齿</b>：读 <span class="inline">AntiAliasMaskTexture</span>（#4 输出）定位这些像素，用 LDR 亮度做边缘检测与平滑，输出方向性 AA 信息。<b>时序管够就用时序，时序断供就用空间</b>——两者接力保证任何情况下边缘都不裸露。质量档 <span class="inline">DIM_QUALITY_PRESET</span> 决定迭代次数（1→3 次，2→8 次）。</p></div></div></section>
 
+<section class="card"><h2>SpatialAntiAliasing 内部：一个微型 FXAA <span class="en">Edge browsing</span></h2><div class="body">
+<p>被拒像素的单帧空间 AA，内里是一套<b>沿边缘行走（edge browsing）</b>的算法——思路与 FXAA 同源，但用 fp16 双像素向量化重写（源码 <span class="inline">TSRSpatialAntiAliasing.usf 88–223</span>）：</p>
+<div class="codebox"><span class="c">// 仅处理 AntiAliasMask>0 的被拒像素，其余直接跳过</span>
+<span class="k">if</span> (all(!bAntiAlias)) { TexelOffset = <span class="s">0</span>; <span class="k">return</span>; }
+<span class="c">// ① 读 3×3 LDR 亮度邻域（InputC/N/S/E/W/NE/NW/SE/SW）</span>
+<span class="c">// ② 找边缘方向：判断边是水平还是垂直、哪一侧</span>
+<span class="f">FindBrowsingDirection</span>(InputC, InputN..SW, <span class="c">/*out*/</span> NoiseFiltering, BrowseDirection, EdgeSide, EdgeLuma);
+LumaDelta = abs(EdgeLuma - InputC) * <span class="s">0.5</span>;
+WorthBrowsing = LumaDelta &gt; SPATIAL_ANTI_ALIASER_MIN_LUMIMANCE;
+<span class="c">// ③ 沿边缘两侧各行走 CONFIG_ITERATIONS 步，测边缘长度</span>
+<span class="f">BrowseNeighborhoodBilinearOptimized</span>(CONFIG_ITERATIONS, ..., <span class="c">/*out*/</span> EdgeLengthP, EdgeLengthN, bEdgeStoped...);
+<span class="c">// ④ 由边缘长度与停止位置推子像素采样偏移</span>
+TexelOffset = EdgeSide * (BrowseDelta * <span class="f">ComputeDistanceToEdge</span>(bEdgeStoped..., EdgeLengthN, EdgeLengthP));
+AntiAliasingOutput = (<span class="f">EncodeSpatialAntiAliasingOffset</span>(TexelOffset), round(NoiseFiltering*<span class="s">255</span>));</div>
+<div class="note purple"><h3>输出的不是颜色，而是“采样偏移”</h3><p>关键细节：SpatialAntiAliasing <b>不直接输出平滑后的颜色</b>，而是输出一个<b>亚像素采样偏移 <span class="inline">TexelOffset</span></b>（编码进 <span class="inline">AntiAliasingOutput</span>）：告诉后续“沿边缘垂直方向偏移多少去采样”才能把阶梯边变平滑。这正是 FXAA 的核心思想：<b>不模糊整块，只沿边缘法线方向做亚像素重定位</b>，保持非边缘区域锐利。<span class="inline">CONFIG_ITERATIONS</span>（低档 3 / 高档 8）就是边缘行走的最大步数——走得越远，能处理的斜率越接近水平（长斜边）。<span class="inline">NoiseFiltering</span> 另存一份噪声抑制强度。</p></div></div></section>
+
 <section class="card"><h2>ResolveHistory：把历史"冲印"成成片 <span class="en">Resolve</span></h2><div class="body">
 <p>历史是 TSR 内部格式（可能是 R11G11B10、可能带独立的历史分辨率）。ResolveHistory 负责把它转成后处理链期望的输出：重采样到最终输出分辨率、做锐化、处理 HDR 权重与 clamp。</p>
 <div class="codebox"><span class="c">// ResolveHistory 的高质量路径用 Nyquist 卷积网络重建（DIM_NYQUIST_WAVE_SIZE = 16/32）</span>

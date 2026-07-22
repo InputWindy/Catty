@@ -34,7 +34,13 @@ RWTexture2D&lt;tsr_ushort2&gt; AntiAliasingOutput;          <span class="c">// �
 <table><tr><th>DIM_QUALITY_PRESET</th><th>迭代</th></tr>
 <tr><td>1</td><td>3 次（低）</td></tr>
 <tr><td>2</td><td>8 次（高，<code>r.TSR.RejectionAntiAliasingQuality</code> 高档）</td></tr></table>
-<div class="note blue"><h3>双像素向量化</h3><p><span class="inline">CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION</span>（fp16 时开）用 RDNA 的 <span class="inline">v_pk_*_{uif}16</span> 指令一次处理两个像素；<span class="inline">Map8x8Tile2x2LaneDPV</span> 把 8×8 tile 的线程按 2×2 映射到 lane，配合双像素打包。</p></div></div></section>
+<div class="note blue"><h3>双像素向量化</h3><p><span class="inline">CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION</span>（fp16 时开）用 RDNA 的 <span class="inline">v_pk_*_{uif}16</span> 指令一次处理两个像素；<span class="inline">Map8x8Tile2x2LaneDPV</span> 把 8×8 tile 的线程按 2×2 映射到 lane，配合双像素打包。</p></div>
+<table><tr><th>edge browsing 函数</th><th>作用</th></tr>
+<tr><td><code>FindBrowsingDirection</code></td><td>由 3×3 亮度邻域判断边缘方向（水平/垂直）、哪一侧（<code>EdgeSide</code>）、边缘亮度，同时出 <code>NoiseFiltering</code></td></tr>
+<tr><td><code>BrowseNeighborhoodBilinearOptimized</code></td><td>沿边缘两侧行走 <code>CONFIG_ITERATIONS</code> 步，用双线性优化测两向边缘长度 <code>EdgeLengthP/N</code> 及停止原因</td></tr>
+<tr><td><code>ComputeDistanceToEdge</code></td><td>由边缘长度与停止位置推算本像素到边缘中心的距离 → 亚像素偏移</td></tr>
+<tr><td><code>EncodeSpatialAntiAliasingOffset</code></td><td>把 <code>TexelOffset</code> 编码进 <code>AntiAliasingOutput</code>（供 Resolve 采样）</td></tr>
+<tr><td><code>SPATIAL_ANTI_ALIASER_MIN_LUMIMANCE</code></td><td>边缘判定的最小亮差阈值，低于此不值得行走</td></tr></table></div></section>
 
 <section class="card" id="cvar"><h2>相关 CVar</h2><div class="body">
 <table><tr><th>CVar</th><th>默认</th><th>作用</th></tr>

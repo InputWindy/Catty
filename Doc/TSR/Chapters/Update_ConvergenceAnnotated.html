@@ -10,11 +10,24 @@
 
 <section class="card"><h2>累积的本质：加权指数移动平均 <span class="en">Exponential moving average</span></h2><div class="body">
 <p>TSR 的历史累积，本质是一个逐像素的<b>加权指数移动平均（EMA）</b>：新历史 = 混合(旧历史, 当前输入)，混合比由 #4 的拒绝权重和已累积样本数共同决定。</p>
-<div class="codebox"><span class="c">// 概念式（真实代码分散在 1426 行里的多个分支）</span>
-<span class="c">// 累积样本数越多 → 新帧占比越小 → 越稳定；被拒绝 → 样本数重置 → 新帧占比大</span>
-<span class="k">float</span> NewFrameWeight = <span class="s">1.0</span> / min(AccumulatedSampleCount + <span class="s">1</span>, MaxHistorySampleCount);
-NewFrameWeight = lerp(<span class="s">1.0</span>, NewFrameWeight, HistoryValidity);  <span class="c">// 拒绝时 validity↓ → 权重↑</span>
-NewHistory = lerp(ReprojectedHistory, CurrentInput, NewFrameWeight);</div>
+<div class="codebox"><span class="c">// 真实累积（TSRUpdateHistory.usf 1254–1300，保留源码符号）</span>
+<span class="c">// ① 历史先 clamp 进当前输入颜色盒，再按 HDR 权重与原历史软混合（DisableHistoryClamp 时退化为不 clamp）</span>
+ClampedPrev = <span class="f">fastClamp</span>(PrevHighFrequencyColor, InputMinColor, InputMaxColor);
+Weight = <span class="f">WeightedLerpFactors</span>(HdrWeight4(ClampedPrev), HdrWeight4(Prev), DisableHistoryClamp);
+BlendedPrev = ClampedPrev * Weight[<span class="s">0</span>] + Prev * Weight[<span class="s">1</span>];
+<span class="c">// ② 运动钳制历史权重：像素速度越快 MaxValidity 越低 → 压低历史占比，减少运动拖影</span>
+MaxValidity = <span class="s">1</span> - WeightClampingPixelSpeedAmplitude * saturate(OutputPixelVelocity * InvWeightClampingPixelSpeed);
+MaxValidity = max(MaxValidity, |FilteredLuma - PrevLuma| / max(FilteredLuma, PrevLuma)); <span class="c">// 高对比边缘反而保稳定</span>
+PrevWeight  = min(PrevWeight, MaxValidity);
+<span class="c">// ③ 加权混合（注释明言：有意用 full float 避免极端差异下的量化误差）</span>
+BlendPrevHistory   = PrevWeight    * HdrWeightY(Luma(BlendedPrev));
+BlendFilteredInput = CurrentWeight * HdrWeight4(FilteredInput);
+CommonWeight = <span class="f">SafeRcp</span>(BlendPrevHistory + BlendFilteredInput);
+FinalColor   = BlendedPrev * (CommonWeight*BlendPrevHistory) + FilteredInput * (CommonWeight*BlendFilteredInput);
+<span class="c">// ④ validity 量化到 8bit，避免与颜色编码错位</span>
+OutputValidity       = CurrentWeight + PrevWeight;
+FinalHistoryValidity = ceil(<span class="s">255.0</span> * OutputValidity) * rcp(<span class="s">255.0</span>);</div>
+<div class="note blue"><h3>为什么权重计算特意用 full float</h3><p>整个 pass 为省带宽跑在 fp16（<span class="inline">tsr_half</span>），唯独 <b>混合权重的分子分母（<span class="inline">BlendPrevHistory</span> / <span class="inline">BlendFilteredInput</span> / <span class="inline">CommonWeight</span>）源码显式声明为 <span class="inline">float</span></b>——源码注释直言：当历史与输入亮度差极大（HDR 高光叠暗部）时，fp16 的权重会被量化到失真，导致混合比例错误。权重算完再 <span class="inline">dpv_scale</span> 回 fp16 颜色。这是 TSR 典型的"数值敏感处局部升精度"手法，与 #4 <span class="inline">HdrWeight</span> 的 fp16 下限保护同源。</p></div>
 <div class="flow">
 <div class="node func"><span class="step">1</span><strong>重采样当前输入</strong><small>用 Catmull-Rom 核把低分辨率输入采到历史（高）分辨率网格</small></div>
 <div class="arrow">▶</div>
