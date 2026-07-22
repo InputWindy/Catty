@@ -36,12 +36,14 @@ main{padding:26px 36px 90px;max-width:1320px}
 .b-lumen .eyebrow{color:var(--purple)}
 .b-ml .accent{background:linear-gradient(90deg,var(--pink),var(--red))}
 .b-ml .eyebrow{color:var(--pink)}
-.flow{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px}
+.b-tsr .accent{background:linear-gradient(90deg,var(--cyan),var(--purple))}
+.b-tsr .eyebrow{color:var(--cyan)}
+.flow{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px}
 @media(max-width:900px){.flow{grid-template-columns:1fr 1fr}}
 .node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:14px;min-height:96px}
 .node strong{display:block;margin-bottom:6px;font-size:14.5px}
 .node small{color:var(--muted);font-size:12.5px}
-.n-geo{border-color:var(--orange)}.n-tex{border-color:var(--green)}.n-gi{border-color:var(--purple)}.n-light{border-color:var(--pink)}
+.n-geo{border-color:var(--orange)}.n-tex{border-color:var(--green)}.n-gi{border-color:var(--purple)}.n-light{border-color:var(--pink)}.n-aa{border-color:var(--cyan)}
 .note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}
 .note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}
 .note p{margin:10px 0;color:#cfe4ff;line-height:1.82}
@@ -51,20 +53,20 @@ footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
 </style></head><body>
 <header>
 <h1>UE5.8 渲染方案源码解析 · 文档集</h1>
-<div class="subtitle">这是一套对照 <b>UE5.8 本地源码</b>逐层解析的渲染方案学习文档，目前覆盖四大子系统：<b>Nanite</b>（虚拟化几何）、<b>虚拟纹理</b>（三种"数据大于显存"的流送范式）、<b>Lumen</b>（实时全局光照）、<b>MegaLights</b>（多光源阴影解耦）。每个主题都含一份<span style="color:var(--green)">主文档</span>（设计动机 + 数据流骨架 + 分阶段源码批注）与一份<span style="color:var(--cyan)">函数附录</span>（类 / 函数 / CVar / 结构体 / 常量细节）。所有符号名、常量、CVar 默认值均取自 UE5.8 源码，非二手转述。</div>
+<div class="subtitle">这是一套对照 <b>UE5.8 本地源码</b>逐层解析的渲染方案学习文档，目前覆盖五大子系统：<b>Nanite</b>（虚拟化几何）、<b>虚拟纹理</b>（三种"数据大于显存"的流送范式）、<b>Lumen</b>（实时全局光照）、<b>MegaLights</b>（多光源阴影解耦）、<b>TSR</b>（时序超分辨率上采样）。每个主题都含一份<span style="color:var(--green)">主文档</span>（设计动机 + 数据流骨架 + 分阶段源码批注）与一份<span style="color:var(--cyan)">函数附录</span>（类 / 函数 / CVar / 结构体 / 常量细节）。所有符号名、常量、CVar 默认值均取自 UE5.8 源码，非二手转述。</div>
 </header>
 <main>
 
 <section class="card"><h2>文档集规模</h2><div class="body">
 <div class="stat">
-<span class="pill"><b>4</b> 本书</span>
-<span class="pill"><b>64</b> 个主题</span>
-<span class="pill"><b>128</b> 篇正文（主文档 + 附录）</span>
+<span class="pill"><b>5</b> 本书</span>
+<span class="pill"><b>72</b> 个主题</span>
+<span class="pill"><b>144</b> 篇正文（主文档 + 附录）</span>
 <span class="pill">对照 <b>UE 5.8</b> 源码</span>
 </div>
 </div></section>
 
-<section class="card"><h2>四本书 · 从几何到光照的一条主线</h2><div class="body">
+<section class="card"><h2>五本书 · 从几何到光照再到上采样的一条主线</h2><div class="body">
 <div class="grid">
 
 <a class="book b-nanite" href="Nanite/UE_Nanite_解析_总目录.html"><div class="accent"></div><div class="inner">
@@ -103,23 +105,34 @@ footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
 <span class="go">进入总目录 →</span>
 </div></a>
 
+<a class="book b-tsr" href="TSR/UE_TSR_解析_总目录.html"><div class="accent"></div><div class="inner">
+<span class="eyebrow">TEMPORAL UPSAMPLING · 时序超分辨率</span>
+<h3>UE TSR 源码解析</h3>
+<div class="en">Velocity · Reproject · Reject · Update · Resolve · ThinGeom</div>
+<p>UE5 默认的<b>时序上采样抗锯齿</b>：低分辨率渲染 + 亚像素 jitter + 跨帧累积历史重建高分辨率。按 12-pass 单帧顺序拆解：速度膨胀、重投影、着色拒绝、EMA 累积、Nyquist 重建、薄几何专项通道，核心难点在<b>抗鬼影</b>与历史可信度判定。</p>
+<div class="meta"><span class="chip">8 主题 · 17 篇</span><span class="chip">12-pass 单帧顺序</span><span class="chip">ITemporalUpscaler 可替换</span></div>
+<span class="go">进入总目录 →</span>
+</div></a>
+
 </div></div></section>
 
-<section class="card"><h2>一眼看懂：四本书在渲染管线里的位置</h2><div class="body">
+<section class="card"><h2>一眼看懂：五本书在渲染管线里的位置</h2><div class="body">
 <div class="flow">
 <div class="node n-geo"><strong>① 几何 Geometry</strong><small><b>Nanite</b> 提供高密度几何，像素级 LOD，输出 visibility buffer 与延迟材质 GBuffer</small></div>
 <div class="node n-tex"><strong>② 纹理 Texture</strong><small><b>虚拟纹理</b> 解决"纹理 > 显存"：页表式按需流送 + Clipmap，喂给材质采样</small></div>
 <div class="node n-gi"><strong>③ 全局光照 GI</strong><small><b>Lumen</b> 用 Nanite fallback mesh 做软件光追，算漫反射 GI / 反射 / 体积光照</small></div>
 <div class="node n-light"><strong>④ 多光源 Lights</strong><small><b>MegaLights</b> 让大量阴影投射光源的开销与数量解耦，与上述系统同帧协作</small></div>
+<div class="node n-aa"><strong>⑤ 上采样 Upscale</strong><small><b>TSR</b> 在管线<b>末端</b>把低分辨率抗抖动帧跨帧累积成高分辨率抗锯齿图像</small></div>
 </div>
-<p style="color:var(--muted);margin:16px 0 0">四本书是<b>并列的四套渲染方案</b>，各有独立总目录，可单独阅读；但它们共享同一套 UE5 渲染世界观，交汇点见下。</p>
+<p style="color:var(--muted);margin:16px 0 0">五本书是<b>并列的五套渲染方案</b>，各有独立总目录，可单独阅读；但它们共享同一套 UE5 渲染世界观，交汇点见下。</p>
 </div></section>
 
-<section class="card"><h2>四本书的交汇点 · 同一套渲染世界观</h2><div class="body"><div class="note book-inline">
-<h3>三处关键连接，串起整个 UE5 渲染</h3>
+<section class="card"><h2>五本书的交汇点 · 同一套渲染世界观</h2><div class="body"><div class="note book-inline">
+<h3>四处关键连接，串起整个 UE5 渲染</h3>
 <p><b>① 页流送范式（Nanite ↔ 虚拟纹理）：</b>Nanite 的 <span class="inline">#4 流送</span>（几何页）与虚拟纹理书的<b>页表式流送</b>（纹理页）是同一种"数据 > 显存、按需分页进物理池、GPU 反馈驱动请求"的范式——一个流几何、一个流纹理，读完一个再看另一个会非常通透。</p>
 <p><b>② VSM 阴影（Nanite ↔ 虚拟纹理 ↔ MegaLights）：</b>Nanite 的 <span class="inline">#9 阴影</span>直接复用虚拟纹理书 <b>VSM Clipmap</b> 篇的 clipmap 结构——Nanite 提供几何、VSM 提供页表，每个阴影视图就是一个 Nanite view（<span class="inline">NANITE_MAX_VIEWS_PER_CULL_RASTERIZE_PASS = 4096</span> 多视图批处理）。</p>
 <p><b>③ 几何是光照的输入（Nanite → Lumen）：</b>Nanite 提供的高密度几何是 Lumen（软件光追走 Nanite fallback mesh）与整个延迟管线的输入；MegaLights 的光追可见性也在这套几何上求交。建议顺序：先 <b>Nanite 主干（#1~#7）</b>建立几何与延迟着色的直觉，再看虚拟纹理理解流送，然后 Lumen / MegaLights 理解光照。</p>
+<p><b>④ 运动矢量与上采样（Nanite/整管线 → TSR）：</b>TSR 处于管线<b>最末端</b>，消费前面所有系统产出的 <span class="inline">SceneColor</span> + <span class="inline">SceneDepth</span> + <span class="inline">SceneVelocity</span>（运动矢量由 Nanite 等几何写入），把低分辨率帧跨帧重建成高分辨率。而 TSR 又只是 <span class="inline">ITemporalUpscaler</span> 的默认实现——DLSS / FSR / XeSS 可通过同一接口整体替换这一级。</p>
 </div></div></section>
 
 </main>
