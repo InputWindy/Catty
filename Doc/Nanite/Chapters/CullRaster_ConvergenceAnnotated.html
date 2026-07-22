@@ -36,7 +36,32 @@ InterlockedMax(OutDepthBuffer[PixelPos], DepthInt);              <span class="c"
 <tr><td><code>HardwareThenSoftware</code></td><td>先硬件画大三角，再软件画小三角（串行）</td></tr>
 <tr><td><code>HardwareAndSoftwareOverlap</code></td><td>硬件画大三角 <b>与</b> 软件画小三角<b>并行重叠</b>，吃满 GPU（默认高性能路径）</td></tr>
 </table>
-<div class="note blue"><h3>每簇/每三角在哪分流</h3><p>分流的决定早在 <a href="InstanceCull_ConvergenceAnnotated.html" style="color:#9ee8ff">#5</a> 簇剔除时就打了 <span class="inline">NANITE_CULLING_FLAG_USE_HW</span> 标志（依据簇投影到屏幕的尺寸估计）。光栅阶段据此把可见簇分成 SW/HW 两组（<span class="inline">VisibleClustersSWHW</span> 就是这么命名的），分别喂给软件光栅 compute 和硬件光栅 draw。<span class="inline">FMicropolyRasterizeCS</span> 是软件光栅的核心 compute shader——注意它是个 <b>Material shader</b>，意味着材质可以参与光栅（这为 <a href="ProgRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#8 可编程光栅化</a> 埋下伏笔）。</p></div></div></section>
+<div class="note blue"><h3>每簇/每三角在哪分流：阈值 r.Nanite.MinPixelsPerEdgeHW=32</h3><p>分流的真实判据是 <span class="inline">r.Nanite.MinPixelsPerEdgeHW</span>（UE5.8 默认 <b>32.0 像素</b>）：三角形/簇投影到屏幕的边长 <b>≥ 32 像素走硬件光栅</b>，<b>&lt; 32 像素走软件光栅</b>。剔除阶段据此把可见簇分成 SW/HW 两组写进 <span class="inline">VisibleClustersSWHW</span>（一个 buffer 两端分别是 SW 段和 HW 段，故命名 SWHW），分别喂给软件光栅 compute 和硬件光栅 draw。<span class="inline">FMicropolyRasterizeCS</span> 是软件光栅的核心 compute shader——注意它是个 <b>Material shader</b>（<span class="inline">DECLARE_SHADER_TYPE(..., Material)</span>），意味着材质可以参与光栅（这为 <a href="ProgRaster_ConvergenceAnnotated.html" style="color:#9ee8ff">#8 可编程光栅化</a> 埋下伏笔）。目标三角边长由 <span class="inline">r.Nanite.MaxPixelsPerEdge</span>（默认 1.0）控制。</p></div></div></section>
+
+<section class="card"><h2>两趟遮挡剔除的真实流程 <span class="en">Two-pass occlusion</span></h2><div class="body">
+<p>Nanite 默认开启<b>两趟遮挡剔除</b>（<span class="inline">r.Nanite.Culling.TwoPass=1</span>，全局变量 <span class="inline">GNaniteCullingTwoPass</span>）。核心难题：剔除需要 HZB（层级深度）做遮挡测试，但 HZB 又要等这一帧画完才有。解法是<b>两趟</b>——主趟先用<b>上一帧的 HZB</b> 做保守遮挡，画出大部分可见簇；再用主趟结果建<b>本帧新 HZB</b>，对主趟被判遮挡的簇做二次确认，补画"上帧被挡、本帧露出"的物体。</p>
+<p>代码里用三态宏区分（<span class="inline">NaniteCullRaster.cpp</span> L41-44）：</p>
+<table><tr><th>宏</th><th>值</th><th>含义</th></tr>
+<tr><td><code>CULLING_PASS_NO_OCCLUSION</code></td><td>0</td><td>不做遮挡（关 HZB 或单趟），仅视锥/距离剔除后全画</td></tr>
+<tr><td><code>CULLING_PASS_OCCLUSION_MAIN</code></td><td>1</td><td>主趟：读 <span class="inline">PrevHZB</span>（上帧 HZB）做遮挡测试，<span class="inline">QueueStateIndex=0</span></td></tr>
+<tr><td><code>CULLING_PASS_OCCLUSION_POST</code></td><td>2</td><td>后趟：基于主趟新建的 HZB 复核被遮挡簇，<span class="inline">QueueStateIndex=1</span></td></tr>
+<tr><td><code>CULLING_PASS_EXPLICIT_LIST</code></td><td>3</td><td>显式实例列表（如特定 pass 指定绘制）</td></tr></table>
+<div class="flow">
+<div class="node"><strong>① InitArgs</strong><small>清零 <span class="inline">FQueueState</span>、初始化两趟的 RasterizeArgs 与 OccludedInstancesArgs</small></div>
+<div class="node branch"><strong>② Main Pass</strong><small>InstanceCull→NodeAndClusterCull，用 PrevHZB 遮挡；被遮挡实例写入 OccludedInstances</small></div>
+<div class="node out"><strong>③ 主趟光栅 + 建 HZB</strong><small>画主趟可见簇进 VisBuffer64，再对其做 HZB 归约得本帧 HZB</small></div>
+<div class="node branch"><strong>④ Post Pass</strong><small>只对 OccludedInstances 重新剔除（用新 HZB），补画露出的簇</small></div>
+</div>
+<div class="note green"><h3>主/后趟候选从 buffer 两端分配</h3><p><span class="inline">NaniteClusterCulling.usf</span> L31-33 点明：<b>Main 和 Post 的候选（CandidateNodes/CandidateClusters）从同一 buffer 的两端反向分配</b>，并 trim 计数防止两趟互相踩踏。这样主/后趟共享一块内存又互不干扰，省一次分配。<span class="inline">FQueueState.PassState[0]</span> 记主趟、<span class="inline">PassState[1]</span> 记后趟的 <span class="inline">ClusterWriteOffset / NodeWriteOffset</span> 等游标。</p></div></div></section>
+
+<section class="card"><h2>剔除内核与工作队列 <span class="en">Cull kernels &amp; FQueueState</span></h2><div class="body">
+<p>剔除是<b>GPU 驱动</b>的：CPU 只发几个 indirect dispatch，节点遍历、LOD 选择、簇剔除全在 GPU 上自组织。核心是一组 compute 内核围绕 <span class="inline">FQueueState</span> 工作队列协作（均在 <span class="inline">NaniteClusterCulling.usf</span>）：</p>
+<table><tr><th>内核 (C++ 类 → usf entry)</th><th>职责</th></tr>
+<tr><td><code>FInitArgs_CS</code> → <code>InitArgs</code></td><td>清零 QueueState、写 Main/Post 的 RasterizeArgs、（开遮挡时）初始化 OccludedInstancesArgs</td></tr>
+<tr><td><code>FNodeAndClusterCull_CS</code> → <code>NodeAndClusterCull</code></td><td>按 <span class="inline">CULLING_TYPE</span> 分派：NODES（节点遍历）/ CLUSTERS（簇剔除）/ PERSISTENT_NODES_AND_CLUSTERS（持久线程合并）</td></tr>
+<tr><td><code>FInitClusterCullArgs_CS</code> / <code>FInitNodeCullArgs_CS</code></td><td>据 QueueState 里已写入的候选数，算出下一次 dispatch 的线程组数</td></tr>
+<tr><td><code>FCalculateSafeRasterizerArgs_CS</code> → <code>CalculateSafeRasterizerArgs</code></td><td>钳制光栅 indirect args，防止越界、防止 SW/HW 段重叠</td></tr></table>
+<div class="note purple"><h3>persistent culling：一个内核吞下整棵层级</h3><p>常规路径把"节点遍历"和"簇剔除"拆成多轮 dispatch（层级逐层展开）。开启 <span class="inline">r.Nanite.PersistentThreadsCulling=1</span>（UE5.8 默认 <b>0</b>）后，走 <span class="inline">NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS</span>：用<b>持久线程（persistent threads）</b>在<b>单个内核</b>内循环消费工作队列，节点和簇剔除合一，省去多次 dispatch 的 barrier 开销。代价是它不随 GPU 规模自动伸缩、依赖调度器行为，故官方注释说<b>不推荐用于非固定硬件平台</b>（默认关闭，主机等固定硬件可开）。此时 <span class="inline">CandidateNodes/CandidateClusters/ClusterBatches</span> 变为 <span class="inline">RWCoherentByteAddressBuffer</span> 以支持内核内无锁并发读写。</p></div></div></section>
 
 <section class="card"><h2>输出目标：主视图 vs 阴影 <span class="en">Output targets</span></h2><div class="body">
 <div class="note purple"><h3>同一套光栅器，不同的写入目标</h3><p><span class="inline">EOutputBufferMode</span> 有两种：<span class="inline">VisBuffer</span>（写 id + 深度，主渲染）与 <span class="inline">DepthOnly</span>（只写 32 位深度，阴影/预深度）。当目标是虚拟阴影贴图（<span class="inline">VIRTUAL_TEXTURE_TARGET</span>）时，写入换成 <span class="inline">OutDepthBufferArray[PhysicalPosition]</span> 的 <span class="inline">InterlockedMax</span>——这正是 <a href="Shadow_ConvergenceAnnotated.html" style="color:#9ee8ff">#9</a> 阴影集成的接入点：VSM 的物理页就是这里的 depth array。一套光栅代码，通过编译宏切换目标，服务主视图、阴影、捕获等所有场景。</p></div></div></section>
@@ -48,12 +73,30 @@ InterlockedMax(OutDepthBuffer[PixelPos], DepthInt);              <span class="c"
 <p>不同点：软件光栅器是 Nanite 独有的（虚拟纹理/Lumen 都没有）；但它写的 visibility buffer 思想，与延迟渲染 G-buffer 的"先记信息后着色"一脉相承。</p></div>
 <p style="color:#a9b4c0">下一篇 <a href="Shading_ConvergenceAnnotated.html" style="color:#9ee8ff">#7 Visibility Buffer 与材质着色</a> 讲如何从 64 位 visibility buffer 反查三角形、算属性、按材质分箱着色。</p></div></section>
 
+<section class="card"><h2>关键 CVar 速查 <span class="en">Console variables</span></h2><div class="body">
+<p>下表取自 <span class="inline">NaniteCullRaster.cpp</span>（L51-377）定义的重要 <span class="inline">r.Nanite.*</span>，调试剔除/光栅时常用：</p>
+<table><tr><th>CVar</th><th>默认</th><th>作用</th></tr>
+<tr><td><code>r.Nanite.MaxPixelsPerEdge</code></td><td>1.0</td><td>运行时目标三角边长（像素），LOD 选择的基准</td></tr>
+<tr><td><code>r.Nanite.MinPixelsPerEdgeHW</code></td><td>32.0</td><td>≥ 此值的三角走硬件光栅，以下走软件光栅</td></tr>
+<tr><td><code>r.Nanite.Culling.TwoPass</code></td><td>1</td><td>两趟遮挡剔除开关</td></tr>
+<tr><td><code>r.Nanite.Culling.HZB</code></td><td>1</td><td>HZB 遮挡剔除开关</td></tr>
+<tr><td><code>r.Nanite.Culling.Frustum</code></td><td>1</td><td>视锥剔除开关</td></tr>
+<tr><td><code>r.Nanite.PersistentThreadsCulling</code></td><td>0</td><td>持久线程合并节点+簇剔除（不推荐非固定硬件）</td></tr>
+<tr><td><code>r.Nanite.AsyncRasterization</code></td><td>1</td><td>软件光栅走异步计算（async compute）</td></tr>
+<tr><td><code>r.Nanite.ComputeRasterization</code></td><td>1</td><td>允许 compute 软光栅；关后全走硬件</td></tr>
+<tr><td><code>r.Nanite.ProgrammableRaster</code></td><td>1</td><td>允许可编程光栅（见 #8）；关后走固定功能</td></tr>
+<tr><td><code>r.Nanite.Tessellation</code></td><td>1</td><td>运行时曲面细分开关（见 #8）</td></tr>
+<tr><td><code>r.Nanite.DicingRate</code></td><td>2.0</td><td>细分微多边形目标尺寸（像素）</td></tr>
+<tr><td><code>r.Nanite.FastVisBufferClear</code></td><td>1</td><td>VisBuffer 快清：0=禁用 / 1=像素清 / 2=瓦片清</td></tr>
+<tr><td><code>r.Nanite.RasterSort</code></td><td>1</td><td>对光栅 dispatch/draw 排序</td></tr></table></div></section>
+
 <section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
 <div class="note green"><h3>记住这几点</h3>
 <p>1. <b>为什么自写光栅</b>：硬件光栅以 2×2 quad 为单位，画 1 像素小三角浪费 75%。Nanite 微小三角走<b>软件光栅（compute 逐像素）</b>，大三角走硬件。</p>
 <p>2. <b>64 位原子写</b>：<span class="inline">PackUlongType(uint2(PixelValue, DepthInt))</span> + <span class="inline">ImageInterlockedMaxUInt64</span>，深度在高位，一条 atomic max 同时做深度测试+写 id，无需独立 Z-buffer。</p>
-<p>3. <b>调度</b>：<span class="inline">ERasterScheduling</span> = HardwareOnly / HardwareThenSoftware / HardwareAndSoftwareOverlap（默认软硬并行重叠）；分流标志 <span class="inline">USE_HW</span> 在 #5 就打好。</p>
-<p>4. <b>只写可见性不写颜色</b>：光栅产出 <span class="inline">VisBuffer64</span>（簇+三角 id + 深度），颜色留给 #7；同一套代码经宏切换服务主视图/阴影（VSM depth array）。</p></div></div></section>
+<p>3. <b>调度</b>：<span class="inline">ERasterScheduling</span> = HardwareOnly / HardwareThenSoftware / HardwareAndSoftwareOverlap（默认软硬并行重叠）；软/硬分流由 <span class="inline">r.Nanite.MinPixelsPerEdgeHW</span>（默认 32 像素）判定，可见簇写入一个 <span class="inline">VisibleClustersSWHW</span> 的两端。</p>
+<p>4. <b>两趟遮挡</b>：主趟（OCCLUSION_MAIN）读上帧 <span class="inline">PrevHZB</span>，光栅后建本帧 HZB；后趟（OCCLUSION_POST）只复核被遮挡实例。剔除 GPU 驱动，围绕 <span class="inline">FQueueState</span> 工作队列，可选 persistent culling 单内核合并。</p>
+<p>5. <b>只写可见性不写颜色</b>：光栅产出 <span class="inline">VisBuffer64</span>（簇+三角 id + 深度），颜色留给 #7；同一套代码经宏切换服务主视图/阴影（VSM depth array）。</p></div></div></section>
 
 <section class="card"><h2>关联文档</h2><div class="body legend">
 <a class="tag" href="CullRaster_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a>

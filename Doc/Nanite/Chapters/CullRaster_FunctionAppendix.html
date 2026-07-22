@@ -8,6 +8,8 @@
 <a href="#enums">光栅枚举</a>
 <a href="#context">FRasterContext / FRasterParameters</a>
 <a href="#writepixel">WritePixel</a>
+<a href="#cull">剔除内核与 FQueueState</a>
+<a href="#renderer">FRenderer / IRenderer</a>
 <a href="#shaders">光栅着色器</a>
 <a href="#files">源码文件索引</a>
 </div></section>
@@ -49,6 +51,35 @@ return UnpackUlongType(OutVisBuffer64[Position]).y &lt; DepthInt;
   WritePixel(OutVisBuffer64, Value, Position, DepthInt);
 #endif</div>
 <div class="note"><h3>关键点</h3><p>深度在 64 位的高 32 位（<code>.y</code>），payload（可见簇+三角 id）在低 32 位（<code>.x</code>）。<code>ImageInterlockedMaxUInt64</code> 的 atomic max 天然实现"近者胜出 + 记录 id"。不支持 64 位原子的平台会 <code>#error UNKNOWN_ATOMIC_PLATFORM</code>——这也是 <code>HardwareOnly</code> 回退存在的原因。</p></div></div></section>
+
+<section class="card" id="cull"><h2>剔除内核与 FQueueState <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteCullRaster.cpp · NaniteClusterCulling.usf</span></h2><div class="body">
+<table><tr><th>C++ 着色器类</th><th>usf entry</th><th>职责</th></tr>
+<tr><td><code>FInitArgs_CS</code></td><td><code>InitArgs</code></td><td>清零 <code>FQueueState</code>、写 Main/Post 的 RasterizeArgs（开遮挡时）初始化 OccludedInstancesArgs；permutation：<code>OCCLUSION_CULLING</code> / <code>DRAW_PASS_INDEX</code>(0无/1置/2加)</td></tr>
+<tr><td><code>FNodeAndClusterCull_CS</code></td><td><code>NodeAndClusterCull</code></td><td>剔除主内核；permutation <code>CULLING_PASS</code>(NO_OCCLUSION/MAIN/POST) × <code>CULLING_TYPE</code>(NODES/CLUSTERS/PERSISTENT) × MultiView/VirtualTexture/MaterialCache/SplineDeform/DebugFlags</td></tr>
+<tr><td><code>FInitClusterCullArgs_CS</code></td><td><code>InitClusterCullArgs</code></td><td>据 <code>QueueState.PassState[InitIsPostPass].ClusterWriteOffset</code> 算簇剔除 dispatch 组数</td></tr>
+<tr><td><code>FInitNodeCullArgs_CS</code></td><td><code>InitNodeCullArgs</code></td><td>据 <code>NodeWriteOffset</code> 算节点剔除 dispatch 组数（逐层）</td></tr>
+<tr><td><code>FCalculateSafeRasterizerArgs_CS</code></td><td><code>CalculateSafeRasterizerArgs</code></td><td>钳制光栅 indirect args，防越界、防 SW/HW 段重叠；permutation <code>IS_POST_PASS</code></td></tr></table>
+<div class="codebox"><span class="c">// FQueueState：两趟共享，PassState[0]=主趟 PassState[1]=后趟（InitArgs 里清零）</span>
+OutQueueState[0].TotalClusters = 0;
+<span class="k">for</span> (uint i = 0; i &lt; 2; i++){
+  OutQueueState[0].PassState[i].ClusterBatchReadOffset = 0;
+  OutQueueState[0].PassState[i].ClusterWriteOffset     = 0;
+  OutQueueState[0].PassState[i].NodeReadOffset         = 0;
+  OutQueueState[0].PassState[i].NodeWriteOffset        = 0;
+  OutQueueState[0].PassState[i].NodeCount              = 0;
+}</div>
+<div class="note"><h3>persistent culling 的 buffer 变体</h3><p>当 <code>CULLING_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS</code> 时，<code>CandidateNodes / CandidateClusters / ClusterBatches / InOutAssemblyTransforms</code> 声明为 <code>RWCoherentByteAddressBuffer</code>（否则普通 <code>RWByteAddressBuffer</code>），以保证单内核内多组间的无锁并发可见性。由 <code>r.Nanite.PersistentThreadsCulling</code>（默认 0）控制。</p></div></div></section>
+
+<section class="card" id="renderer"><h2>FRenderer / IRenderer <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">剔除光栅总入口</span></h2><div class="body">
+<p><code>Nanite::IRenderer</code> 是剔除光栅的对外接口，具体实现为 <code>class FRenderer : public IRenderer</code>。创建时传入 <code>PrevHZB</code>（非空则开 HZB 剔除）与可选 <code>FVirtualShadowMapArray*</code>（驱动 #9 阴影）。</p>
+<table><tr><th>方法 / 成员</th><th>说明</th></tr>
+<tr><td><code>IRenderer::Create(GraphBuilder, Scene, View, ..., PrevHZB, VSMArray)</code></td><td>工厂；返回 <code>TUniquePtr&lt;IRenderer&gt;</code></td></tr>
+<tr><td><code>DrawGeometry(RasterPipelines, VisibilityQuery, ViewArray, ...)</code></td><td>执行一次完整剔除+光栅（多个重载：显式视图/InstanceDraw/场景剔除查询）</td></tr>
+<tr><td><code>ExtractResults(FRasterResults&amp;)</code></td><td>取出 <code>VisBuffer64 / VisibleClustersSWHW / RasterBinMeta/Data/Args</code> 等供 #7 着色消费</td></tr>
+<tr><td><code>FConfiguration</code></td><td>位域：<code>bTwoPassOcclusion / bForceHWRaster / bIsShadowPass / bDisableProgrammable / bUpdateStreaming ...</code></td></tr>
+<tr><td><code>FDispatchContext</code></td><td>软/硬分派列表：<code>Dispatches_HW_Triangles / Dispatches_SW_Triangles / Dispatches_SW_Tessellated</code></td></tr>
+</table>
+<p style="color:#a9b4c0;font-size:13px"><code>FRenderer</code> 成员含两趟 args 缓冲：<code>MainRasterizeArgsSWHW / PostRasterizeArgsSWHW</code>、安全版 <code>SafeMain.../SafePost...</code>，以及 <code>PrevHZB / HZBBuildViewRect / QueueState / VisibleClustersSWHW / OccludedInstances</code> 等。</p></div></section>
 
 <section class="card" id="shaders"><h2>光栅着色器 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteRasterizer.usf</span></h2><div class="body">
 <table><tr><th>着色器 / 函数</th><th>说明</th></tr>

@@ -55,6 +55,15 @@ QueueState[0].PassState[0/1].ClusterWriteOffset</div>
 <section class="card"><h2>遍历中的 LOD 选择：cut 就在这里定 <span class="en">LOD at traversal time</span></h2><div class="body">
 <div class="note green"><h3>DAG 的 cut 是遍历时逐节点决定的</h3><p>还记得 <a href="ClusterDAG_ConvergenceAnnotated.html" style="color:#9ee8ff">#2</a> 说 LOD 是沿 DAG 求一条 cut？运行时这条 cut 就是<b>在节点遍历时动态选出</b>的：每个节点/组带着自己的 <span class="inline">LODBounds</span> 和误差，遍历时把误差投影到屏幕（结合 <span class="inline">FPackedView</span> 的相机参数），比较<b>本组误差</b>与<b>父组误差</b>对阈值的关系——<span class="inline">ParentError &gt; Threshold ≥ ClusterError</span> 时就在这一层收边，选中这些簇；否则继续下潜到更细的子节点。因为误差沿 DAG 单调，这个判据保证每个实例在每个视图下都切出一组<b>无缝、恰好够清晰</b>的簇。同一物体在屏幕不同部位可以切在不同层级（近处细、远处粗）。</p></div></div></section>
 
+<section class="card"><h2>HZB 遮挡测试怎么做 <span class="en">How HZB occlusion works</span></h2><div class="body">
+<p>上面反复提到的 <span class="inline">FrustumHZB</span> / <span class="inline">HZB</span> 剔除，具体在 <span class="inline">NaniteHZBCull.ush</span> 里分三步（均以包围盒投影的<b>屏幕矩形</b>为单位，而非逐像素）：</p>
+<div class="flow">
+<div class="node func"><strong>① GetScreenRect</strong><small>把 3D 包围盒投影到屏幕 → <span class="inline">FScreenRect</span>（像素矩形 + 深度）；HZB mip0 是半分辨率，故坐标先 &gt;&gt;1</small></div>
+<div class="node func"><strong>② MipLevelForRect</strong><small>用 <span class="inline">firstbithigh(zw-xy)</span> 算出能覆盖矩形的最低 mip（一个 texel 盖住包围盒），必要时 +1 级保守</small></div>
+<div class="node gate"><strong>③ IsVisibleHZB</strong><small>在选中 mip 上 4×4 采样取最小深度，<span class="inline">Rect.Depth &gt;= MinDepth</span> 则可见（反向 Z）</small></div>
+</div>
+<div class="note blue"><h3>为什么用矩形+mip而不是逐像素</h3><p>剔除要快且保守：不能把本该可见的误剔。<span class="inline">MipLevelForRect</span> 挑一个合适的 HZB mip，使包围盒大致落在 2×2 texel 内，再用 4×4 采样取<b>最小</b>深度与包围盒最近深度比较——只要包围盒比 HZB 里最近的遮挡物还近（反向 Z 下 <span class="inline">Rect.Depth &gt;= MinDepth</span>）就判为可见。主趟（OCCLUSION_MAIN）拿上帧 HZB、后趟（OCCLUSION_POST）拿本帧新 HZB；后趟还会跨过视锥测试（<span class="inline">bSkipCullFrustum=true</span>）因为它只复核主趟存下的遮挡项。VSM 阴影则走 <span class="inline">IsVisibleHZBArray</span>（按页层采样，见 #9）。</p></div></div></section>
+
 <section class="card"><h2>两趟遮挡剔除 <span class="en">Two-pass occlusion</span></h2><div class="body">
 <p>Nanite 的遮挡剔除用<b>上一帧的深度（HZB）</b>做保守剔除，再用<b>本帧结果</b>补漏。<span class="inline">FConfiguration::bTwoPassOcclusion</span> 开启：</p>
 <div class="flow">

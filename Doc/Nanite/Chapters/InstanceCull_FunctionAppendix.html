@@ -7,6 +7,8 @@
 <section class="card"><h2>目录</h2><div class="body toc">
 <a href="#const">剔除常量</a>
 <a href="#flags">剔除标志位</a>
+<a href="#candnode">FCandidateNode 位打包</a>
+<a href="#hzb">HZB 遮挡函数</a>
 <a href="#queue">FQueueState / FQueuePassState</a>
 <a href="#visible">FVisibleCluster</a>
 <a href="#config">FConfiguration</a>
@@ -31,6 +33,36 @@
 <tr><td><code>NANITE_CULLING_FLAG_ENABLE_WPO</code></td><td>1&lt;&lt;3</td><td>启用世界位置偏移（材质动几何）</td></tr>
 <tr><td><code>NANITE_CULLING_FLAG_FALLBACK_RASTER</code></td><td>1&lt;&lt;4</td><td>用回退光栅路径</td></tr>
 </table></div></section>
+
+<section class="card" id="candnode"><h2>FCandidateNode 位打包 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteCulling.ush · PackCandidateNode</span></h2><div class="body">
+<p>候选节点（实例剔除产出、等待 BVH 遍历）以位打包存进 <code>OutCandidateNodes</code>（ByteAddressBuffer）：</p>
+<div class="codebox"><span class="k">uint4</span> <span class="f">PackCandidateNode</span>(FCandidateNode Node){
+  uint4 RawData = 0;
+  RawData.x = (Node.InstanceId &lt;&lt; <span class="c">5</span>) | Node.Flags;      <span class="c">// Flags[5位] | InstanceId[24位]</span>
+  RawData.y = (Node.ViewId &lt;&lt; <span class="c">16</span>) | Node.NodeIndex;    <span class="c">// NodeIndex[16位] | ViewId[12位]</span>
+#if NANITE_ASSEMBLY_DATA
+  RawData.z = Node.AssemblyTransformIndex;  RawData.w = Node.EnabledBitmask;
+#else
+  RawData.z = Node.EnabledBitmask;
+#endif
+  <span class="c">// 每个字段都留≥1位未用，保证 0xFFFFFFFF 永不是合法值（用作哨兵）</span>
+  return RawData;
+}</div>
+<table><tr><th>字段</th><th>位宽</th><th>常量</th></tr>
+<tr><td><code>Flags</code></td><td>5</td><td><code>NANITE_NUM_CULLING_FLAG_BITS</code></td></tr>
+<tr><td><code>InstanceId</code></td><td>24</td><td><code>NANITE_MAX_INSTANCES_BITS</code></td></tr>
+<tr><td><code>NodeIndex</code></td><td>16</td><td><code>NANITE_MAX_NODES_PER_PRIMITIVE_BITS</code></td></tr>
+<tr><td><code>ViewId</code></td><td>12</td><td><code>NANITE_MAX_VIEWS_PER_CULL_RASTERIZE_PASS_BITS</code></td></tr></table>
+<div class="note"><h3>为何能塞进 32 位：static_assert 守卫</h3><p><code>NaniteCullRaster.cpp</code>（L46-48）用编译期断言保证位域不溢出：<code>1 + 5 + 24 ≤ 32</code>（x 字段）、<code>1 + 16 + 12 ≤ 32</code>（y 字段）。预留的 1 位使 <code>0xFFFFFFFF</code> 不会撞上合法值，可用作“空”哨兵。节点占用 dwords：含装配数据时 post 趟 4 / 主趟 3，否则 3 / 2（主/后趟候选从 buffer 两端分配）。</p></div></div></section>
+
+<section class="card" id="hzb"><h2>HZB 遮挡函数 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteHZBCull.ush</span></h2><div class="body">
+<table><tr><th>函数</th><th>说明</th></tr>
+<tr><td><code>GetScreenRect(ViewRect, CullData, DesiredFootprint=4)</code></td><td>包围盒→屏幕矩形 <code>FScreenRect</code>（像素矩形/深度/HZB texel）；HZB mip0 半分辨率故坐标 &gt;&gt;1</td></tr>
+<tr><td><code>MipLevelForRect(RectPixels, DesiredFootprintPixels)</code></td><td>用 <code>firstbithigh(zw-xy)</code> 算最低可覆盖 mip；对齐量化不够时 +1 级</td></tr>
+<tr><td><code>GetMinDepthFromHZB(Rect, bSample4x4)</code></td><td>选定 mip 上采样（可 4×4）取<b>最小</b>深度；窄足迹时 mask 掉右/下像素</td></tr>
+<tr><td><code>IsVisibleHZB(Rect, bSample4x4)</code></td><td>返回 <code>Rect.Depth &gt;= MinDepth</code>（反向 Z：包围盒比遮挡物近则可见）</td></tr>
+<tr><td><code>IsVisibleHZBArray(Rect, bSample4x4, ArrayIndex)</code></td><td>VSM 阴影用：在 HZB 纹理数组的指定层采样（见 #9）</td></tr></table>
+<p style="color:#a9b4c0;font-size:13px">剔除入口 <code>FBoxCull::FrustumHZB(bClampToPageLevel)</code> → <code>Frustum()</code> + <code>HZB()</code>。主趟用上帧 HZB（<code>CULLING_PASS_OCCLUSION_MAIN</code>），后趟用本帧 HZB（<code>CULLING_PASS_OCCLUSION_POST</code>，跨过视锥测试）。</p></div></section>
 
 <section class="card" id="queue"><h2>FQueueState / FQueuePassState <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">NaniteHierarchyTraversalCommon.ush</span></h2><div class="body">
 <div class="codebox"><span class="k">struct</span> FQueuePassState {
