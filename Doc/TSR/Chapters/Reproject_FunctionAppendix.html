@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#3 附录 · 历史抽取与重投影函数</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.toc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13px}.toc a:hover{border-color:var(--cyan)}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:17px}.body{padding:18px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:14px 18px;margin:12px 0}.note h3{margin:0 0 8px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}</style></head><body>
+<header><a class="back" href="../UE_TSR_解析_总目录.html">← 总目录</a><a class="back" href="Reproject_ConvergenceAnnotated.html">← #3 主文档</a><h1>#3 附录 · 历史抽取与重投影函数</h1><div class="sub">DecimateHistory pass 的 permutation、输入/输出纹理与复活参数。符号取自 UE5.8 <span class="inline">TemporalSuperResolution.cpp</span>（~884–956）+ <span class="inline">TSRDecimateHistory.usf</span>。</div>
+<div class="toc"><a href="#cs">FTSRDecimateHistoryCS</a><a href="#io">输入/输出</a><a href="#res">复活参数</a><a href="#files">源码文件</a></div></header>
+<main>
+
+<section class="card" id="cs"><h2>FTSRDecimateHistoryCS · permutation</h2><div class="body">
+<div class="codebox"><span class="k">class</span> <span class="f">FTSRDecimateHistoryCS</span> : <span class="k">public</span> FTSRShader
+{
+  <span class="k">class</span> FMoireReprojectionDim         : SHADER_PERMUTATION_BOOL(<span class="s">"DIM_MOIRE_REPROJECTION"</span>);
+  <span class="k">class</span> FResurrectionReprojectionDim   : SHADER_PERMUTATION_BOOL(<span class="s">"DIM_RESURRECTION_REPROJECTION"</span>);
+  <span class="k">class</span> FThinGeometryCoverageDim       : SHADER_PERMUTATION_BOOL(<span class="s">"DIM_THIN_GEOMETRY_COVERAGE_REPROJECTION"</span>);
+  <span class="k">using</span> FPermutationDomain = TShaderPermutationDomain&lt;
+    FMoireReprojectionDim, FResurrectionReprojectionDim, FThinGeometryCoverageDim,
+    FTSRShader::F16BitVALUDim, FTSRShader::FAlphaChannelDim&gt;;
+};</div>
+<table><tr><th>permutation</th><th>作用</th></tr>
+<tr><td><code>DIM_MOIRE_REPROJECTION</code></td><td>额外重投影 Moire 历史，供 #4 闪烁抑制</td></tr>
+<tr><td><code>DIM_RESURRECTION_REPROJECTION</code></td><td>额外重投影复活历史（更久远的历史 slice）</td></tr>
+<tr><td><code>DIM_THIN_GEOMETRY_COVERAGE_REPROJECTION</code></td><td>重投影薄几何 coverage，供 #7</td></tr>
+<tr><td><code>F16BitVALUDim</code> / <code>FAlphaChannelDim</code></td><td>16bit ALU 与 alpha 通道（全 TSR 通用维度）</td></tr></table></div></section>
+
+<section class="card" id="io"><h2>输入 / 输出纹理</h2><div class="body">
+<div class="codebox"><span class="c">// 输入：来自 #2 DilateVelocity 的重投影信息</span>
+Texture2D&lt;uint&gt;        DilatedReprojectionVectorTexture;
+Texture2D&lt;float/2&gt;     ClosestDepthTexture;       <span class="c">// 复活时是 float2</span>
+Texture2D&lt;uint&gt;        DilateMaskTexture;
+Texture2D&lt;uint&gt;        DepthErrorTexture;
+Texture2DArray&lt;uint&gt;   PrevAtomicTextureArray;     <span class="c">// #2 散射的原子结果</span>
+<span class="c">// 输入：上一帧历史的三份代理</span>
+Texture2DArray&lt;tsr_half4&gt; PrevHistoryGuide;         <span class="c">// 引导（判断可信度用）</span>
+Texture2DArray&lt;tsr_half4&gt; PrevHistoryMoire;
+Texture2DArray&lt;tsr_half&gt;  PrevHistoryCoverage;
+<span class="c">// 输出：对齐到当前网格的重投影结果 + 抽取掩码</span>
+RWTexture2DArray&lt;tsr_half4&gt; ReprojectedHistoryGuideOutput;
+RWTexture2DArray&lt;tsr_half4&gt; ReprojectedHistoryMoireOutput;
+RWTexture2DArray&lt;tsr_half&gt;  ReprojectedHistoryCoverageOutput;
+RWTexture2DArray&lt;uint&gt;      ReprojectionFieldOutput;
+RWTexture2D&lt;tsr_half2&gt;      DecimateMaskOutput;       <span class="c">// ★ 连续历史失效软掩码</span></div>
+<div class="note blue"><h3>CorrectGuideColorExposure</h3><p>重采样历史引导后要做<b>曝光校正</b>：历史是上一帧的曝光下累积的，当前帧曝光可能变了（自动曝光）。<span class="inline">CorrectGuideColorExposure</span> 用 <span class="inline">PreExposureCorrection</span> 把历史色彩拉到当前曝光，否则曝光突变会被误判为"着色变化"而错误拒绝历史。<span class="inline">ExposureOffsetFactor</span> 参与这一步。</p></div></div></section>
+
+<section class="card" id="res"><h2>复活重投影参数</h2><div class="body">
+<table><tr><th>参数</th><th>含义</th></tr>
+<tr><td><code>PrevFrameIndex</code></td><td>近期历史所在的帧索引</td></tr>
+<tr><td><code>ResurrectionFrameIndex</code></td><td>复活历史所在的帧索引（更久远）</td></tr>
+<tr><td><code>ClipToResurrectionClip</code></td><td>当前裁剪空间 → 复活帧裁剪空间的重投影矩阵</td></tr>
+<tr><td><code>ScreenPosToResurrectionGuideBufferUV</code></td><td>复活历史引导的采样 UV 变换</td></tr>
+<tr><td><code>HistoryGuideQuantizationError</code></td><td>引导缓冲的量化误差补偿（引导是有损压缩的）</td></tr></table></div></section>
+
+<section class="card" id="files"><h2>源码文件索引</h2><div class="body">
+<table><tr><th>文件</th><th>行数</th><th>内容</th></tr>
+<tr><td><code>TSRDecimateHistory.usf</code></td><td>543</td><td>重投影引导/Moire/coverage + 抽取掩码主 pass</td></tr>
+<tr><td><code>TSRColorSpace.ush</code></td><td>293</td><td>曝光校正与颜色空间（#4 深入）</td></tr>
+<tr><td><code>TSRDepthVelocityAnalysis.ush</code></td><td>607</td><td>深度速度分析（视差拒绝判定）</td></tr>
+<tr><td><code>TemporalSuperResolution.cpp</code></td><td>~884–956</td><td><code>FTSRDecimateHistoryCS</code> 声明与 dispatch</td></tr></table></div></section>
+
+</main></body></html>

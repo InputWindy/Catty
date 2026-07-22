@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#3 历史抽取与重投影 · 把上帧拉到当前抖动网格</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_TSR_解析_总目录.html">← 返回《UE TSR》总目录</a><h1>#3 历史抽取与重投影 · 把上帧拉到当前抖动网格</h1><div class="sub">拿到膨胀速度后，<span class="inline">DecimateHistory</span> pass 把上一帧的历史<b>引导（guide）</b>重投影、重采样到当前帧的抖动网格上，并算出一张<b>抽取掩码（DecimateMask）</b>标记遮挡消失/视差失效的像素。这一步是"历史对齐"的落地，也为下一步 #4 的着色拒绝准备好对比素材。源码取自 UE5.8 <span class="inline">TSRDecimateHistory.usf</span>（543 行）。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--orange)"></span>重投影采样</span><span class="tag"><span class="dot" style="background:var(--red)"></span>视差/遮挡拒绝</span><span class="tag"><span class="dot" style="background:var(--purple)"></span>历史复活</span><span class="tag"><span class="dot" style="background:var(--green)"></span>抽取掩码输出</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2"><span class="inline">FTSRDecimateHistoryCS</span> 的 5 个 permutation、输入/输出纹理、复活重投影的 <span class="inline">ClipToResurrectionClip</span> 全部符号，见 <a href="Reproject_FunctionAppendix.html" style="color:#9ee8ff">→ 重投影附录</a>。</p></div></section>
+
+<section class="card"><h2>"抽取"抽的是什么 <span class="en">Decimate = reproject the guide</span></h2><div class="body">
+<p>名字容易误解：DecimateHistory <b>不是</b>把完整历史颜色搬过来（那是 #5 UpdateHistory 干的）。它重投影的是历史的<b>引导缓冲（guide）</b>——一份存历史"代表色 + 元数据"的低成本代理，专供 #4 的着色拒绝拿来和当前帧对比。同时重投影 Moire 历史（闪烁抑制用）和薄几何 coverage（#7 用）。</p>
+<div class="flow">
+<div class="node branch"><span class="step">1</span><strong>读膨胀重投影向量</strong><small>从 #2 的 <code>DilatedReprojectionVectorTexture</code> + <code>ClosestDepthTexture</code> 取每像素上一帧位置</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><span class="step">2</span><strong>重采样历史引导</strong><small>按重投影坐标双线性采样 <code>PrevHistoryGuide</code> / <code>Moire</code> / <code>Coverage</code>，做曝光校正</small></div>
+<div class="arrow">▶</div>
+<div class="node gate"><span class="step">3</span><strong>算抽取掩码</strong><small>比对散射的 <code>PrevAtomic</code> 深度，判定视差/遮挡失效 → <code>DecimateMaskOutput</code></small></div>
+</div>
+<div class="note blue"><h3>为什么要一份"引导"而不是直接用历史颜色</h3><p>着色拒绝（#4）要逐像素判断"重投影历史 vs 当前帧"差多少。若直接拿全精度历史颜色去卷积对比，带宽和计算都很贵。TSR 的做法是维护一份<b>引导缓冲</b>：一份经过量化（<span class="inline">HistoryGuideQuantizationError</span>）的历史色彩摘要，DecimateHistory 把它重投影对齐到当前网格，#4 只在这份轻量引导上做卷积启发式。全精度历史颜色则留到 #5 才按最终权重重采样——<b>把"判断可信度"与"实际累积"解耦</b>，前者用便宜的代理，后者才动真格。</p></div></div></section>
+
+<section class="card"><h2>抽取掩码：遮挡消失与视差拒绝 <span class="en">DecimateMask</span></h2><div class="body">
+<p>DecimateHistory 的核心产物是 <span class="inline">DecimateMaskOutput</span>（<span class="inline">tsr_half2</span>）。它综合几类"历史不可信"的几何信号：</p>
+<table><tr><th>信号</th><th>来源</th><th>含义</th></tr>
+<tr><td>视差拒绝 parallax rejection</td><td>重投影深度 vs <code>ClosestDepth</code></td><td>重投影位置的深度和当前深度对不上 → 是被遮挡/露出的区域</td></tr>
+<tr><td>遮挡消失 disocclusion</td><td><code>PrevAtomicTextureArray</code>（#2 散射）</td><td>历史里没有对应像素（前景刚移开露出的背景）</td></tr>
+<tr><td>出屏 off-screen</td><td>重投影坐标越界</td><td>上一帧在屏幕外，无历史可用</td></tr></table>
+<div class="note red"><h3>掩码不是非黑即白</h3><p>DecimateMask 是<b>连续值</b>而非布尔——它给出"历史有多大程度失效"的软标记。完全遮挡消失的区域掩码接近"完全拒绝"，轻微视差的区域给中间值。这个软掩码进入 #4 后与着色分析的结果<b>相乘/融合</b>，共同决定最终每像素的历史权重。TSR 反鬼影的哲学一以贯之：<b>几乎所有判定都是连续权重，而非硬开关</b>——硬开关会在画面上留下可见的接缝与突变。</p></div></div></section>
+
+<section class="card"><h2>历史复活的重投影 <span class="en">Resurrection reprojection</span></h2><div class="body">
+<p>当 permutation <span class="inline">DIM_RESURRECTION_REPROJECTION</span> 开启时（对应 #1 讲的历史复活），DecimateHistory 会<b>额外</b>把一份更久远的历史（存在纹理数组的复活 slice）也重投影过来：</p>
+<div class="codebox"><span class="c">// 除了 PrevFrameIndex 的近期历史，还用 ResurrectionFrameIndex 的老历史</span>
+<span class="k">float</span> ResurrectionFrameIndex;
+<span class="k">float</span> PrevFrameIndex;
+<span class="k">float4x4</span> ClipToResurrectionClip;   <span class="c">// 当前裁剪空间 → 复活帧裁剪空间的变换</span>
+<span class="c">// 复活历史用独立的 guide UV 变换重采样</span>
+FScreenTransform ScreenPosToResurrectionGuideBufferUV;</div>
+<div class="note purple"><h3>两份历史，谁可信用谁</h3><p>复活重投影的意义：某像素被前景短暂遮挡（近期历史失效），但它在<b>更早的某帧</b>其实清晰可见。DecimateHistory 把"近期历史"和"复活历史"都对齐到当前帧，后续 #4/#5 就能在两者间择优——近期历史被判失效时，用复活历史顶上，避免从零重建导致的模糊闪烁。代价是多一次重投影采样和一份纹理数组 slice，所以只在高画质档开启。<span class="inline">ClipToResurrectionClip</span> 是把当前裁剪空间坐标映射到复活帧裁剪空间的矩阵——复活帧的相机位置和现在不同，必须重新投影。</p></div></div></section>
+
+<section class="card"><h2>小结 <span class="en">Summary</span></h2><div class="body">
+<p><span class="step">1</span>DecimateHistory 重投影的是历史<b>引导（guide）</b>而非完整颜色——把"判断可信度用的轻量代理"对齐到当前抖动网格，全精度累积留给 #5。</p>
+<p><span class="step">2</span>核心产物 <span class="inline">DecimateMask</span> 是<b>连续</b>的历史失效软掩码，综合视差拒绝、遮挡消失、出屏三类几何信号，交给 #4 融合。</p>
+<p><span class="step">3</span>开启历史复活时，额外用 <span class="inline">ClipToResurrectionClip</span> 把更久远的历史也重投影过来，供后续在"近期 vs 复活"间择优。</p>
+<p><span class="step">4</span>至此历史已对齐到当前帧，下一篇 #4 进入全书核心——<b>着色拒绝</b>：逐像素判断这份对齐好的历史到底能信多少。</p>
+</div></section>
+
+</main></body></html>
