@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#6 解析与空间抗锯齿 · 历史变成最终像素</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_TSR_解析_总目录.html">← 返回《UE TSR》总目录</a><h1>#6 解析与空间抗锯齿 · 历史变成最终像素</h1><div class="sub">累积好的历史还要走最后一步才能交给后处理。<span class="inline">SpatialAntiAliasing</span> 为"历史被拒绝"的像素在单帧内做空间抗锯齿兜底，<span class="inline">ResolveHistory</span> 把历史解析到输出分辨率并锐化。源码取自 UE5.8 <span class="inline">TSRResolveHistory.usf</span>（430 行）+ <span class="inline">TSRSpatialAntiAliasing.usf</span>（235 行）/ <span class="inline">.ush</span>（679 行）。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--red)"></span>空间 AA 兜底</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>解析/重采样</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>锐化</span><span class="tag"><span class="dot" style="background:var(--green)"></span>输出到后处理</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2"><span class="inline">FTSRResolveHistoryCS</span> 的 Nyquist permutation、<span class="inline">FTSRSpatialAntiAliasingCS</span> 的质量档、锐化 CVar 全部符号，见 <a href="Resolve_FunctionAppendix.html" style="color:#9ee8ff">→ 解析附录</a>。</p></div></section>
+
+<section class="card"><h2>两个 pass 的分工 <span class="en">SpatialAA before, Resolve after</span></h2><div class="body">
+<p>注意帧内顺序：<b>SpatialAntiAliasing（pass 7）在 UpdateHistory（pass 8）之前</b>，ResolveHistory（pass 9）在最后。它们解决两个不同问题：</p>
+<div class="flow">
+<div class="node gate"><span class="step">7</span><strong>SpatialAntiAliasing</strong><small>为 #4 标记的"历史被拒"像素，在<b>当前单帧内</b>算一份空间 AA，弥补时序累积的缺失</small></div>
+<div class="arrow">▶</div>
+<div class="node merge"><span class="step">8</span><strong>UpdateHistory</strong><small>（#5）累积，把空间 AA 结果也考虑进去</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><span class="step">9</span><strong>ResolveHistory</strong><small>把累积历史<b>解析</b>到输出分辨率 + 锐化，交后处理链</small></div>
+</div>
+<div class="note red"><h3>为什么被拒的像素需要空间 AA 兜底</h3><p>时序抗锯齿的锯齿消除，靠的是<b>多帧不同 jitter 采样的累积</b>。可一旦某像素历史被 #4 判为不可信（<span class="inline">RejectionBlendFinal &lt; 0.25</span>），它几乎只剩当前单帧一个采样——回到了"没有抗锯齿"的裸露状态，边缘会重新出现锯齿。<span class="inline">SpatialAntiAliasing</span> 就为这些像素做一次<b>纯空间（单帧内）的抗锯齿</b>：读 <span class="inline">AntiAliasMaskTexture</span>（#4 输出）定位这些像素，用 LDR 亮度做边缘检测与平滑，输出方向性 AA 信息。<b>时序管够就用时序，时序断供就用空间</b>——两者接力保证任何情况下边缘都不裸露。质量档 <span class="inline">DIM_QUALITY_PRESET</span> 决定迭代次数（1→3 次，2→8 次）。</p></div></div></section>
+
+<section class="card"><h2>ResolveHistory：把历史"冲印"成成片 <span class="en">Resolve</span></h2><div class="body">
+<p>历史是 TSR 内部格式（可能是 R11G11B10、可能带独立的历史分辨率）。ResolveHistory 负责把它转成后处理链期望的输出：重采样到最终输出分辨率、做锐化、处理 HDR 权重与 clamp。</p>
+<div class="codebox"><span class="c">// ResolveHistory 的高质量路径用 Nyquist 卷积网络重建（DIM_NYQUIST_WAVE_SIZE = 16/32）</span>
+<span class="k">#if</span> DIM_NYQUIST_WAVE_SIZE != 0
+  <span class="c">// 用 wave 协作 + 卷积网络做接近 Nyquist 极限的重建，TILE 带 overscan</span>
+  <span class="k">#include</span> <span class="s">"TSRConvolutionNetwork.ush"</span>
+  #define DOWNSAMPLE_FACTOR 2u
+<span class="k">#else</span>
+  #define TILE_SIZE 8   <span class="c">// 普通路径</span>
+<span class="k">#endif</span>
+#define KERNEL_SIZE 4
+#define CONFIG_HDR_WEIGHT 1</div>
+<div class="note blue"><h3>Nyquist 重建：ResolveHistory 也用卷积网络</h3><p>当 <span class="inline">DIM_NYQUIST_WAVE_SIZE</span> 为 16 或 32（对应 GPU 的 wave 大小）时，ResolveHistory 走高质量路径：<b>整组线程协作把一片历史加载进寄存器/LDS，用卷积网络做接近 Nyquist 采样极限的重建</b>。这与 #4 拒绝、#7 薄几何用的是同一套 <span class="inline">TSRConvolutionNetwork.ush</span> 基础设施——TSR 把"卷积网络"当作可复用的信号处理原语，在多个关键 pass 复用。锐化就发生在这一步（<span class="inline">r.TSR.Sharpen</span>），因为解析是历史信息转成像素前的最后一次重采样，是加锐化最合适的位置。</p></div></div></section>
+
+<section class="card"><h2>输出：交棒给后处理 <span class="en">Handoff to post-processing</span></h2><div class="body">
+<p>ResolveHistory 的输出就是 TSR 交给后处理链的<b>高分辨率、抗锯齿的 SceneColor</b>。此后 bloom、tonemap、色彩分级等在这张高分辨率图上运行。</p>
+<table><tr><th>衔接</th><th>说明</th></tr>
+<tr><td>输出分辨率</td><td>= <code>View.GetSecondaryViewRectSize()</code>（如 4K），不再是渲染分辨率</td></tr>
+<tr><td>格式</td><td>转成后处理期望的 SceneColor 格式（含 alpha 时 RGBA16F）</td></tr>
+<tr><td>mip</td><td>#5 顺手生成的 mip 供 bloom/DOF 使用</td></tr>
+<tr><td>锐化</td><td>可选，补偿时序累积与重采样带来的轻微软化</td></tr></table>
+<div class="note green"><h3>到此，TSR 主链闭合</h3><p>回顾主线：#2 算清运动 → #3 对齐历史 → #4 判断可信度 → #5 加权累积 → #6 解析输出。低分辨率带抖动的输入，经过这条链，变成了高分辨率、稳定、无锯齿的成片。剩下的 #7（薄几何）和 #8（可视化/生态）是<b>专项增强与工具</b>，主干到这里已经完整。若把 TSR 放回本文档集的大图景：Nanite 给几何、Lumen/MegaLights 给光照，产出低分辨率 SceneColor，TSR 在<b>管线最末端</b>把它"冲印"成最终画面——这是"从磁盘几何到屏幕像素"的最后一步。</p></div></div></section>
+
+<section class="card"><h2>小结 <span class="en">Summary</span></h2><div class="body">
+<p><span class="step">1</span><b>SpatialAntiAliasing（pass 7）</b>为历史被拒的像素做单帧内空间抗锯齿兜底——时序断供时不让边缘裸露；质量档决定 3 或 8 次迭代。</p>
+<p><span class="step">2</span><b>ResolveHistory（pass 9）</b>把累积历史解析到输出分辨率并锐化，高质量路径用 <span class="inline">TSRConvolutionNetwork</span> 做 Nyquist 重建（wave 16/32）。</p>
+<p><span class="step">3</span>输出即交给后处理链的高分辨率 SceneColor，配合 #5 的 mip；锐化补偿时序软化。</p>
+<p><span class="step">4</span>至此 TSR <b>主链闭合</b>：运动→对齐→拒绝→累积→解析。#7/#8 为专项增强与工具。</p>
+</div></section>
+
+</main></body></html>
