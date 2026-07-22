@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#7 附录 · 薄几何与卷积网络函数/CVar</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.toc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13px}.toc a:hover{border-color:var(--cyan)}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:17px}.body{padding:18px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:14px 18px;margin:12px 0}.note h3{margin:0 0 8px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}</style></head><body>
+<header><a class="back" href="../UE_TSR_解析_总目录.html">← 总目录</a><a class="back" href="ThinGeom_ConvergenceAnnotated.html">← #7 主文档</a><h1>#7 附录 · 薄几何与卷积网络函数/CVar</h1><div class="sub">DetectThinGeometry pass 的 shader 类、卷积网络框架与 CVar。符号取自 UE5.8 <span class="inline">TemporalSuperResolution.cpp</span>（~1080+）+ <span class="inline">TSRDetectThinGeometry.usf</span> / <span class="inline">TSRConvolutionNetwork.ush</span> / <span class="inline">TSRThinGeometryCommon.ush</span>。</div>
+<div class="toc"><a href="#cs">FTSRDetectThinGeometryCS</a><a href="#params">检测参数</a><a href="#cn">卷积网络</a><a href="#cvar">CVar</a><a href="#files">源码文件</a></div></header>
+<main>
+
+<section class="card" id="cs"><h2>FTSRDetectThinGeometryCS · permutation</h2><div class="body">
+<div class="codebox"><span class="k">class</span> <span class="f">FTSRDetectThinGeometryCS</span> : <span class="k">public</span> FTSRConvolutionNetworkShader
+{
+  <span class="k">class</span> FVaryingRangeDetectionDim : SHADER_PERMUTATION_BOOL(<span class="s">"DIM_VARYING_RANGE_DETECTION"</span>);
+  <span class="k">class</span> FIntensityLineDetectionDim: SHADER_PERMUTATION_BOOL(<span class="s">"DIM_INTENSITY_LINE_DETECTION"</span>);
+  <span class="k">class</span> FRejectTranslucencyDim   : SHADER_PERMUTATION_BOOL(<span class="s">"DIM_REJECT_TRANSLUCENCY_DETECTION"</span>);
+  <span class="k">using</span> FPermutationDomain = TShaderPermutationDomain&lt;
+    FTSRConvolutionNetworkShader::FPermutationDomain,
+    FVaryingRangeDetectionDim, FIntensityLineDetectionDim, FRejectTranslucencyDim&gt;;
+};</div>
+<table><tr><th>permutation</th><th>作用</th></tr>
+<tr><td><code>DIM_VARYING_RANGE_DETECTION</code></td><td>按深度范围自适应检测尺度（远近线宽不同）</td></tr>
+<tr><td><code>DIM_INTENSITY_LINE_DETECTION</code></td><td>基于颜色强度的线检测（<code>TLineEdgeType = tsr_tensor_half2</code>）</td></tr>
+<tr><td><code>DIM_REJECT_TRANSLUCENCY_DETECTION</code></td><td>结合半透明覆盖做拒绝</td></tr></table>
+<div class="note blue"><h3>边缘类型</h3><p><span class="inline">EDGE_TYPE = EDGE_HORIZONTAL_VERTICAL_DIAGNAL</span>（值 2）：同时检测水平/垂直/对角边缘，比只查水平垂直（值 1）更完整地捕捉斜线。</p></div></div></section>
+
+<section class="card" id="params"><h2>检测参数</h2><div class="body">
+<div class="codebox"><span class="k">int</span>   TileOverscan;                  <span class="c">// tile 边缘 overscan，卷积核需要邻域</span>
+<span class="k">int</span>   ThinGeometryTextureIndex;
+<span class="k">float</span> ErrorMultiplier;
+<span class="k">float</span> MaxRelaxationWeight;           <span class="c">// → #5 权重松弛</span>
+<span class="k">float</span> MinKeepLineContrast;           <span class="c">// 低于此对比度不算线（防噪声误判）</span>
+<span class="k">float</span> HighContrastLineFadeRate;      <span class="c">// 高对比线的淡出速率</span>
+<span class="k">float</span> HighContrastLineFadeRateInsideRegion;
+<span class="k">float</span> HighContrastLineWeight;        <span class="c">// 高对比线的处理权重</span></div></div></section>
+
+<section class="card" id="cn"><h2>TSRConvolutionNetwork · 框架</h2><div class="body">
+<div class="codebox"><span class="c">// TSRConvolutionNetwork.ush 建立在 LaneVectorization.ush 之上</span>
+<span class="k">#include</span> <span class="s">"TSRKernels.ush"</span>
+<span class="k">#include</span> <span class="s">"/Engine/Public/LaneVectorization.ush"</span>
+#define WAVE_COUNT (WAVE_COUNT_X * WAVE_COUNT_Y)
+#define LANE_COUNT (LANE_COUNT_X * LANE_COUNT_Y)
+<span class="c">// tsr_tensor_half / tsr_tensor_half4：跨 lane 的张量；卷积 = wave shuffle + 加权和</span>
+<span class="c">// TSRConvolutionNetworkPass.ush：把网络封装成 pass 级入口（DetectThinGeometry 引用）</span></div>
+<table><tr><th>复用者</th><th>用途</th></tr>
+<tr><td><code>FTSRRejectShadingCS</code>（#4）</td><td>着色拒绝启发式</td></tr>
+<tr><td><code>FTSRDetectThinGeometryCS</code>（#7）</td><td>线/边缘检测</td></tr>
+<tr><td>ResolveHistory Nyquist 路径（#6）</td><td>接近 Nyquist 极限的重建</td></tr></table>
+<div class="note blue"><h3>tsr_tensor 张量算子</h3><p>常见算子：<span class="inline">Median3x3</span>、<span class="inline">MaxRMinG3x3</span>、<span class="inline">ClampPlus3x3</span>、<span class="inline">Concatenate</span>/<span class="inline">Deconcatenate</span>（多张量打包/拆包，配合形态学）、bicubic 采样、能量/权重估计。这些算子在 lane 张量上批量执行，是 TSR 卷积启发式的构件。</p></div></div></section>
+
+<section class="card" id="cvar"><h2>相关 CVar</h2><div class="body">
+<table><tr><th>CVar</th><th>默认</th><th>作用</th></tr>
+<tr><td><code>r.TSR.ThinGeometryDetection</code></td><td>—</td><td>启用薄几何检测（高画质档默认开）</td></tr>
+<tr><td><code>r.TSR.ShadingRejection.ThinGeometry</code></td><td>—</td><td>拒绝阶段对薄几何的处理</td></tr>
+<tr><td><code>r.TSR.16BitVALU</code></td><td>1</td><td>张量运算大量用 16bit</td></tr>
+<tr><td><code>r.TSR.WaveOps</code></td><td>1</td><td>卷积网络依赖 wave ops</td></tr></table></div></section>
+
+<section class="card" id="files"><h2>源码文件索引</h2><div class="body">
+<table><tr><th>文件</th><th>行数</th><th>内容</th></tr>
+<tr><td><code>TSRDetectThinGeometry.usf</code></td><td>644</td><td>薄几何检测主 pass</td></tr>
+<tr><td><code>TSRConvolutionNetwork.ush</code></td><td>1158</td><td>lane 向量化张量卷积框架</td></tr>
+<tr><td><code>TSRConvolutionNetworkPass.ush</code></td><td>151</td><td>卷积网络的 pass 级封装</td></tr>
+<tr><td><code>TSRThinGeometryCommon.ush</code></td><td>142</td><td>薄几何标记编码与跨 pass 约定</td></tr>
+<tr><td><code>TSRMeasureCoverage.usf</code></td><td>84</td><td>MeasureThinGeometryCoverage pass</td></tr>
+<tr><td><code>TemporalSuperResolution.cpp</code></td><td>~1080+</td><td><code>FTSRDetectThinGeometryCS</code> 声明与 dispatch</td></tr></table></div></section>
+
+</main></body></html>
