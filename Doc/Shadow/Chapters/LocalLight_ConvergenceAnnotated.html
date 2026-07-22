@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#4 点光与聚光阴影 · 立方体与透视投影</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_Shadow_解析_总目录.html">← 返回《UE Shadow》总目录</a><h1>#4 点光与聚光阴影 · 立方体与透视投影</h1><div class="sub">点光向四面八方发光，阴影要覆盖六个方向；聚光是一个锥形，只需单个透视视锥。本篇讲清点光的<b>单趟立方体阴影</b>（OnePassPointLightShadow，一次渲 6 个面）、6 个 CubeDirections + UpVectors、投影矩阵 <span class="inline">FReversedZPerspectiveMatrix(PI/4,...)</span>，以及聚光的透视阴影。符号取自 UE5.8 <span class="inline">ShadowRendering.cpp · SetupWholeSceneProjection</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--orange)"></span>点光立方体</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>聚光透视</span><span class="tag"><span class="dot" style="background:var(--red)"></span>投影矩阵</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">6 面方向/上向量表、<span class="inline">OnePassShadowFaceProjectionMatrix</span>、点光/聚光 CVar，见 <a href="LocalLight_FunctionAppendix.html" style="color:#9ee8ff">→ 局部光附录</a>。</p></div></section>
+
+<section class="card"><h2>点光：单趟立方体阴影 <span class="en">OnePassPointLightShadow</span></h2><div class="body">
+<p>点光是全向光源，一个像素可能被任何方向的物体挡住，所以阴影图必须是<b>立方体（cubemap）</b>——六个面各覆盖 90° 视锥，拼成全景。UE5 用<b>单趟渲染</b>（one pass）：借助几何着色器或多视图（multi-view）在一次绘制里把三角形分发到 6 个 cube 面，避免 6 次独立 draw。</p>
+<div class="codebox"><span class="c">// SetupWholeSceneProjection L1149 — 点光 6 面方向与上向量</span>
+<span class="k">const</span> FVector CubeDirections[6] = { +X, -X, +Y, -Y, +Z, -Z };
+<span class="k">const</span> FVector UpVectors[6]      = { ... };  <span class="c">// 每面对应的 up</span>
+<span class="k">for</span> (Face : 0..5) {
+  OnePassShadowViewMatrices[Face] = <span class="f">MakeLookAt</span>(LightPos, CubeDirections[Face], UpVectors[Face]);
+  OnePassShadowViewProjectionMatrices[Face] = ViewMatrix * OnePassShadowFaceProjectionMatrix;
+}
+<span class="c">// 6 个面共享同一个 90° FOV 的反向 Z 透视投影</span>
+OnePassShadowFaceProjectionMatrix = <span class="f">FReversedZPerspectiveMatrix</span>(PI/4, 1, 1, 1, Radius);</div>
+<div class="note blue"><h3>为什么是 FReversedZPerspectiveMatrix(PI/4,...)</h3><p><code>PI/4</code> 是半 FOV（即整个视锥 90°），六个 90° 视锥正好无缝拼满整个球面。<b>Reversed-Z</b>（反向 Z：近平面映射到 1、远平面到 0）是 UE 全线采用的深度精度技巧——浮点深度在近处精度更高，反向后正好把精度分配到最需要的近处，大幅减少点光阴影的 acne 与 z-fighting。近平面固定为 1（单位）、远平面为光源半径 <code>Radius</code>。</p></div></div></section>
+
+<section class="card"><h2>聚光：单个透视视锥 <span class="en">Spot light</span></h2><div class="body">
+<p>聚光只照一个锥形区域，阴影图就是<b>一张普通的透视 shadow map</b>（EShadowDepthType::Spot）：投影视锥的 FOV 取聚光的外锥角，方向沿聚光朝向。它比点光便宜得多（一张图 vs 六个面），是室内灯光最常用的动态阴影。</p>
+<table><tr><th>光源</th><th>阴影图</th><th>投影</th><th>成本</th></tr>
+<tr><td>点光</td><td>Cubemap（6 面）</td><td>6× 90° 透视，单趟渲</td><td>高</td></tr>
+<tr><td>聚光</td><td>单张 2D shadow map</td><td>1× 锥角透视</td><td>中</td></tr></table>
+<div class="note green"><h3>局部光在 VSM 里的对应</h3><p>点光/聚光在中篇 VSM 里走 <b>局部光 VSM（#9）</b>：不再是固定分辨率的 cubemap/2D 图，而是透视投影的 mip 链，远处光源退化为单页阴影图（single page）。本篇的"点光 6 面、聚光 1 面"结构在 VSM 里依然成立，只是每个面的存储换成了按需分配的物理页。</p></div></div></section>
+
+<section class="card"><h2>小结 <span class="en">Summary</span></h2><div class="body">
+<p><span class="step">1</span>点光全向发光，用 <b>Cubemap 立方体阴影</b>；UE5 单趟渲染一次分发三角形到 6 面。</p>
+<p><span class="step">2</span>6 面共享 90° FOV 的 <span class="inline">FReversedZPerspectiveMatrix(PI/4,1,1,1,Radius)</span>，反向 Z 优化近处深度精度。</p>
+<p><span class="step">3</span>聚光只需<b>单张透视 shadow map</b>（EShadowDepthType::Spot），成本远低于点光。</p>
+<p><span class="step">4</span>二者在 VSM 里统一走<b>局部光 VSM</b>（#9），存储换成按需物理页。</p>
+</div></section>
+
+</main></body></html>

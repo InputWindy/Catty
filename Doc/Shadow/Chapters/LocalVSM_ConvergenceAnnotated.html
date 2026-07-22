@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#9 局部光 VSM · 点光聚光的 mip 金字塔与单页图</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:96px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.note.purple{border-left-color:var(--purple)}.note.purple h3{color:#d9ccff}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#1c2634;border:1px solid var(--line);color:#9ee8ff;font-weight:700;margin-right:8px;font-size:13px}</style></head><body>
+<header><a class="back" href="../UE_Shadow_解析_总目录.html">← 返回《UE Shadow》总目录</a><h1>#9 局部光 VSM · 点光聚光的 mip 金字塔与单页图</h1><div class="sub">方向光用 Clipmap（#8），局部光（点光/聚光）走另一条路：每盏灯一张带 <b>mip 金字塔</b>的虚拟阴影图，远处小灯甚至只用 <b>单页图</b>（single-page）省到极致。本篇讲清局部光 VSM 的分配、mip 层级、单页图阈值与点光 6 面处理。符号取自 UE5.8 <span class="inline">VirtualShadowMapArray.h</span>、<span class="inline">VirtualShadowMapDefinitions.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--cyan)"></span>分配</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>mip 金字塔</span><span class="tag"><span class="dot" style="background:var(--green)"></span>单页图</span></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">分配函数、单页阈值常量、mip 常量，见 <a href="LocalVSM_FunctionAppendix.html" style="color:#9ee8ff">→ 局部光 VSM 附录</a>。</p></div></section>
+
+<section class="card"><h2>局部光 = mip 金字塔，而非 Clipmap <span class="en">Why mip pyramid</span></h2><div class="body">
+<p>方向光是平行光、覆盖全场景，所以用以相机为中心的 Clipmap；局部光是<b>有位置、有衰减半径</b>的光，从光源看出去更像一个透视投影——因此它用一张带 <b>mip 金字塔</b>的虚拟阴影图：Level 0 是最高分辨率（<span class="inline">VSM_LEVEL0_DIM_PAGES_XY=128</span> 页，即 16384 纹素），逐级减半，最多 <span class="inline">VSM_MAX_MIP_LEVELS=8</span> 级。近处大灯占满金字塔，远处小灯只需低 mip。</p>
+<table><tr><th></th><th>方向光</th><th>局部光</th></tr>
+<tr><td>结构</td><td>Clipmap 同心环（#8）</td><td>mip 金字塔</td></tr>
+<tr><td>投影</td><td>正交 FReversedZOrthoMatrix</td><td>透视（点光 6 面立方体）</td></tr>
+<tr><td>分配</td><td><code>AllocateDirectional</code></td><td><code>AllocateLocal(bSinglePageShadowMap)</code></td></tr></table></div></section>
+
+<section class="card"><h2>分配顺序与单页图 <span class="en">AllocateLocal · IsSinglePage</span></h2><div class="body">
+<div class="codebox"><span class="c">// FVirtualShadowMapArray（VirtualShadowMapArray.h L293）</span>
+FVirtualShadowMap* <span class="f">AllocateDirectional</span>(...);
+FVirtualShadowMap* <span class="f">AllocateLocal</span>(<span class="k">bool</span> bSinglePageShadowMap);
+<span class="k">bool</span> <span class="f">IsSinglePage</span>(<span class="k">int</span> Id) { <span class="k">return</span> Id &lt; VSM_MAX_SINGLE_PAGE_SHADOW_MAPS; } <span class="c">// &lt; 8192</span></div>
+<div class="note red"><h3>方向光必须先于局部光分配</h3><p>源码注释明确：<i>"All directional lights must be allocated before all local lights."</i> 统一编 ID、统一进物理页池。ID <span class="inline">&lt; VSM_MAX_SINGLE_PAGE_SHADOW_MAPS(8192)</span> 的是<b>单页图</b>：整张阴影图只用一个 128×128 物理页——用于远处/小的局部光，其屏幕投影还不到一页大小，没必要开整座金字塔。这是 VSM 处理"场景里几百盏小灯"的关键省法。</p></div></div></section>
+
+<section class="card"><h2>点光 6 面与聚光 <span class="en">Cube faces</span></h2><div class="body">
+<p>点光向所有方向投射，VSM 沿用传统的 <b>6 面立方体</b>思路（承接 #4），但每一面都是一张 VSM mip 金字塔的一部分；聚光只需一个透视锥、一张图。局部光的页同样走页标记（#10）按需分配、走缓存（#11）跨帧复用——静止的灯只在第一帧渲染，之后完全缓存命中。</p>
+<div class="flow">
+<div class="node func"><strong>聚光 Spot</strong><small>单个透视锥，一张 mip 金字塔图</small></div>
+<div class="node branch"><strong>点光 Point</strong><small>6 面立方体，各面共享页池</small></div>
+<div class="node green"><strong>远处小灯</strong><small>单页图（single-page），仅 1 物理页</small></div>
+</div>
+<div class="note green"><h3>局部光的缓存收益最大</h3><p>场景里绝大多数局部光是<b>静止的</b>（路灯、火把、室内灯）。VSM 缓存让它们的阴影图只渲一次、之后年龄回收前一直命中（<span class="inline">Cache.MaxLightAgeSinceLastRequest=10</span>，见 #11）。这就是为什么 VSM 能开"每盏灯都投影动态阴影"而传统阴影图做不到——传统方案每盏灯每帧都要重渲一张固定分辨率图。</p></div></div></section>
+
+<section class="card"><h2>小结 <span class="en">Summary</span></h2><div class="body">
+<p><span class="step">1</span>局部光 VSM 用 <b>mip 金字塔</b>（Level 0 = 128 页，最多 <span class="inline">VSM_MAX_MIP_LEVELS=8</span> 级），而非 Clipmap。</p>
+<p><span class="step">2</span>分配走 <span class="inline">AllocateLocal(bSinglePageShadowMap)</span>；<b>方向光必须先分配</b>，再局部光。</p>
+<p><span class="step">3</span>ID <span class="inline">&lt; 8192(VSM_MAX_SINGLE_PAGE_SHADOW_MAPS)</span> 的是<b>单页图</b>，只占 1 物理页，用于远/小灯。</p>
+<p><span class="step">4</span>点光沿用 6 面立方体；静止局部光缓存收益最大，是 VSM "海量投影灯"的根本。</p>
+</div></section>
+
+</main></body></html>

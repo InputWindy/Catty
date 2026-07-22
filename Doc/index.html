@@ -38,6 +38,8 @@ main{padding:26px 36px 90px;max-width:1320px}
 .b-ml .eyebrow{color:var(--pink)}
 .b-tsr .accent{background:linear-gradient(90deg,var(--cyan),var(--purple))}
 .b-tsr .eyebrow{color:var(--cyan)}
+.b-shadow .accent{background:linear-gradient(90deg,var(--red),var(--purple))}
+.b-shadow .eyebrow{color:var(--red)}
 .flow{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px}
 @media(max-width:900px){.flow{grid-template-columns:1fr 1fr}}
 .node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:14px;min-height:96px}
@@ -53,20 +55,20 @@ footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
 </style></head><body>
 <header>
 <h1>UE5.8 渲染方案源码解析 · 文档集</h1>
-<div class="subtitle">这是一套对照 <b>UE5.8 本地源码</b>逐层解析的渲染方案学习文档，目前覆盖五大子系统：<b>Nanite</b>（虚拟化几何）、<b>虚拟纹理</b>（三种"数据大于显存"的流送范式）、<b>Lumen</b>（实时全局光照）、<b>MegaLights</b>（多光源阴影解耦）、<b>TSR</b>（时序超分辨率上采样）。每个主题都含一份<span style="color:var(--green)">主文档</span>（设计动机 + 数据流骨架 + 分阶段源码批注）与一份<span style="color:var(--cyan)">函数附录</span>（类 / 函数 / CVar / 结构体 / 常量细节）。所有符号名、常量、CVar 默认值均取自 UE5.8 源码，非二手转述。</div>
+<div class="subtitle">这是一套对照 <b>UE5.8 本地源码</b>逐层解析的渲染方案学习文档，目前覆盖六大子系统：<b>Nanite</b>（虚拟化几何）、<b>虚拟纹理</b>（三种"数据大于显存"的流送范式）、<b>Lumen</b>（实时全局光照）、<b>MegaLights</b>（多光源阴影解耦）、<b>TSR</b>（时序超分辨率上采样）、<b>Shadow</b>（阴影系统：传统阴影图 → VSM → 专项方案）。每个主题都含一份<span style="color:var(--green)">主文档</span>（设计动机 + 数据流骨架 + 分阶段源码批注）与一份<span style="color:var(--cyan)">函数附录</span>（类 / 函数 / CVar / 结构体 / 常量细节）。所有符号名、常量、CVar 默认值均取自 UE5.8 源码，非二手转述。</div>
 </header>
 <main>
 
 <section class="card"><h2>文档集规模</h2><div class="body">
 <div class="stat">
-<span class="pill"><b>5</b> 本书</span>
-<span class="pill"><b>72</b> 个主题</span>
-<span class="pill"><b>144</b> 篇正文（主文档 + 附录）</span>
+<span class="pill"><b>6</b> 本书</span>
+<span class="pill"><b>87</b> 个主题</span>
+<span class="pill"><b>174</b> 篇正文（主文档 + 附录）</span>
 <span class="pill">对照 <b>UE 5.8</b> 源码</span>
 </div>
 </div></section>
 
-<section class="card"><h2>五本书 · 从几何到光照再到上采样的一条主线</h2><div class="body">
+<section class="card"><h2>六本书 · 从几何到光照、阴影再到上采样的一条主线</h2><div class="body">
 <div class="grid">
 
 <a class="book b-nanite" href="Nanite/UE_Nanite_解析_总目录.html"><div class="accent"></div><div class="inner">
@@ -114,20 +116,29 @@ footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
 <span class="go">进入总目录 →</span>
 </div></a>
 
+<a class="book b-shadow" href="Shadow/UE_Shadow_解析_总目录.html"><div class="accent"></div><div class="inner">
+<span class="eyebrow">SHADOW · 阴影系统全谱</span>
+<h3>UE Shadow 阴影系统源码解析</h3>
+<div class="en">Shadow Map · CSM · VSM Clipmap · SMRT · DFShadow</div>
+<p>阴影要回答"从光源看，这个像素被谁挡住"。从传统 <b>阴影图 / CSM / 立方体 / Per-Object</b>，走到 UE5 划时代的 <b>VSM</b>（把阴影做成虚拟纹理，16K 虚拟分辨率、按需分页、跨帧缓存、SMRT 软阴影）。<b>5.8 方向光全面 Clipmap 化</b>是重点，另含距离场 / Capsule / Contact / 光追 / 移动端专项。</p>
+<div class="meta"><span class="chip">15 主题 · 30 篇</span><span class="chip">VSM Clipmap 重点</span><span class="chip">传统/VSM/专项三篇</span></div>
+<span class="go">进入总目录 →</span>
+</div></a>
+
 </div></div></section>
 
-<section class="card"><h2>一眼看懂：五本书在渲染管线里的位置</h2><div class="body">
+<section class="card"><h2>一眼看懂：六本书在渲染管线里的位置</h2><div class="body">
 <div class="flow">
 <div class="node n-geo"><strong>① 几何 Geometry</strong><small><b>Nanite</b> 提供高密度几何，像素级 LOD，输出 visibility buffer 与延迟材质 GBuffer</small></div>
 <div class="node n-tex"><strong>② 纹理 Texture</strong><small><b>虚拟纹理</b> 解决"纹理 > 显存"：页表式按需流送 + Clipmap，喂给材质采样</small></div>
 <div class="node n-gi"><strong>③ 全局光照 GI</strong><small><b>Lumen</b> 用 Nanite fallback mesh 做软件光追，算漫反射 GI / 反射 / 体积光照</small></div>
-<div class="node n-light"><strong>④ 多光源 Lights</strong><small><b>MegaLights</b> 让大量阴影投射光源的开销与数量解耦，与上述系统同帧协作</small></div>
+<div class="node n-light"><strong>④ 多光源与阴影 Lights &amp; Shadows</strong><small><b>MegaLights</b> 让大量阴影投射光源开销与数量解耦；<b>Shadow</b>（VSM 等）回答“像素被谁挡住”</small></div>
 <div class="node n-aa"><strong>⑤ 上采样 Upscale</strong><small><b>TSR</b> 在管线<b>末端</b>把低分辨率抗抖动帧跨帧累积成高分辨率抗锯齿图像</small></div>
 </div>
-<p style="color:var(--muted);margin:16px 0 0">五本书是<b>并列的五套渲染方案</b>，各有独立总目录，可单独阅读；但它们共享同一套 UE5 渲染世界观，交汇点见下。</p>
+<p style="color:var(--muted);margin:16px 0 0">六本书是<b>并列的六套渲染方案</b>，各有独立总目录，可单独阅读；但它们共享同一套 UE5 渲染世界观，交汇点见下。</p>
 </div></section>
 
-<section class="card"><h2>五本书的交汇点 · 同一套渲染世界观</h2><div class="body"><div class="note book-inline">
+<section class="card"><h2>六本书的交汇点 · 同一套渲染世界观</h2><div class="body"><div class="note book-inline">
 <h3>四处关键连接，串起整个 UE5 渲染</h3>
 <p><b>① 页流送范式（Nanite ↔ 虚拟纹理）：</b>Nanite 的 <span class="inline">#4 流送</span>（几何页）与虚拟纹理书的<b>页表式流送</b>（纹理页）是同一种"数据 > 显存、按需分页进物理池、GPU 反馈驱动请求"的范式——一个流几何、一个流纹理，读完一个再看另一个会非常通透。</p>
 <p><b>② VSM 阴影（Nanite ↔ 虚拟纹理 ↔ MegaLights）：</b>Nanite 的 <span class="inline">#9 阴影</span>直接复用虚拟纹理书 <b>VSM Clipmap</b> 篇的 clipmap 结构——Nanite 提供几何、VSM 提供页表，每个阴影视图就是一个 Nanite view（<span class="inline">NANITE_MAX_VIEWS_PER_CULL_RASTERIZE_PASS = 4096</span> 多视图批处理）。</p>

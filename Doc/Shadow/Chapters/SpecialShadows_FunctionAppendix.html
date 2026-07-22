@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#14 附录 · 补充阴影（胶囊/接触/光追）</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.toc{display:flex;flex-wrap:wrap;gap:8px}.toc a{padding:6px 12px;border-radius:999px;background:#101823;border:1px solid var(--line);color:#cfe4ff;text-decoration:none;font-size:13.5px}.toc a:hover{border-color:var(--cyan)}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;font-family:Consolas,"Cascadia Mono",monospace;font-size:13px;line-height:1.6;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15px;color:#ffe08a}.note p{margin:8px 0;color:#cfe4ff}.inline{font-family:Consolas,monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}</style></head><body>
+<header><a class="back" href="../UE_Shadow_解析_总目录.html">← 返回《UE Shadow》总目录</a> &nbsp;·&nbsp; <a class="back" href="SpecialShadows_ConvergenceAnnotated.html">← 回到 #14 主文档</a><h1>#14 附录 · 补充阴影</h1><div class="sub">胶囊/接触/光追三类的 CS、枚举与 CVar 全表。取自 UE5.8。</div></header>
+<main>
+
+<section class="card"><h2>目录</h2><div class="body toc">
+<a href="#capsule">胶囊阴影</a>
+<a href="#contact">接触阴影</a>
+<a href="#rt">光追阴影</a>
+</div></section>
+
+<section class="card" id="capsule"><h2>胶囊阴影 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">CapsuleShadowRendering.cpp</span></h2><div class="body">
+<div class="codebox"><span class="k">class</span> FCapsuleShadowingCS &lt;FShapeShadow, FIndirectPrimitiveType&gt;
+<span class="k">enum</span> ECapsuleShadowingType { ... }
+FCapsuleShape3f;  GShadowShapeTileSize = 8;  downsample = 2;
+<span class="c">// /Engine/Private/CapsuleShadowShaders.usf</span></div>
+<table><tr><th>CVar</th><th>默认</th></tr>
+<tr><td><code>r.CapsuleShadows</code></td><td>1</td></tr>
+<tr><td><code>r.CapsuleDirectShadows</code></td><td>1</td></tr>
+<tr><td><code>r.CapsuleIndirectShadows</code></td><td>1</td></tr>
+<tr><td><code>r.CapsuleShadowsFullResolution</code></td><td>0</td></tr>
+<tr><td><code>r.CapsuleMaxDirectOcclusionDistance</code></td><td>400</td></tr>
+<tr><td><code>r.CapsuleMaxIndirectOcclusionDistance</code></td><td>200</td></tr>
+<tr><td><code>r.CapsuleShadowFadeAngleFromVertical</code></td><td>PI/3</td></tr>
+<tr><td><code>r.CapsuleIndirectConeAngle</code></td><td>PI/8</td></tr>
+<tr><td><code>r.CapsuleSkyAngleScale</code></td><td>0.6</td></tr>
+<tr><td><code>r.CapsuleMinSkyAngle</code></td><td>15</td></tr></table></div></section>
+
+<section class="card" id="contact"><h2>接触阴影 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">ScreenSpaceShadows.cpp</span></h2><div class="body">
+<div class="codebox"><span class="k">enum</span> ContactShadowsMethod { StochasticJittering = 0, BendSSS = 1 }
+<span class="k">enum</span> EContactShadowsIntensityMode { PrimitiveFlag, DepthBasedApproximation, ForceCastingIntensity }
+FScreenSpaceShadowsCS / FScreenSpaceShadowsBendCS / FScreenSpaceShadowsUpsamplePS
+<span class="c">// tile 8×8, downsample=2, FadeStart=1600, FadeLength=800</span></div>
+<table><tr><th>CVar</th><th>默认</th></tr>
+<tr><td><code>r.ContactShadows.Standalone.Method</code></td><td>0</td></tr>
+<tr><td><code>r.ContactShadows.Intensity.Mode</code></td><td>0</td></tr>
+<tr><td><code>r.ContactShadows.OverrideLength</code></td><td>-1</td></tr>
+<tr><td><code>r.ContactShadows.Bend.OverrideSurfaceThickness</code></td><td>0.005</td></tr></table></div></section>
+
+<section class="card" id="rt"><h2>光追阴影 <span style="font-family:Consolas;font-size:13px;color:#a9b4c0">RayTracingShadows.cpp</span></h2><div class="body">
+<div class="codebox"><span class="f">ShouldRenderRayTracingShadowsForLight</span>(...)
+<span class="f">ShouldRenderRayTracingShadows</span>(...)</div>
+<table><tr><th>CVar</th><th>默认</th></tr>
+<tr><td><code>r.RayTracing.Shadows</code></td><td>0</td></tr>
+<tr><td><code>r.RayTracing.Shadows.SamplesPerPixel</code></td><td>-1</td></tr>
+<tr><td><code>r.RayTracing.Shadows.MaxBatchSize</code></td><td>8</td></tr>
+<tr><td><code>r.RayTracing.Shadows.Lights.Directional/Point/Spot/Rect</code></td><td>1</td></tr>
+<tr><td><code>r.RayTracing.Shadows.EnableMaterials</code></td><td>1</td></tr>
+<tr><td><code>r.RayTracing.Shadows.AvoidSelfIntersectionTraceDistance</code></td><td>1.0</td></tr>
+<tr><td><code>r.RayTracing.Shadows.EnableTwoSidedGeometry</code></td><td>1</td></tr>
+<tr><td><code>r.RayTracing.Shadows.EnableHairVoxel</code></td><td>1</td></tr>
+<tr><td><code>r.RayTracing.Shadows.LODTransitionStart</code></td><td>4000</td></tr>
+<tr><td><code>r.RayTracing.Shadows.LODTransitionEnd</code></td><td>5000</td></tr>
+<tr><td><code>r.RayTracing.Shadows.AcceptFirstHit</code></td><td>1</td></tr>
+<tr><td><code>r.RayTracing.Shadows.Translucency</code></td><td>0</td></tr>
+<tr><td><code>r.RayTracing.NormalBias</code></td><td>0.1</td></tr>
+<tr><td><code>r.Shadow.Denoiser</code></td><td>2</td></tr>
+<tr><td><code>r.Shadow.Denoiser.MaxBatchSize</code></td><td>4</td></tr></table></div></section>
+
+</main></body></html>
