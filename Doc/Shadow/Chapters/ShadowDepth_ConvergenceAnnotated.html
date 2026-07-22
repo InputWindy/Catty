@@ -29,11 +29,24 @@
 <tr><td>渲染</td><td>设 viewport 到该阴影图区域，用光源视图投影矩阵渲深度</td></tr></table></div></section>
 
 <section class="card"><h2>阴影深度着色器 <span class="en">EShadowDepthType permutation</span></h2><div class="body">
-<p>阴影深度只写深度、不写颜色，用一套精简的顶点/像素着色器。它按 <span class="inline">EShadowDepthType</span>（见 #1 附录）选 permutation——方向光是正交投影、聚光是透视、点光是立方体、VSM 又是另一路：</p>
-<div class="codebox"><span class="c">// 深度类型决定顶点着色器如何变换 + 是否输出到 cube 面</span>
-<span class="k">enum class</span> EShadowDepthType { None, VSM, Directional, Spot, OnePassPoint };
-<span class="c">// 顶点着色器：世界坐标 → 光源裁剪空间；像素着色器：仅在 masked/半透明材质时算 alpha 裁剪</span></div>
-<div class="note red"><h3>bias 在渲染期注入：对抗 shadow acne</h3><p>深度渲染时会写入两种偏移把记录深度稍微"推远"，避免比较时自阴影：<b>DepthBias</b>（常量偏移）与 <b>SlopeScaledDepthBias</b>（按多边形斜率缩放的偏移，斜面偏移更多）。二者太小则 acne（条纹自阴影），太大则 peter-panning（阴影脱离接触点）。UE 让每类阴影有独立 bias 参数（方向光、点光、聚光、VSM 各不同），并暴露给光源组件微调。VSM 因分辨率高得多，所需 bias 远小于传统方案。</p></div></div></section>
+<p>阴影深度只写深度、不写颜色，用一套精简的顶点/像素着色器。它按 <span class="inline">EShadowDepthType</span>（见 #1 附录）选 permutation——方向光是正交投影、聚光是透视、点光是立方体、VSM 又是另一路。下面是真实像素着色器 <span class="inline">ShadowDepthPixelShader.usf</span> 的 <span class="inline">Main</span> 尾部，聚光与 VSM 两条路一目了然：</p>
+<div class="codebox"><span class="c">// ShadowDepthPixelShader.usf — void Main(...) 节选（真实源码）</span>
+<span class="k">#if</span> SUPPORT_SHADOW_DEPTH_SPOT              <span class="c">// 聚光：反相深度 + bias 后写 SV_DEPTH</span>
+  Inputs.ShadowDepth = 1 - Inputs.ShadowDepth * PassStruct.ShadowParams.w;
+  Inputs.ShadowDepth += Inputs.DepthBias;
+  OutDepth = <span class="f">saturate</span>(Inputs.ShadowDepth);
+<span class="k">#endif</span>
+<span class="k">#if</span> SUPPORT_SHADOW_DEPTH_VSM               <span class="c">// VSM：解析页表 → 原子写进物理页池</span>
+  FShadowPhysicalPage Page = <span class="f">ShadowDecodePageTable</span>(PassStruct.VirtualSmPageTable[
+    <span class="f">CalcPageOffset</span>(NaniteView.TargetLayerIndex, NaniteView.TargetMipLevel,
+                  vAddress &gt;&gt; VSM_LOG2_PAGE_SIZE).GetResourceAddress()]);
+  <span class="k">if</span> (Page.bThisLODValidForRendering) {
+    uint2 pAddress = Page.PhysicalAddress * VSM_PAGE_SIZE + (vAddress &amp; VSM_PAGE_SIZE_MASK);
+    <span class="k">const int</span> ArrayIndex = PageInfo.bStaticPage ? <span class="f">GetVirtualShadowMapStaticArrayIndex</span>() : 0;
+    <span class="f">InterlockedMax</span>(PassStruct.OutDepthBufferArray[uint3(pAddress, ArrayIndex)], <span class="f">asuint</span>(DeviceZ));
+  }
+<span class="k">#endif</span></div>
+<div class="note red"><h3>bias 在渲染期注入 + VSM 用 InterlockedMax</h3><p>聚光路径里 <span class="inline">Inputs.DepthBias</span> 就是渲染期注入的偏移（常量 <b>DepthBias</b> + 按斜率的 <b>SlopeScaledDepthBias</b>）把记录深度稍微"推远"，避免比较时自阴影：太小则 acne（条纹自阴影），太大则 peter-panning（阴影脱离接触点）。VSM 路径没有独立深度目标——Nanite 光栅时同一物理页纹素可能被多个三角形写入，故用 <span class="inline">InterlockedMax(..., asuint(DeviceZ))</span> 原子取最大（反向 Z 下最大即最近），把深度直接写进物理页池的 <span class="inline">OutDepthBufferArray</span>（静/动分离由 <code>PageInfo.bStaticPage</code> 选 ArrayIndex）。VSM 因分辨率高得多，所需 bias 远小于传统方案。</p></div></div></section>
 
 <section class="card"><h2>小结 <span class="en">Summary</span></h2><div class="body">
 <p><span class="step">1</span><span class="inline">RenderShadowDepthMaps</span> 按 <b>VSM/Nanite → 传统 Atlas → 点光 Cubemap</b> 顺序渲深度，VSM 优先独占 Nanite 多视图路径。</p>

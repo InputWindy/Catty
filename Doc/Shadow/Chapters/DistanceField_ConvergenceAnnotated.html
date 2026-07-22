@@ -10,13 +10,22 @@
 
 <section class="card"><h2>不用阴影图，用距离场 <span class="en">Sphere tracing occlusion</span></h2><div class="body">
 <p>每个网格预烘一张 <b>Mesh Distance Field</b>（体素化的有符号距离场，记录到最近表面的距离）。求阴影时，从接收点朝光源发一条射线，用 <b>sphere tracing</b> 步进：每步跳过"当前点到最近表面的距离"，若途中距离场值很小说明贴近遮挡物——用最小 <i>圆锥半角</i>估计软阴影强度。</p>
-<div class="codebox"><span class="c">// DistanceFieldShadowing.cpp — 射线步进求遮挡</span>
-<span class="f">RayTraceShadows</span>(...):
-  <span class="k">for</span> (step = 0; step &lt; MaxSteps; ++step) {
-    dist = <span class="f">SampleMeshDistanceField</span>(pos);
-    minConeAngle = min(minConeAngle, dist / distAlongRay); <span class="c">// 软阴影</span>
-    pos += rayDir * dist;
-  }</div>
+<div class="codebox"><span class="c">// DistanceFieldShadowing.usf — void DistanceFieldShadowingCS(...)（真实源码节选）</span>
+float3 OpaqueTranslatedWorldPosition = <span class="f">mul</span>(float4(..., SceneDepth, 1), PrimaryView.ScreenToTranslatedWorld).xyz; <span class="c">// 重建世界位</span>
+float TraceDistance = TanLightAngleAndNormalThreshold.z;              <span class="c">// 方向光追踪距离</span>
+uint NumIntersectingObjects = <span class="f">GetCulledNumObjects</span>();
+<span class="k">#if</span> SCATTER_TILE_CULLING                                          <span class="c">// ① tile 剔除聚集候选 SDF 物体</span>
+  <span class="f">GetShadowTileCulledData</span>(OpaqueTranslatedWorldPosition, CulledDataParameter, NumIntersectingObjects);
+<span class="k">#else</span>
+  <span class="f">CullObjectsToTileWithGather</span>(SceneDepth, ThreadIndex, GroupId.xy, TraceDistance, MinDepth, MaxDepth, ...);
+<span class="k">#endif</span>
+float Result = 1.0;
+BRANCH
+<span class="k">if</span> (bShouldComputeShadowing &amp;&amp; NumIntersectingObjects &gt; 0) {       <span class="c">// ② 对候选物 sphere trace</span>
+  float MinSphereRadius = .4f;              <span class="c">// 不至于全硬</span>
+  float MaxSphereRadius = MAX_TRACE_SPHERE_RADIUS;
+  <span class="c">// ... 沿光线在 Mesh Distance Field 步进，用最小圆锥半角估计软阴影 → Result ...</span>
+}</div>
 <div class="note purple"><h3>DFShadow 的定位</h3><p>距离场阴影擅长<b>大范围、远景、静态几何</b>的柔和阴影，开销与阴影图分辨率无关（分辨率来自 SDF 体素）。它需要 SM5+，且是很多"低配 Lumen / 无 VSM"配置下的方向光远景阴影方案。缺点：只对有 SDF 的网格有效（不支持骨骼动画细节、半透明）。</p></div></div></section>
 
 <section class="card"><h2>tile 剔除加速 <span class="en">Scatter / Tiled culling</span></h2><div class="body">

@@ -27,12 +27,24 @@
 <span class="c">// 稳定一个静态帧后再转回缓存模式</span></div>
 <div class="note red"><h3>什么会触发失效</h3><p>灯的变换/参数变化、投射体（动态物）移动、可变形网格更新（<span class="inline">Cache.DeformableMeshesInvalidate=1</span>）、相机跨越 clipmap snap 网格。<span class="inline">RenderedFrameNumber=-1</span> 是"作废"信号。失效后的第一帧 <span class="inline">bIsUncached</span>，完整渲染；若之后场景静止，下一帧起转回缓存命中。这个"缓一帧再信任缓存"的设计避免了运动物残影。</p></div></div></section>
 
-<section class="card"><h2>GPU 实例失效 <span class="en">CacheGPUInvalidation.usf</span></h2><div class="body">
-<p>动态物移动导致的页失效在 GPU 上并行完成，避免 CPU 遍历成千上万实例：</p>
+<section class="card"><h2>GPU 实例失效 <span class="en">VirtualShadowMapCacheGPUInvalidation.usf</span></h2><div class="body">
+<p>动态物移动导致的页失效在 GPU 上并行完成，避免 CPU 遍历成千上万实例。核心 CS <span class="inline">VSMUpdateViewInstanceStateCS</span> 每线程处理 <b>32 个实例</b>（一个 uint 一位一个实例），用位运算找出"本帧状态变了"的实例：</p>
+<div class="codebox"><span class="c">// VirtualShadowMapCacheGPUInvalidation.usf — VSMUpdateViewInstanceStateCS（真实源码节选）</span>
+uint IsDeformingMask     = <span class="f">LoadInstanceDeformingWord</span>(WordIndex, SceneRendererViewId); <span class="c">// 本帧是否形变</span>
+uint CachedAsDynamicMask = InOutViewInstanceState[WordIndex];                       <span class="c">// 上帧动态标记</span>
+uint TrackedMask         = InOutViewInstanceState[WordIndex + StateWordStride];     <span class="c">// 是否已跟踪</span>
+<span class="c">// XOR 找出与上帧不一致、且已跟踪的实例（新增的不算状态变化）</span>
+uint StateChangeMask = (IsDeformingMask ^ CachedAsDynamicMask) &amp; TrackedMask;
+uint InvalidationMask = StateChangeMask &amp; IsDeformingMask;      <span class="c">// 只在"转为动态"时失效</span>
+<span class="f">FOREACH_SET_BIT_BEGIN</span>(InvalidationMask, BitIndex, BitMask) {   <span class="c">// 遍历置位，写失效队列</span>
+  <span class="f">WaveInterlockedAddScalarInGroups</span>(OutInvalidationArgs[3], OutInvalidationArgs[0], THREAD_GROUP_SIZE, 1, WriteOffset);
+  OutInvalidationQueue[WriteOffset] = <span class="f">PackInvalidationItem</span>(WordIndex*32u + BitIndex, SceneRendererViewId, ...);
+}
+<span class="f">FOREACH_SET_BIT_END</span>()</div>
 <div class="flow">
-<div class="node func"><strong>VSMUpdateViewInstanceStateCS</strong><small>每线程处理 32 个实例，位运算更新状态</small></div>
+<div class="node func"><strong>VSMUpdateViewInstanceStateCS</strong><small>32 实例/字，XOR 找状态变化 → 写失效队列</small></div>
 <div class="arrow">▶</div>
-<div class="node gate"><strong>VSMProcessInstanceInvalidationCS</strong><small>把移动实例覆盖的页标记失效</small></div>
+<div class="node gate"><strong>ProcessInvalidationQueueGPUCS</strong><small>消费失效队列，把实例覆盖的页标记失效</small></div>
 </div>
 <div class="note purple"><h3>用 HZB 加速失效判定</h3><p><span class="inline">Cache.InvalidateUseHZB=1</span>：用上一帧的 HZB 判断移动实例是否真的会影响某页——若实例在该页里被完全遮挡，就无需失效该页。这把"保守全失效"收窄成"精确按需失效"，是 VSM 在大量动态物场景仍高效的关键。失效预算 <span class="inline">DeferredInvalidationBudget=-1</span>（不限）。</p></div></div></section>
 

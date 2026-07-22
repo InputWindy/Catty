@@ -10,15 +10,27 @@
 
 <section class="card"><h2>胶囊阴影 <span class="en">CapsuleShadowRendering.cpp</span></h2><div class="body">
 <p>用一组<b>胶囊体</b>（<span class="inline">FCapsuleShape3f</span>，从骨骼生成）近似角色，对面光源/天光做<b>柔和的直接与间接遮蔽</b>。开销极低，常用于移动端角色软阴影和静态物对角色的间接阴影。</p>
-<div class="codebox"><span class="c">// FCapsuleShadowingCS &lt;FShapeShadow, FIndirectPrimitiveType&gt;</span>
-GShadowShapeTileSize = 8;   downsample = 2;   <span class="c">// tile 8×8，半分辨率</span>
-r.CapsuleShadows = 1;              <span class="c">// 总开关</span>
-r.CapsuleDirectShadows = 1;        r.CapsuleIndirectShadows = 1;
-r.CapsuleMaxDirectOcclusionDistance = 400;   r.CapsuleMaxIndirectOcclusionDistance = 200;</div>
+<div class="codebox"><span class="c">// CapsuleShadowShaders.usf — float ShadowConeTraceAgainstCulledCapsuleShapes(...)（真实源码节选）</span>
+<span class="c">// FCapsuleShadowingCS &lt;FShapeShadow, FIndirectPrimitiveType&gt;；GShadowShapeTileSize=8, downsample=2</span>
+float ConeVisibility = 1;
+float AreaOfLight = 6.283185308f - 6.283185308f * <span class="f">cos</span>(LightAngle);   <span class="c">// 光锥立体角</span>
+LOOP
+<span class="k">for</span> (uint i = 0; i &lt; NumIntersectingCapsules; i++) {                 <span class="c">// 遍历本 tile 剔除后的胶囊</span>
+  uint ObjectIndex = bUseCulling ? IntersectingShapeIndices[MAX_INTERSECTING_SHAPES*GroupIndex + i] : i;
+  <span class="c">// ... 对该胶囊做锥形遮挡测试，取 min → ConeVisibility ...</span>
+}</div>
 <div class="note green"><h3>软阴影从角度来</h3><p>胶囊阴影的软硬由光源张角控制：<span class="inline">r.CapsuleShadowFadeAngleFromVertical=PI/3</span>、间接锥角 <span class="inline">r.CapsuleIndirectConeAngle=PI/8</span>、天光角 <span class="inline">r.CapsuleSkyAngleScale=0.6</span>（下限 <span class="inline">r.CapsuleMinSkyAngle=15</span>）。shader 在 <span class="inline">/Engine/Private/CapsuleShadowShaders.usf</span>。</p></div></div></section>
 
-<section class="card"><h2>接触阴影 <span class="en">ScreenSpaceShadows.cpp</span></h2><div class="body">
-<p>接触阴影在<b>屏幕空间沿光线方向步进深度缓冲</b>，补全阴影图/VSM 分辨率不足处的"接触细节"（脚与地面、物体缝隙的硬小阴影）。每盏灯可设 ContactShadowLength 开启。</p>
+<section class="card"><h2>接触阴影 <span class="en">ScreenSpaceShadows.usf</span></h2><div class="body">
+<p>接触阴影在<b>屏幕空间沿光线方向步进深度缓冲</b>，补全阴影图/VSM 分辨率不足处的"接触细节"（脚与地面、物体缝隙的硬小阴影）。每盏灯可设 ContactShadowLength 开启。下面是默认方法的真实 CS：</p>
+<div class="codebox"><span class="c">// ScreenSpaceShadows.usf — void ScreenSpaceShadowsCS(...)（真实源码节选）</span>
+float3 OpaqueTranslatedWorldPosition = <span class="f">mul</span>(float4(..., SceneDepth, 1), PrimaryView.ScreenToTranslatedWorld).xyz;
+float Dither = <span class="f">InterleavedGradientNoise</span>(DispatchThreadId.xy + 0.5f, View.StateFrameIndexMod8);
+float2 HitUV;
+float HitDistance = <span class="f">CastScreenSpaceShadowRay</span>(OpaqueTranslatedWorldPosition, LightDirection,
+                        ActualContactShadowLength, 8 <span class="c">/*步数*/</span>, Dither, 2.0f, false, HitUV);
+float Result = HitDistance &gt; 0.0 ? (1.0f - <span class="f">GetContactShadowOcclusion</span>(HitUV)) : 1.0f; <span class="c">// 命中=被遮挡</span>
+RWShadowFactors[DispatchThreadId.xy] = float2(Result, SceneDepth);</div>
 <div class="flow">
 <div class="node branch"><strong>StochasticJittering = 0</strong><small>默认方法，随机抖动步进</small></div>
 <div class="node func"><strong>BendSSS = 1</strong><small>Bend Studio 屏幕空间软阴影</small></div>
