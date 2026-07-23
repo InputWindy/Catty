@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteHZBCull.ush 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/InstanceCull_ConvergenceAnnotated.html">← 回到 #5 实例剔除与层级遍历</a></div>
+<h1>NaniteHZBCull.ush 汇聚/发散批注版</h1><div class="subtitle">Nanite 遮挡剔除的<b>底层工具库</b>：把一个包围盒投影成<b>屏幕矩形</b>（<span class="inline">FScreenRect</span>），选一个合适的 HZB mip，采样该矩形覆盖的 HZB 纹素取最小深度，与矩形自身深度比较判可见。实例剔除、簇剔除、阴影页剔除全部调它。核心 <span class="inline">GetScreenRect</span> + <span class="inline">IsVisibleHZB</span>。<b>说明：完整文件 704 行</b>，下方内嵌核心结构与判定的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>包围盒</strong><small>视锥求交得 NDC RectMin/RectMax</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>GetScreenRect</strong><small>NDC→屏幕矩形 + 选 HZB mip（覆盖 footprint）</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>GetMinDepthFromHZB</strong><small>Gather 该 mip 上矩形覆盖的纹素，取最小深度</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>IsVisibleHZB</strong><small>Rect.Depth ≥ MinDepth ? 可见 : 遮挡</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（704 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/Nanite/NaniteHZBCull.ush · FScreenRect L27 / GetScreenRect L71 / IsVisibleHZB L195 / MipLevelForRect L40</span>
+<textarea class="embedded-source" readonly spellcheck="false">struct FScreenRect
+{
+	int4  Pixels;                // 全分辨率下矩形像素范围 [min.xy, max.xy]
+	bool  bOverlapsPixelCenter;  // 是否覆盖任一像素中心（否则不会被光栅）
+	int4  HZBTexels;             // 该 HZB mip 下的纹素范围
+	int   HZBLevel;              // 选中的 HZB mip
+	float Depth;                 // 矩形最近深度（Inverted-Z：越大越近）
+};
+
+// 选能覆盖 footprint 的最低 mip：k = firstbithigh(n-1)，比 log2 快（GCN 上 full rate）
+int MipLevelForRect( int4 RectPixels, int DesiredFootprintPixels )
+{
+	const int MipOffset = (int)log2((float)DesiredFootprintPixels) - 1;
+	int2 MipLevelXY = firstbithigh(RectPixels.zw - RectPixels.xy);
+	int MipLevel = max(max(MipLevelXY.x, MipLevelXY.y) - MipOffset, 0);
+	// 量化对齐可能少覆盖一格，必要时再降一级兜底
+	MipLevel += any((RectPixels.zw >> MipLevel) - (RectPixels.xy >> MipLevel) > MaxPixelOffset) ? 1 : 0;
+	return MipLevel;
+}
+
+// 包围盒 NDC → 屏幕矩形 + 选 HZB mip
+FScreenRect GetScreenRect( int4 ViewRect, float3 CullRectMin, float3 CullRectMax, int DesiredFootprintPixels )
+{
+	FScreenRect Rect;
+	Rect.Depth = CullRectMax.z;                                    // Inverted-Z 取最近
+	float4 RectUV = saturate( float4(CullRectMin.xy, CullRectMax.xy) * float2(0.5,-0.5).xyxy + 0.5 ).xwzy;
+	float2 ViewSize = ViewRect.zw - ViewRect.xy;
+	Rect.Pixels = int4( RectUV * ViewSize.xyxy + ViewRect.xyxy + float4(0.5,0.5,-0.5,-0.5) );  // 用像素中心，约省 5% 簇
+	Rect.bOverlapsPixelCenter = all( Rect.Pixels.zw >= Rect.Pixels.xy );
+	Rect.HZBTexels = int4( Rect.Pixels.xy, max(Rect.Pixels.xy, Rect.Pixels.zw) ) >> 1;  // HZB mip0 = 半分辨率
+	Rect.HZBLevel  = MipLevelForRect( Rect.HZBTexels, DesiredFootprintPixels );
+	Rect.HZBTexels >>= Rect.HZBLevel;
+	return Rect;
+}
+
+// 判定：矩形最近深度 ≥ HZB 最小深度 → 未被遮挡（Inverted-Z）
+bool IsVisibleHZB( FScreenRect Rect, bool bSample4x4 )
+{
+	const float MinDepth = GetMinDepthFromHZB(Rect, bSample4x4);
+	return Rect.Depth >= MinDepth;   // Inverted Z buffer
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. FScreenRect：包围盒的屏幕足迹</h2><div class="body grid2"><pre><code><span class="code-line blue">int4  Pixels;       // 全分辨率像素范围</span>
+<span class="code-line blue">int4  HZBTexels;    // 该 mip 下的纹素范围</span>
+<span class="code-line blue">int   HZBLevel;     // 选中的 mip</span>
+<span class="code-line yellow">float Depth;        // 矩形最近深度（Inverted-Z 越大越近）</span></code></pre><div class="note n-blue"><h3>说明</h3><p>剔除的基本单位不是三角、不是簇，而是包围盒投影出的<b>屏幕矩形</b> <span class="inline">FScreenRect</span>。它记住矩形的像素范围、对应 HZB 纹素范围、选中的 mip，以及矩形<b>最近</b>深度 <span class="inline">Depth</span>（UE 用 Inverted-Z，越大越近）。<span class="inline">GetScreenRect</span> 从 <span class="inline">FFrustumCullData</span> 的 <span class="inline">RectMin/RectMax</span>（视锥求交结果）构造它。</p></div></div></section>
+
+<section class="card"><h2>1. 选 mip：一次 Gather 覆盖整个足迹</h2><div class="body grid2"><pre><code><span class="code-line green">int2 MipLevelXY = firstbithigh(RectPixels.zw - RectPixels.xy);</span>
+<span class="code-line green">int MipLevel = max(max(MipLevelXY.x, MipLevelXY.y) - MipOffset, 0);</span>
+<span class="code-line orange">MipLevel += (量化对齐不够) ? 1 : 0;   // 兜底再降一级</span></code></pre><div class="note n-green"><h3>说明</h3><p>关键优化：选一个<b>足够粗的 mip</b>，使矩形足迹只需 2×2（或 4×4）个纹素就能覆盖——这样一次 <span class="inline">GatherLODRed</span> 就取完，避免遍历大量像素。<span class="inline">MipLevelForRect</span> 用 <span class="inline">firstbithigh(n-1)</span> 算最低可行 mip（比 <span class="inline">log2</span> 在 GCN 上快 4 倍），再按对齐量化补一级兜底。HZB mip0 本身是<b>半分辨率</b>起步（一个纹素盖 2×2 全分辨率像素）。</p></div></div></section>
+
+<section class="card"><h2>2. 判定：Inverted-Z 的一次比较（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line yellow">float MinDepth = GetMinDepthFromHZB(Rect, bSample4x4);  // Gather 取最小</span>
+<span class="code-line yellow">return Rect.Depth >= MinDepth;   // 矩形最近 ≥ HZB 最小 → 可见</span></code></pre><div class="note"><h3>说明</h3><p>全库的<b>汇聚点</b>：<span class="inline">GetMinDepthFromHZB</span> 在选中 mip 上 Gather 矩形覆盖的 4（或 16）个纹素取<b>最小</b>深度（HZB 存的是各块最近深度）。因为 Inverted-Z 越大越近，<span class="inline">Rect.Depth &gt;= MinDepth</span> 表示"矩形最近点比 HZB 记录的遮挡物还近或齐平"→ 没被完全挡住 → <b>保守判可见</b>。HZB 是保守的：宁可放过（多画），绝不错杀。<span class="inline">bSample4x4</span> 用更大足迹换更保守（用于对精度敏感的场景）。</p></div></div></section>
+
+<section class="card"><h2>3. 谁在调它</h2><div class="body grid2"><pre><code><span class="code-line blue">InstanceCull:  Cull.FrustumHZB()  → GetScreenRect + IsVisibleHZB</span>
+<span class="code-line blue">ClusterCull:   簇包围盒 → 同一套判定</span>
+<span class="code-line orange">IsVisibleHZBArray: 阴影页 array（VSM，带 ArrayIndex）</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span><a href="NaniteInstanceCulling.usf.html" class="inline">实例剔除</a>、<a href="NaniteClusterCulling.usf.html" class="inline">簇剔除</a>、<a href="../Chapters/Shadow_ConvergenceAnnotated.html" class="inline">#9 阴影</a>页剔除，都用这同一套 <span class="inline">GetScreenRect</span>+<span class="inline">IsVisibleHZB</span>，只是喂进不同的包围盒与 HZB。</p><p><span class="note-label diff">不同点</span>主视图用 2D HZB（<span class="inline">IsVisibleHZB</span>）；VSM 阴影页用 <span class="inline">Texture2DArray</span> HZB（<span class="inline">IsVisibleHZBArray</span> 带 <span class="inline">ArrayIndex</span>）。两趟遮挡（<a href="../Chapters/InstanceCull_ConvergenceAnnotated.html" class="inline">#5</a>）里主趟用上帧 HZB、后趟用本帧新建 HZB，调的都是这里。</p></div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>包围盒 → <span class="inline">GetScreenRect</span>（NDC→屏幕矩形 + 选覆盖足迹的最低 mip）→ Gather 取最小深度 → Inverted-Z 一次比较判可见。保守、廉价、一次 Gather，全 Nanite 剔除共用。</p></div><div class="note"><h3>阅读建议</h3><p>调用方见 <a href="NaniteInstanceCulling.usf.html" class="inline">InstanceCulling</a>/<a href="NaniteClusterCulling.usf.html" class="inline">ClusterCulling</a>；两趟遮挡与 HZB 何时重建见 <a href="../Chapters/InstanceCull_ConvergenceAnnotated.html" class="inline">#5</a>；VSM 页 HZB 见 <a href="../Chapters/Shadow_ConvergenceAnnotated.html" class="inline">#9</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="NaniteInstanceCulling.usf.html"><span class="dot" style="background:var(--green)"></span>NaniteInstanceCulling.usf（FrustumHZB 调用方）↗</a>
+<a class="tag" href="NaniteClusterCulling.usf.html"><span class="dot" style="background:var(--green)"></span>NaniteClusterCulling.usf（簇剔除调用方）↗</a>
+<a class="tag" href="../Chapters/InstanceCull_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#5 实例剔除与层级遍历（两趟遮挡）</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>

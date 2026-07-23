@@ -26,7 +26,7 @@
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
 <tr><td><code>NaniteInstanceCulling.usf</code></td><td>实例视锥/HZB 剔除，写候选节点/occluded 实例</td><td><a href="../Shaders/NaniteInstanceCulling.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
 <tr><td><code>NaniteClusterCulling.usf</code></td><td>NodeCull / ClusterCull / PersistentNodeAndClusterCull（FQueueState 工作队列）</td><td><a href="../Shaders/NaniteClusterCulling.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
-<tr><td><code>NaniteHZBCull.ush</code></td><td>HZB 遮挡测试（屏幕矩形 + mip 选择）</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
+<tr><td><code>NaniteHZBCull.ush</code></td><td>HZB 遮挡测试（屏幕矩形 + mip 选择）</td><td><a href="../Shaders/NaniteHZBCull.ush.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FQueueState</span>、<span class="inline">FVisibleCluster</span>、剔除标志位、<span class="inline">FConfiguration</span>、<span class="inline">FPackedView</span> 全部符号，见 <a href="InstanceCull_FunctionAppendix.html" style="color:#9ee8ff">→ 剔除遍历附录</a>。</p></div></section>
 
@@ -117,7 +117,7 @@ QueueState[0].PassState[0/1].ClusterWriteOffset</div>
 <section class="card"><h2>关联文档 / 接口连接 <span class="en">Related &amp; interfaces</span></h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="Streaming_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#4 资源与流送（层级/页数据）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#6 集群剔除与两路光栅（消费 VisibleClustersSWHW）</a><a class="tag" href="Streaming_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#4 流送（回写页请求）</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/NaniteInstanceCulling.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteInstanceCulling.usf ↗</a><a class="tag" href="../Shaders/NaniteClusterCulling.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteClusterCulling.usf ↗</a><span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteHZBCull.ush（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/NaniteInstanceCulling.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteInstanceCulling.usf ↗</a><a class="tag" href="../Shaders/NaniteClusterCulling.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteClusterCulling.usf ↗</a><a class="tag" href="../Shaders/NaniteHZBCull.ush.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteHZBCull.ush ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="InstanceCull_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 
