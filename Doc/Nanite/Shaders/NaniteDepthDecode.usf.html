@@ -1,0 +1,97 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteDepthDecode.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:380px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Shading_ConvergenceAnnotated.html">← 回到 延迟材质着色</a></div>
+<h1>NaniteDepthDecode.usf 整源解析</h1><div class="subtitle">Nanite 的<b>深度解码</b>（51 行）：把 HTILE 压缩布局的深度<b>解码回线性可采样纹理</b>，供不能直接读 HTILE 的路径使用。核心 <span class="inline">DepthDecode</span>（8×8 tile）。<b>下方内嵌完整 51 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/NaniteDepthDecode.usf</span></h2><div class="body">
+<span class="source-path">DepthDecode @ L28（numthreads 8,8,1）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "../Common.ush"
+#include "../SceneData.ush"
+#include "../DeferredShadingCommon.ush"
+#include "../HTileEncoding.ush"
+#include "../VelocityCommon.ush"
+#include "NaniteDataDecode.ush"
+#include "NaniteAttributeDecode.ush"
+
+#if PLATFORM_SUPPORTS_HTILE_LOOKUP
+
+uint4 ViewRect;
+uint4 HTileConfig;
+
+Texture2D&lt;float&gt; SceneDepth;
+
+Texture2D&lt;uint&gt;   ShadingMask;
+
+StructuredBuffer&lt;uint&gt; SceneHTileBuffer;
+
+RWTexture2D&lt;float&gt; SceneZDecoded;
+RWTexture2D&lt;uint4&gt; SceneZLayout;
+
+// TODO: Need to adjust this to properly support dynamic res scaling on SceneDepth
+
+[numthreads(8, 8, 1)]
+void DepthDecode(uint2 GroupId : SV_GroupID, uint ThreadIndex : SV_GroupIndex)
+{
+	const uint2 PixelLocalPos = SwizzleThreadIndex(ThreadIndex &amp; 63u);
+	const uint2 PixelPos = ((GroupId &lt;&lt; 3) | PixelLocalPos) + uint2(ViewRect.xy);
+
+	if (any(PixelPos.xy &gt;= ViewRect.zw)) // TODO: Support offset views
+	{
+		return;
+	}
+
+	const uint PlatformConfig		= HTileConfig.x;
+	const uint PixelsWide			= HTileConfig.y;
+	const bool HiStencil			= IsHiStencilTileConfig(PlatformConfig);
+	const bool Is32BytePadded		= Is32BytePaddedTileConfig(PlatformConfig);
+	const bool CompareMinZ			= true;
+	const uint TileIndex			= ToScalarMemory(ComputeTileOffset(PixelPos.xy, PixelsWide, PlatformConfig));
+
+	// Reverse Z Clear Value
+	const float ClearValue = 0.0f;
+
+	// Scene Depth
+	{
+		const uint  SceneHTileEnc			= SceneHTileBuffer[TileIndex];
+		const uint2 SceneTileMinMaxFP		= DecodeTileMinMax(SceneHTileEnc, HiStencil, CompareMinZ);
+		const float2 SceneTileMinMax		= SceneTileMinMaxFP / (float2)((1 &lt;&lt; 14) - 1); // 14bit fixed point
+		const uint SceneTileZMask			= BitFieldExtractU32(SceneHTileEnc, 4u, 0u);
+
+		SceneZDecoded[PixelPos.xy] = DecompressDepthValue(SceneDepth, SceneTileZMask, PixelPos.xy, ThreadIndex, ClearValue, PlatformConfig);
+
+		// Raw, Packed Min/Max, ZMask, TileIndex
+		SceneZLayout[PixelPos.xy] = uint4(SceneHTileEnc, f32tof16(SceneTileMinMax.x) | (f32tof16(SceneTileMinMax.y) &lt;&lt; 16), SceneTileZMask, TileIndex);
+	}
+}
+
+#else
+
+[numthreads(8, 8, 1)]
+void DepthDecode(uint3 PixelPos : SV_DispatchThreadID, uint ThreadIndex : SV_GroupIndex)
+{
+}
+
+#endif</textarea>
+</div></section>
+<section class="card"><h2>0. HTILE → 普通深度纹理（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">[numthreads(8, 8, 1)] void DepthDecode(uint2 GroupId, uint ThreadIndex)</span>
+<span class="code-line blue">// 从 HTILE 压缩深度布局读取每像素深度</span>
+<span class="code-line green">// 写进普通线性排布的深度纹理（可被常规采样）</span></code></pre><div class="note"><h3>说明</h3><p><a href="NaniteDepthExport.usf.html" class="inline">DepthExport</a> 把深度写成 HTILE 压缩布局（高效但只有硬件/特定 API 能直接读）。有些路径（调试、某些平台后处理）需要<b>普通线性排布</b>的深度纹理。<span class="inline">DepthDecode</span> 就是逆操作：8×8 tile 的 compute 把 HTILE 布局深度<b>解码/拷贝</b>成常规深度纹理，供这些消费者按普通 UV 采样。是 HTILE 编码 ↔ 线性纹理的桥，属深度导出的配套工具。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Shading_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>延迟材质着色</a>
+<a class="tag" href="NaniteDepthExport.usf.html"><span class="dot" style="background:var(--cyan)"></span>DepthExport.usf↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

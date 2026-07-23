@@ -1,23 +1,31 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NaniteExportGBuffer.usf 代码解析</title>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteExportGBuffer.usf 代码解析（整源）</title>
 <style>
-:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.legend{display:flex;flex-wrap:wrap;gap:10px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.box{border:1px solid var(--line);border-radius:12px;background:#101823;padding:14px}.box h3{margin:0 0 8px;font-size:16px}.box p,.box li{color:#ced8e2}.flow{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:92px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.pink{background:rgba(255,122,182,.12);border-left:4px solid var(--pink);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.red{background:rgba(255,107,107,.12);border-left:4px solid var(--red);padding-left:10px}.cyan{background:rgba(102,227,224,.12);border-left:4px solid var(--cyan);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18);font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",Arial,sans-serif;letter-spacing:.01em}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700;text-shadow:0 0 18px rgba(255,209,102,.18)}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note ul{margin:10px 0;padding-left:18px}.note li{margin:7px 0;color:#bfe8d0}.note li::marker{color:#74d99f}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700;letter-spacing:.02em}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-purple{border-left-color:var(--purple);background:rgba(182,156,255,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.n-cyan{border-left-color:var(--cyan);background:rgba(102,227,224,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.embedded-source{width:100%;height:720px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2,.grid3{grid-template-columns:1fr}.flow{grid-template-columns:1fr}}
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
-<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Shading_ConvergenceAnnotated.html">← 回到 #7 Visibility Buffer 与材质着色</a></div>
-<h1>NaniteExportGBuffer.usf 汇聚/发散批注版</h1><div class="subtitle">按“先看汇聚点，再看发散点”重排。这个 shader 是一组独立的<b>全屏像素着色器入口</b>：它们共享同一段"解包 VisBuffer64 → 写 SV_Depth"的<b>汇聚骨架</b>，各自把结果<b>发散</b>到不同导出目标（ShadingMask / Velocity / 自定义深度模板 / 阴影图深度 / 编辑器 HitProxy 与选中轮廓）。</div></header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Shading_ConvergenceAnnotated.html">← 回到 延迟材质着色</a></div>
+<h1>NaniteExportGBuffer.usf 整源解析</h1><div class="subtitle">Nanite 的<b>GBuffer 导出</b>（330 行）：把 Visbuffer 的可见性解成场景深度/模板，并配合材质着色把 Nanite 结果写入延迟 GBuffer——衔接 Nanite 与引擎延迟光照。核心 <span class="inline">EmitSceneDepthPS</span> / <span class="inline">EmitSceneStencilPS</span> / <span class="inline">MarkStencilPS</span>。<b>下方内嵌完整 330 行真实源码</b>，再逐段真实代码批注。</div></header>
 <main>
-<section class="card"><h2>颜色图例</h2><div class="body legend"><span class="tag"><span class="dot" style="background:var(--green)"></span>汇聚点</span><span class="tag"><span class="dot" style="background:var(--orange)"></span>发散点</span><span class="tag"><span class="dot" style="background:var(--blue)"></span>输入契约</span><span class="tag"><span class="dot" style="background:var(--cyan)"></span>解包/深度</span><span class="tag"><span class="dot" style="background:var(--yellow)"></span>核心公式</span><span class="tag"><span class="dot" style="background:var(--purple)"></span>编辑器</span><span class="tag"><span class="dot" style="background:var(--red)"></span>易误解</span></div></section>
 
-<section class="card"><h2>一眼看懂：汇聚/发散骨架</h2><div class="body flow"><div class="node merge"><strong>共同入口</strong><small>每个 PS 取 PixelPos，Load VisBuffer64[PixelPos]。</small></div><div class="node merge"><strong>解包汇聚</strong><small>UnpackVisPixel → DepthInt / VisibleClusterIndex / TriIndex。</small></div><div class="node branch"><strong>覆盖判定</strong><small>VisibleClusterIndex==0xFFFFFFFF 则 discard。</small></div><div class="node branch"><strong>入口发散</strong><small>7 个入口各自导出不同目标。</small></div><div class="node branch"><strong>材质/编辑器发散</strong><small>ShadingMask、Velocity、HitProxy、Overlay。</small></div><div class="node merge"><strong>深度汇聚</strong><small>几乎所有入口都 OutDepth = asfloat(DepthInt)。</small></div><div class="node out"><strong>写目标</strong><small>SV_Depth + 可选 SV_Target（RT）。</small></div></div></section>
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>Visbuffer 64bit</strong><small>可见 cluster/tri</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>解出深度/模板</strong><small>EmitSceneDepth/Stencil</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>标记 Nanite 像素</strong><small>MarkStencil</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>写入场景 GBuffer</strong></div>
+</div></section>
 
-<section class="card"><h2>完整源码对照</h2><div class="body"><p>完整源码复制在下方暗色代码框中（只读、可滚动、可复制）。源码相对路径：</p><span class="source-path">Engine/Shaders/Private/Nanite/NaniteExportGBuffer.usf（378 行，UE5.8）</span><textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/NaniteExportGBuffer.usf</span></h2><div class="body">
+<span class="source-path">MarkStencilPS @ L46 · EmitSceneDepthPS @ L70 · EmitSceneStencilPS @ L161</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "../Common.ush"
 #include "../SceneData.ush"
@@ -39,19 +47,19 @@ uint MeshPassIndex;
 uint RegularMaterialRasterBinCount;
 int4 ViewRect;
 
-Texture2D<UlongType> VisBuffer64;
+Texture2D&lt;UlongType&gt; VisBuffer64;
 #if SHADING_MASK_LOAD
-Texture2D<uint> ShadingMask;
+Texture2D&lt;uint&gt; ShadingMask;
 #endif
-StructuredBuffer<FNaniteRasterBinMeta> RasterBinMeta;
+StructuredBuffer&lt;FNaniteRasterBinMeta&gt; RasterBinMeta;
 
 // These are only used for custom depth/stencil output
-Texture2D<float> CustomDepth;
-Texture2D<uint2> CustomStencil;
+Texture2D&lt;float&gt; CustomDepth;
+Texture2D&lt;uint2&gt; CustomStencil;
 
 uint GetCustomStencilValue(FPrimitiveSceneData PrimitiveData)
 {
-	uint CustomStencilMask = (PrimitiveData.CustomStencilValueAndMask >> 8u) &amp; 0xFFu;
+	uint CustomStencilMask = (PrimitiveData.CustomStencilValueAndMask &gt;&gt; 8u) &amp; 0xFFu;
 	if (CustomStencilMask == 0)
 	{
 		// "Default" mask value of 0 means depth pass = replace, depth fail = keep
@@ -114,7 +122,7 @@ void EmitSceneDepthPS(
 		const FPrimitiveSceneData PrimitiveData = GetPrimitiveData(InstanceData.PrimitiveId);
 	#if VELOCITY_EXPORT
 	#if INSTANCED_STEREO
-		checkSlow(VisibleCluster.ViewId < 2);					// see INSTANCED_VIEW_COUNT in SceneView.h.  
+		checkSlow(VisibleCluster.ViewId &lt; 2);					// see INSTANCED_VIEW_COUNT in SceneView.h.  
 																// Velocity export uses a per-view TemporalAAJitter anyway, so it is a fair assumption that each NaniteView has a backing FViewInfo at this point.
 		FNaniteView NaniteView = GetNaniteView(VisibleCluster.ViewId);
 		ResolvedView = ResolveView(VisibleCluster.ViewId);
@@ -127,7 +135,7 @@ void EmitSceneDepthPS(
 
 #if SHADING_MASK_EXPORT
 		const uint ShadingBin					= GetMaterialShadingBin(Cluster, InstanceData.PrimitiveId, MeshPassIndex, TriIndex);
-		const bool bIsDecalReceiver				= (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_DECAL_RECEIVER) != 0 &amp;&amp; View.ShowDecalsMask > 0;
+		const bool bIsDecalReceiver				= (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_DECAL_RECEIVER) != 0 &amp;&amp; View.ShowDecalsMask &gt; 0;
 		const bool bHasRayTracingRepresentation	= (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_HAS_RAY_TRACING_REPRESENTATION) != 0;
 		const bool bCastShadow					= (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_CAST_SHADOWS) != 0;
 		OutShadingMask = PackShadingMask(
@@ -142,7 +150,7 @@ void EmitSceneDepthPS(
 
 	#if VELOCITY_EXPORT
 		// Don't output velocity here for WPO clusters, as their velocity must be calculated in the base pass.
-		// The same is technically also true for first person primitives with material programmable world space -> first person interpolation.
+		// The same is technically also true for first person primitives with material programmable world space -&gt; first person interpolation.
 		// Unfortunately, we don't have a NANITE_CULLING_FLAG for that case (and don't want to always load the MaterialFlags),
 		// so we just output fixed function velocity here and then potentially overwrite in the base pass with velocity taking the material driven interpolation into account.
 		// TODO: Find a way to skip writing velocity here if the material is using the FP lerp feature (bFirstPersonLerp in FNaniteMaterialFlags).
@@ -232,7 +240,7 @@ void EmitCustomDepthStencilPS
 	
 	const float NaniteDepth = asfloat(DepthInt);
 
-	if (IsPixelInRect(PixelPos, ViewRect) &amp;&amp; VisibleClusterIndex != 0xFFFFFFFF &amp;&amp; NaniteDepth > SceneDepth)
+	if (IsPixelInRect(PixelPos, ViewRect) &amp;&amp; VisibleClusterIndex != 0xFFFFFFFF &amp;&amp; NaniteDepth &gt; SceneDepth)
 	{
 		OutDepth = NaniteDepth;
 
@@ -257,7 +265,7 @@ void EmitCustomDepthStencilPS
 float ViewToClip22; 
 float DepthBias;
 
-Texture2D< uint > DepthBuffer;
+Texture2D&lt; uint &gt; DepthBuffer;
 
 void EmitShadowMapPS(
 	in float4 SvPosition	: SV_Position,
@@ -394,112 +402,23 @@ void EmitEditorSelectionDepthPS(
 		discard;
 	}
 }
-</textarea></div></section>
+</textarea>
+</div></section>
 
-<section class="card"><h2>0. 固定输入输出契约</h2><div class="body grid2"><pre><code><span class="code-line blue">Texture2D&lt;UlongType&gt; VisBuffer64;              // 64 位可见性缓冲（#6 光栅产出）</span>
-<span class="code-line blue">Texture2D&lt;uint&gt;      ShadingMask;              // #if SHADING_MASK_LOAD</span>
-<span class="code-line blue">StructuredBuffer&lt;FNaniteRasterBinMeta&gt; RasterBinMeta;</span>
-<span class="code-line blue">Texture2D&lt;float&gt;  CustomDepth;                 // 自定义深度输入</span>
-<span class="code-line blue">Texture2D&lt;uint2&gt;  CustomStencil;               // 自定义模板输入</span>
-<span class="code-line blue">Texture2D&lt;uint&gt;   DepthBuffer;                 // EmitShadowMapPS 的深度源</span>
-<span class="code-line blue">int4 ViewRect;  uint MeshPassIndex;  ...</span>
-<span class="code-line green">out float OutDepth : SV_Depth                  // 几乎所有入口都写深度</span>
-<span class="code-line green">out uint OutShadingMask / out float4 OutVelocity / out uint2 OutStencil / out float4 OutHitProxyId / OutOverlay</span></code></pre><div class="note n-blue"><h3>说明</h3><p>本 shader 的对外契约很稳定：<b>读</b> 64 位 VisBuffer64（外加各导出场景需要的辅助纹理），<b>写</b> SV_Depth + 至多一两个 SV_Target。上游 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6 光栅</a>只要把可见簇正确写进 VisBuffer64，本 shader 就能把它导出成引擎其余管线要的各种目标。</p></div></div></section>
+<section class="card"><h2>0. 从 Visbuffer 解出场景深度/模板（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">void EmitSceneDepthPS(...)   // 从 VisBuffer64 高 32 位解出深度 → 写场景深度</span>
+<span class="code-line blue">void EmitSceneStencilPS(...)   // 写模板：标记 Nanite 覆盖像素</span>
+<span class="code-line green">void MarkStencilPS(...)   // 用模板标出 Nanite 区域，供后续 pass 分流</span></code></pre><div class="note"><h3>说明</h3><p>Nanite 的可见性存在 <b>VisBuffer64</b>（深度高位 + 簇/三角 ID 低位），而引擎延迟管线需要标准<b>场景深度 + 模板</b>。<span class="inline">EmitSceneDepthPS</span> 从 Visbuffer 解出深度写进场景深度缓冲；<span class="inline">EmitSceneStencilPS</span>/<span class="inline">MarkStencilPS</span> 在模板里标出 Nanite 覆盖的像素——这样非 Nanite 几何、后处理、光照等都能像对待普通几何一样处理 Nanite 区域（如用模板跳过/仅处理 Nanite 像素）。这是 Nanite <b>融入引擎标准延迟管线</b>的接口层。</p></div></div></section>
 
-<section class="card"><h2>1. 汇聚点：共同解包骨架</h2><div class="body grid2"><pre><code><span class="code-line green">const uint2 PixelPos = (uint2)SvPosition.xy;</span>
-<span class="code-line green">const UlongType VisPixel = VisBuffer64[PixelPos];</span>
-<span class="code-line cyan">uint DepthInt = 0, VisibleClusterIndex = 0, TriIndex = 0;</span>
-<span class="code-line cyan">UnpackVisPixel(VisPixel, DepthInt, VisibleClusterIndex, TriIndex);</span>
-<span class="code-line orange">if (VisibleClusterIndex != 0xFFFFFFFF)   // 该像素有 Nanite 覆盖</span>
-<span class="code-line green">    OutDepth = asfloat(DepthInt);        // 深度整数按位还原为 DeviceZ</span>
-<span class="code-line red">else { OutDepth = 0.0f; discard; }       // 无覆盖：丢弃</span></code></pre><div class="note n-green"><h3>说明</h3><p>这段是全 shader 的<b>最大公约数</b>——上面的 <span class="inline">MarkStencilPS</span> 就是它的最小完整形态。VisBuffer64 高 32 位是深度整数、低 32 位是 payload（可见簇 id + 三角 id）；<span class="inline">UnpackVisPixel</span> 一次拆出三者。<span class="inline">VisibleClusterIndex == 0xFFFFFFFF</span> 是"无 Nanite 覆盖"的哨兵值，命中就 <span class="inline">discard</span>。</p><p>易误解：<span class="inline">asfloat(DepthInt)</span> 不是类型转换而是<b>按位重解释</b>——深度本就以 float 的位模式塞在整数里，光栅时用整数 <span class="inline">InterlockedMax</span> 才能做原子深度测试（反向 Z 下 max=最近）。</p></div></div></section>
+<section class="card"><h2>1. 材质着色写 GBuffer（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">// 配合 ShadeBinning：逐材质 bin 读 Visbuffer 可见三角</span>
+<span class="code-line blue">// 从簇页取顶点属性 → 重心插值出该像素的材质输入</span>
+<span class="code-line green">// 求值材质 → 写 BaseColor/Normal/Roughness/Metallic 到 GBuffer</span></code></pre><div class="note"><h3>说明</h3><p>本 shader 的<b>汇聚点</b>与 <a href="NaniteShadeBinning.usf.html" class="inline">ShadeBinning</a> 配合完成<b>延迟材质</b>：分箱后每 bin 一次派发对应材质 shader，读 Visbuffer 得该像素可见的簇/三角，从簇页取三顶点属性（<a href="NaniteAttributeDecode.ush.html" class="inline">AttributeDecode</a>）按重心<b>插值</b>出材质输入，求值材质图，把 BaseColor/Normal/Roughness 等写进标准 <b>GBuffer</b>。至此 Nanite 几何完全等价于普通延迟几何，后续光照/Lumen/阴影一视同仁。深度/模板导出 + 材质着色写 GBuffer，共同构成 Nanite 与延迟管线的完整桥接。</p></div></div></section>
 
-<section class="card"><h2>2. 发散点：7 个导出入口</h2><div class="body"><table class="table"><tr><th>入口</th><th>额外输出</th><th>发散点在哪</th></tr>
-<tr><td><code>MarkStencilPS</code></td><td>—</td><td>无额外逻辑，纯汇聚骨架（打深度标记）</td></tr>
-<tr><td><code>EmitSceneDepthPS</code></td><td>ShadingMask + Velocity</td><td>主导出：算材质分箱掩码 + 运动矢量（见 3 / 4）</td></tr>
-<tr><td><code>EmitSceneStencilPS</code></td><td>—</td><td>加一层"仅 decal 接收者"的门（读 ShadingMask）</td></tr>
-<tr><td><code>EmitCustomDepthStencilPS</code></td><td>Stencil</td><td>与场景自定义深度按更近者合并（见 5）</td></tr>
-<tr><td><code>EmitShadowMapPS</code></td><td>—</td><td>深度改走阴影投影公式（见 6）</td></tr>
-<tr><td><code>EmitHitProxyIdPS</code></td><td>HitProxyId</td><td>编辑器拾取 id（见 7）</td></tr>
-<tr><td><code>EmitEditorSelectionDepthPS</code></td><td>Overlay</td><td>编辑器选中轮廓 / 叠加色（见 7）</td></tr></table>
-<div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span>7 个入口都从 <b>第 1 节的解包骨架</b>出发，最终（除 discard 外）都写 <span class="inline">OutDepth = asfloat(DepthInt)</span>。</p><p><span class="note-label diff">不同点</span>发散只发生在"额外导出什么"上——用 <b>preprocessor 宏</b>（<span class="inline">SHADING_MASK_EXPORT</span> / <span class="inline">VELOCITY_EXPORT</span> / <span class="inline">WRITE_CUSTOM_STENCIL</span> / <span class="inline">DEPTH_OUTPUT_TYPE</span> / <span class="inline">USE_EDITOR_SHADERS</span> / <span class="inline">EMIT_OVERLAY</span>）在编译期裁出每个变体，避免运行时分支。</p></div></div></section>
-
-<section class="card"><h2>3. EmitSceneDepthPS · ShadingMask 导出（主）</h2><div class="body grid2"><pre><code><span class="code-line blue">const uint ShadingBin = GetMaterialShadingBin(Cluster, PrimitiveId, MeshPassIndex, TriIndex);</span>
-<span class="code-line blue">const bool bIsDecalReceiver = (Flags &amp; ..._DECAL_RECEIVER) != 0 &amp;&amp; View.ShowDecalsMask > 0;</span>
-<span class="code-line blue">const bool bCastShadow      = (Flags &amp; ..._CAST_SHADOWS) != 0;</span>
-<span class="code-line yellow">OutShadingMask = PackShadingMask(</span>
-<span class="code-line yellow">    ShadingBin, D3D12_SHADING_RATE_1X1,</span>
-<span class="code-line yellow">    bIsDecalReceiver, bHasRayTracingRepresentation, bCastShadow,</span>
-<span class="code-line yellow">    GetPrimitive_LightingChannelMask_FromFlags(Flags));</span></code></pre><div class="note"><h3>说明</h3><p>这是本 shader 最重要的产出。<span class="inline">GetMaterialShadingBin</span> 反查该像素三角所属材质的<b>着色分箱号</b>，连同 decal 接收 / 光追表示 / 投影 / 光照通道等标志位打包成一个 uint。</p><p>这张 <span class="inline">OutShadingMask</span> 正是 <a href="../Chapters/Shading_ConvergenceAnnotated.html" class="inline">#7 shade binning</a> 的<b>输入</b>——后续 count/reserve/scatter 三趟按 ShadingBin 把同材质像素聚到一起，实现"每材质每像素只算一次"的延迟着色。</p></div></div></section>
-
-<section class="card"><h2>4. EmitSceneDepthPS · Velocity 导出</h2><div class="body grid2"><pre><code><span class="code-line orange">bool bWPOEnabled = (VisibleCluster.Flags &amp; NANITE_CULLING_FLAG_ENABLE_WPO) != 0;</span>
-<span class="code-line orange">if (bWPOEnabled) {</span>
-<span class="code-line orange">    FNaniteMaterialFlags MaterialFlags = ...;</span>
-<span class="code-line orange">    GetMaterialRasterBinAndFlags(..., MaterialFlags);   // 查材质真是否开 WPO</span>
-<span class="code-line orange">    bWPOEnabled &amp;= MaterialFlags.bWorldPositionOffset;</span>
-<span class="code-line orange">}</span>
-<span class="code-line yellow">OutVelocity = CalculateNaniteVelocity(NaniteView, InstanceData, Cluster, VisibleCluster,</span>
-<span class="code-line yellow">    float4(SvPosition.xy, asfloat(DepthInt), 1.0f), TriIndex, Flags, bWPOEnabled);</span></code></pre><div class="note"><h3>说明</h3><p>运动矢量用于 TSR 等时序算法。这里算的是<b>固定函数速度</b>（相机/物体刚体运动）。</p><p>易误解：<b>开了 WPO 的簇不在这里输出速度</b>——WPO（世界位置偏移，如风吹草动）会让顶点位置随材质变化，其速度必须在 base pass 里按材质算。所以这段先探测材质是否真开 WPO，是则把 <span class="inline">bWPOEnabled</span> 传给 <span class="inline">CalculateNaniteVelocity</span>，让它在 base pass 覆盖。</p></div></div></section>
-
-<section class="card"><h2>5. EmitCustomDepthStencilPS · 更近者胜出合并</h2><div class="body grid2"><pre><code><span class="code-line cyan">float SceneDepth = CustomDepth[PixelPos];              // 场景已有自定义深度</span>
-<span class="code-line cyan">uint SceneStencil = CustomStencil[PixelPos] STENCIL_COMPONENT_SWIZZLE;</span>
-<span class="code-line yellow">const float NaniteDepth = asfloat(DepthInt);</span>
-<span class="code-line yellow">if (InRect &amp;&amp; VisibleClusterIndex != 0xFFFFFFFF &amp;&amp; NaniteDepth > SceneDepth) {</span>
-<span class="code-line yellow">    OutDepth = NaniteDepth;                            // Nanite 更近 → 用 Nanite</span>
-<span class="code-line green">    OutStencil = GetCustomStencilValue(PrimitiveData); // 写该图元自定义模板</span>
-<span class="code-line yellow">} else {</span>
-<span class="code-line yellow">    OutDepth = SceneDepth;  OutStencil = SceneStencil; // 否则原样透传</span>
-<span class="code-line yellow">}</span></code></pre><div class="note"><h3>说明</h3><p>自定义深度/模板要把 Nanite 几何和非 Nanite 几何合并到一张缓冲。判据是 <span class="inline">NaniteDepth &gt; SceneDepth</span>——<b>反向 Z 下越大越近</b>，Nanite 更近就覆盖，否则透传场景值。<span class="inline">GetCustomStencilValue</span>（源码 L33）从 <span class="inline">CustomStencilValueAndMask</span> 高 8 位取 mask、与 value 相与得到最终模板值。</p></div></div></section>
-
-<section class="card"><h2>6. EmitShadowMapPS · 深度重映射到阴影投影</h2><div class="body grid2"><pre><code><span class="code-line cyan">uint DepthInt = DepthBuffer[PixelPos];  if (DepthInt == 0) discard;</span>
-<span class="code-line cyan">float DeviceZ = asfloat(DepthInt);</span>
-<span class="code-line yellow">#if DEPTH_OUTPUT_TYPE == 0   // 标准深度</span>
-<span class="code-line yellow">    OutDepth = DeviceZ;</span>
-<span class="code-line yellow">#elif DEPTH_OUTPUT_TYPE == 1 // 正交阴影图</span>
-<span class="code-line yellow">    OutDepth = 1 - DeviceZ + DepthBias;</span>
-<span class="code-line yellow">#else                        // 透视阴影图</span>
-<span class="code-line yellow">    OutDepth = ViewToClip22 * (DeviceZ - 1) / (DeviceZ - ViewToClip22) + DepthBias;</span>
-<span class="code-line yellow">#endif</span></code></pre><div class="note"><h3>说明</h3><p>这是 Nanite 深度进<b>传统阴影图</b>的接入点（见 <a href="../Chapters/Shadow_ConvergenceAnnotated.html" class="inline">#9 阴影集成</a>）。三种 <span class="inline">DEPTH_OUTPUT_TYPE</span> 对应不同投影：标准直写、正交用线性翻转、透视用 <span class="inline">ViewToClip22</span> 做非线性重映射。<span class="inline">DepthBias</span> 抵抗阴影痤疮。注意它的深度源是单独的 <span class="inline">DepthBuffer</span>（阴影趟的整数深度），不是 VisBuffer64。</p></div></div></section>
-
-<section class="card"><h2>7. 编辑器入口：HitProxy 与选中轮廓</h2><div class="body grid2"><pre><code><span class="code-line purple">#if USE_EDITOR_SHADERS   // 非编辑器构建整体 discard</span>
-<span class="code-line purple">// EmitHitProxyIdPS：拾取 id</span>
-<span class="code-line purple">if ((InstanceData.Flags &amp; ..._HAS_EDITOR_DATA) != 0u)</span>
-<span class="code-line purple">    OutHitProxyId = float4(InstanceData.EditorData.HitProxyId, 0);</span>
-<span class="code-line purple">else</span>
-<span class="code-line purple">    OutHitProxyId = UnpackHitProxyId(GetMaterialHitProxyId(Cluster, ...));</span>
-<span class="code-line purple">// EmitEditorSelectionDepthPS：选中轮廓 + 叠加色</span>
-<span class="code-line purple">#if ONLY_SELECTED  if (!IsInstanceSelected(...)) discard;  #endif</span>
-<span class="code-line purple">#if EMIT_OVERLAY   OutOverlay = LoadNaniteMaterialOverlayColor(PrimitiveId);  #endif</span>
-<span class="code-line purple">#endif</span></code></pre><div class="note n-purple"><h3>说明</h3><p>这两个入口只在编辑器构建（<span class="inline">USE_EDITOR_SHADERS</span>）里有实体，运行时构建整体 <span class="inline">discard</span>。<span class="inline">EmitHitProxyIdPS</span> 导出鼠标拾取 id（优先用实例自带、否则查材质表）；<span class="inline">EmitEditorSelectionDepthPS</span> 为选中轮廓/关卡实例可视化写深度，可选只导出选中项、可选叠加色。<span class="inline">OutputToInputScale/Bias</span> 支持输出与输入分辨率不一致。</p></div></div></section>
-
-<section class="card"><h2>汇聚/发散总表</h2><div class="body"><table class="table"><tr><th>层级</th><th>类型</th><th>代表符号</th><th>触发条件</th></tr>
-<tr><td>读 VisBuffer</td><td>汇聚</td><td>VisBuffer64[PixelPos]</td><td>所有入口</td></tr>
-<tr><td>解包</td><td>汇聚</td><td>UnpackVisPixel → DepthInt/ClusterIndex/TriIndex</td><td>所有入口</td></tr>
-<tr><td>覆盖判定</td><td>汇聚</td><td>== 0xFFFFFFFF → discard</td><td>所有入口</td></tr>
-<tr><td>入口分派</td><td>发散</td><td>7 个 PS 入口</td><td>C++ 选 PS + 宏变体</td></tr>
-<tr><td>ShadingMask</td><td>发散</td><td>PackShadingMask</td><td>SHADING_MASK_EXPORT</td></tr>
-<tr><td>Velocity</td><td>发散</td><td>CalculateNaniteVelocity</td><td>VELOCITY_EXPORT</td></tr>
-<tr><td>自定义深度模板</td><td>发散</td><td>NaniteDepth &gt; SceneDepth 合并</td><td>Custom depth pass</td></tr>
-<tr><td>阴影图深度</td><td>发散</td><td>DEPTH_OUTPUT_TYPE 投影公式</td><td>阴影趟</td></tr>
-<tr><td>编辑器</td><td>发散</td><td>HitProxyId / Overlay</td><td>USE_EDITOR_SHADERS</td></tr>
-<tr><td>写深度</td><td>汇聚</td><td>OutDepth = asfloat(DepthInt)</td><td>除纯 discard 外全部</td></tr></table></div></section>
-
-<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>外壳极稳定：读 VisBuffer64 → 解包 → 判覆盖 → 写 SV_Depth。这条链是所有入口的公共骨架。</p><p>复杂度全在发散区：导出什么额外目标（ShadingMask/Velocity/Stencil/HitProxy/Overlay），以及深度用什么公式（标准/正交/透视阴影）。发散靠编译期宏切变体，不是运行时分支。</p></div><div class="note"><h3>阅读建议</h3><p>先记住一个汇聚点：<span class="inline">UnpackVisPixel → asfloat(DepthInt) → SV_Depth</span>。再把 7 个入口理解成"在这条骨架上各挂一个导出目标"。想写自己的 Nanite 导出 pass，照 <span class="inline">MarkStencilPS</span> 这个最小形态起步最省事。</p></div></div></section>
-
-<section class="card"><h2>关联文档</h2><div class="body">
-<a class="tag" href="../Chapters/Shading_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#7 Visibility Buffer 与材质着色（本 shader 的 ShadingMask 是其输入）</a>
-<a class="tag" href="../Chapters/CullRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#6 集群剔除与两路光栅化（产出 VisBuffer64）</a>
-<a class="tag" href="../Chapters/Shadow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--blue)"></span>#9 Nanite 阴影集成（EmitShadowMapPS 的去处）</a>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Shading_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>延迟材质着色</a>
+<a class="tag" href="NaniteShadeBinning.usf.html"><span class="dot" style="background:var(--cyan)"></span>ShadeBinning.usf↗</a>
+<a class="tag" href="NaniteAttributeDecode.ush.html"><span class="dot" style="background:var(--cyan)"></span>AttributeDecode.ush↗</a>
 <a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
 </div></section>
 </main>
-<script>
-document.querySelectorAll('.note p').forEach(function(p){
-  p.innerHTML = p.innerHTML
-    .replace(/共同点：/g, '<span class="note-label common">共同点</span>')
-    .replace(/不同点：/g, '<span class="note-label diff">不同点</span>')
-    .replace(/^易误解：/, '<span class="note-label diff">易误解</span>');
-});
-</script>
 </body>
 </html>
