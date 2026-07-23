@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#4 附录 · FRDGBuilder 接口</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}</style></head><body>
+<header><a class="back" href="Builder_ConvergenceAnnotated.html">← 返回 #4 主文档</a><h1>#4 附录 · FRDGBuilder 接口速查</h1><div class="sub">本篇列出 <span class="inline">FRDGBuilder</span>（<span class="inline">RenderGraphBuilder.h</span>，1200 行）最常用的接口分组，含真实签名与源码行号。</div></header>
+<main>
+
+<section class="card"><h2>资源创建接口（含源码行号）</h2><div class="body">
+<table><tr><th>接口</th><th>作用</th><th>RenderGraphBuilder.h</th></tr>
+<tr><td><code>CreateTexture(Desc, Name, Flags)</code></td><td>创建图跟踪纹理</td><td>L104</td></tr>
+<tr><td><code>CreateBuffer(Desc, Name, Flags)</code></td><td>创建图跟踪缓冲</td><td>L110</td></tr>
+<tr><td><code>CreateBuffer(Desc, Name, NumElementsCallback, Flags)</code></td><td>延迟尺寸缓冲</td><td>L116</td></tr>
+<tr><td><code>CreateSRV(FRDGTextureSRVDesc)</code> / <code>(FRDGBufferSRVDesc)</code></td><td>创建纹理/缓冲 SRV</td><td>L119 / L122</td></tr>
+<tr><td><code>CreateSRV(Buffer, EPixelFormat)</code></td><td>SRV 便捷重载</td><td>L124</td></tr>
+<tr><td><code>CreateUAV(FRDGTextureUAVDesc, Flags)</code></td><td>创建纹理 UAV</td><td>L130</td></tr>
+</table></div></section>
+
+<section class="card"><h2>外部资源桥接接口（真实签名）</h2><div class="body">
+<div class="codebox"><span class="src">// RenderGraphBuilder.h : L79-L95（详见 #16）</span>FRDGTextureRef RegisterExternalTexture(<span class="k">const</span> TRefCountPtr&lt;IPooledRenderTarget&gt;&amp; ExternalPooledTexture, ...);
+FRDGBufferRef  RegisterExternalBuffer(<span class="k">const</span> TRefCountPtr&lt;FRDGPooledBuffer&gt;&amp; ExternalPooledBuffer, ERDGBufferFlags Flags = ...);
+FRDGBufferRef  RegisterExternalBuffer(..., ERHIAccess AccessFinal);</div>
+<div class="note"><h3>批注</h3><p>这组把图外持有的池化资源（<span class="inline">IPooledRenderTarget</span> / <span class="inline">FRDGPooledBuffer</span>）注册进图，得到图内句柄。带 <span class="inline">ERHIAccess AccessFinal</span> 的重载指定"图执行完该资源应处于哪种访问态"——这是 RDG 与图外世界交接屏障状态的关键，详见 <b>#16 图内外互通桥</b>。</p></div></div></section>
+
+<section class="card"><h2>提取 / 执行接口</h2><div class="body">
+<div class="codebox"><span class="src">// RenderGraphBuilder.h : L345-L360, L412</span><span class="k">void</span> QueueTextureExtraction(FRDGTextureRef Texture, TRefCountPtr&lt;IPooledRenderTarget&gt;* OutPtr, ...);
+<span class="k">void</span> QueueBufferExtraction(FRDGBufferRef Buffer, TRefCountPtr&lt;FRDGPooledBuffer&gt;* OutPtr);
+<span class="k">const</span> TRefCountPtr&lt;IPooledRenderTarget&gt;&amp; ConvertToExternalTexture(FRDGTextureRef Texture);
+<span class="k">void</span> AddPassDependency(FRDGPass* Producer, FRDGPass* Consumer);   <span class="c">// L249</span>
+<span class="k">void</span> Execute();   <span class="c">// L412</span></div>
+<div class="note green"><h3>批注</h3><p><span class="inline">QueueTextureExtraction</span>/<span class="inline">QueueBufferExtraction</span> 把图内资源标记为"执行完提取到图外指针"（设 <span class="inline">bExtracted</span>，成为剔除根——#2）。<span class="inline">AddPassDependency</span> 是手动加依赖的后门：极少数图无法自动推导的顺序约束时用（#5 会讲它内部如何处理跨管线）。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航</h2><div class="body">
+<div class="iface-grp"><b>主文档</b> <a class="tag" href="Builder_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#4 FRDGBuilder</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="ExternalBridge_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#16 图内外互通桥</a><a class="tag" href="Compile_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#5 编译</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main></body></html>
