@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#17 转译到 RHICommandList / 并行 · VisualizeTexture</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#17 转译到 RHICommandList / 并行 · VisualizeTexture</h1><div class="sub">Part 3 收尾。RDG pass 最终要变成真实的 <span class="inline">FRHICommandList</span> 命令；并行录制时命令被切成多段再合并；<span class="inline">VisualizeTexture</span>（<span class="inline">vis</span> 命令）则挂在 RDG 资源上做可视化调试。本篇讲这最后一跳与调试出口。源码取自 <span class="inline">RHICommandList.h</span>、<span class="inline">VisualizeTexture.h/.cpp</span>。</div></header>
+<main>
+
+<section class="card"><h2>最后一跳 <span class="en">The last hop</span></h2><div class="body">
+<div class="note" style="margin:0"><h3>pass lambda → RHICommandList → 后端 → GPU</h3><p>#6 讲过 pass 执行时把 <span class="inline">FRHIComputeCommandList&amp;</span>/<span class="inline">FRHICommandList&amp;</span> 传进 lambda。lambda 里的 <span class="inline">RHICmdList.SetShaderParameters</span>/<span class="inline">DispatchComputeShader</span>/<span class="inline">DrawIndexedPrimitive</span> 就是往命令列表<b>录命令</b>；命令列表最终提交给平台 RHI 后端（D3D12/Vulkan）翻译成原生 API 调用。RDG 只是<b>编排谁先谁后、插哪些屏障</b>，真正的 GPU 命令仍走 RHICmdList。</p></div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">命令列表类型（immediate vs 普通）、并行提交、<span class="inline">VisualizeTexture</span> 接口见 <a href="RHITranslate_FunctionAppendix.html" style="color:#9ee8ff">→ 转译/可视化附录</a>。</p></div></section>
+
+<section class="card"><h2>并行录制：切分与合并 <span class="en">Parallel command lists</span></h2><div class="body">
+<div class="note blue"><h3>为什么能并行录命令</h3><p>录制命令（把 draw/dispatch 写进命令列表）是<b>CPU</b> 工作，且各 pass 之间只要顺序正确就能<b>并行录</b>。#6 的 <span class="inline">SetupParallelExecute</span> 把符合条件的 pass 分给多个 worker 线程，每个线程持一个<b>非 immediate</b> 的 <span class="inline">FRHICommandList</span> 各录一段，最后按图顺序把这些子命令列表<b>拼接</b>提交给 immediate 命令列表。这就是 #1 讲的并行约定为什么要求"lambda 用非 immediate 命令列表"——immediate 命令列表是单线程直提交的，不能并行录。<span class="inline">FRHICommandListImmediate</span>（主）vs <span class="inline">FRHICommandList</span>（并行子）的区别贯穿整个 RHI 命令系统（<span class="inline">RHICommandList.h</span> 5581 行）。</p></div></div></section>
+
+<section class="card"><h2>VisualizeTexture：调试出口 <span class="en">vis command</span></h2><div class="body">
+<div class="codebox"><span class="src">// VisualizeTexture.h（259 行）+ RenderGraphBuilder.h 的 CreateTexture 注释</span><span class="c">// #4 的 CreateTexture 注释："The name is used for GPU debugging tools</span>
+<span class="c">//                          and the VisualizeTexture/Vis command."</span>
+
+<span class="c">// 控制台：</span>
+vis &lt;ResourceName&gt;        <span class="c">// 把某个 RDG 资源显示到屏幕</span>
+vis                       <span class="c">// 列出当前帧所有可视化的资源</span></div>
+<div class="note green"><h3>批注</h3><p>还记得 #4 里 <span class="inline">CreateTexture(Desc, Name)</span> 那个 <span class="inline">Name</span> 吗？它就是给 <span class="inline">VisualizeTexture</span> 用的。开控制台敲 <span class="inline">vis MyPass.Output</span>，引擎会把那个 RDG 资源当帧的内容抓出来画到屏幕——直接肉眼看某个中间纹理对不对，是调试渲染最直接的手段。<span class="inline">SUPPORTS_VISUALIZE_TEXTURE</span>（#1 的宏）控制其可用性（非 Shipping 或带编辑器）。它与 <b>#18 RenderGraphInsights</b>（时间线剖析）互补：Vis 看"某资源内容对不对"，Insights 看"pass/屏障/时序对不对"。这两个加上 #8 的校验、clobber，就是 RDG 全套调试手段。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. RDG 只编排顺序与屏障；真实 GPU 命令仍由 pass lambda 里的 <span class="inline">RHICmdList</span> 录制，最终交平台后端翻译。</p>
+<p>2. <b>并行录制</b>：多 worker 各持非 immediate 命令列表录一段，按图顺序拼接提交——这是 #1 并行约定要求非 immediate 列表的原因。</p>
+<p>3. <span class="inline">VisualizeTexture</span>（<span class="inline">vis 资源名</span>）用 <span class="inline">CreateTexture</span> 给的 Name 把 RDG 资源画到屏幕；与 #18 Insights、#8 校验/clobber 组成全套调试。</p>
+<p>4. Part 3 完结：RHI 资源模型（#13）→ ERHIAccess（#14）→ 资源池演进（#15）→ 图内外互通（#16）→ 转译/Vis（#17）。RDG 之下的 RHI 世界讲透。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="ExternalBridge_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#16 互通桥</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="Insights_ConvergenceAnnotated.html"><span class="dot" style="background:var(--pink)"></span>#18 RenderGraphInsights</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="Execute_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#6 执行（并行）</a><a class="tag" href="Builder_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#4 Builder（Name→vis）</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="RHITranslate_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇转译/可视化附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#15 资源池演进 · 老 FRenderTargetPool → RDG 瞬态分配器</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:88px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#15 资源池演进 · 老 FRenderTargetPool → RDG 瞬态分配器</h1><div class="sub">"为什么要 RDG"的历史答案。RDG 之前，中间渲染目标靠 <span class="inline">FRenderTargetPool</span> / <span class="inline">IPooledRenderTarget</span> 手动借还；RDG 之后，靠<b>瞬态资源分配器</b>（transient allocator）用<b>资源别名（aliasing）</b>在同一块显存上复用生命周期不重叠的资源。本篇讲这条演进与 <span class="inline">FRDGPooledBuffer</span> 的角色。源码取自 <span class="inline">PooledRenderTarget.h</span>、<span class="inline">RHITransientResourceAllocator.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>两代资源池 <span class="en">Two generations</span></h2><div class="body">
+<div class="flow">
+<div class="node branch"><strong>老：FRenderTargetPool</strong><small>手动 FindFreeElement 借<br>用完不还就漏<br>无 aliasing</small></div>
+<div class="node merge"><strong>新：RDG 瞬态分配器</strong><small>编译期算生命周期<br>不重叠即 aliasing 复用<br>自动、更省显存</small></div>
+<div class="node func"><strong>桥：FRDGPooledBuffer / IPooledRenderTarget</strong><small>跨帧持有的池化对象<br>TRefCountPtr</small></div>
+</div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2"><span class="inline">FPooledRenderTargetDesc</span>、<span class="inline">IRHITransientResourceAllocator</span> 接口、aliasing overlap 见 <a href="ResourcePool_FunctionAppendix.html" style="color:#9ee8ff">→ 资源池附录</a>。</p></div></section>
+
+<section class="card"><h2>老世界：手动池化的痛 <span class="en">The old pain</span></h2><div class="body">
+<div class="codebox"><span class="src">// PooledRenderTarget.h : L19-L40（老资源池的描述结构）</span><span class="c">/** All necessary data to create a render target from the pooled render targets. */</span>
+<span class="k">struct</span> <span class="f">FPooledRenderTargetDesc</span>
+{
+	<span class="k">static</span> FPooledRenderTargetDesc Create2DDesc(FIntPoint InExtent, EPixelFormat InFormat,
+		<span class="k">const</span> FClearValueBinding&amp; InClearValue, ETextureCreateFlags InFlags, ...);
+};</div>
+<div class="note red"><h3>批注：手动借还的三宗罪</h3><p>RDG 之前，一块中间 RT 要 <span class="inline">GRenderTargetPool.FindFreeElement(Desc, OutRef, Name)</span> 借出 <span class="inline">IPooledRenderTarget</span>，用完靠引用释放归还。三个问题：<b>① 生命周期靠人</b>——借了忘还就一直占着显存；<b>② 无 aliasing</b>——两块生命周期完全不重叠的 RT 也各占各的显存，浪费；<b>③ 屏障要自己管</b>（#14）。整个 UE4 渲染器充斥这种手动借还，是 bug 与显存浪费的重灾区。<span class="inline">FPooledRenderTargetDesc</span> 就是那个时代描述 RT 的结构（RDG 的 <span class="inline">FRDGTextureDesc</span> 可与它互转，保证兼容）。</p></div></div></section>
+
+<section class="card"><h2>新世界：瞬态分配器 + 资源别名 <span class="en">Transient allocator + aliasing</span></h2><div class="body">
+<div class="codebox"><span class="src">// RHITransientResourceAllocator.h : L535-L548</span><span class="k">class</span> <span class="f">IRHITransientResourceAllocator</span>
+{
+	<span class="k">virtual</span> FRHITransientTexture* CreateTexture(<span class="k">const</span> FRHITextureCreateInfo&amp; CreateInfo,
+		<span class="k">const</span> TCHAR* DebugName, <span class="k">const</span> FRHITransientAllocationFences&amp; Fences) = 0;
+	<span class="k">virtual</span> FRHITransientBuffer* CreateBuffer(<span class="k">const</span> FRHIBufferCreateInfo&amp; CreateInfo,
+		<span class="k">const</span> TCHAR* DebugName, <span class="k">const</span> FRHITransientAllocationFences&amp; Fences) = 0;
+};</div>
+<div class="note blue"><h3>批注：aliasing 是关键升级</h3><p>RDG 用编译期算出的<b>生命周期区间</b>（#5：首末次使用）喂给 <span class="inline">IRHITransientResourceAllocator</span>。分配器维护一块<b>大显存堆</b>，把生命周期<b>不重叠</b>的资源<b>别名（alias）到同一段物理内存</b>——A 用完了，那段内存立刻给 B 用。<span class="inline">FRHITransientAliasingOverlap</span>（源码 L244）记录哪些资源发生了 aliasing 重叠，配合 <span class="inline">Fences</span> 保证 GPU 上 A 真的用完才让 B 开始。效果：一帧几百个中间纹理可能只占相当于几十个的显存。这是 RDG 相比手动池化最直接的收益——<b>而且全自动</b>，开发者只管声明。<span class="inline">CreateInfo</span> 里带 <span class="inline">Fences</span> 正是 aliasing 安全的保证。注：源码注释提到 aliasing overlap 目前主要在 RHI validation 下追踪。</p></div></div></section>
+
+<section class="card"><h2>FRDGPooledBuffer / IPooledRenderTarget：跨帧的桥 <span class="en">The cross-frame bridge</span></h2><div class="body">
+<div class="note green"><h3>不是所有资源都瞬态</h3><p>瞬态 aliasing 只适用<b>单帧内</b>生命周期明确的资源。有些资源要<b>跨帧</b>存活（历史帧颜色、累积 buffer——TSR/Lumen 时域复用的核心）。这类走 <span class="inline">TRefCountPtr&lt;IPooledRenderTarget&gt;</span>（纹理）/ <span class="inline">TRefCountPtr&lt;FRDGPooledBuffer&gt;</span>（buffer）——引用计数的<b>持久池化对象</b>，跨帧持有。RDG 用 <span class="inline">RegisterExternal*</span> 把它们注册进图、用 <span class="inline">Queue*Extraction</span> 把图内资源提取成它们（#16）。所以完整图景是：<b>帧内瞬态资源走 aliasing 分配器（省显存）；跨帧资源走引用计数池化对象（安全存活）</b>——两者由 #16 的互通 API 衔接。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. 老世界 <span class="inline">FRenderTargetPool</span>/<span class="inline">IPooledRenderTarget</span>：手动借还，无 aliasing，易漏易浪费——这是"为什么要 RDG"的痛点起点。</p>
+<p>2. 新世界 <span class="inline">IRHITransientResourceAllocator</span>：用 #5 算出的生命周期，把<b>不重叠</b>资源 <b>alias 到同一显存</b>，全自动、大幅省显存；<span class="inline">Fences</span> 保证 GPU 安全。</p>
+<p>3. 跨帧资源走 <span class="inline">TRefCountPtr&lt;IPooledRenderTarget/FRDGPooledBuffer&gt;</span> 持久池化对象，由 #16 的 Register/Extract 与图衔接。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="RHIAccess_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#14 ERHIAccess</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="ExternalBridge_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#16 图内外互通桥</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="Compile_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#5 编译（生命周期）</a><a class="tag" href="RHIResources_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#13 RHI 资源（延迟删除）</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="ResourcePool_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇资源池附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>
