@@ -1,0 +1,399 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ShadowFilteringCommon.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:540px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/Projection_ConvergenceAnnotated.html">← 回到 阴影投影</a></div>
+<h1>ShadowFilteringCommon.ush 整源解析<span class="libtag">库 / PCF 滤波核心</span></h1><div class="subtitle">阴影的<b>PCF 滤波核心库</b>（307 行）：把阴影图深度比较结果做双线性加权得到软阴影边缘，含 <span class="inline">FPCFSamplerSettings</span> 配置、多种核尺寸（2×2/更大）、次表面透射支持。前向/延迟着色共用。<b>下方内嵌完整 307 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/ShadowFilteringCommon.ush</span></h2><div class="body">
+<span class="source-path">FPCFSamplerSettings + PCF2x2 及更大核</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	ShadowFilteringCommon.usf: Contains functions to filter a shadowmap, shared between forward/deferred shading.
+=========================================================================*/
+
+#pragma once
+
+#include "PixelQuadMessagePassing.ush"
+#include "FastMath.ush"
+#include "TransmissionCommon.ush"
+
+struct FPCFSamplerSettings
+{
+	Texture2D		ShadowDepthTexture;
+	SamplerState	ShadowDepthTextureSampler;
+
+	//XY - Pixel size of shadowmap
+	//ZW - Inverse pixel size of shadowmap
+	float4			ShadowBufferSize;
+
+	// SceneDepth in lightspace.
+	float			SceneDepth;
+
+	float			TransitionScale;
+
+	// set by the caller, constant for the code so only one code branch should be compiled
+	bool			bSubsurface;
+
+	// Whether to treat shadow depths near 1 as unshadowed.  This is useful when the shadowmap does not contain all the points being shadowed.
+	bool			bTreatMaxDepthUnshadowed;
+
+	// only used if bSubsurface is true
+	float			DensityMulConstant;
+
+	// only used if bSubsurface is true
+	float2			ProjectionDepthBiasParameters;
+};
+
+// linear PCF, input 3x3
+// @param Values0 in row 0 from left to right: x,y,z,w
+// @param Values1 in row 1 from left to right: x,y,z,w
+// @param Values2 in row 2 from left to right: x,y,z,w
+float PCF2x2(float2 Fraction, float3 Values0, float3 Values1, float3 Values2)
+{
+	float3 Results;
+
+	Results.x = Values0.x * (1.0f - Fraction.x);
+	Results.y = Values1.x * (1.0f - Fraction.x);
+	Results.z = Values2.x * (1.0f - Fraction.x);
+	Results.x += Values0.y;
+	Results.y += Values1.y;
+	Results.z += Values2.y;
+	Results.x += Values0.z * Fraction.x;
+	Results.y += Values1.z * Fraction.x;
+	Results.z += Values2.z * Fraction.x;
+
+	return saturate(0.25f * dot(Results, half3(1.0f - Fraction.y, 1.0f, Fraction.y)));
+}
+
+// linear PCF, input 4x4
+// @param Values0 in row 0 from left to right: x,y,z,w
+// @param Values1 in row 1 from left to right: x,y,z,w
+// @param Values2 in row 2 from left to right: x,y,z,w
+// @param Values3 in row 3 from left to right: x,y,z,w
+float PCF3x3(float2 Fraction, float4 Values0, float4 Values1, float4 Values2, float4 Values3)
+{
+	float4 Results;
+
+	Results.x = Values0.x * (1.0f - Fraction.x);
+	Results.y = Values1.x * (1.0f - Fraction.x);
+	Results.z = Values2.x * (1.0f - Fraction.x);
+	Results.w = Values3.x * (1.0f - Fraction.x);
+	Results.x += Values0.y;
+	Results.y += Values1.y;
+	Results.z += Values2.y;
+	Results.w += Values3.y;
+	Results.x += Values0.z;
+	Results.y += Values1.z;
+	Results.z += Values2.z;
+	Results.w += Values3.z;
+	Results.x += Values0.w * Fraction.x;
+	Results.y += Values1.w * Fraction.x;
+	Results.z += Values2.w * Fraction.x;
+	Results.w += Values3.w * Fraction.x;
+
+	return saturate(dot(Results, float4(1.0f - Fraction.y, 1.0f, 1.0f, Fraction.y)) * (1.0f / 9.0f));
+}
+
+
+// linear PCF, input 4x4
+// using Gather: xyzw in counter clockwise order starting with the sample to the lower left of the queried location
+// @param Values0 left top
+// @param Values1 right top
+// @param Values2 left bottom
+// @param Values3 right bottom
+float PCF3x3gather(float2 Fraction, float4 Values0, float4 Values1, float4 Values2, float4 Values3)
+{
+	float4 Results;
+
+	Results.x = Values0.w * (1.0 - Fraction.x);
+	Results.y = Values0.x * (1.0 - Fraction.x);
+	Results.z = Values2.w * (1.0 - Fraction.x);
+	Results.w = Values2.x * (1.0 - Fraction.x);
+	Results.x += Values0.z;
+	Results.y += Values0.y;
+	Results.z += Values2.z;
+	Results.w += Values2.y;
+	Results.x += Values1.w;
+	Results.y += Values1.x;
+	Results.z += Values3.w;
+	Results.w += Values3.x;
+	Results.x += Values1.z * Fraction.x;
+	Results.y += Values1.y * Fraction.x;
+	Results.z += Values3.z * Fraction.x;
+	Results.w += Values3.y * Fraction.x;
+
+	return dot( Results, float4( 1.0 - Fraction.y, 1.0, 1.0, Fraction.y) * ( 1.0 / 9.0) );
+}
+
+// horizontal PCF, input 6x2
+float2 HorizontalPCF5x2(float2 Fraction, float4 Values00, float4 Values20, float4 Values40)
+{
+	float Results0;
+	float Results1;
+
+	Results0 = Values00.w * (1.0 - Fraction.x);
+	Results1 = Values00.x * (1.0 - Fraction.x);
+	Results0 += Values00.z;
+	Results1 += Values00.y;
+	Results0 += Values20.w;
+	Results1 += Values20.x;
+	Results0 += Values20.z;
+	Results1 += Values20.y;
+	Results0 += Values40.w;
+	Results1 += Values40.x;
+	Results0 += Values40.z * Fraction.x;
+	Results1 += Values40.y * Fraction.x;
+
+	return float2(Results0, Results1);
+}
+
+// lowest quality ith PCF
+float PCF1x1(float2 Fraction, float4 Values00)
+{
+	float2 HorizontalLerp00 = lerp(Values00.wx, Values00.zy, Fraction.xx);
+
+	return lerp(HorizontalLerp00.x, HorizontalLerp00.y, Fraction.y);
+}
+
+float4 CalculateShadowVisibilityTransmittanceFactor(float4 ShadowmapDepth, FPCFSamplerSettings Settings)
+{
+	if (Settings.bSubsurface)
+	{
+		float4 OccluderDistance = max(Settings.SceneDepth - ShadowmapDepth, 0);
+		float4 Transmittance = GetSubSurfaceTransmission(OccluderDistance, Settings.DensityMulConstant);
+		// Never shadow from depths that were never written to (max depth value)
+		return select(ShadowmapDepth &gt; .99f, 1.0f, Transmittance);
+	}
+	else
+	{
+		// The standard comparison is SceneDepth &lt; ShadowmapDepth
+		// Using a soft transition based on depth difference
+		// Offsets shadows a bit but reduces self shadowing artifacts considerably
+		float TransitionScale = Settings.TransitionScale;
+
+		// Unoptimized Math: saturate((ShadowmapDepth - Settings.SceneDepth) * TransitionScale + 1);
+		// Rearranged the math so that per pixel constants can be optimized from per sample constants.
+		float ConstantFactor = (Settings.SceneDepth * TransitionScale - 1);
+		float4 ShadowFactor = saturate(ShadowmapDepth * TransitionScale - ConstantFactor);
+
+		FLATTEN
+		if (Settings.bTreatMaxDepthUnshadowed)
+		{
+			ShadowFactor = saturate(ShadowFactor + (ShadowmapDepth &gt; .99f));
+		}
+
+		return ShadowFactor;
+	}
+}
+
+float3 CalculateShadowVisibilityTransmittanceFactor(float3 ShadowmapDepth, FPCFSamplerSettings Settings)
+{
+	if (Settings.bSubsurface)
+	{
+		// Determine the distance that the light traveled through the subsurface object
+		// This assumes that anything between this subsurface pixel and the light was also a subsurface material,
+		// As a result, subsurface materials receive leaked light based on how transparent they are
+		float3 Thickness = max(Settings.SceneDepth - ShadowmapDepth, 0);
+		float3 OpticalDepth = Thickness * Settings.DensityMulConstant;
+		float3 Transmittance = saturate(FastExp(-OpticalDepth));
+		// Never shadow from depths that were never written to (max depth value)
+		return select(ShadowmapDepth &gt; .99f, 1.0, Transmittance);
+	}
+	else
+	{
+		// The standard comparison is Settings.SceneDepth &lt; ShadowmapDepth
+		// Using a soft transition based on depth difference
+		// Offsets shadows a bit but reduces self shadowing artifacts considerably
+		float TransitionScale = Settings.TransitionScale;
+
+		// Unoptimized Math: saturate((ShadowmapDepth - Settings.SceneDepth) * TransitionScale + 1);
+		// Rearranged the math so that per pixel constants can be optimized from per sample constants.
+		float ConstantFactor = (Settings.SceneDepth * TransitionScale - 1);
+		float3 ShadowFactor = saturate(ShadowmapDepth * TransitionScale - ConstantFactor);
+
+		FLATTEN
+		if (Settings.bTreatMaxDepthUnshadowed)
+		{
+			ShadowFactor = saturate(ShadowFactor + (ShadowmapDepth &gt; .99f));
+		}
+
+		return ShadowFactor;
+	}
+}
+
+float3 FetchRowOfThree(float2 Sample00TexelCenter, float VerticalOffset, FPCFSamplerSettings Settings)
+{
+	float3 Values;
+	Values.x = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(0, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	Values.y = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(1, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	Values.z = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(2, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;	
+	return CalculateShadowVisibilityTransmittanceFactor(Values, Settings);
+}
+
+float4 FetchRowOfFour(float2 Sample00TexelCenter, float VerticalOffset, FPCFSamplerSettings Settings)
+{
+	float4 Values;
+	Values.x = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(0, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	Values.y = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(1, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	Values.z = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(2, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	Values.w = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(3, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	return CalculateShadowVisibilityTransmittanceFactor(Values, Settings);
+}
+
+float3 FetchRowOfThreeAfterFour(float2 Sample00TexelCenter, float VerticalOffset, FPCFSamplerSettings Settings)
+{
+	float3 Values;
+	Values.x = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(4, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	Values.y = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(5, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	Values.z = Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, (Sample00TexelCenter + float2(6, VerticalOffset)) * Settings.ShadowBufferSize.zw, 0).r;
+	return CalculateShadowVisibilityTransmittanceFactor(Values, Settings);
+}
+
+float Manual3x3PCF(float2 ShadowPosition, FPCFSamplerSettings Settings)
+{
+	// medium quality, 4x4 samples, using and not using gather4
+	{
+		float2 TexelPos = ShadowPosition * Settings.ShadowBufferSize.xy - 0.5f;	// bias to be consistent with texture filtering hardware
+		float2 Fraction = frac(TexelPos);
+		float2 TexelCorner = floor(TexelPos);	// bias to get reliable texel center content
+
+		// Gather4 samples "at the following locations: (-,+),(+,+),(+,-),(-,-), where the magnitude of the deltas are always half a texel" - DX11 Func. Spec.
+		// So we need to offset to the centre of the 2x2 grid we want to sample.
+		float2 SamplePos = (TexelCorner + 1.0f) * Settings.ShadowBufferSize.zw;	// bias to get reliable texel center content
+		float4 SampleValues0 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(-1, -1)), Settings);
+		float4 SampleValues1 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(1, -1)), Settings);
+		float4 SampleValues2 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(-1, 1)), Settings);
+		float4 SampleValues3 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(1, 1)), Settings);
+		return PCF3x3gather(Fraction, SampleValues0, SampleValues1, SampleValues2, SampleValues3);
+	}
+}
+
+float Manual5x5PCF(float2 ShadowPosition, FPCFSamplerSettings Settings)
+{
+	// high quality, 6x6 samples, using gather4
+	float2 TexelPos = ShadowPosition * Settings.ShadowBufferSize.xy - 0.5f;	// bias to be consistent with texture filtering hardware
+	float2 Fraction = frac(TexelPos);
+	// Gather4 samples "at the following locations: (-,+),(+,+),(+,-),(-,-), where the magnitude of the deltas are always half a texel" - DX11 Func. Spec.
+	// So we need to offset to the centre of the 2x2 grid we want to sample.
+	float2 SamplePos = (floor(TexelPos) + 1.0f) * Settings.ShadowBufferSize.zw;	// bias to get reliable texel center content
+
+	float4 Values00 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(-2, -2)), Settings);
+	float4 Values20 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(0, -2)), Settings);
+	float4 Values40 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(2, -2)), Settings);
+
+	float2 Row0 = HorizontalPCF5x2(Fraction, Values00, Values20, Values40);
+	float Results = Row0.x * (1.0f - Fraction.y) + Row0.y;
+
+	float4 Values02 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(-2, 0)), Settings);
+	float4 Values22 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(0, 0)), Settings);
+	float4 Values42 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(2, 0)), Settings);
+
+	float2 Row1 = HorizontalPCF5x2(Fraction, Values02, Values22, Values42);
+	Results += Row1.x + Row1.y;
+
+	float4 Values04 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(-2, 2)), Settings);
+	float4 Values24 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(0, 2)), Settings);
+	float4 Values44 = CalculateShadowVisibilityTransmittanceFactor(Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, SamplePos, int2(2, 2)), Settings);
+
+	float2 Row2 = HorizontalPCF5x2(Fraction, Values04, Values24, Values44);
+	Results += Row2.x + Row2.y * Fraction.y;
+
+	return 0.04f * Results;
+}
+
+// break this out for forward rendering as it's not part of ManualPCF's set of shadowquality settings.
+float Manual2x2PCF(float2 ShadowPosition, FPCFSamplerSettings Settings)
+{
+	float2 TexelPos = ShadowPosition * Settings.ShadowBufferSize.xy;
+	float2 Fraction = frac(TexelPos);
+	float2 TexelCenter = floor(TexelPos) + 0.5f;	// bias to get reliable texel center content
+	
+	float2 Sample00TexelCenter = TexelCenter - float2(1, 1);
+
+	float3 SamplesValues0 = FetchRowOfThree(Sample00TexelCenter, 0, Settings);
+	float3 SamplesValues1 = FetchRowOfThree(Sample00TexelCenter, 1, Settings);
+	float3 SamplesValues2 = FetchRowOfThree(Sample00TexelCenter, 2, Settings);
+	
+	return PCF2x2(Fraction, SamplesValues0, SamplesValues1, SamplesValues2);
+}
+
+// break this out for forward rendering as it's not part of ManualPCF's set of shadowquality settings.
+float Manuax2PCF(float2 ShadowPosition, FPCFSamplerSettings Settings)
+{
+	float2 TexelPos = ShadowPosition * Settings.ShadowBufferSize.xy;
+	float2 Fraction = frac(TexelPos);
+	float2 TexelCenter = floor(TexelPos) + 0.5f;	// bias to get reliable texel center content
+	
+	float2 Sample00TexelCenter = TexelCenter - float2(1, 1);
+
+	float3 SamplesValues0 = FetchRowOfThree(Sample00TexelCenter, 0, Settings);
+	float3 SamplesValues1 = FetchRowOfThree(Sample00TexelCenter, 1, Settings);
+	float3 SamplesValues2 = FetchRowOfThree(Sample00TexelCenter, 2, Settings);
+	
+	return PCF2x2(Fraction, SamplesValues0, SamplesValues1, SamplesValues2);
+}
+
+float ManualNoFiltering(float2 ShadowPosition, FPCFSamplerSettings Settings)
+{
+	// very low quality but very good performance, useful to profile, 1 sample, not using gather4
+	return CalculateShadowVisibilityTransmittanceFactor(Texture2DSampleLevel(Settings.ShadowDepthTexture, Settings.ShadowDepthTextureSampler, ShadowPosition, 0).rrr, Settings).r;
+}
+
+float Manual1x1PCF(float2 ShadowPosition, FPCFSamplerSettings Settings)
+{
+	float2 TexelPos = ShadowPosition * Settings.ShadowBufferSize.xy - 0.5f;	// bias to be consistent with texture filtering hardware
+	float2 Fraction = frac(TexelPos);
+
+	// using Gather: xyzw in counter clockwise order starting with the sample to the lower left of the queried location
+	float4 Samples;
+
+	// Gather4 samples "at the following locations: (-,+),(+,+),(+,-),(-,-), where the magnitude of the deltas are always half a texel" - DX11 Func. Spec.
+	// So we need to offset to the centre of the 2x2 grid we want to sample.
+	float2 QuadCenter = floor(TexelPos) + 1.0f;	
+	Samples = Settings.ShadowDepthTexture.Gather(Settings.ShadowDepthTextureSampler, QuadCenter * Settings.ShadowBufferSize.zw);
+
+	float4 Values00 = CalculateShadowVisibilityTransmittanceFactor(Samples, Settings);
+	return PCF1x1(Fraction, Values00);
+}
+
+
+float ManualPCF(float2 ShadowPosition, FPCFSamplerSettings Settings)
+{
+#if SHADOW_QUALITY == 1
+	return ManualNoFiltering(ShadowPosition, Settings);
+#elif SHADOW_QUALITY == 2
+	// low quality, 2x2 samples, using and not using gather4
+	return Manual1x1PCF(ShadowPosition, Settings);
+#elif SHADOW_QUALITY == 3
+	return Manual3x3PCF(ShadowPosition, Settings);
+#else
+	return Manual5x5PCF(ShadowPosition, Settings);
+#endif
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. PCF 双线性加权软阴影（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">struct FPCFSamplerSettings { Texture2D ShadowDepthTexture; float4 ShadowBufferSize; float SceneDepth; float TransitionScale; bool bSubsurface; bool bTreatMaxDepthUnshadowed; ... };</span>
+<span class="code-line blue">float PCF2x2(float2 Fraction, float3 Values0, float3 Values1, float3 Values2) {</span>
+<span class="code-line green">    Results.x = Values0.x * (1.0f - Fraction.x); ...   // 按亚像素 Fraction 双线性加权比较结果</span>
+<span class="code-line yellow">// 更大核（3×3/5×5/…）由多个 PCF2x2 拼接，TransitionScale 控软硬</span></code></pre><div class="note"><h3>说明</h3><p>硬阴影只有 0/1（在阴影里/外），锯齿严重。<b>PCF</b>（Percentage-Closer Filtering）在阴影图上取一片邻域深度、逐个与当前像素深度比较得 0/1，再按<b>亚像素 Fraction 双线性加权</b>平均——得到 0..1 的软边。<span class="inline">PCF2x2</span> 是基本 2×2 加权单元，更大核由多个拼接。<span class="inline">FPCFSamplerSettings</span> 把纹理/尺寸/场景深度/过渡系数打包配置一次编译一路。<span class="inline">bSubsurface</span> 时走透射（<span class="inline">TransmissionCommon</span>），<span class="inline">bTreatMaxDepthUnshadowed</span> 处理阴影图未覆盖区。这是 <a href="ShadowProjectionPixelShader.usf.html" class="inline">投影 PS</a> 默认软阴影路径，也被 <a href="ShadowPercentageCloserFiltering.ush.html" class="inline">PCSS</a> 复用。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Projection_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>阴影投影</a>
+<a class="tag" href="ShadowProjectionPixelShader.usf.html"><span class="dot" style="background:var(--cyan)"></span>ShadowProjectionPixelShader.usf↗</a>
+<a class="tag" href="ShadowPercentageCloserFiltering.ush.html"><span class="dot" style="background:var(--cyan)"></span>PCSS↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

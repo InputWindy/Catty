@@ -1,0 +1,158 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ShadowDepthPixelShader.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/ShadowDepth_ConvergenceAnnotated.html">← 回到 阴影深度渲染</a></div>
+<h1>ShadowDepthPixelShader.usf 整源解析</h1><div class="subtitle">经典阴影的<b>深度渲染像素着色器</b>：不透明材质通常无 PS（只写深度），本 shader 处理需要的情形——masked 材质裁剪、聚光/点光写 <span class="inline">SV_DEPTH</span>（带偏置）、VSM 把深度原子写入物理页。核心 <span class="inline">Main</span>。<b>下方内嵌完整 89 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>VS 插值 + SvPosition</strong><small>FShadowDepthVSToPS</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>masked 裁剪</strong><small>GetMaterialClippingShadowDepth</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>按类型写深度</strong><small>Spot: SV_DEPTH / VSM: 原子写页</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>阴影深度</strong></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/ShadowDepthPixelShader.usf</span></h2><div class="body">
+<span class="source-path">Main @ L37（SUPPORT_SHADOW_DEPTH_SPOT / VSM permutation）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved. 
+
+/*=============================================================================
+	ShadowDepthPixelShader.usf: Pixel shader for writing shadow depth.
+=============================================================================*/
+
+#if !MATERIAL_LWC_ENABLED
+#define UE_DF_FORCE_FP32_OPS 1
+#endif
+
+// needs to before Common.usf
+#define SHADOW_DEPTH_SHADER 1
+#define USE_STENCIL_LOD_DITHER	0
+
+#include "Nanite/NanitePackedNaniteView.ush"
+#include "Common.ush"
+
+// Reroute SceneTexturesStruct uniform buffer references to the shadow depth pass uniform buffer
+#if FEATURE_LEVEL &gt;= FEATURE_LEVEL_SM5
+#define PassStruct ShadowDepthPass
+#define SceneTexturesStruct ShadowDepthPass.SceneTextures 
+#else
+#define PassStruct MobileShadowDepthPass
+#define MobileSceneTextures MobileShadowDepthPass.SceneTextures 
+#endif
+
+#include "/Engine/Generated/Material.ush"
+#include "/Engine/Generated/VertexFactory.ush"
+#include "ShadowDepthCommon.ush"
+
+#if SUPPORT_SHADOW_DEPTH_VSM
+#include "Nanite/NaniteDataDecode.ush"
+#include "SceneData.ush"
+#include "VirtualShadowMaps/VirtualShadowMapPageAccessCommon.ush"
+#endif
+
+void Main( 
+	FShadowDepthVSToPS Inputs,
+	in float4 SvPosition : SV_Position		// after all interpolators
+#if SUPPORT_SHADOW_DEPTH_SPOT
+	, out float OutDepth : SV_DEPTH
+#endif
+	)
+{
+	ResolvedView = ResolveView();
+
+#if INTERPOLATE_VF_ATTRIBUTES
+	
+	FMaterialPixelParameters MaterialParameters = GetMaterialPixelParameters(Inputs.FactoryInterpolants, SvPosition);
+	FPixelMaterialInputs PixelMaterialInputs;
+	#if INTERPOLATE_POSITION || (USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS &amp;&amp; !IS_NANITE_PASS)
+	    {
+			float4 ScreenPosition  = SvPositionToResolvedScreenPosition(SvPosition);  
+			
+			float3 TranslatedWorld = 
+		#if INTERPOLATE_POSITION
+			Inputs.PixelPosition.xyz;
+		#else
+			SvPositionToResolvedTranslatedWorld(SvPosition);
+		#endif
+
+			CalcMaterialParametersEx(MaterialParameters, PixelMaterialInputs, SvPosition, ScreenPosition, 1, TranslatedWorld, 
+		#if USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS &amp;&amp; !IS_NANITE_PASS
+				Inputs.PixelPositionExcludingWPO
+		#else
+				TranslatedWorld
+		#endif			
+			);
+		}
+	#else
+		CalcMaterialParameters(MaterialParameters, PixelMaterialInputs, SvPosition, 1);
+	#endif
+
+	// Evaluate the mask for masked materials
+	GetMaterialClippingShadowDepth(MaterialParameters, PixelMaterialInputs);
+#else
+	ClipLODTransition(SvPosition.xy);
+#endif
+
+#if SUPPORT_SHADOW_DEPTH_SPOT
+	const float InvMaxSubjectDepth = PassStruct.ShadowParams.w;
+	Inputs.ShadowDepth = 1 - Inputs.ShadowDepth * InvMaxSubjectDepth;
+	Inputs.ShadowDepth += Inputs.DepthBias;
+
+	OutDepth = saturate(Inputs.ShadowDepth);
+#endif
+
+#if SUPPORT_SHADOW_DEPTH_VSM
+	uint2 vAddress = (uint2)SvPosition.xy;
+	float DeviceZ = SvPosition.z;
+
+	FPageInfo PageInfo = UnpackPageInfo( Inputs.PackedPageInfo );
+	FNaniteView NaniteView = UnpackNaniteView( PassStruct.PackedNaniteViews[ PageInfo.ViewId ] );
+
+	// Note: not the usual UB
+	FShadowPhysicalPage Page = ShadowDecodePageTable( PassStruct.VirtualSmPageTable[ CalcPageOffset( NaniteView.TargetLayerIndex, NaniteView.TargetMipLevel, vAddress &gt;&gt; VSM_LOG2_PAGE_SIZE ).GetResourceAddress() ] );
+
+	if( Page.bThisLODValidForRendering)
+	{
+		uint2 pAddress = Page.PhysicalAddress * VSM_PAGE_SIZE + (vAddress &amp; VSM_PAGE_SIZE_MASK);
+		// If requested, render to the static page
+		const int ArrayIndex = PageInfo.bStaticPage ? GetVirtualShadowMapStaticArrayIndex() : 0;
+		InterlockedMax( PassStruct.OutDepthBufferArray[ uint3( pAddress, ArrayIndex ) ], asuint( DeviceZ ) );
+	}
+#endif
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. masked 材质裁剪（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">#if INTERPOLATE_VF_ATTRIBUTES</span>
+<span class="code-line blue">FMaterialPixelParameters MaterialParameters = GetMaterialPixelParameters(Inputs.FactoryInterpolants, SvPosition);</span>
+<span class="code-line blue">CalcMaterialParametersEx(MaterialParameters, PixelMaterialInputs, SvPosition, ScreenPosition, 1, TranslatedWorld, ...);</span>
+<span class="code-line green">GetMaterialClippingShadowDepth(MaterialParameters, PixelMaterialInputs);   // clip() 掉透明部分</span>
+<span class="code-line">#else  ClipLODTransition(SvPosition.xy);   // 仅 LOD 抖动裁剪  #endif</span></code></pre><div class="note"><h3>说明</h3><p>不透明几何的阴影深度<b>不需要 PS</b>（硬件直接写深度最快），本 shader 只在两种情况存在：① <b>masked 材质</b>（如树叶）——必须求值材质 opacity mask 并 <span class="inline">clip()</span> 掉透明像素，否则阴影会是实心矩形；② 需要手动写深度的投影类型。<span class="inline">GetMaterialClippingShadowDepth</span> 是裁剪入口，非 masked 时退化为仅 <span class="inline">ClipLODTransition</span>（LOD 过渡的 dither 裁剪）。</p></div></div></section>
+
+<section class="card"><h2>1. 按投影类型写深度（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">#if SUPPORT_SHADOW_DEPTH_SPOT   // 聚光/点光：透视投影需手动写深度</span>
+<span class="code-line blue">Inputs.ShadowDepth = 1 - Inputs.ShadowDepth * InvMaxSubjectDepth; Inputs.ShadowDepth += Inputs.DepthBias;</span>
+<span class="code-line green">OutDepth = saturate(Inputs.ShadowDepth);   // SV_DEPTH</span>
+<span class="code-line">#if SUPPORT_SHADOW_DEPTH_VSM</span>
+<span class="code-line yellow">uint2 vAddress = (uint2)SvPosition.xy;   // 虚拟页地址 → 原子写入物理页深度</span></code></pre><div class="note"><h3>说明</h3><p>本 PS 的<b>汇聚点</b>：<b>聚光/点光</b>用透视投影，深度非线性，需在 PS 里手动算 <span class="inline">SV_DEPTH</span>（<span class="inline">1 - depth*InvMaxSubjectDepth + DepthBias</span>，偏置抗自阴影 acne）；<b>VSM</b> 则把当前像素的虚拟页地址 <span class="inline">vAddress</span> 翻译成物理页位置，用<b>原子 min</b> 把深度写进 VSM 物理页池（因为 VSM 用 compute 光栅而非固定深度测试）。方向光走正交投影，深度线性，VS 直接输出即可、无需本 PS。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/ShadowDepth_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>阴影深度渲染</a>
+<a class="tag" href="ShadowDepthVertexShader.usf.html"><span class="dot" style="background:var(--cyan)"></span>ShadowDepthVertexShader.usf↗</a>
+<a class="tag" href="ShadowDepthCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>ShadowDepthCommon.ush↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

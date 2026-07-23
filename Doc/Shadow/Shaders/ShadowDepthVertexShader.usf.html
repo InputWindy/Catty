@@ -1,0 +1,395 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ShadowDepthVertexShader.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/ShadowDepth_ConvergenceAnnotated.html">← 回到 阴影深度渲染</a></div>
+<h1>ShadowDepthVertexShader.usf 整源解析</h1><div class="subtitle">经典阴影的<b>深度渲染顶点着色器</b>：从光源视角把几何投影到阴影图空间，支持 VSM / 方向光 / 聚光/点光 / OnePass 立方体贴图等多种投影类型（<span class="inline">ShadowDepthType</span> 分派），含 WPO 与 First-Person 变换。核心 <span class="inline">Main</span> + <span class="inline">PositionOnlyMain</span>。<b>下方内嵌完整 290 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>几何 + 光源视图</strong><small>VertexFactory</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>世界位置 + WPO</strong><small>GetMaterialWorldPositionOffset</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>按投影类型变换</strong><small>VSM/Directional/Spot</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>阴影图裁剪空间位置</strong></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/ShadowDepthVertexShader.usf</span></h2><div class="body">
+<span class="source-path">Main @ L171 · PositionOnlyMain @ L261</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	ShadowDepthVertexShader.usf: Vertex &amp; Geometry shader for writing shadow depth.
+=============================================================================*/
+
+// needs to before Common.usf
+#define SHADOW_DEPTH_SHADER 1
+#define USE_STENCIL_LOD_DITHER	0
+
+// Need to get the definition of nanite packed view for generated unform buffer (which is pulled in by Common.ush)
+#include "Nanite/NanitePackedNaniteView.ush"
+#include "Common.ush"
+
+// Reroute SceneTexturesStruct uniform buffer references to the shadow depth pass uniform buffer
+#if FEATURE_LEVEL &gt;= FEATURE_LEVEL_SM5
+#define PassStruct ShadowDepthPass
+#define SceneTexturesStruct ShadowDepthPass.SceneTextures 
+#else
+#define PassStruct MobileShadowDepthPass
+#define MobileSceneTextures MobileShadowDepthPass.SceneTextures 
+#endif
+
+#include "/Engine/Generated/Material.ush"
+#include "/Engine/Generated/VertexFactory.ush"
+#include "ShadowDepthCommon.ush"
+
+// 
+#ifndef VF_USE_VSM_CONSTANT_BIAS
+#define VF_USE_VSM_CONSTANT_BIAS								0
+#endif
+
+#if SUPPORT_SHADOW_DEPTH_VSM
+#include "Nanite/NaniteDataDecode.ush"
+#include "SceneData.ush"
+#include "VirtualShadowMaps/VirtualShadowMapPageAccessCommon.ush"
+
+/** 
+ * Load physical page offset and perform the needed scale and bias to render the instance into the given physical page,
+ * with the correct clipping set up.
+ */
+float4 ScaleBiasClipToPhysicalSmPage(FNaniteView NaniteView, float4 InPositionClip, inout float4 ClipPlanesInOut, FPageInfo PageInfo)
+{
+	float2 vUV = InPositionClip.xy * float2(0.5, -0.5) + 0.5 * InPositionClip.w;
+	float2 vPixels = vUV * ( uint(VSM_VIRTUAL_MAX_RESOLUTION_XY) &gt;&gt; NaniteView.TargetMipLevel );
+
+	float4 PositionClip = InPositionClip;
+	{
+		float2 Scale = exp2( -NaniteView.TargetMipLevel );
+		PositionClip.xy *= Scale;
+		PositionClip.xy += ( Scale * float2(1,-1) + float2(-1,1) ) * PositionClip.w;
+	}
+
+	{
+		// Clip to uncached page rect
+		uint4 PageRect = PassStruct.UncachedPageRectBounds[ NaniteView.TargetLayerIndex * VSM_MAX_MIP_LEVELS + NaniteView.TargetMipLevel ];
+
+		float2 MinClip =  vPixels - ( PageRect.xy + 0 ) * VSM_PAGE_SIZE * PositionClip.w;
+		float2 MaxClip = -vPixels + ( PageRect.zw + 1 ) * VSM_PAGE_SIZE * PositionClip.w;
+
+		ClipPlanesInOut.xy = MinClip;
+		ClipPlanesInOut.zw = MaxClip;
+	}
+
+	return PositionClip;
+}
+
+float4 TransformShadowVSM(inout float4 ClipPlanesInOut, FPageInfo PageInfo, float3 PointTranslatedWorld)
+{
+	// Load nanite view and perform transform to SM space.
+	FNaniteView NaniteView = UnpackNaniteView(PassStruct.PackedNaniteViews[PageInfo.ViewId]);
+
+	PointTranslatedWorld += DFFastSubtractDemote( NaniteView.PreViewTranslation, ResolvedView.PreViewTranslation );
+	float4 PointClip = mul( float4( PointTranslatedWorld, 1 ), NaniteView.TranslatedWorldToClip );
+
+	// Clamp the vertex to the near plane if it is in front of the near plane
+	// This has problems if some vertices of a triangle get clamped and others do not, also causes artifacts with non-ortho projections
+	if (PassStruct.bClampToNearPlane &gt; 0 &amp;&amp; PointClip.z &gt; PointClip.w)
+	{
+		PointClip.z = 0.999999f;
+		PointClip.w = 1.0f;
+	}
+
+	PointClip = ScaleBiasClipToPhysicalSmPage(NaniteView, PointClip, ClipPlanesInOut, PageInfo);
+
+#if VF_USE_VSM_CONSTANT_BIAS
+	{
+		const float ConstantDepthBias = VertexFactoryGetNonNaniteVirtualShadowMapConstantDepthBias();
+		PointClip.z = clamp(PointClip.z + ConstantDepthBias * NaniteView.ViewToClip[2][2], -PointClip.w, PointClip.w);
+	}
+#endif
+
+	return PointClip;
+}
+#endif // SUPPORT_SHADOW_DEPTH_VSM
+
+float ComputeDepthBiasDirectionalSpot(float4x4 WorldToShadowMatrix, float3 WorldVertexNormal)
+{
+	const float NoL = abs(dot(
+		float3(WorldToShadowMatrix[0].z, WorldToShadowMatrix[1].z, WorldToShadowMatrix[2].z),
+		WorldVertexNormal));
+
+	const float MaxSlopeDepthBias = PassStruct.ShadowParams.z;
+	const float Slope = clamp(abs(NoL) &gt; 0 ? sqrt(saturate(1 - NoL*NoL)) / NoL : MaxSlopeDepthBias, 0, MaxSlopeDepthBias);
+	
+	const float SlopeDepthBias = PassStruct.ShadowParams.y;
+	const float SlopeBias = SlopeDepthBias * Slope;
+
+	const float ConstantDepthBias = PassStruct.ShadowParams.x;
+	const float DepthBias = SlopeBias + ConstantDepthBias;
+
+	return DepthBias;
+}
+
+// NOTE: Only for non-VSM directional lights
+float4 TransformShadowDirectional(
+	float4x4 WorldToClipMatrix, 
+	float4x4 WorldToShadowMatrix, 
+	float4 WorldPosition, 
+	float3 WorldVertexNormal)
+{
+	float4 OutPosition = mul(WorldPosition, WorldToClipMatrix);
+
+	// Clamp the vertex to the near plane if it is in front of the near plane
+	// This has problems if some vertices of a triangle get clamped and others do not, also causes artifacts with non-ortho projections
+	if (PassStruct.bClampToNearPlane &gt; 0 &amp;&amp; OutPosition.z &gt; OutPosition.w)
+	{
+		OutPosition.z = 0.999999f;
+		OutPosition.w = 1.0f;
+	}
+
+	const float DepthBias = ComputeDepthBiasDirectionalSpot(WorldToShadowMatrix, WorldVertexNormal);
+
+	// Output linear, normalized depth
+	const float InvMaxSubjectDepth = PassStruct.ShadowParams.w;
+#if PLATFORM_NEEDS_PRECISE_SHADOW_DEPTH
+	precise
+#endif
+	float AdjustedDepth = ( 1 - OutPosition.z * InvMaxSubjectDepth ) + DepthBias;
+	OutPosition.z = AdjustedDepth;
+
+	return OutPosition;
+}
+
+// Only for non-VSM spot lights
+float4 TransformShadowSpot(
+	float4x4 WorldToClipMatrix, 
+	float4x4 WorldToShadowMatrix, 
+	float4 WorldPosition, 
+	float3 WorldVertexNormal,
+	out float OutShadowDepth,
+	out float OutDepthBias)
+{
+	float4 OutPosition = mul(WorldPosition, WorldToClipMatrix);
+	OutShadowDepth = OutPosition.z;
+	OutDepthBias = ComputeDepthBiasDirectionalSpot(WorldToShadowMatrix, WorldVertexNormal);
+	return OutPosition;
+}
+
+// See EShadowDepthType
+#define SHADOW_DEPTH_TYPE_VSM (1U)
+#define SHADOW_DEPTH_TYPE_DIRECTIONAL (1U&lt;&lt;1)
+#define SHADOW_DEPTH_TYPE_SPOT (1U&lt;&lt;2)
+#define SHADOW_DEPTH_TYPE_ONEPASSPOINT (1U&lt;&lt;3)
+
+uint bUseGpuSceneInstancing;
+#if VERTEXSHADER &amp;&amp; SUPPORT_SHADOW_DEPTH_POINT
+uint LayerId;
+#endif
+
+void Main(
+	FVertexFactoryInput Input,
+	out FShadowDepthVSToPS OutParameters,
+	out float4 OutPosition : SV_POSITION)
+{
+	ResolvedView = ResolveView();
+	
+	FVertexFactoryIntermediates VFIntermediates = GetVertexFactoryIntermediates(Input);
+	float4 WorldPos = VertexFactoryGetWorldPosition(Input, VFIntermediates);
+#if USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS &amp;&amp; !IS_NANITE_PASS
+	OutParameters.PixelPositionExcludingWPO = WorldPos.xyz;
+#endif
+	half3x3 TangentToLocal = VertexFactoryGetTangentToLocal(Input, VFIntermediates);
+
+	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(Input, VFIntermediates, WorldPos.xyz, TangentToLocal);
+	const float3 WorldNormal = VertexFactoryGetWorldNormal(Input, VFIntermediates);
+
+	WorldPos.xyz += GetMaterialWorldPositionOffset(VertexParameters);
+	ApplyMaterialFirstPersonTransform(VertexParameters, WorldPos.xyz);
+
+#if INTERPOLATE_VF_ATTRIBUTES
+	// Masked materials need texture coords to clip
+	OutParameters.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
+#endif
+
+#if INTERPOLATE_POSITION
+	OutParameters.PixelPosition = WorldPos.xyz;
+#endif
+
+	OutPosition = float4(0, 0, 0, 0);
+
+#if SUPPORT_SHADOW_DEPTH_VSM
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_VSM)
+	{
+		OutParameters.PackedPageInfo = 0;	
+		OutParameters.VirtualSmPageClip = float4(1.0f, 1.0f, 1.0f, 1.0f);
+		
+		// Get the offset from which we loaded the instance ID
+		uint InstanceIdIndex = VertexFactoryGetInstanceIdLoadIndex(VFIntermediates);
+		OutParameters.PackedPageInfo = InstanceCulling.PageInfoBuffer[InstanceIdIndex];
+		FPageInfo PageInfo = UnpackPageInfo(OutParameters.PackedPageInfo);
+		OutPosition = TransformShadowVSM(OutParameters.VirtualSmPageClip, PageInfo, WorldPos.xyz);
+	}
+	else
+	{
+		// TODO: Cleaner way to initialize unused outputs...
+		OutParameters.PackedPageInfo = 0;
+		OutParameters.VirtualSmPageClip = float4(1, 1, 1, 1);
+	}
+#endif // SUPPORT_SHADOW_DEPTH_VSM
+
+#if SUPPORT_SHADOW_DEPTH_DIRECTIONAL
+	// Non-VSM directional lights
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_DIRECTIONAL)
+	{
+		OutPosition = TransformShadowDirectional(
+			PassStruct.ProjectionMatrix,
+			PassStruct.ViewMatrix,
+			WorldPos, 
+			WorldNormal);
+	}
+#endif // SUPPORT_SHADOW_DEPTH_DIRECTIONAL
+
+#if SUPPORT_SHADOW_DEPTH_SPOT
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_SPOT)
+	{
+		OutPosition = TransformShadowSpot(
+			PassStruct.ProjectionMatrix,
+			PassStruct.ViewMatrix,
+			WorldPos,
+			WorldNormal,
+			OutParameters.ShadowDepth,
+			OutParameters.DepthBias);
+	}
+#endif // SUPPORT_SHADOW_DEPTH_SPOT
+
+#if SUPPORT_SHADOW_DEPTH_POINT
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_ONEPASSPOINT)
+	{
+		OutParameters.LayerIndex = bUseGpuSceneInstancing ? VertexFactoryGetViewIndex(VFIntermediates) : LayerId;
+		OutPosition = mul(WorldPos, PassStruct.ShadowViewProjectionMatrices[OutParameters.LayerIndex]);
+	}
+	else
+	{
+		OutParameters.LayerIndex = 0;
+	}
+#endif // SUPPORT_SHADOW_DEPTH_POINT
+}
+
+#if POSITION_ONLY
+void PositionOnlyMain(
+	in FPositionAndNormalOnlyVertexFactoryInput Input,
+	out FShadowDepthVSToPS OutParameters,
+	out float4 OutPosition : SV_POSITION)
+{
+	ResolvedView = ResolveView();
+
+	float4 WorldPos = VertexFactoryGetWorldPosition(Input);
+#if USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS &amp;&amp; !IS_NANITE_PASS
+	OutParameters.PixelPositionExcludingWPO = WorldPos.xyz;
+#endif
+
+	float3 WorldNormal = VertexFactoryGetWorldNormal(Input);
+
+#if INTERPOLATE_VF_ATTRIBUTES
+	OutParameters.FactoryInterpolants = (FVertexFactoryInterpolantsVSToPS)0;
+#endif
+
+#if INTERPOLATE_POSITION
+	OutParameters.PixelPosition = WorldPos.xyz;
+#endif
+
+	OutPosition = float4(0, 0, 0, 0);
+
+#if SUPPORT_SHADOW_DEPTH_VSM
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_VSM)
+	{
+		OutParameters.PackedPageInfo = 0;
+		OutParameters.VirtualSmPageClip = float4(1.0f, 1.0f, 1.0f, 1.0f);
+		
+		// Get the offset from which we loaded the instance ID
+		uint InstanceIdIndex = VertexFactoryGetInstanceIdLoadIndex(Input);
+		OutParameters.PackedPageInfo = InstanceCulling.PageInfoBuffer[InstanceIdIndex];
+		FPageInfo PageInfo = UnpackPageInfo(OutParameters.PackedPageInfo);
+		OutPosition = TransformShadowVSM(OutParameters.VirtualSmPageClip, PageInfo, WorldPos.xyz);
+	}
+	else
+	{
+		// TODO: Cleaner way to initialize unused outputs...
+		OutParameters.PackedPageInfo = 0;
+		OutParameters.VirtualSmPageClip = float4(1, 1, 1, 1);
+	}	
+#endif // SUPPORT_SHADOW_DEPTH_VSM
+
+#if	SUPPORT_SHADOW_DEPTH_DIRECTIONAL
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_DIRECTIONAL)
+	{
+		OutPosition = TransformShadowDirectional(
+			PassStruct.ProjectionMatrix,
+			PassStruct.ViewMatrix,
+			WorldPos, 
+			WorldNormal);
+	}
+#endif // SUPPORT_SHADOW_DEPTH_DIRECTIONAL
+
+#if SUPPORT_SHADOW_DEPTH_POINT
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_ONEPASSPOINT)
+	{
+		OutParameters.LayerIndex = bUseGpuSceneInstancing ? VertexFactoryGetViewIndex(Input) : LayerId;
+		OutPosition = mul(WorldPos, PassStruct.ShadowViewProjectionMatrices[OutParameters.LayerIndex]);
+	}
+	else
+	{
+		OutParameters.LayerIndex = 0;
+	}	
+#endif // SUPPORT_SHADOW_DEPTH_POINT
+
+#if SUPPORT_SHADOW_DEPTH_SPOT
+	if (PassStruct.ShadowDepthType == SHADOW_DEPTH_TYPE_SPOT)
+	{
+		OutPosition = TransformShadowSpot(
+			PassStruct.ProjectionMatrix,
+			PassStruct.ViewMatrix,
+			WorldPos,
+			WorldNormal,
+			OutParameters.ShadowDepth,
+			OutParameters.DepthBias);
+	}
+#endif // SUPPORT_SHADOW_DEPTH_SPOT
+}
+
+
+#endif // POSITION_ONLY
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 世界位置 + WPO + First-Person 变换（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">float4 WorldPos = VertexFactoryGetWorldPosition(Input, VFIntermediates);</span>
+<span class="code-line blue">FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(Input, VFIntermediates, WorldPos.xyz, TangentToLocal);</span>
+<span class="code-line green">WorldPos.xyz += GetMaterialWorldPositionOffset(VertexParameters);   // 材质顶点偏移（风吹草动等）</span>
+<span class="code-line green">ApplyMaterialFirstPersonTransform(VertexParameters, WorldPos.xyz);</span>
+<span class="code-line yellow">#if INTERPOLATE_VF_ATTRIBUTES  OutParameters.FactoryInterpolants = ...;   // masked 材质需 UV 裁剪</span></code></pre><div class="note"><h3>说明</h3><p>阴影深度渲染必须与主渲染<b>顶点变换完全一致</b>，否则会产生自阴影瑕疵（peter-panning/acne）。故这里同样跑 <span class="inline">GetMaterialWorldPositionOffset</span>（材质 WPO，如植被摆动）、First-Person 变换——确保阴影跟随几何形变。<span class="inline">INTERPOLATE_VF_ATTRIBUTES</span> 只对 masked 材质输出 UV（PS 要按 mask 裁剪），不透明材质省掉插值。<span class="inline">PositionOnlyMain</span> 是不带材质属性的快速路径（纯位置，用于不需要 mask 的场景）。</p></div></div></section>
+
+<section class="card"><h2>1. 按 ShadowDepthType 分派投影变换（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">#if SUPPORT_SHADOW_DEPTH_VSM   // 虚拟阴影图</span>
+<span class="code-line blue">FPageInfo PageInfo = UnpackPageInfo(InstanceCulling.PageInfoBuffer[InstanceIdIndex]);</span>
+<span class="code-line blue">OutPosition = TransformShadowVSM(OutParameters.VirtualSmPageClip, PageInfo, WorldPos.xyz);</span>
+<span class="code-line green">#if SUPPORT_SHADOW_DEPTH_DIRECTIONAL   OutPosition = TransformShadowDirectional(ProjectionMatrix, ViewMatrix, WorldPos, WorldNormal);</span>
+<span class="code-line yellow">// Spot/Point/OnePassPointLight 各有对应 Transform 分支</span></code></pre><div class="note"><h3>说明</h3><p>本 VS 的<b>汇聚点</b>：同一份 shader 按 <span class="inline">PassStruct.ShadowDepthType</span> 走不同投影——<b>VSM</b>（虚拟阴影图，用 <span class="inline">PageInfo</span> 把顶点变到对应物理页的裁剪空间 + <span class="inline">VirtualSmPageClip</span> 页内裁剪）、<b>方向光</b>（正交投影 + 沿法线的深度偏移抗 acne）、<b>聚光/点光</b>（透视投影，PS 写 <span class="inline">SV_DEPTH</span>）、<b>OnePassPointLight</b>（几何/实例化到立方体 6 面）。这套 permutation 让一份深度 shader 覆盖 UE 所有阴影投影类型——是 <a href="../Chapters/ShadowDepth_ConvergenceAnnotated.html" class="inline">阴影深度</a>的统一入口。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/ShadowDepth_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>阴影深度渲染</a>
+<a class="tag" href="ShadowDepthPixelShader.usf.html"><span class="dot" style="background:var(--cyan)"></span>ShadowDepthPixelShader.usf↗</a>
+<a class="tag" href="ShadowDepthCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>ShadowDepthCommon.ush↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
