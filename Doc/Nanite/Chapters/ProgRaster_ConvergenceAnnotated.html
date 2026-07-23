@@ -25,8 +25,8 @@
 <p style="margin:14px 0 6px;color:#c6d4e2">本章的 GPU 算法在这些 Shader 里（解析文档陆续补齐）：</p>
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
 <tr><td><code>NaniteRasterizer.usf</code></td><td>软件光栅（FMicropolyRasterizeCS，material shader，执行 WPO/PDO）</td><td><a href="../Shaders/NaniteRasterizer.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
-<tr><td><code>NaniteSplit.usf</code></td><td>patch 递归细分（FSplitTask / SplitWorkQueue）</td><td><span class="usf-todo">规划中</span></td></tr>
-<tr><td><code>NaniteTessellation.ush</code></td><td>细分表查找 / 重心坐标编码 / 位移与保守包围盒</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
+<tr><td><code>NaniteSplit.usf</code></td><td>patch 递归细分（FSplitTask / SplitWorkQueue）</td><td><a href="../Shaders/NaniteSplit.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
+<tr><td><code>NaniteTessellation.ush</code></td><td>细分表查找 / 重心坐标编码 / 位移与保守包围盒</td><td><a href="../Shaders/NaniteTessellation.ush.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FSplitTask</span>、<span class="inline">FTessellatedPatch</span>、<span class="inline">FTessellationTable</span>、barycentric 编码全部符号，见 <a href="ProgRaster_FunctionAppendix.html" style="color:#9ee8ff">→ 可编程光栅附录</a>。</p></div></section>
 
@@ -71,7 +71,7 @@
 <section class="card"><h2>关联文档 / 接口连接 <span class="en">Related &amp; interfaces</span></h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#6 集群剔除与两路光栅（软件光栅=material shader）</a><a class="tag" href="InstanceCull_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#5 剔除（回喂保守包围盒）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="Shadow_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#9 Nanite 与阴影 VSM 集成</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/NaniteRasterizer.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteRasterizer.usf ↗</a><span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteSplit.usf（规划中）</span><span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteTessellation.ush（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/NaniteRasterizer.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteRasterizer.usf ↗</a><a class="tag" href="../Shaders/NaniteSplit.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteSplit.usf ↗</a><a class="tag" href="../Shaders/NaniteTessellation.ush.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteTessellation.ush ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="ProgRaster_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 

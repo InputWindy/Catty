@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteTessellation.ush 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/ProgRaster_ConvergenceAnnotated.html">← 回到 #8 可编程光栅</a></div>
+<h1>NaniteTessellation.ush 汇聚/发散批注版</h1><div class="subtitle">Nanite 曲面细分的<b>数学工具库</b>：算<b>细分密度</b>（<span class="inline">GetTessFactors</span>：屏幕边长/深度）、决定要不要继续<b>拆分</b>（<span class="inline">GetSplitFactors</span>），以及在递归细分里<b>压缩/还原重心坐标</b>（<span class="inline">EncodeBarycentrics</span>）。它给 <a href="NaniteSplit.usf.html" class="inline">NaniteSplit.usf</a> 提供判据，给 <a href="NaniteRasterizer.usf.html" class="inline">光栅</a> 的 patch 路径提供细分表查询。<b>说明：完整文件 357 行</b>，下方内嵌核心函数的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>三角/patch 顶点</strong><small>视图空间 PointView[3]</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>GetTessFactors</strong><small>每边：屏幕边长 / 深度 → 细分密度</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>GetSplitFactors</strong><small>÷ 表尺寸 → 是否还需再拆一层</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>EncodeBarycentrics</strong><small>子顶点重心坐标压进 uint 传递</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（357 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/Nanite/NaniteTessellation.ush · GetTessFactors L62 / GetSplitFactors L103 / EncodeBarycentrics L15</span>
+<textarea class="embedded-source" readonly spellcheck="false">// 每条边的细分因子 = 屏幕投影边长 / 边的视深（近处密、远处疏）
+float3 GetTessFactors( FNaniteView NaniteView, float3 PointView[3], float LowTessDistance )
+{
+	const bool bOrtho = NaniteView.ViewToClip[3][3] >= 1;
+
+	bool3 bDistant = false;
+	float3 TessFactors;
+	for( uint i = 0; i < 3; i++ )
+	{
+		uint i0 = i;
+		uint i1 = (i + 1) % 3;
+
+		float EdgeScale  = min( PointView[i0].z, PointView[i1].z );          // 边两端较近的视深
+		float EdgeLength = length( PointView[i0] - PointView[i1] );          // 视空间边长
+		EdgeScale = bOrtho ? 1.0f : max( EdgeScale, NaniteView.NearPlane );
+		TessFactors[i] = EdgeLength / EdgeScale;                             // 透视：远处自动变疏
+		bDistant[i] = !bOrtho &amp;&amp; LowTessDistance > 0.0f &amp;&amp; EdgeScale > LowTessDistance;
+	}
+
+	const float LowTessMultiple = 0.25f; // 远处再打个折
+	TessFactors *= NaniteView.LODScale * InvDiceRate * select(bDistant, LowTessMultiple, 1.0f);
+	return TessFactors;
+}
+
+// 拆分因子 = 细分因子 / 细分表尺寸：>1 说明一层表还盖不住，需要递归再拆
+float3 GetSplitFactors( float3 TessFactors )
+{
+	return TessFactors / NANITE_TESSELLATION_TABLE_SIZE;
+}
+
+// 重心坐标 → 一个 uint（递归细分时在 patch 间传递子三角位置，省带宽）
+uint EncodeBarycentrics( float3 Barycentrics );
+float3 DecodeBarycentrics( uint Encoded );
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. GetTessFactors：细分密度 = 屏幕边长 / 深度</h2><div class="body grid2"><pre><code><span class="code-line yellow">float EdgeScale  = min(PointView[i0].z, PointView[i1].z);</span>
+<span class="code-line yellow">float EdgeLength = length(PointView[i0] - PointView[i1]);</span>
+<span class="code-line yellow">TessFactors[i] = EdgeLength / EdgeScale;   // 透视：远处自动变疏</span></code></pre><div class="note n-blue"><h3>说明</h3><p>细分要"近处细、远处粗"，判据就是<b>边在屏幕上占多少像素</b>。这里用<b>视空间边长 / 边的视深</b>近似屏幕像素长度（除以 z 等价透视缩放）：同样的世界边长，离得越远 z 越大、tess factor 越小、细分越少。<span class="inline">LODScale</span>/<span class="inline">InvDiceRate</span> 是全局密度旋钮；<span class="inline">LowTessDistance</span> 外的边额外乘 <span class="inline">0.25</span> 进一步降密度。正交视图（<span class="inline">bOrtho</span>）不做深度缩放。</p></div></div></section>
+
+<section class="card"><h2>1. GetSplitFactors：要不要再拆一层</h2><div class="body grid2"><pre><code><span class="code-line green">return TessFactors / NANITE_TESSELLATION_TABLE_SIZE;</span></code></pre><div class="note n-green"><h3>说明</h3><p>Nanite 用预烘的<b>细分表</b>（<span class="inline">FTessellatedPatch</span>）一次把一个三角细分到固定上限（<span class="inline">NANITE_TESSELLATION_TABLE_SIZE</span>）。当 tess factor 超过一张表能盖的密度，就得<b>先把三角拆成子三角</b>（<a href="NaniteSplit.usf.html" class="inline">NaniteSplit</a> 递归），每个子三角再各查一次表。<span class="inline">GetSplitFactors = TessFactors / 表尺寸</span>，&gt;1 就意味着"一层不够，继续拆"。这把"任意高细分"拆成"递归拆分 + 每层查表"两级。</p></div></div></section>
+
+<section class="card"><h2>2. EncodeBarycentrics：递归里传子三角位置</h2><div class="body grid2"><pre><code><span class="code-line blue">uint   EncodeBarycentrics(float3 Barycentrics);</span>
+<span class="code-line blue">float3 DecodeBarycentrics(uint Encoded);</span></code></pre><div class="note n-blue"><h3>说明</h3><p>递归拆分时，子三角的三个顶点是父三角内的<b>重心坐标</b>。为省队列带宽，<span class="inline">EncodeBarycentrics</span> 把一个 <span class="inline">float3</span> 重心（和为 1，只需存两个分量）压进一个 <span class="inline">uint</span>，随 <span class="inline">FSplitTask</span> 进工作队列；子任务 <span class="inline">DecodeBarycentrics</span> 还原，再 <span class="inline">TransformBarycentrics</span> 映射到全局。这让细分递归的中间态<b>极其紧凑</b>——和 Nanite 处处"位打包"的风格一致。</p></div></div></section>
+
+<section class="card"><h2>3. FTessellatedPatch：查表出微三角</h2><div class="body grid2"><pre><code><span class="code-line orange">struct FTessellatedPatch { ... GetTessFactors(); ... };</span>
+<span class="code-line orange">struct FSplitPatch { float3 TransformBarycentrics(float3 Local); };</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="inline">FTessellatedPatch</span> 封装"给定一组 tess factor，从预烘表里读出这层该产生哪些微三角顶点（重心）"。<a href="NaniteRasterizer.usf.html" class="inline">光栅</a> 的 patch 路径（<span class="inline">PATCHES</span> 分支）用它把叶子 patch 展开成微三角逐个光栅。<span class="inline">FSplitPatch::TransformBarycentrics</span> 把子 patch 局部重心映回原始三角空间——保证多层递归后顶点仍落在正确世界位置，配合 <a href="../Chapters/ProgRaster_ConvergenceAnnotated.html" class="inline">#8</a> 的位移（PDO/WPO）产出最终几何。</p></div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p><span class="inline">GetTessFactors</span>（屏幕边长/深度=密度）→ <span class="inline">GetSplitFactors</span>（÷表尺寸，&gt;1 则递归拆）→ <span class="inline">EncodeBarycentrics</span> 紧凑传子三角 → <span class="inline">FTessellatedPatch</span> 查表出微三角。把"任意高细分"化为"递归拆分 + 分层查表"。</p></div><div class="note"><h3>阅读建议</h3><p>递归拆分的执行见 <a href="NaniteSplit.usf.html" class="inline">NaniteSplit.usf</a>；细分产出的微三角在哪光栅 + 位移见 <a href="../Chapters/ProgRaster_ConvergenceAnnotated.html" class="inline">#8 可编程光栅</a> 与 <a href="NaniteRasterizer.usf.html" class="inline">NaniteRasterizer.usf</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/ProgRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#8 可编程光栅（细分 + 位移）</a>
+<a class="tag" href="NaniteSplit.usf.html"><span class="dot" style="background:var(--green)"></span>NaniteSplit.usf（递归拆分执行）↗</a>
+<a class="tag" href="NaniteRasterizer.usf.html"><span class="dot" style="background:var(--cyan)"></span>NaniteRasterizer.usf（patch 光栅）↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>
