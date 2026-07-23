@@ -13,7 +13,7 @@
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
 <tr><td><code>材质渲染</code></td><td>把地形/贴花材质画进临时目标（标准材质管线 VS/PS）</td><td><span class="usf-todo">材质驱动</span></td></tr>
-<tr><td><code>VirtualTextureCompress.usf</code></td><td>把现画结果压成 GPU 格式（BC1/3/5…）再写物理页</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
+<tr><td><code>VirtualTextureCompress.usf</code></td><td>把现画结果压成 GPU 格式（BC1/3/5…）再写物理页</td><td><a href="../Shaders/VirtualTextureCompress.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">URuntimeVirtualTexture</span> 属性、<span class="inline">FRuntimeVirtualTextureProducer</span>/<span class="inline">Finalizer</span>、<span class="inline">FRenderPageBatchDesc</span>、材质类型枚举，见 <a href="RVT_FunctionAppendix.html" style="color:#9ee8ff">→ RVT 函数附录</a>。</p></div></section>
 
@@ -95,7 +95,7 @@
 <section class="card"><h2>关联文档 / 接口连接</h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="VTProducer_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#4 Producer（IVirtualTexture 现画实现）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="SVT_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#6 SVT（另一种 producer）</a><a class="tag" href="ClipmapTheory_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--purple)"></span>#7 Clipmap 经典理论</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>VirtualTextureCompress.usf（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/VirtualTextureCompress.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>VirtualTextureCompress.usf ↗</a><a class="tag" href="../Shaders/VirtualTextureMaterial.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>VirtualTextureMaterial.usf ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="RVT_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="../UE_VirtualTexture_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 

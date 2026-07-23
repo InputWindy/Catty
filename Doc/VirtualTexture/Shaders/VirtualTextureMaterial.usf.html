@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualTextureMaterial.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><a href="../Chapters/RVT_ConvergenceAnnotated.html">← 回到 #5 RVT</a></div>
+<h1>VirtualTextureMaterial.usf 汇聚/发散批注版</h1><div class="subtitle">RVT 现画一页时用的<b>材质写入 shader</b>：把地形/贴花材质的输出（BaseColor/Normal/Roughness/Specular/Height/位移…）按 <b>RVT 材质类型的 MRT 布局</b>写进临时目标，再由 <a href="VirtualTextureCompress.usf.html" class="inline">VirtualTextureCompress.usf</a> 压成物理页。核心 <span class="inline">FPixelShaderInOut_MainPS</span> 按输出宏分几路 MRT。<b>说明：完整文件 182 行</b>，下方内嵌核心 PS 的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>RVT 材质</strong><small>地形/贴花的 VT 输出节点</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>取材质属性</strong><small>VT 输出 or 标准材质属性</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>按类型打包 MRT</strong><small>OUT_BASECOLOR_NORMAL_SPECULAR…</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>写临时目标</strong><small>→ Compress 压成物理页</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（182 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/VirtualTextureMaterial.usf · FPixelShaderInOut_MainPS L71</span>
+<textarea class="embedded-source" readonly spellcheck="false">void FPixelShaderInOut_MainPS( in FVertexFactoryInterpolantsVSToPS Interpolants, inout FPixelShaderIn In, inout FPixelShaderOut Out )
+{
+	ResolvedView = ResolveView();
+	FMaterialPixelParameters MaterialParameters = GetMaterialPixelParameters(Interpolants, In.SvPosition);
+	FPixelMaterialInputs PixelMaterialInputs;
+	CalcPixelMaterialInputs(MaterialParameters, PixelMaterialInputs);
+	// ... 反投影出屏幕/世界位置，算材质参数 ...
+
+#if VIRTUAL_TEXTURE_OUTPUT
+	// 来自 UMaterialExpressionRuntimeVirtualTextureOutput 节点
+	half3 BaseColor = GetVirtualTextureOutput0(MaterialParameters);
+	half  Specular  = GetVirtualTextureOutput1(MaterialParameters);
+	half  Roughness = GetVirtualTextureOutput2(MaterialParameters);
+	half3 Normal    = GetVirtualTextureOutput3(MaterialParameters);
+	FDFScalar WorldHeight = WSToDF(GetVirtualTextureOutput4_LWC(MaterialParameters));
+	// ... Opacity/Mask/Displacement/Mask4 ...
+#else
+	// 来自标准材质输出属性
+	half3 BaseColor = GetMaterialBaseColor(PixelMaterialInputs);
+	half  Specular  = GetMaterialSpecular(PixelMaterialInputs);
+	half  Roughness = GetMaterialRoughness(PixelMaterialInputs);
+	half3 Normal    = MaterialParameters.WorldNormal;
+	// ...
+#endif
+
+	// 固定色 / mip 调试色覆盖（省略）
+
+	// —— 按 RVT 材质类型选 MRT 布局（发散点）——
+#if OUT_BASECOLOR
+	Out.MRT[0] = float4(BaseColor, 1.f) * Opacity;
+#elif OUT_BASECOLOR_NORMAL_ROUGHNESS
+	float3 PackedNormal = PackNormal(Normal);
+	Out.MRT[0] = float4(LinearToSrgb(BaseColor), 1.f) * Opacity;   // sRGB 存以提质量
+	Out.MRT[1] = float4(PackedNormal.x, Roughness, PackedNormal.y, 1.f) * Opacity;
+#elif OUT_BASECOLOR_NORMAL_SPECULAR
+	float3 PackedNormal = PackNormal(Normal);
+	Out.MRT[0] = float4(BaseColor, 1.f) * Opacity;
+	Out.MRT[1] = float4(PackedNormal.xy, Mask, 1.f) * Opacity;
+	Out.MRT[2] = float4(Specular, Roughness, PackedNormal.z, 1.f) * Opacity;
+#elif OUT_MASK4
+	Out.MRT[0] = float4(Mask4.xyz, 1.f) * Opacity;
+	Out.MRT[1] = float4(Mask4.w, 0.f, 0.f, 1.f) * Opacity;
+#elif OUT_WORLDHEIGHT
+	Out.MRT[0] = float4(PackWorldHeight(WorldHeight, ...), 0, 0, 1.f);
+#elif OUT_DISPLACEMENT
+	Out.MRT[0] = float4(Displacement, 0.f, 0.f, 1.f) * Opacity;
+#endif
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 两种属性来源（VT 输出 vs 标准材质）</h2><div class="body grid2"><pre><code><span class="code-line orange">#if VIRTUAL_TEXTURE_OUTPUT   GetVirtualTextureOutput0..8(...)</span>
+<span class="code-line orange">#else                        GetMaterialBaseColor/Specular/...</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label diff">不同点</span>材质可以走两条路给 RVT 供数据：① 用专门的 <span class="inline">RuntimeVirtualTextureOutput</span> 节点（<span class="inline">VIRTUAL_TEXTURE_OUTPUT</span>），显式声明"这些属性写进 RVT"；② 直接用标准材质输出（BaseColor/Normal/Roughness…）。<span class="note-label common">共同点</span>两路最终都归到同一组本地变量（BaseColor/Normal/Roughness/Specular/Height/Displacement），再统一打包——这让"专用 RVT 材质"和"复用普通材质"都能画进 RVT。这是 <a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a> 说的"把材质输出预合成进页"的入口。</p></div></div></section>
+
+<section class="card"><h2>1. 按 MaterialType 分 MRT 布局（发散核心）</h2><div class="body grid2"><pre><code><span class="code-line yellow">#if OUT_BASECOLOR_NORMAL_SPECULAR</span>
+<span class="code-line yellow">  Out.MRT[0]=BaseColor; MRT[1]=(Normal.xy,Mask); MRT[2]=(Specular,Roughness,Normal.z)</span></code></pre><div class="note n-blue"><h3>说明</h3><p>全 shader 的<b>发散点</b>：<a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a> 的 <span class="inline">MaterialType</span>（≤3 层）在这里落成不同的 <b>MRT 输出布局</b>——<span class="inline">OUT_BASECOLOR</span>(1层) / <span class="inline">OUT_BASECOLOR_NORMAL_ROUGHNESS</span>(2层) / <span class="inline">OUT_BASECOLOR_NORMAL_SPECULAR</span>(3层) / <span class="inline">OUT_MASK4</span> / <span class="inline">OUT_WORLDHEIGHT</span> / <span class="inline">OUT_DISPLACEMENT</span>。法线用 <span class="inline">PackNormal</span> 压两分量、第三分量塞进别的 MRT 通道省带宽；BaseColor 存 sRGB 提质量；全部 <span class="inline">* Opacity</span> 做预乘便于后续混合。这组 MRT 就是物理页的层布局，直接对应 <span class="inline">URuntimeVirtualTexture</span> 的 <span class="inline">MaterialType</span>。</p></div></div></section>
+
+<section class="card"><h2>2. 与 Compress、页表的衔接</h2><div class="body grid2"><pre><code><span class="code-line green">MainPS 写临时 MRT → VirtualTextureCompress.usf 压 BC/ASTC → 物理页</span>
+<span class="code-line blue">普通材质采样 VT 时（另一路）：查页表 → 采物理页 → 写反馈</span></code></pre><div class="note n-green"><h3>说明</h3><p>本 shader 是 RVT 的<b>写入侧</b>：产出的临时 MRT 交给 <a href="VirtualTextureCompress.usf.html" class="inline">VirtualTextureCompress.usf ↗</a> 压成 GPU 压缩格式写进物理池（对应 <a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a> 的 RenderFinalize→Finalize 分相）。另一侧的<b>读取/反馈</b>——普通材质采样一张 VT 时查页表间接寻址 + 写缺页反馈（<a href="../Chapters/VTFeedback_ConvergenceAnnotated.html" class="inline">#3</a>）——由材质编译期注入的 VT 采样函数完成，与本文件的写入路径合起来构成 VT 的读写闭环。</p></div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>取材质属性（VT 输出/标准两路汇聚）→ 按 <span class="inline">MaterialType</span> 分 MRT 布局打包（发散）→ 写临时目标供 Compress 压页。这是 RVT "把材质预合成进页"的 GPU 写入侧。</p></div><div class="note"><h3>阅读建议</h3><p>RVT 整体（资产/按页渲染/脏区）见 <a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a>；MRT 如何压成物理页见 <a href="VirtualTextureCompress.usf.html" class="inline">VirtualTextureCompress.usf</a>；采样侧反馈闭环见 <a href="../Chapters/VTFeedback_ConvergenceAnnotated.html" class="inline">#3</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/RVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 RVT 运行时虚拟纹理</a>
+<a class="tag" href="VirtualTextureCompress.usf.html"><span class="dot" style="background:var(--cyan)"></span>VirtualTextureCompress.usf（压成物理页）↗</a>
+<a class="tag" href="../Chapters/VTFeedback_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 反馈与页请求（采样侧）</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>

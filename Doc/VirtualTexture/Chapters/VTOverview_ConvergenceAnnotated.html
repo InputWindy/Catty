@@ -12,7 +12,7 @@
 </div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader（VT 以 CPU 编排为主）：</p>
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
-<tr><td><code>VirtualTextureMaterial.usf</code></td><td>材质采样 VT：查页表间接寻址 + 写缺页反馈（详见 #3）</td><td><span class="usf-todo">规划中</span></td></tr>
+<tr><td><code>VirtualTextureMaterial.usf</code></td><td>材质采样 VT：查页表间接寻址 + 写缺页反馈（详见 #3）</td><td><a href="../Shaders/VirtualTextureMaterial.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
 <tr><td><code>页表更新</code></td><td>QueueUpdate→BeginUpdates/ApplyUpdates 多为 CPU 排队 + 少量 compute 写入</td><td><span class="usf-todo">CPU 为主</span></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的顶层 <span class="inline">r.VT.*</span> CVar 全表、<span class="inline">FVirtualTextureSystem</span> 公开接口、Space / PhysicalSpace 描述结构体，见 <a href="VTOverview_FunctionAppendix.html" style="color:#9ee8ff">→ 架构与 CVar 附录</a>。</p></div></section>
@@ -105,7 +105,7 @@
 <section class="card"><h2>关联文档 / 接口连接</h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="MipStreaming_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#1 传统 Mip 流送（粒度对比）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="VTFeedback_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#3 反馈与页请求</a><a class="tag" href="VTProducer_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#4 Producer 与页数据</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>VirtualTextureMaterial.usf（规划中，见 #3）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/VirtualTextureMaterial.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>VirtualTextureMaterial.usf ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="VTOverview_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="../UE_VirtualTexture_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 

@@ -12,7 +12,7 @@
 </div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
-<tr><td><code>VirtualTextureMaterial.usf</code></td><td>材质采样 VT：算出落在哪个虚拟页/mip → 编码 PageId 写反馈缓冲</td><td><span class="usf-todo">规划中</span></td></tr>
+<tr><td><code>VirtualTextureMaterial.usf</code></td><td>材质采样 VT：算出落在哪个虚拟页/mip → 编码 PageId 写反馈缓冲</td><td><a href="../Shaders/VirtualTextureMaterial.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
 <tr><td><code>反馈回读</code></td><td>TransferGPUToCPU + fence 环形缓冲；CPU 侧去重/排序为主</td><td><span class="usf-todo">CPU 为主</span></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FUniquePageList</span> / <span class="inline">FUniqueRequestList</span> 数据结构、请求 union 位域、反馈回读 API，见 <a href="VTFeedback_FunctionAppendix.html" style="color:#9ee8ff">→ 反馈闭环函数附录</a>。</p></div></section>
@@ -104,7 +104,7 @@ Algo::Sort(SortOrder, [this](uint32 A, uint32 B){
 <section class="card"><h2>关联文档 / 接口连接</h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="VTOverview_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#2 VT 总览（反馈三大件之一）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="VTProducer_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>#4 Producer 与页数据（Load 请求→产出）</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>VirtualTextureMaterial.usf（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/VirtualTextureMaterial.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>VirtualTextureMaterial.usf ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="VTFeedback_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="../UE_VirtualTexture_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 

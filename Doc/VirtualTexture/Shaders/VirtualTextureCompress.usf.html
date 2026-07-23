@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualTextureCompress.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><a href="../Chapters/RVT_ConvergenceAnnotated.html">← 回到 #5 RVT</a></div>
+<h1>VirtualTextureCompress.usf 汇聚/发散批注版</h1><div class="subtitle">RVT 现画后的<b>GPU 块压缩 shader</b>：把 <a href="VirtualTextureMaterial.usf.html" class="inline">VirtualTextureMaterial.usf</a> 渲进临时目标的未压缩像素，<b>一个线程组 8×8、每线程压一个 4×4 块</b>，实时编码成 BC1/BC3/ETC2/ASTC 写进物理页。核心 <span class="inline">CompressBaseColorCS</span> / <span class="inline">CompressBaseColorNormalSpecularCS</span>。<b>说明：完整文件 471 行</b>，下方内嵌核心内核的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>未压缩临时目标</strong><small>Material.usf 渲出的 RGB/Normal…</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>ReadBlock 取 4×4</strong><small>每线程读 16 个纹素</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>CompressBlock</strong><small>按平台编 BC1/BC3/ETC2/ASTC</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>写物理页</strong><small>64/128 位块 → 压缩物理纹理</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（471 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/VirtualTextureCompress.usf · CompressBaseColorCS L119 / CompressBaseColorNormalSpecularCS L158</span>
+<textarea class="embedded-source" readonly spellcheck="false">// 每线程压一个 4×4 块：8×8 线程组 = 32×32 像素
+[numthreads(8,8,1)]
+void CompressBaseColorCS(uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 >= SourceRect.zw)) return;   // 越界块丢弃
+
+	uint2  SamplePos   = SourceRect.xy + ThreadId.xy * 4;
+	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
+	float2 SampleUV    = (float2(SamplePos) + 0.5f) * TexelUVSize;
+
+	float3 BlockBaseColor[16];
+	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);  // 读 4×4=16 纹素
+
+#if ASTC_PROFIlE
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_SRGB(BlockBaseColor));
+#elif ETC_PROFILE
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_SRGB(BlockBaseColor));
+#else   // 桌面：BC1
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBC1Block_SRGB(BlockBaseColor));
+#endif
+}
+
+// 3 层布局：BaseColor + Normal + Specular 一次压两张 128 位目标
+[numthreads(8,8,1)]
+void CompressBaseColorNormalSpecularCS(uint3 ThreadId : SV_DispatchThreadID)
+{
+	// ... ReadBlock 出 BlockBaseColor / BlockNormalX / BlockNormalY / BlockSpecular ...
+#if ASTC_PROFIlE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ASTC_SRGBA(BlockBaseColor, BlockNormalX);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ASTC_RGBA (BlockSpecular,  BlockNormalY);
+#elif ETC_PROFILE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ETC2_SRGBA(BlockBaseColor, BlockNormalX);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RGBA (BlockSpecular,  BlockNormalY);
+#else   // 桌面：BC3
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBC3Block_SRGB(BlockBaseColor, BlockNormalX);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBC3Block   (BlockSpecular,  BlockNormalY);
+#endif
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 为什么要 GPU 实时压缩</h2><div class="body grid2"><pre><code><span class="code-line blue">临时目标（未压缩 RGBA8）→ CompressCS → 压缩物理页（BC/ASTC）</span></code></pre><div class="note n-blue"><h3>说明</h3><p><a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a> 的 <span class="inline">bCompressTextures=true</span> 要求物理页用 <b>GPU 压缩格式</b>存（BC/ASTC），显存占用降到 1/4~1/8。但材质是渲进未压缩临时目标的，所以缺页现画后必须<b>在 GPU 上实时块压缩</b>一遍（离线烘焙的 SVT 不需要，页里已是压缩格式）。这就是本 shader 的存在意义——它是 RVT 相对 SVT 独有的一步，代价是每次现画多一趟 compute。</p></div></div></section>
+
+<section class="card"><h2>1. 一线程一 4×4 块</h2><div class="body grid2"><pre><code><span class="code-line yellow">[numthreads(8,8,1)]  // 组内 64 线程 = 32×32 像素</span>
+<span class="code-line green">uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;  // 每线程负责一块</span>
+<span class="code-line green">ReadBlockRGB(..., BlockBaseColor);  // 读该块 4×4=16 个纹素</span></code></pre><div class="note n-green"><h3>说明</h3><p>BC/ASTC 都是 <b>4×4 像素为一个压缩块</b>，所以映射极自然：一个线程压一个块，<span class="inline">ThreadId.xy * 4</span> 定位块左上角，<span class="inline">ReadBlock</span> 采回 16 个纹素到本地数组。8×8 线程组一次覆盖 32×32 像素。<span class="inline">GetDestPos</span> 把块坐标映到物理页里的目标位置。越界块（超出 <span class="inline">SourceRect</span>）直接 return——RVT 页边缘不满整块时的保护。</p></div></div></section>
+
+<section class="card"><h2>2. 按平台 + 布局分派（发散核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">#if ASTC_PROFIlE   CompressBlock_ASTC_*   // 移动</span>
+<span class="code-line orange">#elif ETC_PROFILE  CompressBlock_ETC2_*   // 部分移动</span>
+<span class="code-line orange">#else              CompressBC1/BC3Block  // 桌面</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span>不管什么格式，流程都是"读 4×4 块 → 调 <span class="inline">CompressBlock_*</span> 编码 → 写目标"，且都有<b>按 MaterialType 的多套内核</b>：<span class="inline">CompressBaseColorCS</span>(单层 64 位) / <span class="inline">CompressBaseColorNormalSpecularCS</span>(3 层写两张 128 位)。</p><p><span class="note-label diff">不同点</span>压缩格式随平台 permutation 分三路：桌面 <b>BC1/BC3</b>（64/128 位块）、移动 <b>ASTC</b>、部分移动 <b>ETC2</b>。法线的 X/Y 分开塞进不同块的 alpha 通道以保精度（<span class="inline">BlockNormalX</span>/<span class="inline">BlockNormalY</span>）。这套 permutation 与 <a href="VirtualTextureMaterial.usf.html" class="inline">Material.usf</a> 的 MRT 布局宏严格对应——写入侧产出几张 MRT，压缩侧就有几路对应内核。</p></div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>一线程一 4×4 块：读 16 纹素 → 按平台（BC1/BC3/ETC2/ASTC）+ 布局（1层/3层）实时块压缩 → 写压缩物理页。这是 RVT <span class="inline">bCompressTextures</span> 现画后的独有一趟 compute。</p></div><div class="note"><h3>阅读建议</h3><p>被压的临时目标从哪来见 <a href="VirtualTextureMaterial.usf.html" class="inline">VirtualTextureMaterial.usf</a>；何时触发（RenderFinalize→Finalize）与 RVT 整体见 <a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a>；SVT 页已是压缩格式、不走这里，见 <a href="../Chapters/SVT_ConvergenceAnnotated.html" class="inline">#6</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="VirtualTextureMaterial.usf.html"><span class="dot" style="background:var(--green)"></span>VirtualTextureMaterial.usf（未压缩来源）↗</a>
+<a class="tag" href="../Chapters/RVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 RVT 运行时虚拟纹理</a>
+<a class="tag" href="../Chapters/SVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#6 SVT（离线已压缩对比）</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>
