@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteRasterizer.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/CullRaster_ConvergenceAnnotated.html">← 回到 #6 集群剔除与两路光栅化</a></div>
+<h1>NaniteRasterizer.usf 汇聚/发散批注版</h1><div class="subtitle">Nanite 的<b>软件光栅器</b>：一个 compute 内核逐像素扫描三角形，专治"三角形小于一像素"时硬件光栅的 quad 浪费。软件路径（<span class="inline">MicropolyRasterize</span> CS）与硬件路径（<span class="inline">HWRasterizeVS/MS/PS</span>）<b>汇聚</b>到同一段 <span class="inline">RasterizeTri_Adaptive(Tri, NaniteWritePixel)</span>，按几何类型（三角/体素/曲线/patch）与目标（主/VSM）<b>发散</b>。<b>说明：完整文件 3531 行</b>，下方内嵌<b>核心入口与三角光栅调用</b>的真实源码；扫描细节在 <span class="inline">NaniteRasterizationCommon.ush</span>。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：软/硬两路，一个写入</h2><div class="body flow">
+<div class="node branch"><strong>软件光栅</strong><small>MicropolyRasterize CS（微小三角，逐像素扫描）</small></div>
+<div class="node branch"><strong>硬件光栅</strong><small>HWRasterizeVS/MS/PS（大三角，固定功能）</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>SetupTriangle</strong><small>子像素定点 + 背面/剪裁</small></div>
+<div class="arrow">▶</div>
+<div class="node merge"><strong>RasterizeTri_Adaptive</strong><small>扫描三角，逐像素回调 NaniteWritePixel</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>VisBuffer64 / VSM 页</strong><small>64 位原子写（见 NaniteWritePixel.ush）</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（3531 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/Nanite/NaniteRasterizer.usf · MicropolyRasterize L2420 / ClusterRasterize 三角光栅 L710</span>
+<textarea class="embedded-source" readonly spellcheck="false">// ============ 软件光栅入口：一个线程组处理一个簇，按几何类型分派 ============
+[numthreads(THREADGROUP_SIZE, 1, 1)]
+void MicropolyRasterize(
+	uint DispatchThreadID	: SV_DispatchThreadID,
+	uint GroupID			: SV_GroupID,
+	uint GroupIndex			: SV_GroupIndex)
+{
+#if NANITE_VOXELS
+	ClusterTraceBricks( GroupID, GroupIndex );      // 体素路径（#11）
+#elif NANITE_CURVES
+	ClusterRasterizeCurves( GroupID, GroupIndex );  // 曲线（头发）
+#elif PATCHES
+	PatchRasterize( GroupID, GroupIndex );          // 曲面细分 patch（#8）
+#else // NANITE_TRIANGLES
+	ClusterRasterize( GroupID, GroupIndex );        // 三角形（主路径）
+#endif
+}
+
+// ============ ClusterRasterize 内：取簇三角 → 建三角 → 扫描光栅（节选） ============
+float4 Verts[3];
+UNROLL
+for( uint k = 0; k < 3; k++ )
+{
+	MaterialShader.Verts[k]	= TriangleVerts[k].TransformedVert;
+	Verts[k]				= TriangleVerts[k].PointSubpixelClip;
+}
+
+// 子像素定点 + 背面剔除（NANITE_SUBPIXEL_SAMPLES 定亚像素精度）
+FRasterTri Tri = SetupTriangle< NANITE_SUBPIXEL_SAMPLES, !NANITE_TWO_SIDED >( Raster.ScissorRect, Verts );
+
+if( Tri.bIsValid &amp;&amp; bTriValid )
+{
+	// payload = 可见簇索引 + 三角索引，打进 32 位
+	const uint PixelValue = PackVisPixelX(ClusterRef.VisibleIndex, TriIndex);
+	uint2 VisualizeValues = GetVisualizeValues();
+
+	// 用一个 functor（NaniteWritePixel）承载"每命中一个像素做什么"——
+	// 扫描器 RasterizeTri_Adaptive 只管遍历覆盖像素，写入策略由 functor 决定
+	TNaniteWritePixel< FMaterialShader > NaniteWritePixel;
+	NaniteWritePixel.Raster = Raster;
+	NaniteWritePixel.Shader = MaterialShader;       // 材质 shader（可编程光栅 #8 在此执行 WPO）
+	NaniteWritePixel.PixelValue = PixelValue;
+	NaniteWritePixel.VisualizeValues = VisualizeValues;
+	RasterizeTri_Adaptive( Tri, NaniteWritePixel ); // 扫描 + 逐像素回调 functor.Write()
+}
+// VSM 目标（VIRTUAL_TEXTURE_TARGET）时改用 TNaniteWritePixel<..., FCachedPageTable>，
+// 把深度经页表写进物理页 array —— 扫描逻辑完全相同，只换写入 functor。
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 软/硬双入口 + 几何类型分派</h2><div class="body grid2"><pre><code><span class="code-line orange">[numthreads(THREADGROUP_SIZE,1,1)] void MicropolyRasterize(...)  // 软件光栅 CS</span>
+<span class="code-line orange">void HWRasterizeVS/MS/PS(...)                                    // 硬件光栅（VS+MS+PS）</span>
+<span class="code-line yellow">#if NANITE_VOXELS   ClusterTraceBricks   // 体素</span>
+<span class="code-line yellow">#elif NANITE_CURVES ClusterRasterizeCurves</span>
+<span class="code-line yellow">#elif PATCHES       PatchRasterize        // 细分 patch</span>
+<span class="code-line yellow">#else               ClusterRasterize      // 三角形</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label diff">不同点</span>软件光栅是 compute（<span class="inline">MicropolyRasterize</span>，一个线程组一个簇，逐像素扫描无 quad 浪费）；硬件光栅走固定功能（<span class="inline">HWRasterizeVS/MS/PS</span>）。<a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a> 按 <span class="inline">r.Nanite.MinPixelsPerEdgeHW=32</span> 把簇分到 SW/HW 两组。</p><p><span class="note-label common">共同点</span>软件路径内再按宏分几何类型：三角形（主）、体素（<a href="../Chapters/Voxel_ConvergenceAnnotated.html" class="inline">#11</a>）、曲线（头发）、细分 patch（<a href="../Chapters/ProgRaster_ConvergenceAnnotated.html" class="inline">#8</a>）。</p></div></div></section>
+
+<section class="card"><h2>1. SetupTriangle：子像素定点</h2><div class="body grid2"><pre><code><span class="code-line green">FRasterTri Tri = SetupTriangle&lt; NANITE_SUBPIXEL_SAMPLES, !NANITE_TWO_SIDED &gt;(</span>
+<span class="code-line green">    Raster.ScissorRect, Verts );</span>
+<span class="code-line green">if( Tri.bIsValid &amp;&amp; bTriValid ) { ... }</span></code></pre><div class="note n-green"><h3>说明</h3><p>顶点先转成<b>子像素定点坐标</b>（<span class="inline">PointSubpixelClip</span>，<span class="inline">NANITE_SUBPIXEL_SAMPLES</span> 定亚像素精度），<span class="inline">SetupTriangle</span> 算边方程、做背面剔除（<span class="inline">!NANITE_TWO_SIDED</span> 时）与剪裁矩形裁剪，产出 <span class="inline">FRasterTri</span>。定点数学保证光栅结果精确、无 T 型裂缝——这是软件光栅能替代硬件的前提。</p></div></div></section>
+
+<section class="card"><h2>2. RasterizeTri_Adaptive + NaniteWritePixel functor（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line blue">TNaniteWritePixel&lt; FMaterialShader &gt; NaniteWritePixel;</span>
+<span class="code-line blue">NaniteWritePixel.Shader = MaterialShader;   // #8 可编程光栅在此</span>
+<span class="code-line blue">NaniteWritePixel.PixelValue = PackVisPixelX(VisibleIndex, TriIndex);</span>
+<span class="code-line yellow">RasterizeTri_Adaptive( Tri, NaniteWritePixel );  // 扫描 + 逐像素回调</span></code></pre><div class="note n-blue"><h3>说明</h3><p>这是全 shader 的<b>汇聚点</b>：无论软/硬、无论目标，最终都调 <span class="inline">RasterizeTri_Adaptive(Tri, NaniteWritePixel)</span>。<b>扫描器只负责"遍历三角覆盖的像素"，"命中一个像素做什么"由 functor <span class="inline">NaniteWritePixel</span> 决定</b>——这是 C++ 模板 functor 在 HLSL 里的用法，把"扫描"与"写入策略"解耦。functor 内部调 <span class="inline">EarlyDepthTest()</span> + <span class="inline">Write()</span>，最终落到 <a href="NaniteWritePixel.ush.html" class="inline">NaniteWritePixel.ush ↗</a> 的 64 位原子 max。<span class="inline">MaterialShader</span> 承载材质的顶点部分，<a href="../Chapters/ProgRaster_ConvergenceAnnotated.html" class="inline">#8 可编程光栅</a>的 WPO/位移就在这条路径上执行。</p></div></div></section>
+
+<section class="card"><h2>3. 发散：主视图 vs VSM 物理页</h2><div class="body grid2"><pre><code><span class="code-line orange">#if VIRTUAL_TEXTURE_TARGET &amp;&amp; NANITE_LATE_VSM_PAGE_TRANSLATION</span>
+<span class="code-line orange">    TNaniteWritePixel&lt; FMaterialShader, FCachedPageTable &gt; NaniteWritePixel;  // VSM 页表</span>
+<span class="code-line orange">#else</span>
+<span class="code-line orange">    TNaniteWritePixel&lt; FMaterialShader &gt; NaniteWritePixel;                    // 主 VisBuffer</span>
+<span class="code-line orange">#endif</span></code></pre><div class="note"><h3>说明</h3><p>唯一发散在<b>写入 functor 的模板参数</b>：主视图用 <span class="inline">TNaniteWritePixel&lt;FMaterialShader&gt;</span> 写 VisBuffer64；VSM 阴影（<a href="../Chapters/Shadow_ConvergenceAnnotated.html" class="inline">#9</a>）用带 <span class="inline">FCachedPageTable</span> 的版本，把深度经页表翻译后写进物理页 array。<b>扫描逻辑一行没变</b>，只换 functor——这正是 functor 解耦的价值。<span class="inline">PackVisPixelX</span> 把可见簇索引 + 三角索引打进 payload。</p></div></div></section>
+
+<section class="card"><h2>汇聚/发散总表</h2><div class="body"><table class="table"><tr><th>层级</th><th>类型</th><th>代表符号</th></tr>
+<tr><td>光栅方式</td><td>发散</td><td>MicropolyRasterize(SW) / HWRasterizeVS/MS/PS(HW)</td></tr>
+<tr><td>几何类型</td><td>发散</td><td>ClusterRasterize / ClusterTraceBricks / Curves / Patch</td></tr>
+<tr><td>三角建立</td><td>汇聚</td><td>SetupTriangle → FRasterTri（子像素定点）</td></tr>
+<tr><td>扫描</td><td>汇聚</td><td>RasterizeTri_Adaptive(Tri, NaniteWritePixel)</td></tr>
+<tr><td>写入目标</td><td>发散</td><td>TNaniteWritePixel&lt;...&gt; 主VisBuffer / VSM 页表</td></tr>
+<tr><td>写入原语</td><td>汇聚</td><td>NaniteWritePixel.ush 64 位原子 max</td></tr></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>软/硬两路光栅 + 四种几何类型，全部汇聚到 <span class="inline">RasterizeTri_Adaptive(Tri, functor)</span>。扫描与写入用 functor 解耦：扫描遍历像素，functor 决定写哪、怎么写（主 VisBuffer / VSM 页 / 可视化）。</p></div><div class="note"><h3>阅读建议</h3><p>先看 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a> 软/硬分流与 64 位写，再看这里的 <span class="inline">MicropolyRasterize</span> 分派 + functor 模式；写入落点见 <a href="NaniteWritePixel.ush.html" class="inline">NaniteWritePixel.ush</a>；可编程光栅在 functor 的 MaterialShader 上，见 <a href="../Chapters/ProgRaster_ConvergenceAnnotated.html" class="inline">#8</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/CullRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#6 集群剔除与两路光栅化（软/硬分流）</a>
+<a class="tag" href="NaniteWritePixel.ush.html"><span class="dot" style="background:var(--cyan)"></span>NaniteWritePixel.ush（写入原语）↗</a>
+<a class="tag" href="../Chapters/ProgRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#8 可编程光栅（functor 的 MaterialShader）</a>
+<a class="tag" href="../Chapters/Shadow_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>#9 阴影（VSM 页表写入分支）</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){
+  p.innerHTML = p.innerHTML
+    .replace(/共同点：/g, '<span class="note-label common">共同点</span>')
+    .replace(/不同点：/g, '<span class="note-label diff">不同点</span>');
+});
+</script>
+</body>
+</html>

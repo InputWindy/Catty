@@ -25,7 +25,7 @@
 <p style="margin:14px 0 6px;color:#c6d4e2">本章的 GPU shader（解析文档陆续补齐；VSM 系统全谱见<a href="../../Shadow/UE_Shadow_解析_总目录.html" style="color:#9ee8ff">《UE Shadow》书</a>）：</p>
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
 <tr><td><code>NaniteEmitShadow.usf</code></td><td>把 Nanite 光栅深度按标准/正交/透视三种投影写阴影图</td><td><span class="usf-todo">规划中</span></td></tr>
-<tr><td><code>NaniteRasterizer.usf</code></td><td>VSM 分支：<code>VIRTUAL_TEXTURE_TARGET</code> 把深度写进物理页 array</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
+<tr><td><code>NaniteRasterizer.usf</code></td><td>VSM 分支：<code>VIRTUAL_TEXTURE_TARGET</code> 把深度写进物理页 array</td><td><a href="../Shaders/NaniteRasterizer.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">VSM_PAGE_SIZE</span>、<span class="inline">FVirtualShadowMapArray</span>、页表/缓存符号、<span class="inline">EmitShadowMapPS</span> 全部符号，见 <a href="Shadow_FunctionAppendix.html" style="color:#9ee8ff">→ 阴影集成附录</a>。</p></div></section>
 
@@ -81,7 +81,7 @@ OutDepth = ViewToClip22 * (DeviceZ - 1) / (DeviceZ - ViewToClip22) + DepthBias;<
 <section class="card"><h2>关联文档 / 接口连接 <span class="en">Related &amp; interfaces</span></h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#6 集群剔除与两路光栅（多视图复用）</a><a class="tag" href="InstanceCull_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#5 剔除（CACHE_AS_STATIC）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="RayTracing_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#10 Nanite 光线追踪</a><a class="tag" href="../../Shadow/UE_Shadow_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--purple)"></span>《UE Shadow》书（VSM 全谱）</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteEmitShadow.usf（规划中）</span><span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteRasterizer.usf（VSM 分支，规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteEmitShadow.usf（规划中）</span><a class="tag" href="../Shaders/NaniteRasterizer.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteRasterizer.usf ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="Shadow_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 
