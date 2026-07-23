@@ -1,0 +1,397 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteInstanceHierarchyCulling.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/InstanceCull_ConvergenceAnnotated.html">← 回到 实例剔除</a></div>
+<h1>NaniteInstanceHierarchyCulling.usf 整源解析</h1><div class="subtitle">Nanite 的<b>实例层级剔除</b>（303 行）：在实例之上再套一层空间层级（chunk/BVH），先剔整块 chunk 再下钻实例——海量实例（草、石）时先按块剔除大幅减少逐实例测试。核心 <span class="inline">ProcessChunk</span>。<b>下方内嵌完整 303 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/NaniteInstanceHierarchyCulling.usf</span></h2><div class="body">
+<span class="source-path">WriteOccludedChunk @ L27 · UpdateChunkPreCullStat @ L82 · ProcessChunk @ L106</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+// Do not use shared samplers as it requires the View uniform buffer, which is not bound for this shader.
+#define USE_HZB_SHARED_SAMPLERS 0
+
+#include "../Common.ush"
+#include "../SceneData.ush"
+#include "../WaveOpUtil.ush"
+#include "../ComputeShaderUtils.ush"
+#include "../SceneCulling/SceneCulling.ush"
+#include "../WorkGroupLoadBalancer.ush"
+
+#include "NaniteCullingCommon.ush"
+#include "NaniteCulling.ush"
+#include "NaniteDataDecode.ush"
+#include "NaniteHZBCull.ush"
+
+#if DEBUG_FLAGS
+RWStructuredBuffer&lt;FNaniteStats&gt;		OutStatsBuffer;
+#endif
+
+// Occluded chunks fed back to post-pass.
+RWStructuredBuffer&lt;FOccludedChunkDraw&gt; OutOccludedChunkDraws;
+RWBuffer&lt;uint&gt; OutOccludedChunkArgs;
+
+
+void WriteOccludedChunk(uint ChunkId, uint ViewGroupId, uint OccludedViewMask)
+{
+	uint OccludedChunkOffset = 0;
+	WaveInterlockedAddScalarInGroups(OutOccludedChunkArgs[3], OutOccludedChunkArgs[0], 64, 1, OccludedChunkOffset);
+
+	FOccludedChunkDraw OccDraw;
+	OccDraw.ViewGroupId = ViewGroupId;
+	OccDraw.OccludedViewMask = OccludedViewMask;
+	OccDraw.ChunkId = ChunkId;
+
+	OutOccludedChunkDraws[OccludedChunkOffset] = OccDraw;
+}
+
+StructuredBuffer&lt;FViewDrawGroup&gt; InViewDrawRanges;
+
+// Yet another format 
+// TODO: unify/remove paths
+RWStructuredBuffer&lt;FInstanceCullingGroupWork&gt; OutInstanceWorkGroups;
+
+// TODO: this used to be the same arg as the post pass instances from the instance culling main pass, but due to a weird bug they are separate, for now.
+// Output indirect dispatch args for the following instance culling pass (x will contain all the groups, which matches the array count above).
+RWBuffer&lt;uint&gt; OutInstanceWorkArgs;
+uint MaxInstanceWorkGroups;
+uint bAllowStaticGeometryPath;
+
+bool AppendInstanceCullingWorkGroup(uint ItemChunksOffset, uint ViewGroupId, uint ActiveViewMask, bool bIsStaticSceneGeometry)
+{
+	uint InstanceGroupsOutOffset = 0;
+	BRANCH
+	if (bIsStaticSceneGeometry &amp;&amp; bAllowStaticGeometryPath)
+	{
+		WaveInterlockedAddScalar_(OutInstanceWorkArgs[0u], 1u, InstanceGroupsOutOffset);
+	}
+	else
+	{
+		WaveInterlockedAddScalar_(OutInstanceWorkArgs[4u], 1u, InstanceGroupsOutOffset);
+		// Write from the end
+		InstanceGroupsOutOffset = MaxInstanceWorkGroups - InstanceGroupsOutOffset - 1u;
+	}
+
+	if (InstanceGroupsOutOffset &lt; MaxInstanceWorkGroups)
+	{
+		uint PackedItemChunkDesc = InstanceHierarchyItemChunks[ItemChunksOffset];
+
+		FInstanceCullingGroupWork InstanceCullingGroupWork;
+		InstanceCullingGroupWork.ViewGroupId = ViewGroupId;
+		InstanceCullingGroupWork.PackedItemChunkDesc = PackedItemChunkDesc;
+		InstanceCullingGroupWork.ActiveViewMask = ActiveViewMask;
+		// Allocate the static geo to the end of the buffer
+		OutInstanceWorkGroups[InstanceGroupsOutOffset] = InstanceCullingGroupWork;
+		return true;
+	}
+	return false;
+}
+
+void UpdateChunkPreCullStat(uint NumChunks, bool bShouldUpdate)
+{
+#if DEBUG_FLAGS
+	if (bShouldUpdate &amp;&amp; (RenderFlags &amp; NANITE_RENDER_FLAG_WRITE_STATS) != 0u)
+	{
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+		InterlockedAdd(OutStatsBuffer[0].NumPostHierarchyChunksPreCull, NumChunks);
+#else
+		InterlockedAdd(OutStatsBuffer[0].NumMainHierarchyChunksPreCull, NumChunks);
+#endif
+	}
+#endif
+}
+
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+Buffer&lt;uint&gt; InOccludedChunkArgs;
+StructuredBuffer&lt;FOccludedChunkDraw&gt; InOccludedChunkDraws;
+#else
+StructuredBuffer&lt;FCellChunkDraw&gt; ParentInfoBuffer;
+StructuredBuffer&lt;uint&gt; InGroupIds;
+uint NumGroupIds;
+uint NumParentInfos;
+#endif
+
+void ProcessChunk(uint ChunkId, uint ViewGroupId, uint InOccludedViewMask)
+{
+	FViewDrawGroup ViewDrawGroup = InViewDrawRanges[ViewGroupId];
+
+	uint CellId = ExplicitChunkCellIds[ChunkId];
+	FSceneHiearchyCellData CellData = GetSceneHiearchyCellData(CellId);
+
+	const float LevelCellSize = CellData.BlockData.LevelCellSize;
+	FInstanceChunkAttributes ChunkAttributes = LoadInstanceChunkAttributes(ChunkId, LevelCellSize * 2.0f, LevelCellSize * 0.5f);
+
+
+	FCellHeader CellHeader = GetCellHeader(CellId);
+	const bool bIsStaticSceneGeometry = (ChunkId - CellHeader.ItemChunksOffset) &lt; CellHeader.NumStaticChunks;
+
+#if VIRTUAL_TEXTURE_TARGET
+	// Early out if none of the instances in the chunk cast shadows
+	if ((ChunkAttributes.AnyFlags &amp; PCAF_ANY_CAST_SHADOW) == 0u)
+	{
+		return;
+	}
+#endif
+
+	// Early out if nothing is farfield &amp; that is all we're interested in.
+	if ((RenderFlags &amp; NANITE_RENDER_FLAG_DRAW_ONLY_RAYTRACING_FAR_FIELD) &amp;&amp; (ChunkAttributes.AnyFlags &amp; PCAF_ANY_RAYTRACING_FAR_FIELD) == 0u)
+	{
+		return;
+	}
+
+
+	FAabb CellRelativeBounds = ChunkAttributes.Aabb;
+	float3 ImplicitBoundsMin = float3(CellData.LocalCellCoord) * LevelCellSize - (LevelCellSize * 0.5f).xxx;
+	float3 LocalBoundsCenter = (CellRelativeBounds.Min + CellRelativeBounds.Max) * 0.5f + ImplicitBoundsMin;
+	float3 LocalBoundsExtent = (CellRelativeBounds.Max - CellRelativeBounds.Min) * 0.5f;
+	float2 InstanceDrawDistanceMinMaxSquared = ChunkAttributes.InstanceDrawDistanceMinMaxSquared;
+	bool bHasDrawDistance = InstanceDrawDistanceMinMaxSquared.x &lt; InstanceDrawDistanceMinMaxSquared.y;
+
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN
+	uint OutOccludedViewMask = 0U;
+#endif
+	uint ActiveViewMask = 0U;
+	// Wrt mip views - views, there is no explicit handling here: they are expected to come in a compact range (post view compaction, or from host for non-VSM draws)
+	for (uint ViewIndex = 0; ViewIndex &lt; ViewDrawGroup.NumViews; ++ViewIndex)
+	{
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+		// TODO: loop over set bits instead!
+		if ((InOccludedViewMask &amp; (1U &lt;&lt; ViewIndex)) == 0U)
+		{
+			continue;
+		}
+#endif
+		uint ViewId = ViewDrawGroup.FirstView + ViewIndex;
+
+		FNaniteView NaniteView = GetNaniteView(ViewId);
+
+		// Depth clipping should only be disabled with orthographic projections
+		const bool bIsOrtho = IsOrthoProjection(NaniteView.ViewToClip);
+		const bool bNearClip = (NaniteView.Flags &amp; NANITE_VIEW_FLAG_NEAR_CLIP) != 0u;
+		const bool bViewHZB = (NaniteView.Flags &amp; NANITE_VIEW_FLAG_HZBTEST) != 0u;
+		const bool bIsViewUncached = (NaniteView.Flags &amp; NANITE_VIEW_FLAG_UNCACHED) != 0u;
+
+		// TODO: Move out of the loop, logically all views in a group should share the preview translation
+		// TODO: Make the view compaction pull this data out of the view and store with the group?
+		float4x4 LocalToTranslatedWorld = MakeTranslationMatrix(DFFastToTranslatedWorld(CellData.BlockData.WorldPos, NaniteView.PreViewTranslation));
+		float4x4 PrevLocalToTranslatedWorld = MakeTranslationMatrix(DFFastToTranslatedWorld(CellData.BlockData.WorldPos, NaniteView.PrevPreViewTranslationHZB));
+
+		FBoxCull Cull;
+		Cull.Init(NaniteView, LocalBoundsCenter, LocalBoundsExtent, float4(1.0f, 1.0f, 1.0f, 1.0f), LocalToTranslatedWorld, PrevLocalToTranslatedWorld);
+		if (CULLING_PASS == CULLING_PASS_OCCLUSION_POST)
+		{
+			Cull.bSkipCullFrustum = true;
+			Cull.bSkipCullGlobalClipPlane = true;
+		}
+
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN
+		Cull.DistanceConservative(bHasDrawDistance, InstanceDrawDistanceMinMaxSquared.x, InstanceDrawDistanceMinMaxSquared.y);
+		Cull.GlobalClipPlane();
+#endif
+		BRANCH
+        if( Cull.bIsVisible )
+        {
+#if VIRTUAL_TEXTURE_TARGET
+            Cull.PageFlagMask = VSM_FLAG_ANY_UNCACHED;
+			// Using the static HZB and disabling any dynamic depth culling is conservative while
+			// we traverse the hierarchy and we don't yet know what static/dynamic geometry is below
+			Cull.bIsStaticGeometry = true;
+			// If we're rendering into the static cache, it's not safe to use the receiver mask as we may cache that (full) page
+			// Since at this point in the hierarchy there could still be static instances below, it's only safe to use
+			// the receiver mask if we know the whole view is uncached.
+			Cull.bUseReceiverMask = Cull.bUseReceiverMask &amp;&amp; Cull.bIsViewUncached;
+#endif
+			// Note: bClampToPageLevel == true means we might test rather large footprints in the HZB, leading to load imbalance
+			// TODO: rebalance the work in the workgroup? Spawn more work groups / cell? Implement the top (virtual space) HZB hierarchy?
+			const bool bClampToPageLevel = false;
+            Cull.FrustumHZB( bClampToPageLevel );
+        }
+
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN
+		if( Cull.bWasOccluded )
+		{
+			OutOccludedViewMask |= 1U &lt;&lt; ViewIndex;
+		}
+#endif
+		if( Cull.bIsVisible &amp;&amp; !Cull.bWasOccluded )
+		{
+			ActiveViewMask |= 1U &lt;&lt; ViewIndex;
+		}
+	}
+
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN
+	if( OutOccludedViewMask != 0u)
+	{
+		WriteOccludedChunk(ChunkId, ViewGroupId, OutOccludedViewMask);
+	}
+#endif
+	if (ActiveViewMask != 0u)
+	{
+		AppendInstanceCullingWorkGroup(ChunkId, ViewGroupId, ActiveViewMask, bIsStaticSceneGeometry);
+	}
+}
+
+#ifdef InstanceHierarchyCellChunkCull_CS
+
+[numthreads(64, 1, 1)]
+void InstanceHierarchyCellChunkCull_CS(uint3 GroupId : SV_GroupID, uint GroupThreadIndex : SV_GroupIndex)
+{
+	FWorkGroupSetup WorkGroupSetup = WorkGroupLoadBalancer_Setup(GroupId, GroupThreadIndex);
+
+	if (!WorkGroupSetup.bValid)
+	{
+		return;
+	}
+
+	UpdateChunkPreCullStat(WorkGroupLoadBalancer_GetNumItems(), WorkGroupSetup.DispatchThreadId == 0u);
+
+	// decode payload into index
+	uint CellDrawIndex = WorkGroupSetup.WorkGroupInfo.Payload + WorkGroupSetup.Item.Payload;
+
+	FCellChunkDraw CellDraw = ParentInfoBuffer[CellDrawIndex];
+	ProcessChunk(CellDraw.ItemChunksOffset + WorkGroupSetup.ChildIndex, CellDraw.ViewGroupId, 0u);
+}
+
+#endif // InstanceHierarchyCellChunkCull_CS
+
+#ifdef InstanceHierarchyChunkCull_CS
+
+[numthreads(64, 1, 1)]
+void InstanceHierarchyChunkCull_CS(uint3 DispatchThreadID : SV_DispatchThreadID)
+{
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+	uint NumChunkDraws = InOccludedChunkArgs[3];
+	if (DispatchThreadID.x &gt;= NumChunkDraws)
+	{
+		return;
+	}
+	FOccludedChunkDraw OccDraw = InOccludedChunkDraws[DispatchThreadID.x];
+	const uint ChunkId = OccDraw.ChunkId;
+	const uint ViewGroupId = OccDraw.ViewGroupId;
+	const uint InOccludedViewMask = OccDraw.OccludedViewMask;
+
+	UpdateChunkPreCullStat(NumChunkDraws, all(DispatchThreadID == 0u));
+#else
+	// exit if out of range
+	if (DispatchThreadID.y &gt;= NumGroupIds || DispatchThreadID.x &gt;= NumAllocatedChunks)
+	{
+		return;
+	}
+
+	UpdateChunkPreCullStat(NumGroupIds * NumAllocatedChunks, all(DispatchThreadID == 0u));
+	const uint ChunkId = DispatchThreadID.x;
+
+	// early out if chunk not allocated / used by any cell
+	if (!IsChunkUsed(ChunkId))
+	{
+		return;
+	}
+
+	const uint ViewGroupId = InGroupIds[DispatchThreadID.y];
+	const uint InOccludedViewMask = 0u;
+#endif
+
+	ProcessChunk(ChunkId, ViewGroupId, InOccludedViewMask);
+}
+#endif // InstanceHierarchyChunkCull_CS
+
+// Store the uncullable in the regular cell draw array, at the end.
+uint NumViewDrawGroups;
+uint UncullableItemChunksOffset;
+uint UncullableNumItemChunks;
+
+// One thread per uncullable chunk in the X dimension * View draw groups in the Y dimensions.
+[numthreads(64, 1, 1)]
+void AppendUncullableInstanceWork(uint3 DispatchThreadID : SV_DispatchThreadID)
+{
+	const uint ChunkIndex = DispatchThreadID.x;
+	const uint ViewGroupId = DispatchThreadID.y;
+
+	if (ChunkIndex &lt; UncullableNumItemChunks)
+	{
+		FViewDrawGroup ViewDrawGroup = InViewDrawRanges[ViewGroupId];
+		if (ViewDrawGroup.NumViews &gt; 0u)
+		{
+			uint ActiveViewMask = (1u &lt;&lt; ViewDrawGroup.NumViews) - 1u;
+
+			AppendInstanceCullingWorkGroup(UncullableItemChunksOffset + ChunkIndex, ViewGroupId, ActiveViewMask, false);
+		}
+	}
+}
+
+RWBuffer&lt; uint &gt; OutInstanceWorkArgs0;
+RWBuffer&lt; uint &gt; OutInstanceWorkArgs1;
+
+[numthreads(1, 1, 1)]
+void InitArgs()
+{
+	OutInstanceWorkArgs0[0] = 0; // group count == x dimension
+	OutInstanceWorkArgs0[1] = 1;
+	OutInstanceWorkArgs0[2] = 1;
+	OutInstanceWorkArgs0[3] = 0; // instance count
+
+	// Second args for static geo args growing from the rear
+	OutInstanceWorkArgs0[4] = 0; 
+	OutInstanceWorkArgs0[5] = 1; 
+	OutInstanceWorkArgs0[6] = 1; 
+	OutInstanceWorkArgs0[7] = 0; 
+
+#if OCCLUSION_CULLING
+	// occluded chunks
+	OutOccludedChunkArgs[0] = 0; // group count == x dimension
+	OutOccludedChunkArgs[1] = 1;
+	OutOccludedChunkArgs[2] = 1;
+	OutOccludedChunkArgs[3] = 0; // Item count
+
+	OutInstanceWorkArgs1[0] = 0; // group count == x dimension
+	OutInstanceWorkArgs1[1] = 1;
+	OutInstanceWorkArgs1[2] = 1;
+	OutInstanceWorkArgs1[3] = 0; // instance count
+
+	// Second args for static geo args growing from the rear
+	OutInstanceWorkArgs1[4] = 0; 
+	OutInstanceWorkArgs1[5] = 1; 
+	OutInstanceWorkArgs1[6] = 1; 
+	OutInstanceWorkArgs1[7] = 0; 
+#endif
+}
+
+#ifdef InstanceHierarchySanitizeInstanceArgsCS
+
+RWBuffer&lt; uint &gt; InOutInstanceWorkArgs;
+uint GroupWorkArgsMaxCount;
+
+[numthreads(1, 1, 1)]
+void InstanceHierarchySanitizeInstanceArgsCS()
+{
+	InOutInstanceWorkArgs[0] = min(InOutInstanceWorkArgs[0], GroupWorkArgsMaxCount);
+
+	// Clamp the number of non-static-geo work groups (thread arg)
+	uint ClampedNumStatic = min(InOutInstanceWorkArgs[4], GroupWorkArgsMaxCount);
+	InOutInstanceWorkArgs[4] = ClampedNumStatic;
+}
+
+#endif
+</textarea>
+</div></section>
+<section class="card"><h2>0. chunk 层级剔除 + 下钻（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">void ProcessChunk(uint ChunkId, uint ViewGroupId, uint InOccludedViewMask)</span>
+<span class="code-line blue">// 取 chunk 包围盒 → 对多视图做视锥/HZB 剔除，得 OccludedViewMask</span>
+<span class="code-line green">void WriteOccludedChunk(uint ChunkId, uint ViewGroupId, uint OccludedViewMask)   // 整块被遮挡→暂存</span>
+<span class="code-line yellow">// chunk 通过 → 展开其内实例，交给 InstanceCull 逐实例测试</span></code></pre><div class="note"><h3>说明</h3><p>当场景有<b>百万级实例</b>（植被、碎石），逐实例剔除仍太多。本 shader 在实例上再加一层<b>空间 chunk 层级</b>：先对每个 chunk（一组邻近实例的包围盒）做视锥/HZB 剔除——整块在屏外/被遮就一次性跳过<b>成千实例</b>。<span class="inline">ProcessChunk</span> 用 <span class="inline">OccludedViewMask</span> 位图同时处理多视图（主相机 + 各阴影视图），整块被所有视图遮挡才 <span class="inline">WriteOccludedChunk</span> 暂存（两趟）。通过的 chunk 才展开其实例交给 <a href="NaniteInstanceCulling.usf.html" class="inline">InstanceCulling</a>。这是 Nanite 应对超大实例数的分层剔除优化。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/InstanceCull_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>实例剔除</a>
+<a class="tag" href="NaniteInstanceCulling.usf.html"><span class="dot" style="background:var(--cyan)"></span>InstanceCulling.usf↗</a>
+<a class="tag" href="NaniteHZBCull.ush.html"><span class="dot" style="background:var(--cyan)"></span>HZBCull.ush↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

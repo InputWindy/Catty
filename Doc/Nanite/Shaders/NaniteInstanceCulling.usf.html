@@ -1,32 +1,198 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NaniteInstanceCulling.usf 代码解析</title>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteInstanceCulling.usf 代码解析（整源）</title>
 <style>
-:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:500px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
-<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/InstanceCull_ConvergenceAnnotated.html">← 回到 #5 实例剔除与层级遍历</a></div>
-<h1>NaniteInstanceCulling.usf 汇聚/发散批注版</h1><div class="subtitle">Nanite 剔除漏斗的第一级：对每个<b>实例</b>做视锥 + HZB 遮挡剔除，可见者写出<b>候选节点</b>（BVH 根）交给层级遍历。两趟遮挡在这里分叉——主趟把被遮挡实例暂存，后趟复核。核心入口 <span class="inline">InstanceCull</span>（64 线程/组）。<b>说明：完整文件 451 行</b>，下方内嵌核心入口与剔除/写出逻辑的真实源码。</div></header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/InstanceCull_ConvergenceAnnotated.html">← 回到 实例剔除</a></div>
+<h1>NaniteInstanceCulling.usf 整源解析</h1><div class="subtitle">Nanite 的<b>实例剔除</b>（376 行）：对每个实例做视锥 + HZB 遮挡剔除，通过的实例把其 BVH 根节点入队给簇剔除；被遮挡实例写入下一帧的遮挡列表（两趟剔除）。核心 <span class="inline">InstanceCull</span> @ L178。<b>下方内嵌完整 376 行真实源码</b>，再逐段真实代码批注。</div></header>
 <main>
 
 <section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
-<div class="node branch"><strong>取实例</strong><small>每线程一个实例（多视图批处理）</small></div>
+<div class="node branch"><strong>实例列表</strong><small>GPUScene</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><strong>FrustumHZB</strong><small>视锥 + HZB 遮挡测试</small></div>
+<div class="node func"><strong>视锥 + HZB 遮挡剔除</strong><small>逐实例</small></div>
 <div class="arrow">▶</div>
-<div class="node branch"><strong>被遮挡?</strong><small>MAIN 趟 → WriteOccludedInstance 暂存</small></div>
+<div class="node func"><strong>通过→入队 BVH 根</strong><small>供簇剔除</small></div>
 <div class="arrow">▶</div>
-<div class="node out"><strong>可见→写候选节点</strong><small>WaveInterlockedAdd 进 QueueState → 层级遍历</small></div>
+<div class="node out"><strong>被遮挡→下帧列表</strong></div>
 </div></section>
 
-<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（451 行文件的核心节选，逐行真实）</span></h2><div class="body">
-<span class="source-path">Engine/Shaders/Private/Nanite/NaniteInstanceCulling.usf · InstanceCull L177 / WriteOccludedInstance L169 / 剔除写出 L394</span>
-<textarea class="embedded-source" readonly spellcheck="false">// 被遮挡实例：原子追加到 occluded 列表（供后趟复核）
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/NaniteInstanceCulling.usf</span></h2><div class="body">
+<span class="source-path">WriteOccludedInstance @ L169 · InstanceCull @ L178（numthreads 64）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+// Do not use shared samplers as it requires the View uniform buffer, which is not bound for this shader.
+#define USE_HZB_SHARED_SAMPLERS 0
+
+#include "../Common.ush"
+#include "../SceneData.ush"
+#include "../WaveOpUtil.ush"
+#include "../ComputeShaderUtils.ush"
+#include "../VirtualShadowMaps/VirtualShadowMapPageOverlap.ush"
+#include "../VirtualShadowMaps/VirtualShadowMapPageCacheCommon.ush"
+
+#include "NaniteCullingCommon.ush"
+#include "NaniteCulling.ush"
+#include "NaniteDataDecode.ush"
+#include "NaniteHZBCull.ush"
+#include "NaniteWritePixel.ush"
+
+#include "../SceneCulling/SceneCulling.ush"
+
+#if VIRTUAL_TEXTURE_TARGET
+MAX_OCCUPANCY
+DISABLE_TARGET_OCCUPANCY_WARNING
+#endif
+
+// Partially implements FPrimitiveSceneProxy::IsShown() - missing view filter lists and some misc. tests
+bool IsPrimitiveShown(FPrimitiveSceneData PrimitiveData, uint RenderFlags, bool bIsShadowPass)
+{
+	const bool bCastShadow						= (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_CAST_SHADOWS) != 0u;
+	
+	const bool bForceHidden						= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_FORCE_HIDDEN) != 0u;
+	const bool bVisibleInGame					= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_GAME) != 0u;
+	const bool bVisibleInEditor					= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_EDITOR) != 0u;
+	const bool bVisibleInMainPass				= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_MAIN_PASS) != 0u;
+	const bool bVisibleInReflectionCaptures		= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_REFLECTION_CAPTURES) != 0u;
+	//const bool bVisibleInRealTimeSkyCaptures	= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_REAL_TIME_SKY_CAPTURES) != 0u;
+	//const bool bVisibleInRayTracing			= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_RAY_TRACING) != 0u;
+	const bool bVisibleInSceneCaptureOnly		= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_SCENE_CAPTURE_ONLY) != 0u;
+	const bool bHiddenInSceneCapture			= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_HIDDEN_IN_SCENE_CAPTURE) != 0u;
+	const bool bVisibleInRayTracing				= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_RAY_TRACING) != 0u;
+	const bool bCastHiddenShadow				= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_CAST_HIDDEN_SHADOW) != 0u;
+	const bool bVisibleInLumenScene				= (PrimitiveData.VisibilityFlags &amp; PRIMITIVE_VISIBILITY_FLAG_VISIBLE_IN_LUMEN_SCENE) != 0u;
+
+	const bool bIsSceneCapture					= (RenderFlags &amp; NANITE_RENDER_FLAG_IS_SCENE_CAPTURE) != 0u;
+	const bool bIsReflectionCapture				= (RenderFlags &amp; NANITE_RENDER_FLAG_IS_REFLECTION_CAPTURE) != 0u;
+	const bool bIsGameView						= (RenderFlags &amp; NANITE_RENDER_FLAG_IS_GAME_VIEW) != 0u;
+	const bool bEditorShowFlag					= (RenderFlags &amp; NANITE_RENDER_FLAG_EDITOR_SHOW_FLAG_ENABLED) != 0u;
+	const bool bGameShowFlag					= (RenderFlags &amp; NANITE_RENDER_FLAG_GAME_SHOW_FLAG_ENABLED) != 0u;
+	const bool bIsLumenCapture					= (RenderFlags &amp; NANITE_RENDER_FLAG_IS_LUMEN_CAPTURE) != 0u;
+
+	// TODO: Make this explicit in RenderFlags?
+	const bool bIsMainPass = !bIsLumenCapture &amp;&amp; !bIsShadowPass &amp;&amp; (CULLING_PASS != CULLING_PASS_EXPLICIT_LIST);
+
+	if (RenderFlags &amp; NANITE_RENDER_FLAG_DRAW_ONLY_RAYTRACING_FAR_FIELD)
+	{
+		return (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_RAYTRACING_FAR_FIELD);
+	}
+
+	if (bForceHidden)
+	{
+		// Primitive is forcibly hidden
+		return false;
+	}
+
+	if (bIsMainPass &amp;&amp; !bVisibleInMainPass)
+	{
+		return false;
+	}
+
+	if (bIsShadowPass &amp;&amp; !bCastShadow)
+	{
+		// Only shadow casting primitives are visible in a shadow pass
+		return false;
+	}
+
+	if (bIsLumenCapture)
+	{
+		// No need to capture this primitive, as it isn't tracked by Lumen scene
+		if (!bVisibleInLumenScene)
+		{
+			return false;
+		}
+
+		// Primitives may be visible only in ray tracing, but we still want to capture them into surface cache
+		if (bVisibleInRayTracing)
+		{
+			return true;
+		}
+	}
+
+	if (bIsSceneCapture)
+	{
+		if (bHiddenInSceneCapture)
+		{
+			return false;
+		}
+	}
+	else if (bVisibleInSceneCaptureOnly)
+	{
+		return false;
+	}
+
+	if (bIsShadowPass &amp;&amp; bCastHiddenShadow)
+	{
+		return true;
+	}
+
+	if (bEditorShowFlag)
+	{
+		if (!bVisibleInEditor)
+		{
+			return false;
+		}
+	}
+	else
+	{
+		if (!bVisibleInGame)
+		{
+			return false;
+		}
+
+		// "G" mode in editor viewport
+		if (!bIsGameView &amp;&amp; bGameShowFlag &amp;&amp; !bVisibleInEditor)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+//======================
+// Instance culling
+//
+// Culls instances and outputs list of clusters to further cull.
+//======================
+
+uint NumInstances;
+uint NumViews;
+uint IsExplicitDraw;
+
+StructuredBuffer&lt;FInstanceDraw&gt;			InInstanceDraws;
+Buffer&lt;uint&gt;							InOccludedInstancesArgs;
+
+#if INSTANCE_CULL_USE_WORK_GROUP_BUFFER
+uint MaxInstanceWorkGroups;
+Buffer&lt;uint&gt;								InInstanceWorkArgs;
+StructuredBuffer&lt;FInstanceCullingGroupWork&gt; InInstanceWorkGroups;
+
+// These paths are coupled for the time being
+StructuredBuffer&lt;FViewDrawGroup&gt; InViewDrawRanges;
+
+#endif 
+
+#if PRIMITIVE_FILTER
+StructuredBuffer&lt;uint&gt;					InPrimitiveFilterBuffer;
+#endif
+
+RWStructuredBuffer&lt;FInstanceDraw&gt;		OutOccludedInstances;
+RWBuffer&lt;uint&gt;							OutOccludedInstancesArgs;
+RWByteAddressBuffer						OutCandidateNodes;
+RWStructuredBuffer&lt;FQueueState&gt;			OutQueueState;
+
+#if DEBUG_FLAGS
+RWStructuredBuffer&lt;FNaniteStats&gt;		OutStatsBuffer;
+#endif
+
+
 void WriteOccludedInstance(uint ViewId, uint InstanceId)
 {
 	uint OccludedInstanceOffset = 0;
@@ -41,58 +207,289 @@ void InstanceCull(
 	uint GroupThreadIndex : SV_GroupIndex)
 {
 	const uint DispatchIndex = GetUnWrappedDispatchThreadId(GroupId, GroupThreadIndex, 64);
+
+	FViewDrawGroup ViewDrawGroup;
+	ViewDrawGroup.FirstView = 0;
+	ViewDrawGroup.NumViews = 1U;
+
 	const bool bIsPostPass = (CULLING_PASS == CULLING_PASS_OCCLUSION_POST);
-	// ... 取 InstanceId、NaniteView，按 ActiveViewMask 多视图循环 ...
+	const bool bIsExplicitDraw = IsExplicitDraw != 0;
 
-	// —— 剔除核心（每实例每视图）——
-	Cull.bEnableWPO = Cull.bEnableWPO &amp;&amp; bAllowWPO;
-	bCacheAsStatic  = ShouldCacheInstanceAsStatic(InstanceId, ...);   // 静态缓存归类（VSM）
-	Cull.SetupCacheDependentState(bCacheAsStatic, InstanceId, ...);
-	Cull.FrustumHZB( false );                                          // 视锥 + HZB 遮挡
+#if INSTANCE_CULL_USE_WORK_GROUP_BUFFER
 
-#if CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN
-	if( Cull.bWasOccluded )
-		WriteOccludedInstance(ViewId, InstanceId);                    // 主趟：暂存被遮挡的
+#if DEBUG_FLAGS &amp;&amp; CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+	uint NumInstanceWorkGroups = InInstanceWorkArgs[STATIC_GEOMETRY_ONLY ? 0 : 4];
+	if ((RenderFlags &amp; NANITE_RENDER_FLAG_WRITE_STATS) != 0u &amp;&amp; DispatchIndex == 0)
+	{
+		InterlockedAdd(OutStatsBuffer[0].NumPostInstancesPreCull, NumInstanceWorkGroups);
+	}
 #endif
 
-	if( Cull.bIsVisible &amp;&amp; !Cull.bWasOccluded )
+#if STATIC_GEOMETRY_ONLY
+	uint WorkItemIndex = GroupId.x;
+#else
+	uint WorkItemIndex = MaxInstanceWorkGroups - 1 - GroupId.x;
+#endif
+	FInstanceCullingGroupWork GroupWorkItem = InInstanceWorkGroups[WorkItemIndex];
+
+	bool bIsRLEPackedChunk = false;
+	uint GroupNumInstances =  UnpackChunkInstanceCount(GroupWorkItem.PackedItemChunkDesc, bIsRLEPackedChunk);
+
+	uint ActiveViewMask = 1u;
+	ViewDrawGroup.FirstView = InViewDrawRanges[GroupWorkItem.ViewGroupId].FirstView;
+#if NANITE_MULTI_VIEW
+	ViewDrawGroup.NumViews = InViewDrawRanges[GroupWorkItem.ViewGroupId].NumViews;
+	ActiveViewMask = GroupWorkItem.ActiveViewMask;
+#endif	
+
+#if DEBUG_FLAGS 
+	if ((RenderFlags &amp; NANITE_RENDER_FLAG_WRITE_STATS) != 0u &amp;&amp; GroupThreadIndex == 0)
 	{
-		// 可见 → 往 QueueState 原子追加一个候选节点（BVH 根），交给层级遍历
-		uint NodeOffset = 0;
-		uint QueueStateIndex = ( CULLING_PASS == CULLING_PASS_OCCLUSION_POST );  // 0=主 1=后
-		WaveInterlockedAddScalar_( OutQueueState[0].PassState[QueueStateIndex].NodeWriteOffset, 1, NodeOffset );
-		WaveInterlockedAddScalar(  OutQueueState[0].PassState[QueueStateIndex].NodeCount, 1 );
-		// ... 写候选节点数据 + 剔除标志（TEST_LOD / FALLBACK_RASTER / ENABLE_WPO / CACHE_AS_STATIC）...
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+		// Add the occluded instances to the count
+		InterlockedAdd(OutStatsBuffer[0].NumPostInstancesPreCull, GroupNumInstances);
+#else // CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN/NO_OCCLUSION
+		InterlockedAdd(OutStatsBuffer[0].NumMainInstancesPreCull, GroupNumInstances * countbits(ActiveViewMask));
+#endif
+	}
+#endif
+
+	// Kill overflowing threads.
+	if (GroupThreadIndex &gt;= GroupNumInstances)
+	{
+		return;
+	}
+
+
+	// Unpack compressed ID OR load the instance ID from the buffer (this is the ID buffer prepped during hierarchy build).
+	uint InstanceId = UnpackChunkInstanceId(bIsRLEPackedChunk, GroupWorkItem.PackedItemChunkDesc, GroupThreadIndex);
+	{
+
+#else // !INSTANCE_CULL_USE_WORK_GROUP_BUFFER
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+	uint NumInstancesLocal = InOccludedInstancesArgs[3];
+
+#if DEBUG_FLAGS
+	if ((RenderFlags &amp; NANITE_RENDER_FLAG_WRITE_STATS) != 0u &amp;&amp; DispatchIndex == 0)
+	{
+		InterlockedAdd(OutStatsBuffer[0].NumPostInstancesPreCull, NumInstancesLocal);
+	}
+#endif
+
+#else
+	uint NumInstancesLocal = NumInstances;
+#endif
+
+	if (DispatchIndex &lt; NumInstancesLocal)
+	{
+#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST || CULLING_PASS == CULLING_PASS_EXPLICIT_LIST
+		uint InstanceId = InInstanceDraws[DispatchIndex].InstanceId;
+		ViewDrawGroup.FirstView = InInstanceDraws[DispatchIndex].ViewId;
+#else
+		uint InstanceId = DispatchIndex;
+#endif
+#if NANITE_MULTI_VIEW
+	#if CULLING_PASS == CULLING_PASS_NO_OCCLUSION || CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN
+		ViewDrawGroup.NumViews = NumViews;
+	#endif
+#endif
+
+#endif // INSTANCE_CULL_USE_WORK_GROUP_BUFFER
+
+		uint PrimitiveId;
+		uint InstanceFlags;
+		LoadInstancePrimitiveIdAndFlags(InstanceId, PrimitiveId, InstanceFlags);
+
+		if (PrimitiveId == INVALID_PRIMITIVE_ID || (InstanceFlags &amp; INSTANCE_SCENE_DATA_FLAG_HIDDEN) != 0u)
+		{
+			return;
+		}
+
+		FInstanceSceneData InstanceData = GetInstanceSceneDataUnchecked(InstanceId);
+
+		BRANCH
+		if (InstanceData.NaniteRuntimeResourceID == 0xFFFFFFFFu)
+		{
+			// Only process valid Nanite instances
+			return;
+		}
+
+		FPrimitiveSceneData PrimitiveData = GetPrimitiveData(InstanceData.PrimitiveId);
+
+	#if PRIMITIVE_FILTER
+		BRANCH
+		if (!bIsExplicitDraw &amp;&amp; (InPrimitiveFilterBuffer[InstanceData.PrimitiveId &gt;&gt; 5u] &amp; BitFieldMaskU32(1u, InstanceData.PrimitiveId &amp; 31u)) != 0u)
+		{
+			// Primitive has been filtered out
+			return;
+		}
+	#endif
+
+		const bool bIsShadowPass = (DEPTH_ONLY != 0);
+		
+		BRANCH
+		if (!bIsExplicitDraw &amp;&amp; !IsPrimitiveShown(PrimitiveData, RenderFlags, bIsShadowPass))
+		{
+			// Primitive is not visible - cull it
+			return;
+		}
+
+		const float3 LocalBoundsCenter = InstanceData.LocalBoundsCenter;
+		const float3 LocalBoundsExtent = InstanceData.LocalBoundsExtent;
+
+		const uint PrimLightingChannelMask = GetPrimitive_LightingChannelMask_FromFlags(PrimitiveData.Flags);
+
+#if INSTANCE_CULL_USE_WORK_GROUP_BUFFER
+
+		while (ActiveViewMask != 0u)
+		{
+			uint ViewIndex = firstbitlow(ActiveViewMask);
+			ActiveViewMask ^= 1u &lt;&lt; ViewIndex;
+#else
+		for (uint ViewIndex = 0; ViewIndex &lt; ViewDrawGroup.NumViews; ++ViewIndex)
+		{
+#endif
+			uint ViewId = ViewDrawGroup.FirstView + ViewIndex;
+
+			FNaniteView NaniteView = GetNaniteView(ViewId);
+
+			// Check if the primitive is hidden in this view due to bOwnerNoSee or bOnlyOwnerSee
+			const uint NumOwnerShipPrimsPerView = Scene.NaniteOwnershipVisibility.PrimitivesPerView;
+			BRANCH
+			if (!bIsExplicitDraw &amp;&amp; NumOwnerShipPrimsPerView &gt; 0 &amp;&amp; NaniteView.SceneRendererPrimaryViewId &gt;= 0)
+			{
+				const uint HiddenPrimitivesIdx = NumOwnerShipPrimsPerView * NaniteView.SceneRendererPrimaryViewId + InstanceData.PrimitiveId;
+				BRANCH
+				if ((Scene.NaniteOwnershipVisibility.HiddenPrimitives[HiddenPrimitivesIdx &gt;&gt; 5u] &amp; BitFieldMaskU32(1u, HiddenPrimitivesIdx &amp; 31u)) != 0u)
+				{
+					continue;
+				}
+			}
+
+			FInstanceDynamicData DynamicData = CalculateInstanceDynamicData(NaniteView, InstanceData, true);
+
+			const bool bLightingChannelMismatch = NaniteView.bUseLightingChannelMask &amp;&amp; ((NaniteView.LightingChannelMask &amp; PrimLightingChannelMask) == 0u);
+
+			BRANCH
+			if (bLightingChannelMismatch)
+			{
+				continue;
+			}
+
+			FBoxCull Cull;
+			// If we know there is only static geometry, then previous-LTW == LocalToTranslatedWorld, this cuts a lot of state especially for the VSM cull that performs looping
+#if STATIC_GEOMETRY_ONLY
+			Cull.Init( NaniteView, LocalBoundsCenter, LocalBoundsExtent, InstanceData.NonUniformScale, DynamicData.LocalToTranslatedWorld, DynamicData.LocalToTranslatedWorld );
+#else
+			Cull.Init( NaniteView, LocalBoundsCenter, LocalBoundsExtent, InstanceData.NonUniformScale, DynamicData.LocalToTranslatedWorld, DynamicData.PrevLocalToTranslatedWorld );
+#endif
+			if( CULLING_PASS == CULLING_PASS_OCCLUSION_POST )
+			{
+				Cull.bSkipCullFrustum = true;
+				Cull.bSkipCullGlobalClipPlane = true;
+			}
+
+#if SUPPORT_FIRST_PERSON_RENDERING
+			if ((PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_IS_FIRST_PERSON) != 0)
+			{
+				// First person primitives potentially deform the geometry outside of its bounds in a view dependent way. They are very unlikely to be occluded anyways,
+				// so to avoid falsely culling them, it is better to simply don't occlusion cull them at all.
+				Cull.bSkipCullHZB = true;
+			}
+#endif // SUPPORT_FIRST_PERSON_RENDERING
+
+			Cull.Distance(PrimitiveData);
+
+			bool bCacheAsStatic = false;
+
+			Cull.GlobalClipPlane();
+
+			BRANCH
+			if( Cull.bIsVisible )
+			{
+#if VIRTUAL_TEXTURE_TARGET
+				const bool bAllowWPO = VirtualShadowMapIsWPOAllowed(PrimitiveData, NaniteView.TargetLayerIndex);
+				Cull.bEnableWPO = Cull.bEnableWPO &amp;&amp; bAllowWPO;
+				
+				bCacheAsStatic = ShouldCacheInstanceAsStatic(InstanceId, (NaniteView.Flags &amp; NANITE_VIEW_FLAG_UNCACHED), bAllowWPO, NaniteView.SceneRendererPrimaryViewId);
+				// If we're rendering into the static cache, it's not safe to use the receiver mask as we may cache that (full) page
+				Cull.SetupCacheDependentState(bCacheAsStatic, InstanceId, NaniteView.SceneRendererPrimaryViewId);
+				
+				float PixelEstRadius = CalcClipSpaceRadiusEstimate(Cull.bIsOrtho, InstanceData, DynamicData.LocalToTranslatedWorld, NaniteView.ViewToClip) * float(VSM_VIRTUAL_MAX_RESOLUTION_XY);
+				Cull.bDetailGeometry = IsDetailGeometry(bCacheAsStatic, true, PixelEstRadius);
+#endif
+				Cull.FrustumHZB( false );
+			}
+
+		#if CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN
+			if( Cull.bWasOccluded )
+			{
+				WriteOccludedInstance(ViewId, InstanceId);
+			}
+		#endif
+
+			if( Cull.bIsVisible &amp;&amp; !Cull.bWasOccluded )
+			{
+				uint NodeOffset = 0;
+				uint QueueStateIndex = ( CULLING_PASS == CULLING_PASS_OCCLUSION_POST );
+				WaveInterlockedAddScalar_( OutQueueState[ 0 ].PassState[ QueueStateIndex ].NodeWriteOffset, 1, NodeOffset );
+				WaveInterlockedAddScalar(  OutQueueState[ 0 ].PassState[ QueueStateIndex ].NodeCount, 1 );
+
+#if DEBUG_FLAGS
+				if ((RenderFlags &amp; NANITE_RENDER_FLAG_WRITE_STATS) != 0u)
+				{
+				#if CULLING_PASS == CULLING_PASS_OCCLUSION_POST
+					WaveInterlockedAddScalar( OutStatsBuffer[0].NumPostInstancesPostCull, 1 );
+				#else
+					WaveInterlockedAddScalar( OutStatsBuffer[0].NumMainInstancesPostCull, 1 );
+				#endif
+				}
+#endif
+
+				if(NodeOffset &lt; MaxNodes)
+				{
+					uint Flags = NANITE_CULLING_FLAG_TEST_LOD;
+					if (Cull.bFallbackRaster)
+					{
+						Flags |= NANITE_CULLING_FLAG_FALLBACK_RASTER;
+					}
+					if (Cull.bEnableWPO)
+					{
+						Flags |= NANITE_CULLING_FLAG_ENABLE_WPO;
+					}
+					if (bCacheAsStatic)
+					{
+						Flags |= NANITE_CULLING_FLAG_CACHE_AS_STATIC;
+					}
+
+					FCandidateNode Node;
+					Node.Flags = Flags;
+					Node.ViewId = ViewId;
+					Node.InstanceId = InstanceId;
+					Node.NodeIndex = 0;
+					Node.EnabledBitmask = NANITE_BVH_NODE_ENABLE_MASK;
+					Node.AssemblyTransformIndex = NANITE_MAX_ASSEMBLY_TRANSFORMS;
+					StoreCandidateNodeData( OutCandidateNodes, NodeOffset, PackCandidateNode( Node ), bIsPostPass );
+				}
+			}
+		}
 	}
 }
 </textarea>
 </div></section>
 
-<section class="card"><h2>0. 输入输出契约</h2><div class="body grid2"><pre><code><span class="code-line blue">// 输入：实例数据、NaniteView[]（多视图，最多 4096）、PrevHZB</span>
-<span class="code-line green">OutQueueState[0].PassState[0/1]  // 候选节点写偏移/计数（主/后趟）</span>
-<span class="code-line green">OutOccludedInstances[] + OutOccludedInstancesArgs  // 被遮挡实例暂存 + 间接args</span></code></pre><div class="note n-blue"><h3>说明</h3><p>输入是场景实例 + <a href="../Chapters/InstanceCull_ConvergenceAnnotated.html" class="inline">#5</a> 传入的 <span class="inline">FPackedView</span> 数组（一次可处理主相机 + 所有阴影页视图）+ 上帧 <span class="inline">PrevHZB</span>。输出两条：可见实例的<b>候选节点</b>写进 <span class="inline">QueueState</span>（喂 <a href="NaniteClusterCulling.usf.html" class="inline">NaniteClusterCulling.usf ↗</a> 的层级遍历），被遮挡实例写进 <span class="inline">OccludedInstances</span>（供后趟复核）。</p></div></div></section>
-
-<section class="card"><h2>1. 两趟遮挡在这里分叉</h2><div class="body grid2"><pre><code><span class="code-line orange">#if CULLING_PASS == CULLING_PASS_OCCLUSION_MAIN</span>
-<span class="code-line orange">    if( Cull.bWasOccluded ) WriteOccludedInstance(ViewId, InstanceId);</span>
-<span class="code-line orange">#endif</span>
-<span class="code-line yellow">uint QueueStateIndex = ( CULLING_PASS == CULLING_PASS_OCCLUSION_POST );  // 0=主 1=后</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span>主趟（<span class="inline">OCCLUSION_MAIN</span>，<span class="inline">QueueStateIndex=0</span>）与后趟（<span class="inline">OCCLUSION_POST</span>，<span class="inline">QueueStateIndex=1</span>）跑同一份 <span class="inline">InstanceCull</span>，用 permutation 宏切。</p><p><span class="note-label diff">不同点</span>主趟用上帧 HZB 剔除，把<b>被遮挡</b>的实例 <span class="inline">WriteOccludedInstance</span> 暂存；后趟只处理这批暂存实例、用主趟建的新 HZB 复核，救回"其实没被遮挡"的。两趟的候选节点写进 QueueState 的 <span class="inline">PassState[0]</span>/<span class="inline">[1]</span> 两套游标（见 <a href="NaniteClusterCulling.usf.html" class="inline">ClusterCulling</a>）。</p></div></div></section>
-
-<section class="card"><h2>2. 剔除核心：FrustumHZB + 标志位</h2><div class="body grid2"><pre><code><span class="code-line green">bCacheAsStatic = ShouldCacheInstanceAsStatic(...);  // 静态几何归类（VSM 缓存）</span>
-<span class="code-line green">Cull.FrustumHZB( false );                           // 视锥 + HZB 屏幕矩形遮挡</span>
-<span class="code-line blue">// 可见者带标志入候选：TEST_LOD / FALLBACK_RASTER / ENABLE_WPO / CACHE_AS_STATIC</span>
-<span class="code-line yellow">WaveInterlockedAddScalar_( OutQueueState[0].PassState[i].NodeWriteOffset, 1, NodeOffset );</span></code></pre><div class="note n-green"><h3>说明</h3><p><span class="inline">FrustumHZB</span> 以包围盒投影的<b>屏幕矩形</b>为单位做视锥 + HZB 遮挡（实现在 <a href="NaniteHZBCull.ush.html" class="inline">NaniteHZBCull.ush ↗</a>）。可见实例用 <span class="inline">WaveInterlockedAdd</span> 原子分配 QueueState 里的写偏移（wave 内先归约再一次原子，减少争用），并带上 <span class="inline">TEST_LOD</span>/<span class="inline">FALLBACK_RASTER</span>/<span class="inline">ENABLE_WPO</span>/<span class="inline">CACHE_AS_STATIC</span> 等标志——这些标志随候选节点一路传到簇剔除与光栅，决定走软/硬光栅、是否缓存。</p></div></div></section>
-
-<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>每实例每视图：FrustumHZB → 被遮挡则暂存（主趟）→ 可见则原子写候选节点入 QueueState。全 GPU 驱动、多视图批处理、两趟遮挡靠 permutation 分叉。</p></div><div class="note"><h3>阅读建议</h3><p>先读 <a href="../Chapters/InstanceCull_ConvergenceAnnotated.html" class="inline">#5</a> 三级漏斗与两趟遮挡；候选节点的后续遍历见 <a href="NaniteClusterCulling.usf.html" class="inline">NaniteClusterCulling.usf</a>；HZB 遮挡细节见 <a href="NaniteHZBCull.ush.html" class="inline">NaniteHZBCull.ush</a>。</p></div></div></section>
+<section class="card"><h2>0. 逐实例视锥 + HZB 遮挡剔除（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">[numthreads(64, 1, 1)] void InstanceCull(...)</span>
+<span class="code-line blue">// 取实例包围盒 → 视锥剔除；未剔则投影到 HZB 做遮挡测试</span>
+<span class="code-line green">void WriteOccludedInstance(uint ViewId, uint InstanceId)   // 被遮挡→写下帧遮挡列表</span>
+<span class="code-line yellow">// 通过者：把该实例的 BVH 根节点入队 → 交给 ClusterCulling</span></code></pre><div class="note"><h3>说明</h3><p>Nanite 剔除分两级：<b>实例级</b>（本 shader）→ <b>簇级</b>（<a href="NaniteClusterCulling.usf.html" class="inline">ClusterCulling</a>）。<span class="inline">InstanceCull</span> 对每个实例取包围盒做<b>视锥剔除</b>，再投影到上一帧的 <b>HZB</b>（层级 Z 缓冲）做<b>遮挡剔除</b>——被前面物体挡住的直接跳过。通过的实例把其 Nanite BVH 根节点<b>入队</b>交给簇剔除逐层下钻。被遮挡的实例经 <span class="inline">WriteOccludedInstance</span> 记入列表，在<b>两趟剔除</b>（two-pass occlusion）的第二趟用当前帧 HZB 复查——防止上帧遮挡本帧露出的物体消失。这是 Nanite 处理海量实例的第一道闸。</p></div></div></section>
 
 <section class="card"><h2>关联文档 / 接口</h2><div class="body">
-<a class="tag" href="../Chapters/InstanceCull_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 实例剔除与层级遍历（CPU 编排）</a>
-<a class="tag" href="NaniteClusterCulling.usf.html"><span class="dot" style="background:var(--cyan)"></span>NaniteClusterCulling.usf（消费候选节点）↗</a>
-<a class="tag" href="NaniteHZBCull.ush.html"><span class="dot" style="background:var(--cyan)"></span>NaniteHZBCull.ush（HZB 遮挡）↗</a>
+<a class="tag" href="../Chapters/InstanceCull_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>实例剔除</a>
+<a class="tag" href="NaniteClusterCulling.usf.html"><span class="dot" style="background:var(--cyan)"></span>ClusterCulling.usf↗</a>
+<a class="tag" href="NaniteHZBCull.ush.html"><span class="dot" style="background:var(--cyan)"></span>HZBCull.ush↗</a>
+<a class="tag" href="NaniteCullingCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>CullingCommon.ush↗</a>
 <a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
 </div></section>
 </main>
-<script>
-document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
-</script>
 </body>
 </html>
