@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#1 附录 · RDG 常量与宏</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}</style></head><body>
+<header><a class="back" href="Overview_ConvergenceAnnotated.html">← 返回 #1 主文档</a><h1>#1 附录 · RDG 常量与宏</h1><div class="sub">本篇收录 #1 涉及的编译期宏与两个最常用枚举的<b>完整真实源码</b>：<span class="inline">ERDGPassFlags</span>（pass 语义标志，直接影响编译/执行）与 <span class="inline">ERDGBufferFlags</span>。均取自 <span class="inline">RenderGraphDefinitions.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>编译期宏一览</h2><div class="body">
+<table><tr><th>宏</th><th>取值条件</th><th>作用</th></tr>
+<tr><td><code>RDG_ENABLE_DEBUG</code></td><td><code>!UE_BUILD_SHIPPING &amp;&amp; !UE_BUILD_TEST</code></td><td>校验层（#8）总开关；发布版编空</td></tr>
+<tr><td><code>IF_RDG_ENABLE_DEBUG(Op)</code></td><td>随上者</td><td>一行内嵌校验调用，发布版自动消失</td></tr>
+<tr><td><code>RDG_ENABLE_TRACE</code></td><td><code>UE_TRACE_ENABLED &amp;&amp; !IS_PROGRAM &amp;&amp; !UE_BUILD_SHIPPING</code></td><td>RenderGraphInsights（#18）埋点开关</td></tr>
+<tr><td><code>RDG_EVENTS</code></td><td>见 #1 主文档源码</td><td>GPU 事件名字符串处理级别（NONE/REF/COPY）</td></tr>
+<tr><td><code>RDG_DUMP_RESOURCES</code></td><td><code>WITH_DUMPGPU</code></td><td>允许 dump 一帧全部 RDG 资源</td></tr>
+<tr><td><code>SUPPORTS_VISUALIZE_TEXTURE</code></td><td><code>WITH_ENGINE &amp;&amp; (!SHIPPING || WITH_EDITOR)</code></td><td>VisualizeTexture（#17）可用性</td></tr>
+</table></div></section>
+
+<section class="card"><h2>ERDGPassFlags · 完整真实源码</h2><div class="body">
+<div class="codebox"><span class="src">// RenderGraphDefinitions.h : L129-L161</span><span class="k">enum class</span> ERDGPassFlags : uint16
+{
+	<span class="c">/** Pass doesn't have any inputs or outputs tracked by the graph. Only for parameterless AddPass. */</span>
+	None = 0,
+	<span class="c">/** Pass uses rasterization on the graphics pipe. */</span>
+	Raster = 1 &lt;&lt; 0,
+	<span class="c">/** Pass uses compute on the graphics pipe. */</span>
+	Compute = 1 &lt;&lt; 1,
+	<span class="c">/** Pass uses compute on the async compute pipe. */</span>
+	AsyncCompute = 1 &lt;&lt; 2,
+	<span class="c">/** Pass uses copy commands on the graphics pipe. */</span>
+	Copy = 1 &lt;&lt; 3,
+	<span class="c">/** Pass (and its producers) will never be culled. Necessary if outputs cannot be tracked by the graph. */</span>
+	NeverCull = 1 &lt;&lt; 4,
+	<span class="c">/** Render pass begin/end skipped and left to the user. Only valid with 'Raster'. Disables merging. */</span>
+	SkipRenderPass = 1 &lt;&lt; 5,
+	<span class="c">/** Pass will never have its render pass merged with other passes. */</span>
+	NeverMerge = 1 &lt;&lt; 6,
+	<span class="c">/** Pass will never run off the render thread. */</span>
+	NeverParallel = 1 &lt;&lt; 7,
+	<span class="c">/** Pass uses copy commands but writes to a staging resource. */</span>
+	Readback = Copy | NeverCull
+};
+ENUM_CLASS_FLAGS(ERDGPassFlags);</div>
+<div class="note"><h3>逐标志批注</h3>
+<p><b>Raster / Compute / AsyncCompute / Copy</b>：声明 pass 用哪种命令、在哪条管线（graphics 还是 async compute pipe）。这直接决定 <b>#6 执行</b>时 pass 被派发到哪个队列，以及需要在图形/异步计算之间插的跨队列同步（fence）。</p>
+<p><b>NeverCull</b>：告诉 <b>#5 编译</b>的剔除算法"别剔我"——当一个 pass 的输出是图无法追踪的（比如写到外部/staging 资源、或有副作用），必须打这个标志，否则会被当成"没人消费"而剔掉。<span class="inline">Readback = Copy | NeverCull</span> 就是这个组合的现成别名。</p>
+<p><b>SkipRenderPass / NeverMerge</b>：影响光栅 pass 的 <span class="inline">RenderPass</span> 合并优化——RDG 会把连续、兼容的 raster pass 合并成一个 RHI render pass 以省开销，这两个标志用来退出该优化。</p>
+<p><b>NeverParallel</b>：强制该 pass 只在渲染线程执行，不进并行任务（对应 #1 主文档讲的并行约定的"反向开关"）。</p></div></div></section>
+
+<section class="card"><h2>ERDGBufferFlags（节选真实源码）</h2><div class="body">
+<div class="codebox"><span class="src">// RenderGraphDefinitions.h : L163-L169</span><span class="c">/** Flags to annotate a render graph buffer. */</span>
+<span class="k">enum class</span> ERDGBufferFlags : uint8
+{
+	None = 0,
+	<span class="c">/** Tag the buffer to survive through frame, important for multi-GPU alternate frame rendering. */</span>
+	MultiFrame = 1 &lt;&lt; 0,
+	<span class="c">// ...（更多标志见源码）</span>
+};</div>
+<div class="note green"><h3>要点</h3><p><span class="inline">MultiFrame</span> 让 buffer 跨帧存活——对应 #16 讲的"跨帧/persistent 资源"场景。普通 RDG buffer 是<b>单帧瞬态</b>的（帧末即回收进池复用）；只有显式标记或被 <span class="inline">QueueBufferExtraction</span> 提取的才跨帧。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航</h2><div class="body">
+<div class="iface-grp"><b>主文档</b> <a class="tag" href="Overview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#1 RDG 总览</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="Pass_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#3 Pass（用到 ERDGPassFlags）</a><a class="tag" href="Compile_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#5 编译（剔除用到 NeverCull）</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main></body></html>

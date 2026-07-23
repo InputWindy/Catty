@@ -146,6 +146,10 @@ footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
 <p><b>④ 运动矢量与上采样（Nanite/整管线 → TSR）：</b>TSR 处于管线<b>最末端</b>，消费前面所有系统产出的 <span class="inline">SceneColor</span> + <span class="inline">SceneDepth</span> + <span class="inline">SceneVelocity</span>（运动矢量由 Nanite 等几何写入），把低分辨率帧跨帧重建成高分辨率。而 TSR 又只是 <span class="inline">ITemporalUpscaler</span> 的默认实现——DLSS / FSR / XeSS 可通过同一接口整体替换这一级。</p>
 </div></div></section>
 
-</main>
+<section class="card"><h2>扩展阅读 · 前沿实验特性</h2><div class="body">
+<div class="note book-inline"><h3>UE5.8 Mesh Partition / Mesh Terrain（架构总览）</h3>
+<p>UE5.8 新增的<b>大规模网格创作系统</b>——用<b>网格（而非高度图 Landscape）</b>做地形/大世界几何，走「空间分区 + 非破坏性 modifier 编辑 + 平台自适应运行时表示」的管线（<span class="inline">Plugins/Experimental/MeshPartition</span> + <span class="inline">MeshTerrainMode</span>）。目前是<b>实验性、默认关闭</b>、几乎无 shader，故只做一篇<b>架构总览</b>（三层结构 + 关键类 + 与 Nanite/World Partition 的关系），不做逐函数深挖，待其转正后再评估。<br /><a href="MeshPartition/UE_MeshPartition_架构总览.html">→ 打开《Mesh Partition / Mesh Terrain 架构总览》</a></p>
+</div>
+</div></section>
 <footer>UE5.8 渲染方案源码解析文档集 · 所有符号名、常量、CVar 默认值均取自 UE5.8 本地源码 · 每主题含主文档（设计动机 + 数据流 + 源码批注）与函数附录（类 / 函数 / CVar / 结构体）。<br />作者：<b style="color:#dbe8f6">土豆泥大王</b> · 最后更新：2026-07-23</footer>
 </body></html>

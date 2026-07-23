@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>UE5.8 Mesh Partition / Mesh Terrain · 架构总览</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:34px 36px 24px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 10px;font-size:31px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 10px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 80px;max-width:1320px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:20px}.warn{border-left:5px solid var(--orange);background:linear-gradient(135deg,rgba(40,26,14,.96),rgba(28,20,14,.92));border-radius:12px;padding:14px 18px;margin:0 0 22px}.warn h3{margin:0 0 8px;font-size:15px;color:#ffbf7a}.warn p{margin:6px 0;color:#f0dcc8;line-height:1.8}.flow{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:12px}@media(max-width:900px){.flow{grid-template-columns:1fr}}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:14px;min-height:104px}.node strong{display:block;margin-bottom:6px;font-size:15px}.node small{color:var(--muted);font-size:12.8px;line-height:1.7}.n-auth{border-color:var(--pink)}.n-part{border-color:var(--green)}.n-rt{border-color:var(--orange)}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}.table{width:100%;border-collapse:collapse;font-size:13.5px}.table th,.table td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}.table th{background:#1c2634}.path{font-family:Consolas,"Cascadia Mono",monospace;color:#dce7f1;font-size:12.5px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 8px 8px 0;font-size:13px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
+</style></head><body>
+<header>
+<div class="nav"><a href="../index.html">← 文档集首页</a></div>
+<h1>UE5.8 Mesh Partition / Mesh Terrain · 架构总览</h1>
+<div class="subtitle">UE5.8 新增的<b>大规模网格创作系统</b>——用<b>网格（而非高度图 Landscape）</b>做地形/大世界几何，走「空间分区 + 非破坏性 modifier 编辑 + 平台自适应运行时表示」的管线。本篇是<b>架构总览</b>（非逐函数深挖）：讲清它是什么、三层结构、关键类、与 World Partition / Nanite 的关系。所有类名、路径、常量均取自 UE5.8 本地源码。</div>
+</header>
+<main>
+
+<div class="warn"><h3>⚠ 实验性特性提醒（写作时点：UE5.8）</h3>
+<p>这是两个 <b>Experimental</b> 插件，默认<b>不启用</b>（<span class="inline">EnabledByDefault=false</span> / <span class="inline">IsExperimentalVersion=true</span>），运行时模块 <span class="inline">MeshPartitionCompute</span> 目前近乎空壳。API 与数据格式在转正前会大改，本篇只做<b>架构定位</b>，不做逐函数解析——等它转 Beta/正式再深挖。</p></div>
+
+<section class="card"><h2>它是什么 · 两个插件的分工</h2><div class="body">
+<table class="table"><tr><th>插件</th><th>官方描述（uplugin 原文）</th><th>角色</th></tr>
+<tr><td><b>Mesh Partition</b><br><span class="path">Plugins/Experimental/MeshPartition/</span></td><td>Large-scale mesh authoring system through spatial partitioning, non-destructive modifier editing, and platform-adaptive runtime representations.</td><td>核心系统：运行时表示 + 分区编译 + modifier 数据。5 个模块（Runtime / Editor / Compute / ModelingToolset / EditorUI）</td></tr>
+<tr><td><b>Mesh Terrain Mode</b><br><span class="path">Plugins/Experimental/MeshTerrainMode/</span></td><td>Mesh Terrain Mode includes a suite of interactive tools for creating and editing Mesh Partitions in the Editor.</td><td>配套编辑器模式：一套交互工具，创建/编辑 Mesh Partition</td></tr>
+</table>
+<div class="note" style="margin-top:16px"><h3>和 Landscape 的关系</h3><p>传统 <b>Landscape</b> 是高度图（heightmap）+ 图层驱动的地形；<b>Mesh Terrain / Mesh Partition</b> 换了范式——地形/大世界几何直接是<b>网格</b>，编辑靠 <b>modifier 管线</b>（非破坏式、可回溯），构建时按<b>空间网格分区</b>成 section，运行时按<b>平台</b>选择表示（与 Nanite / HLOD / World Partition 深度耦合）。它不是简单替换 Landscape，而是面向<b>网格化大世界创作</b>的新一套 DCC + 运行时管线。官方入门文档：<span class="inline">dev.epicgames.com/.../introduction-to-mesh-terrain</span>。</p></div>
+</div></section>
+
+<section class="card"><h2>一眼看懂 · 三层数据流</h2><div class="body">
+<div class="flow">
+<div class="node n-auth"><strong>① 创作层 Authoring（编辑器）</strong><small><b>Mesh Terrain Mode</b> 交互工具（顶点雕刻 / 属性绘制 / 选择）+ <b>Transformer/Modifier 管线</b>（<span class="inline">UTransformerPipeline</span>）。非破坏式：编辑记录为 modifier 图，随时可改可回溯（remesh / project 等类型）。</small></div>
+<div class="node n-part"><strong>② 分区/编译层 Partition &amp; Compile</strong><small><span class="inline">UMeshPartitionDefinition</span>（DataAsset）驱动构建：跑 Transformer 管线 → 按空间网格切成 <span class="inline">FCompiledSection</span>，受<b>复杂度预算</b>约束（<span class="inline">MaxSectionComplexity</span>），可对齐 <b>World Partition</b> 运行时网格。</small></div>
+<div class="node n-rt"><strong>③ 运行时表示层 Runtime Representation</strong><small><span class="inline">AMeshPartition</span> actor + <span class="inline">UMeshPartitionComponent</span> 系列（StaticMesh / Collision）。<b>平台自适应</b>（<span class="inline">PerPlatformProperties</span>）：不同平台选不同 build variant / 表示，接 Nanite、HLOD、DataLayer。</small></div>
+</div>
+<p style="color:var(--muted);margin:16px 0 0">核心思路和 Nanite/虚拟纹理一脉相承：<b>创作端高自由度 → 构建端按预算分区压缩 → 运行时按平台/视距自适应</b>。区别是它作用在「几何创作管线」而非「运行时渲染算法」，所以几乎没有 shader，重头在 C++ 与编辑器工具。</p>
+</div></section>
+
+<section class="card"><h2>关键类速查（运行时模块 MeshPartition）</h2><div class="body">
+<table class="table"><tr><th>类型 / 符号</th><th>作用</th><th>源码</th></tr>
+<tr><td><span class="inline">UMeshPartitionDefinition</span></td><td>核心 DataAsset：定义 build variant、Transformer 管线、运行时设置，是「一块 Mesh Partition」的配方</td><td class="path">MeshPartitionDefinition.h</td></tr>
+<tr><td><span class="inline">FCommonBuildVariant</span> / <span class="inline">FCompiledSectionBuildVariant</span></td><td>构建变体：<span class="inline">MaxSectionComplexity = 256×256×4</span> 复杂度预算；<span class="inline">bSplitSectionsToMatchWorldPartitionRuntimeGrid</span> 对齐 WP 网格</td><td class="path">MeshPartitionDefinition.h</td></tr>
+<tr><td><span class="inline">UTransformerPipeline</span> / <span class="inline">…Transformer</span></td><td>非破坏性 modifier 管线：一串 transformer 顺序作用于网格（编辑记录成图，可回溯）</td><td class="path">MeshPartitionTransformer(Pipeline).h</td></tr>
+<tr><td><span class="inline">FCompiledSection</span></td><td>编译产物：空间分区后的一个网格 section（构建期由 Definition + 管线产出）</td><td class="path">MeshPartitionCompiledSection.h</td></tr>
+<tr><td><span class="inline">UMeshPartitionComponent</span></td><td>运行时组件基类（<span class="inline">UPrimitiveComponent</span> 派生）；含 <span class="inline">PostRegisterMegaMeshComponents</span> 等 "MegaMesh" 钩子</td><td class="path">MeshPartitionComponent.h</td></tr>
+<tr><td><span class="inline">UMeshPartitionStaticMeshComponent</span> / <span class="inline">…CollisionComponent</span></td><td>具体运行时表示：静态网格渲染表示 / 碰撞表示</td><td class="path">MeshPartitionStaticMeshComponent.h · …CollisionComponent.h</td></tr>
+<tr><td><span class="inline">MeshPartitionGridSettings</span> / <span class="inline">…DataLayerContainer</span> / <span class="inline">…Channel</span></td><td>空间网格设置 / DataLayer 容器 / 通道数据——World Partition &amp; 大世界集成</td><td class="path">MeshPartitionGridSettings.h 等</td></tr>
+<tr><td>modifier 类型</td><td>如 <span class="inline">Remesh</span>（重拓扑）、<span class="inline">Project</span>（投影）等 modifier 的参数结构</td><td class="path">Modifiers/MeshPartition{Remesh,Project}ModifierTypes.h</td></tr>
+</table>
+</div></section>
+
+<section class="card"><h2>编辑器侧 · Mesh Terrain Mode</h2><div class="body">
+<div class="note"><h3>基于 Modeling Toolset 的编辑器模式</h3><p><span class="inline">UMeshTerrainMode</span> 继承 <span class="inline">UBaseLegacyWidgetEdMode</span>（源码 <span class="path">MeshTerrainMode/Private/MeshTerrainMode.cpp</span>，~2955 行），本质是<b>复用 Modeling Mode 的交互工具框架</b>做地形创作：几何选择系统（<span class="inline">UGeometrySelectionManager</span>）、顶点雕刻（Vertex Sculpt）、属性/权重绘制（Attribute Paint，含手写笔 <span class="inline">StylusInput</span> 压感）、UV 编辑等。它依赖 <span class="inline">MeshModelingToolset</span> / <span class="inline">MeshModelingToolsetExp</span> / <span class="inline">MeshLODToolset</span> / <span class="inline">ModelingToolsEditorMode</span> 一整套建模工具链——所以它更像「给大世界地形定制的 Modeling Mode」，而非独立编辑器。编辑器代码占绝大头（MeshPartitionEditor 约 4 万行），运行时反而很薄（约 3.3K 行）。</p></div>
+</div></section>
+
+<section class="card"><h2>与文档集其它篇的关系</h2><div class="body"><div class="note"><h3>它站在「几何创作」与「运行时渲染」的交界</h3>
+<p><b>① → Nanite（本文档集《UE Nanite》）：</b>Mesh Partition 的「平台自适应运行时表示」是它与渲染的主接口——高端平台用 Nanite 虚拟化几何承载 section，低端走 fallback。理解 Nanite 的簇/LOD/流送后再看它的运行时层会更顺。</p>
+<p><b>② → World Partition / HLOD：</b>section 可对齐 WP 运行时网格（<span class="inline">bSplitSectionsToMatchWorldPartitionRuntimeGrid</span>），并接 <span class="inline">HLODLayer</span> / <span class="inline">DataLayer</span>，是大世界流送的一环——和虚拟纹理书「数据 &gt; 显存、按需分区」的思路同源。</p>
+<p><b>③ 定位差异：</b>本文档集现有 6 本是<b>运行时渲染方案</b>（几乎全是 shader + GPU 管线）；Mesh Partition 是<b>几何创作 + 构建管线</b>（几乎全是 C++ + 编辑器工具，0 shader）。故本篇只作<b>扩展阅读的架构总览</b>，待其转正后再评估是否做逐模块深挖。</p>
+</div></div></section>
+
+</main>
+<footer>UE5.8 Mesh Partition / Mesh Terrain 架构总览 · 所有类名、路径、常量均取自 UE5.8 本地源码（Plugins/Experimental/MeshPartition · MeshTerrainMode）· 实验性特性，API 以引擎实际版本为准。<br />作者：<b style="color:#dbe8f6">土豆泥大王</b> · 最后更新：2026-07-23</footer>
+</body></html>
