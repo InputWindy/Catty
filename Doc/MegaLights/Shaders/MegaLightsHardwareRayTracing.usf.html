@@ -1,0 +1,437 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MegaLightsHardwareRayTracing.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:540px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_MegaLights_解析_总目录.html">← 返回《UE MegaLights》总目录</a><a href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html">← 回到 #3 可见性追踪</a></div>
+<h1>MegaLightsHardwareRayTracing.usf 整源解析</h1><div class="subtitle">MegaLights 可见性追踪的 <b>硬件光追后端</b>：对压实后的光样本构造 <span class="inline">FRayDesc</span>，沿真实几何 BVH 求交（Inline/RayGen 二选一）。含透射光线反向、双面偏移、命中着色。核心 <span class="inline">HardwareRayTraceLightSamples</span>（RAY_TRACING_ENTRY_RAYGEN_OR_INLINE）。<b>下方内嵌完整 320 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>压实光样本</strong><small>CompactedTraceTexelData</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>构造 FRayDesc</strong><small>TMin/TMax + 透射反向</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>BVH 求交</strong><small>Inline / RayGen</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>命中→样本不可见</strong><small>透射估距离</small></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/MegaLights/MegaLightsHardwareRayTracing.usf</span></h2><div class="body">
+<span class="source-path">HardwareRayTraceLightSamples @ L60（RAY_TRACING_ENTRY_RAYGEN_OR_INLINE）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "/Engine/Shared/RayTracingTypes.h"
+#include "../Common.ush"
+#include "../BlueNoise.ush"
+#include "../IntersectionUtils.ush"
+#include "../RayTracing/RayTracingCommon.ush"
+#include "../SceneTexturesCommon.ush"
+#include "MegaLights.ush"
+#include "MegaLightsRayTracing.ush"
+#include "../Lumen/LumenHardwareRayTracingPayloadCommon.ush"
+#include "../Lumen/LumenHardwareRayTracingCommon.ush"
+#if HAIR_VOXEL_TRACES
+	#include "../HairStrands/HairStrandsRaytracing.ush"
+#endif
+#if DEBUG_MODE
+	#include "../ColorMap.ush"
+#endif
+
+float RayTracingBias;
+float RayTracingNormalBias;
+float RayTracingPullbackBias;
+uint DebugVisualizeTraces;
+uint MaxTraversalIterations;
+uint MeshSectionVisibilityTest;
+RaytracingAccelerationStructure TLAS;
+RaytracingAccelerationStructure FarFieldTLAS;
+
+float NearFieldSceneRadius;
+float NearFieldMaxTraceDistance;
+float NearFieldMaxTraceDistanceDitherScale;
+float FarFieldBias;
+float FarFieldMaxTraceDistance;
+float HairNonShadowedLightMaxTraceDistance;
+
+float DistantScreenTraceSlopeCompareTolerance;
+float DistantScreenTraceStartDistance;
+float DistantScreenTraceLength;
+
+// Visualize Rays
+uint VisualizeRays;
+uint VisualizeRaysMinIterations;
+uint VisualizeRaysHeatmapMin;
+uint VisualizeRaysHeatmapMax;
+
+#if LUMEN_HARDWARE_INLINE_RAYTRACING
+	StructuredBuffer&lt;FHitGroupRootConstants&gt; HitGroupData;
+	StructuredBuffer&lt;FRayTracingSceneMetadataRecord&gt; RayTracingSceneMetadata;
+	RWStructuredBuffer&lt;uint&gt; RWInstanceHitCountBuffer;
+#endif
+
+RWTexture2D&lt;uint&gt; RWLightSamples;
+RWTexture2D&lt;uint&gt; RWLightSampleRays;
+
+Buffer&lt;uint&gt; CompactedTraceTexelData;
+Buffer&lt;uint&gt; CompactedTraceTexelAllocator;
+Texture2D&lt;float&gt; DownsampledSceneDepth;
+Texture2D&lt;UNORM float3&gt; DownsampledSceneWorldNormal;
+
+RAY_TRACING_ENTRY_RAYGEN_OR_INLINE(HardwareRayTraceLightSamples)
+{
+	uint ThreadIndex = DispatchThreadIndex.x;
+	uint GroupIndex = DispatchThreadIndex.y;
+	uint TraceTexelIndex = GroupIndex * 64 + ThreadIndex;
+
+	if (TraceTexelIndex &lt; CompactedTraceTexelAllocator[0])
+	{
+		uint2 SampleCoord = UnpackTraceTexel(CompactedTraceTexelData[TraceTexelIndex]);
+		uint2 ScreenCoord = SampleCoordToScreenCoord(SampleCoord);
+		uint2 DownsampledScreenCoord = SampleCoordToDownsampledScreenCoord(SampleCoord);
+
+		FDebugContext DebugContext = InitDebugContext(DownsampledScreenCoord, /*bDownsampled*/ true, float2(0.05, 0.8));
+
+		float2 ScreenUV = (ScreenCoord + 0.5f) * View.BufferSizeAndInvSize.zw;
+		float SceneDepth = DownsampledSceneDepth[DownsampledScreenCoord];
+		float3 SceneWorldNormal = normalize(DecodeNormal(DownsampledSceneWorldNormal[DownsampledScreenCoord]));
+		float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, SceneDepth);
+
+		FLightSample LightSample = UnpackLightSample(RWLightSamples[SampleCoord]);
+		FLightSampleRay LightSampleRay = UnpackLightSampleRay(RWLightSampleRays[SampleCoord]);
+		FLightSampleTrace LightSampleTrace = GetLightSampleTrace(TranslatedWorldPosition, LightSample.LocalLightIndex, LightSampleRay.UV);
+
+		const FForwardLightData ForwardLightData = GetForwardLightData(LightSample.LocalLightIndex, 0);
+
+		const float ClippedNearFieldMaxTraceDistance = ClipAndDitherNearFieldMaxTraceDistance(
+			TranslatedWorldPosition,
+			LightSampleTrace.Direction,
+			ScreenCoord,
+			NearFieldSceneRadius,
+			NearFieldMaxTraceDistance,
+			NearFieldMaxTraceDistanceDitherScale);
+
+		const bool bTransmissionRay = LightSampleRay.IsTransmission();
+		const bool bFlipNormalBiasDirection = LightSampleRay.IsTwoSided();
+
+		float MaxTraceDistance = LightSampleTrace.Distance - UnpackLightRayEndBias(ForwardLightData);
+
+		// Optionally force a short shadow ray for hair pixel even if light is unshadowed. This is useful for hair self-shadowing.
+		if (LightSampleRay.IsHair() &amp;&amp; !UnpackCastShadow(ForwardLightData))
+		{
+			MaxTraceDistance = min(MaxTraceDistance, HairNonShadowedLightMaxTraceDistance);
+		}
+
+		FRayDesc Ray = (FRayDesc)0;
+		Ray.Origin = TranslatedWorldPosition;
+		Ray.Direction = LightSampleTrace.Direction;
+		Ray.TMin = max(LightSampleRay.RayDistance - RayTracingPullbackBias, bTransmissionRay ? 0.0f : RayTracingBias);
+		Ray.TMax = max(Ray.TMin, min(MaxTraceDistance, ClippedNearFieldMaxTraceDistance));
+
+		if (bTransmissionRay)
+		{
+			// Estimating transmission distance requires inverting the ray and tracing from the light source towards the surface
+			Ray.Origin = Ray.Origin + LightSampleTrace.Direction * Ray.TMax;
+			Ray.Direction = -Ray.Direction;
+			Ray.TMax = Ray.TMax - Ray.TMin;
+			Ray.TMin = 0.0f;
+		}
+		else
+		{
+			// Thin two-sided requires tracing behind the object
+			ApplyPositionBias(Ray.Origin, Ray.Direction, bFlipNormalBiasDirection ? -SceneWorldNormal : SceneWorldNormal, RayTracingNormalBias);
+		}
+
+		FRayCone RayCone = (FRayCone)0;
+		FRayTracedLightingContext LightingContext = CreateRayTracedLightingContext(
+			RayCone,
+			0,
+			0, // dummy coordinate
+			/*CullingMode*/ FORCE_TWO_SIDED ? RAY_FLAG_NONE : (bTransmissionRay ? RAY_FLAG_CULL_BACK_FACING_TRIANGLES : RAY_FLAG_CULL_FRONT_FACING_TRIANGLES),
+			MaxTraversalIterations,
+			MeshSectionVisibilityTest != 0);
+
+		LightingContext.LightingChannelMask = UnpackLightingChannelMask(ForwardLightData);
+
+		// Shadows don't need closest hit distance, but we need it for correctly estimating transmission (distance from the light to the nearest surface)
+		LightingContext.bAcceptFirstHitAndEndSearch = !bTransmissionRay;
+
+#if LUMEN_HARDWARE_INLINE_RAYTRACING
+		LightingContext.HitGroupData = HitGroupData;
+		LightingContext.RayTracingSceneMetadata = RayTracingSceneMetadata;
+		LightingContext.RWInstanceHitCountBuffer = RWInstanceHitCountBuffer;
+#endif // LUMEN_HARDWARE_INLINE_RAYTRACING
+
+		LightingContext.InstanceMask = RAY_TRACING_MASK_OPAQUE_SHADOW;
+		LightingContext.bIsShadowRay = true;
+
+#if HAS_FIRST_PERSON_GBUFFER_BIT
+		// When tracing a ray for a first person pixel, we do not want to intersect the world space representation of that first person primitive.
+		// Doing so would lead to "self"-intersection artifacts between the two representations of that mesh.
+		if (!LightSampleRay.bIsFirstPerson)
+		{
+			// This traces also against non shadow casting FP geometry, but didn't want to waste a bit on a such corner case
+			LightingContext.InstanceMask |= RAY_TRACING_MASK_OPAQUE_FP_WORLD_SPACE;
+		}
+#endif
+
+		#if DEBUG_MODE
+		// by default bIsShadowRay causes RAY_FLAG_SKIP_CLOSEST_HIT_SHADER to be used, but for visualizations we need CHS to run to get hit data such as HitT
+		if (DebugContext.bIsActive &amp;&amp; DebugVisualizeTraces == DEBUG_VISUALIZE_TRACES_RAYS)
+		{
+			LightingContext.bForceClosestHitShader = true;
+		}
+		#endif
+
+#if SUPPORT_CONTINUATION
+		// Need to evaluate CHS as this pass depends on TraceResult.bAlphaMasked
+		LightingContext.bForceClosestHitShader = true;
+#endif
+
+#if MEGA_LIGHTS_EVALUATE_MATERIALS
+		FLumenMinimalRayResult TraceResult = (FLumenMinimalRayResult)0;
+		{
+			FPackedMaterialClosestHitPayload Payload = (FPackedMaterialClosestHitPayload)0;
+			Payload.SetLumenPayload();
+			Payload.SetIgnoreTranslucentMaterials();
+			Payload.SetMinimalPayloadMode();
+			Payload.SetRandom(0.5f); // Is an actual random number needed?
+
+			// Transmission requires valid hit distance
+			uint RayFlags = LightSampleRay.IsTransmission() ? 0 : RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+			RayFlags |= LightingContext.CullingMode;
+			RayFlags |= LightingContext.bAcceptFirstHitAndEndSearch ? RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH : 0;
+
+			TraceLumenShadingRay(TLAS, RayFlags, LightingContext.InstanceMask, RAY_TRACING_SHADER_SLOT_SHADOW, RAY_TRACING_NUM_SHADER_SLOTS, 0, Ray.GetNativeDesc(), Payload);
+
+			TraceResult.bHit = Payload.IsHit();
+			if (TraceResult.bHit)
+			{
+				TraceResult.HitT = Payload.HitT;
+			}
+			#if ENABLE_FAR_FIELD_TRACING
+			else if(Ray.TMax &lt; MaxTraceDistance &amp;&amp; !bTransmissionRay)
+			{
+				FRayDesc FarFieldRay = Ray;
+				FarFieldRay.TMin = max(Ray.TMax, FarFieldBias);
+				FarFieldRay.TMax = max(FarFieldRay.TMin, min(MaxTraceDistance, FarFieldMaxTraceDistance));
+				LightingContext.bIsFarFieldRay = true;
+
+				FPackedMaterialClosestHitPayload FarFieldPayload = (FPackedMaterialClosestHitPayload)0;
+				FarFieldPayload.SetLumenPayload();
+				FarFieldPayload.SetIgnoreTranslucentMaterials();
+				FarFieldPayload.SetMinimalPayloadMode();
+				FarFieldPayload.SetRandom(0.5f); // Is an actual random number needed?
+
+				TraceLumenShadingRay(FarFieldTLAS, RayFlags, LightingContext.InstanceMask, RAY_TRACING_SHADER_SLOT_SHADOW, RAY_TRACING_NUM_SHADER_SLOTS, 0, FarFieldRay.GetNativeDesc(), FarFieldPayload);
+
+				TraceResult.bHit = FarFieldPayload.IsHit();
+				if (TraceResult.bHit)
+				{
+					TraceResult.HitT = FarFieldPayload.HitT;
+				}
+			}
+			#endif
+		}
+#else
+		FLumenMinimalRayResult TraceResult = TraceLumenMinimalRay(TLAS, Ray, LightingContext);
+
+		#if ENABLE_FAR_FIELD_TRACING
+		{
+			if (!TraceResult.bHit &amp;&amp; Ray.TMax &lt; MaxTraceDistance &amp;&amp; !bTransmissionRay)
+			{
+				FRayDesc FarFieldRay = Ray;
+				FarFieldRay.TMin = max(Ray.TMax, FarFieldBias);
+				FarFieldRay.TMax = max(FarFieldRay.TMin, min(MaxTraceDistance, FarFieldMaxTraceDistance));
+				LightingContext.bIsFarFieldRay = true;
+
+				TraceResult = TraceLumenMinimalRay(FarFieldTLAS, FarFieldRay, LightingContext);
+			}
+		}
+		#endif
+#endif
+
+		#if HAIR_VOXEL_TRACES
+		if (!TraceResult.bHit)
+		{
+			// #ml_todo: replace with spatiotemporal blue noise
+			// #ml_todo: also check if DownsampledScreenCoord should be used instead to benefit from error-diffusion 
+			FRandomSequence RandSequence = RandomSequenceCreate(uint3(SampleCoord, MegaLightsStateFrameIndex), 0, 1);
+			const float HitT = TraverseHair(ScreenCoord, RandSequence, Ray.Origin, Ray.Direction, Ray.TMax, VirtualVoxel.Raytracing_ShadowOcclusionThreshold);
+			if (HitT &gt; 0 &amp;&amp; HitT &lt; (TraceResult.bHit ? TraceResult.HitT : Ray.TMax))
+			{
+				TraceResult.HitT = HitT;
+				TraceResult.bHit = true;
+			}
+		}
+		#endif
+
+#if DEBUG_MODE
+		if (DebugContext.bIsActive &amp;&amp; DebugVisualizeTraces == DEBUG_VISUALIZE_TRACES_RAYS)
+		{
+			const FForwardLightData ForwardLightData = GetForwardLightData(LightSample.LocalLightIndex, 0);
+			const FDeferredLightData LightData = ConvertToDeferredLight(ForwardLightData);
+
+			float3 RayStart = Ray.Origin + Ray.Direction * Ray.TMin;
+			float3 RayEnd = Ray.Origin + Ray.Direction * (TraceResult.bHit ? TraceResult.HitT : Ray.TMax);
+			float4 RayColor = float4(LightData.Color.xyz / Luminance(LightData.Color.xyz), 1.0f);
+
+#if MEGA_LIGHTS_EVALUATE_MATERIALS
+			RayColor = ColorRed;
+#endif
+
+			if (TraceResult.bHit)
+			{
+				RayColor.xyz = 0.0f;
+			}
+
+			AddLineTWS(DebugContext, RayStart, RayEnd, RayColor);
+			AddCrossTWS(DebugContext, RayEnd, 2.0f, RayColor);
+		}
+
+		if (!DebugContext.IsDrawLocked() &amp;&amp; VisualizeRays != 0)
+		{
+			float3 RayStart = Ray.Origin + Ray.Direction * Ray.TMin;
+			float3 RayEnd = Ray.Origin + Ray.Direction * (TraceResult.bHit ? TraceResult.HitT : Ray.TMax);
+
+			const float RayColorV = saturate((TraceResult.NumIterations - (float)VisualizeRaysHeatmapMin) / (VisualizeRaysHeatmapMax - VisualizeRaysHeatmapMin));
+			const float4 RayColor = float4(ColorMapTurbo(RayColorV), 1.0);
+
+			if (TraceResult.NumIterations &gt;= VisualizeRaysMinIterations)
+			{
+				AddLineTWS(RayStart, RayEnd, RayColor);
+			}
+		}
+#endif
+
+#if DISTANT_SCREEN_TRACES
+		if (!TraceResult.bHit)
+		{
+			const float ContactShadowLengthScreenScale = GetScreenRayLengthMultiplierForProjectionType(SceneDepth).y;
+
+			float3 TranslatedDistantRayOrigin = Ray.Origin + Ray.Direction * Ray.TMin;
+			float MaxTraceDistanceForDistantScreenTrace = DistantScreenTraceLength * ContactShadowLengthScreenScale;
+
+			// Start the distant linear screen traces where we have no HWRT representation
+			float2 RaySphereHit = RayIntersectSphere(TranslatedDistantRayOrigin, Ray.Direction, float4(View.TranslatedWorldCameraOrigin, DistantScreenTraceStartDistance));
+			if (RaySphereHit.x &lt; 0 &amp;&amp; RaySphereHit.y &gt; 0)
+			{
+				// Pull the origin inside the sphere slightly to reduce the gap created by jittering ray step offset
+				// t + (t - 1) / (n * 2 - 1) where n is the number of distant screen trace steps
+				RaySphereHit.y = max((32.f / 31.f) * RaySphereHit.y - (1.f / 31.f) * MaxTraceDistanceForDistantScreenTrace, 0);
+
+				TranslatedDistantRayOrigin += RaySphereHit.y * Ray.Direction;
+				MaxTraceDistanceForDistantScreenTrace -= RaySphereHit.y;	
+			}
+
+			if (MaxTraceDistanceForDistantScreenTrace &gt; 0)
+			{
+				const float Dither = InterleavedGradientNoise(SampleCoord.xy + 0.5f, View.StateFrameIndexMod8);
+				const bool bHairNoShadowLight = false;
+				const uint NumSteps = 8;
+
+				float2 HitUV;
+				float HitDistance = CastScreenSpaceShadowRay(TranslatedDistantRayOrigin, Ray.Direction, MaxTraceDistanceForDistantScreenTrace, NumSteps, Dither, DistantScreenTraceSlopeCompareTolerance, bHairNoShadowLight, HitUV);
+
+				if ( HitDistance &gt; 0.0 )
+				{
+					TraceResult.bHit = true;
+				}
+			}
+		}
+		#endif
+
+/*
+		#if DEBUG_MODE
+		if (DebugContext.bIsActive)
+		{
+			Print(DebugContext, TEXT("HardwareRayTrace"), FontTitle);
+			Newline(DebugContext);
+
+			Print(DebugContext, TEXT("bFlipNormalBiasDirection: "));
+			Print(DebugContext, bFlipNormalBiasDirection ? 1u : 0u, FontValue);
+			Newline(DebugContext);
+			Print(DebugContext, TEXT("bTransmissionRay   : "));
+			Print(DebugContext, bTransmissionRay ? 1u : 0u, FontValue);
+			Newline(DebugContext);
+			Print(DebugContext, TEXT("TraceResult.bHit    : "));
+			Print(DebugContext, TraceResult.bHit ? 1u : 0u, FontValue);
+			Newline(DebugContext);
+			Print(DebugContext, TEXT("TraceResult.HitT    : "));
+			Print(DebugContext, TraceResult.HitT, FontValue);
+
+			AddTextBackground(DebugContext, FontBackground);
+		}
+		#endif
+*/
+
+		bool bContinueInNextPass = false;
+		if (SUPPORT_CONTINUATION &amp;&amp; TraceResult.bAlphaMasked)
+		{
+			// Do nothing so sample gets retraced with material evaluation
+			// Can't shorten the retrace ray since this trace was done with bAcceptFirstHitAndEndSearch
+			bContinueInNextPass = true;
+		}
+
+		if (!bContinueInNextPass)
+		{
+			LightSampleRay.bCompleted = true;
+			LightSampleRay.RayDistance = LIGHT_SAMPLE_RAY_MAX_DISTANCE;
+
+			if (TraceResult.bHit)
+			{
+				if (bTransmissionRay)
+				{
+					LightSampleRay.RayDistance = Ray.TMax - TraceResult.HitT;
+				}
+				else
+				{
+					LightSampleRay.RayDistance = TraceResult.HitT;
+				}
+			}
+
+			if (TraceResult.bHit)
+			{
+				LightSample.bVisible = LightSampleRay.IsTransmission() ? true : false;
+			}
+
+			RWLightSampleRays[SampleCoord] = PackLightSampleRay(LightSampleRay);
+			RWLightSamples[SampleCoord] = PackLightSample(LightSample);
+		}
+	}
+}</textarea>
+</div></section>
+
+<section class="card"><h2>0. 构造光线：TMin/TMax + 透射反向（发散点）</h2><div class="body grid2"><pre><code><span class="code-line">float MaxTraceDistance = LightSampleTrace.Distance - UnpackLightRayEndBias(ForwardLightData);</span>
+<span class="code-line blue">FRayDesc Ray = (FRayDesc)0;</span>
+<span class="code-line">Ray.Origin = TranslatedWorldPosition;</span>
+<span class="code-line">Ray.Direction = LightSampleTrace.Direction;</span>
+<span class="code-line yellow">Ray.TMin = max(LightSampleRay.RayDistance - RayTracingPullbackBias, bTransmissionRay ? 0.0f : RayTracingBias);</span>
+<span class="code-line yellow">Ray.TMax = max(Ray.TMin, min(MaxTraceDistance, ClippedNearFieldMaxTraceDistance));</span>
+<span class="code-line orange">if (bTransmissionRay) { Ray.Origin += Direction*TMax; Ray.Direction = -Direction; ... }   // 从光源反向追</span>
+<span class="code-line green">else ApplyPositionBias(Ray.Origin, Ray.Direction, bFlip ? -Normal : Normal, RayTracingNormalBias);</span></code></pre><div class="note"><h3>说明</h3><p>对每条压实样本构造 <span class="inline">FRayDesc</span>：<span class="inline">TMin</span> 带 <span class="inline">PullbackBias</span> 回拉起点、<span class="inline">TMax</span> 减 <span class="inline">LightRayEndBias</span> 且被 <b>NearField 最大追踪距离</b>裁剪（近场/远场分级）。<b>透射光线</b>特殊：要估"光到最近表面的距离"，需从<b>光源侧反向</b>追（<span class="inline">Origin += Dir*TMax; Direction = -Direction</span>）；普通光线则按法线做 <span class="inline">ApplyPositionBias</span> 抗自相交（双面材质翻转偏移方向）。</p></div></div></section>
+
+<section class="card"><h2>1. BVH 求交 + 命中着色（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line">FRayTracedLightingContext LightingContext = CreateRayTracedLightingContext(RayCone, 0, 0,</span>
+<span class="code-line orange">    bTransmissionRay ? RAY_FLAG_CULL_BACK_FACING_TRIANGLES : RAY_FLAG_CULL_FRONT_FACING_TRIANGLES, ...);</span>
+<span class="code-line green">LightingContext.bAcceptFirstHitAndEndSearch = !bTransmissionRay;   // 阴影只需 any-hit</span>
+<span class="code-line">#if LUMEN_HARDWARE_INLINE_RAYTRACING</span>
+<span class="code-line blue">    LightingContext.HitGroupData = HitGroupData;  // Inline：计算着色器内联遍历</span>
+<span class="code-line">#endif</span>
+<span class="code-line yellow">// TraceLightSampleRay → 命中: LightSample.bVisible=false；透射: 记录命中距离估厚度</span></code></pre><div class="note"><h3>说明</h3><p>本 shader 的<b>汇聚点</b>：<span class="inline">CreateRayTracedLightingContext</span> 设剔除模式（普通光剔正面/透射剔背面）。阴影光线只关心"是否被挡"，故 <span class="inline">bAcceptFirstHitAndEndSearch=true</span>（any-hit 即停，比 closest-hit 快）；只有透射需要最近命中距离来估次表面厚度。<span class="inline">RAY_TRACING_ENTRY_RAYGEN_OR_INLINE</span> 宏让同一份代码既能编成 <b>RayGen</b> shader（走硬件光追管线）也能编成 <b>Inline</b>（计算着色器内联遍历 BVH）——<span class="inline">MaxTraversalIterations</span> 限步数。产出与 <a href="MegaLightsRayTracing.usf.html" class="inline">SWRT</a>/<a href="MegaLightsVSMTracing.usf.html" class="inline">VSM</a> 同格式的可见性。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 可见性追踪</a>
+<a class="tag" href="MegaLightsRayTracing.usf.html"><span class="dot" style="background:var(--cyan)"></span>RayTracing（SWRT + Compact）↗</a>
+<a class="tag" href="MegaLightsVSMTracing.usf.html"><span class="dot" style="background:var(--cyan)"></span>VSMTracing（VSM 后端）↗</a>
+<a class="tag" href="MegaLightsShading.usf.html"><span class="dot" style="background:var(--cyan)"></span>MegaLightsShading.usf（下游施光）↗</a>
+</div></section>
+</main>
+</body>
+</html>

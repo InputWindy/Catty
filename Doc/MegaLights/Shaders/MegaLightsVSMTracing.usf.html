@@ -1,0 +1,223 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MegaLightsVSMTracing.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_MegaLights_解析_总目录.html">← 返回《UE MegaLights》总目录</a><a href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html">← 回到 #3 可见性追踪</a></div>
+<h1>MegaLightsVSMTracing.usf 整源解析</h1><div class="subtitle">MegaLights 可见性追踪的 <b>VSM 后端</b>：对压实后的光样本，不追世界几何，而是采样对应光源的<b>虚拟阴影贴图</b>（SMRT 光线步进）求遮挡。屏幕光线首段 + 方向光/局部光两条 SMRT 路径。核心 <span class="inline">VirtualShadowMapTraceLightSamplesCS</span>。<b>下方内嵌完整 135 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>压实光样本</strong><small>CompactedTraceTexelData</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>取 VSM id + 法线偏移</strong><small>ForwardLightData.VirtualShadowMapId</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>屏幕光线首段</strong><small>VirtualShadowMapScreenRayCast</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>SMRT 采样 VSM</strong><small>命中→样本不可见</small></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/MegaLights/MegaLightsVSMTracing.usf</span></h2><div class="body">
+<span class="source-path">VirtualShadowMapTraceLightSamplesCS @ L27</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "../Common.ush"
+#include "../BlueNoise.ush"
+#include "../SceneTexturesCommon.ush"
+#include "../LightData.ush"
+#include "../VirtualShadowMaps/VirtualShadowMapProjectionCommon.ush"
+#include "../VirtualShadowMaps/VirtualShadowMapProjectionSpot.ush"
+#include "../VirtualShadowMaps/VirtualShadowMapProjectionDirectional.ush"
+#include "../VirtualShadowMaps/VirtualShadowMapScreenRayTrace.ush"
+#include "MegaLights.ush"
+#include "MegaLightsRayTracing.ush"
+
+RWTexture2D&lt;uint&gt; RWLightSamples;
+RWTexture2D&lt;uint&gt; RWLightSampleRays;
+
+Buffer&lt;uint&gt; CompactedTraceTexelAllocator;
+Buffer&lt;uint&gt; CompactedTraceTexelData;
+Texture2D&lt;float&gt; DownsampledSceneDepth;
+Texture2D&lt;UNORM float3&gt; DownsampledSceneWorldNormal;
+
+SCHEDULER_MIN_PRESSURE
+// Avoid for now due to issues with failing compilation when occupancy not reached
+//MAX_OCCUPANCY
+
+[numthreads(THREADGROUP_SIZE, 1, 1)]
+void VirtualShadowMapTraceLightSamplesCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 GroupThreadId : SV_GroupThreadID,
+	uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint TraceTexelIndex = DispatchThreadId.x;
+
+	if (TraceTexelIndex &lt; CompactedTraceTexelAllocator[0])
+	{
+		const uint2 SampleCoord = UnpackTraceTexel(CompactedTraceTexelData[TraceTexelIndex]);
+		FLightSample LightSample = UnpackLightSample(RWLightSamples[SampleCoord]);
+
+		// Get VSM from LocalLightIndex
+		const FForwardLightData ForwardLightData = GetForwardLightData(LightSample.LocalLightIndex, 0);
+		const int VirtualShadowMapId = ForwardLightData.VirtualShadowMapId;
+
+		// Should we select for this separately in the tile classification instead?
+		if (VirtualShadowMapId != INDEX_NONE)
+		{
+			const FDeferredLightData LightData = ConvertToDeferredLight(ForwardLightData);
+
+			uint2 ScreenCoord = SampleCoordToScreenCoord(SampleCoord);
+			uint2 DownsampledScreenCoord = SampleCoordToDownsampledScreenCoord(SampleCoord);
+
+			float2 ScreenUV = (ScreenCoord + 0.5f) * View.BufferSizeAndInvSize.zw;
+			float SceneDepth = DownsampledSceneDepth[DownsampledScreenCoord];
+			float3 SceneWorldNormal = normalize(DecodeNormal(DownsampledSceneWorldNormal[DownsampledScreenCoord]));
+			float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, SceneDepth);
+
+			bool bDirectionalLight = !LightData.bRadialLight;
+
+			const float3 ToLightDirection =
+				bDirectionalLight ?
+				LightData.Direction :
+				normalize(LightData.TranslatedWorldPosition - TranslatedWorldPosition);
+
+			// Currently using the embedded SMRT ray sampling; could change this to use this one easily if needed
+			//FLightSampleTrace LightSampleTrace = GetLightSampleTrace(TranslatedWorldPosition, LightSample.LocalLightIndex, SampleCoord);
+
+			float StepOffset = BlueNoiseScalar(DownsampledScreenCoord, MegaLightsStateFrameIndex);
+			const float ScreenRayLengthWorld = GetScreenRayLengthMultiplierForProjectionType(VirtualShadowMap.ScreenRayLength * SceneDepth).y;
+
+			// TODO: Avoid doing this normal bias for subsurface pixels
+			// Will need to consider both substrate and downsampling
+			//if (!ShadingInfo.bIsSubsurface)
+			{
+				TranslatedWorldPosition += SceneWorldNormal * VirtualShadowMapGetNormalBiasLength(TranslatedWorldPosition);
+			}
+
+			// VSM screen ray trace
+			float RayStartOffset = ScreenRayLengthWorld;
+			if (ScreenRayLengthWorld &gt; 0.0f)
+			{
+				RayStartOffset = VirtualShadowMapScreenRayCast(
+					TranslatedWorldPosition,
+					ToLightDirection,
+					ScreenRayLengthWorld,
+					StepOffset);
+			}
+
+			// TODO: Back-facing tests? (or BRDF test directly?)
+			// In MegaLights this is already factored into the sample selection though, so less important
+#if 0
+			FVirtualShadowMapSampleResult VSMResult = SampleVirtualShadowMapLocal(
+				VirtualShadowMapId,
+				TranslatedWorldPosition,
+				RayStartOffset,
+				SceneWorldNormal
+			);
+
+			if (!VSMResult.bValid || VSMResult.ShadowFactor &lt; 0.5f)
+			{
+				LightSample.bVisible = false;
+			}
+
+#else
+			FLightShaderParameters LightParameters = ConvertFromForward(ForwardLightData);
+
+			FVirtualShadowMapSampleResult Result;
+
+			// TODO: Possibly worth a permutation for register pressure reasons
+			if (bDirectionalLight)
+			{
+				FSMRTTraceSettings Settings = GetSMRTTraceSettingsDirectional();
+				// Certain settings may be less desirable with the MegaLights path, but since there
+				// is typically only one directional light, it makes sense to respect the cvars
+				// which can be set up as desired for this path.
+				//Settings.RayCount = 1;
+				//Settings.AdaptiveRayCount = 0;
+
+				Result = TraceDirectional(
+					VirtualShadowMapId,
+					LightParameters,
+					SampleCoord,
+					SceneDepth,
+					TranslatedWorldPosition,
+					RayStartOffset,
+					StepOffset,
+					SceneWorldNormal,
+					Settings);
+			}
+			else
+			{
+				FSMRTTraceSettings Settings = GetSMRTTraceSettingsLocal();
+				Settings.RayCount = 1;
+				Settings.AdaptiveRayCount = 0;
+
+				Result = TraceLocalLight(
+					VirtualShadowMapId,
+					LightParameters,
+					SampleCoord,
+					SceneDepth,
+					TranslatedWorldPosition,
+					RayStartOffset,
+					StepOffset,
+					SceneWorldNormal,
+					Settings
+				);
+			}
+
+			if (!Result.bValid || Result.ShadowFactor &lt; 0.5f)
+			{
+				LightSample.bVisible = false;
+			}
+#endif
+
+			// Mark sample as complete to skip continuation
+			FLightSampleRay LightSampleRay = UnpackLightSampleRay(RWLightSampleRays[SampleCoord]);
+			LightSampleRay.bCompleted = true;
+
+			RWLightSampleRays[SampleCoord] = PackLightSampleRay(LightSampleRay);
+			RWLightSamples[SampleCoord] = PackLightSample(LightSample);
+		}
+	}
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 取 VSM + 法线偏移 + 屏幕光线首段（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">if (TraceTexelIndex &lt; CompactedTraceTexelAllocator[0])</span>
+<span class="code-line blue">const int VirtualShadowMapId = ForwardLightData.VirtualShadowMapId;</span>
+<span class="code-line">if (VirtualShadowMapId != INDEX_NONE)</span>
+<span class="code-line">{</span>
+<span class="code-line green">    TranslatedWorldPosition += SceneWorldNormal * VirtualShadowMapGetNormalBiasLength(TranslatedWorldPosition);</span>
+<span class="code-line">    float RayStartOffset = ScreenRayLengthWorld;</span>
+<span class="code-line yellow">    if (ScreenRayLengthWorld &gt; 0.0f)</span>
+<span class="code-line yellow">        RayStartOffset = VirtualShadowMapScreenRayCast(TranslatedWorldPosition, ToLightDirection, ScreenRayLengthWorld, StepOffset);</span>
+<span class="code-line">}</span></code></pre><div class="note"><h3>说明</h3><p>只处理有 <span class="inline">VirtualShadowMapId</span> 的样本。先沿法线偏移（<span class="inline">VirtualShadowMapGetNormalBiasLength</span>）抗自阴影痤疮，再做一段<b>屏幕空间光线投射</b>（<span class="inline">VirtualShadowMapScreenRayCast</span>）——用屏幕深度快速跨过近处接触遮挡，得到 <span class="inline">RayStartOffset</span> 让后续 SMRT 从更远处起步，省步进。方向光/局部光的 <span class="inline">ToLightDirection</span> 分别取常向量/指向光源。</p></div></div></section>
+
+<section class="card"><h2>1. SMRT 采样 VSM：方向光 / 局部光两路（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line">if (bDirectionalLight)</span>
+<span class="code-line">{</span>
+<span class="code-line yellow">    FSMRTTraceSettings Settings = GetSMRTTraceSettingsDirectional();</span>
+<span class="code-line blue">    Result = TraceDirectional(VirtualShadowMapId, LightParameters, SampleCoord, SceneDepth, TranslatedWorldPosition, RayStartOffset, StepOffset, SceneWorldNormal, Settings);</span>
+<span class="code-line">}</span>
+<span class="code-line">else</span>
+<span class="code-line">{</span>
+<span class="code-line yellow">    FSMRTTraceSettings Settings = GetSMRTTraceSettingsLocal(); Settings.RayCount = 1;</span>
+<span class="code-line blue">    Result = TraceLocalLight(VirtualShadowMapId, ...);</span>
+<span class="code-line">}</span>
+<span class="code-line green">// Result.ShadowFactor &lt; 0.5 → LightSample.bVisible = false 回写 RWLightSamples</span></code></pre><div class="note"><h3>说明</h3><p>本 shader 的<b>汇聚点</b>：按光源类型走 <span class="inline">TraceDirectional</span>/<span class="inline">TraceLocalLight</span>——两者都是 <b>SMRT</b>（Shadow Map Ray Tracing，在 VSM 深度上步进式打光线，得软阴影且抗痤疮，与 Shadow 书 #12 同源）。局部光固定 <span class="inline">RayCount=1</span>（MegaLights 已在采样阶段选好样本，无需 VSM 内多采样）。<span class="inline">ShadowFactor</span> 判遮挡后回写样本可见性——与 <a href="MegaLightsRayTracing.usf.html" class="inline">SWRT</a>、<a href="MegaLightsHardwareRayTracing.usf.html" class="inline">HWRT</a> 后端产出同一份可见性交给 <a href="MegaLightsShading.usf.html" class="inline">Shading</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 可见性追踪</a>
+<a class="tag" href="MegaLightsRayTracing.usf.html"><span class="dot" style="background:var(--cyan)"></span>RayTracing（SWRT + Compact）↗</a>
+<a class="tag" href="MegaLightsHardwareRayTracing.usf.html"><span class="dot" style="background:var(--cyan)"></span>HardwareRayTracing（HWRT）↗</a>
+<a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
