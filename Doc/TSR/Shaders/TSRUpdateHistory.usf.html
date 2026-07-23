@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TSRUpdateHistory.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:480px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_TSR_解析_总目录.html">← 返回《UE TSR》总目录</a><a href="../Chapters/Update_ConvergenceAnnotated.html">← 回到 #5 历史更新与累积</a></div>
+<h1>TSRUpdateHistory.usf 汇聚/发散批注版</h1><div class="subtitle">TSR <b>计算量最大的 pass</b>：拿 #4 的拒绝权重，把当前帧输入按<b>加权指数移动平均（EMA）</b>累积进历史——先把历史 <b>clamp</b> 进输入颜色盒，再按 HDR 权重与运动钳制软混合，输出更新后的高分辨率历史（含累积样本数 validity）。核心 <span class="inline">UpdateHistoryCS</span>（8×8 tile，支持 dual-pixel 向量化）。<b>说明：完整文件 1262 行</b>，下方内嵌核心入口与累积公式的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>拒绝权重 + 当帧输入</strong><small>#4 输出 + 重采样输入</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>历史 clamp</strong><small>进输入颜色盒，抑鬼影</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>EMA 加权混合</strong><small>运动钳制 + full-float 权重</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>更新后历史</strong><small>颜色 + validity(8bit)</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（1262 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/TemporalSuperResolution/TSRUpdateHistory.usf · UpdateHistoryCS L636 / 累积核 L1254</span>
+<textarea class="embedded-source" readonly spellcheck="false">[numthreads(TILE_SIZE * TILE_SIZE, 1, 1)]          // 8×8；CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION 时每 lane 处理 2 像素
+void UpdateHistoryCS(uint2 GroupId : SV_GroupID, uint GroupThreadIndex : SV_GroupIndex)
+{
+	// 1) 定位输出像素在历史(高分辨率)网格 + 反算到输入(低分辨率)视口坐标
+	tsr_short2x2 HistoryPixelPos = dpv_add(tsr_short2(GroupId) * tsr_short2(TILE_SIZE, TILE_SIZE),
+	                                       tsr_short2x2(Map8x8Tile2x2LaneDPV(GroupThreadIndex)));
+	float2x2 InputPPCo = ApplyScreenTransform(float2x2(HistoryPixelPos), HistoryPixelPosToInputPPCo);
+	float2x2 InputPPCk = floor(InputPPCo) + 0.5;   // 最近输入像素中心 K
+	// 2) 用 Catmull-Rom 核把低分辨率输入重采样到历史网格（TSRKernels.ush）
+	// 3) ... 累积核（L1254 起，保留源码符号）：
+
+	// ① 历史先 clamp 进当前输入颜色盒，再按 HDR 权重与原历史软混合（DisableHistoryClamp 时退化为不 clamp）
+	ClampedPrev = fastClamp(PrevHighFrequencyColor, InputMinColor, InputMaxColor);
+	Weight      = WeightedLerpFactors(HdrWeight4(ClampedPrev), HdrWeight4(Prev), DisableHistoryClamp);
+	BlendedPrev = ClampedPrev * Weight[0] + Prev * Weight[1];
+
+	// ② 运动钳制历史权重：像素速度越快 MaxValidity 越低 → 压低历史占比，减少运动拖影
+	MaxValidity = 1 - WeightClampingPixelSpeedAmplitude * saturate(OutputPixelVelocity * InvWeightClampingPixelSpeed);
+	MaxValidity = max(MaxValidity, |FilteredLuma - PrevLuma| / max(FilteredLuma, PrevLuma)); // 高对比边缘反而保稳定
+	PrevWeight  = min(PrevWeight, MaxValidity);
+
+	// ③ 加权混合（注释明言：有意用 full float 避免极端差异下的量化误差）
+	BlendPrevHistory   = PrevWeight    * HdrWeightY(Luma(BlendedPrev));
+	BlendFilteredInput = CurrentWeight * HdrWeight4(FilteredInput);
+	CommonWeight       = SafeRcp(BlendPrevHistory + BlendFilteredInput);
+	FinalColor = BlendedPrev * (CommonWeight*BlendPrevHistory) + FilteredInput * (CommonWeight*BlendFilteredInput);
+
+	// ④ validity 量化到 8bit，避免与颜色编码错位
+	OutputValidity       = CurrentWeight + PrevWeight;
+	FinalHistoryValidity = ceil(255.0 * OutputValidity) * rcp(255.0);
+}</textarea>
+</div></section>
+
+<section class="card"><h2>0. 历史 clamp：抗鬼影的第一道闸（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">ClampedPrev = fastClamp(Prev, InputMinColor, InputMaxColor)</span>
+<span class="code-line blue">DisableHistoryClamp 时退化为不 clamp（软混合）</span></code></pre><div class="note n-orange"><h3>说明</h3><p>把重投影来的历史颜色<b>钳进当前帧邻域颜色盒</b>——这是时序算法最经典的抗鬼影手段。但 TSR 不做硬 clamp，而是用 <span class="inline">WeightedLerpFactors</span> 在"clamp 后"与"原历史"间按 HDR 权重<b>软混合</b>，避免硬 clamp 在高光/边缘处闪烁。真正判断历史"能不能信"的连续权重来自 <a href="TSRRejectShading.usf.html" class="inline">#4 RejectShading</a>。</p></div></div></section>
+
+<section class="card"><h2>1. EMA 加权混合：稳定性与清晰度的平衡（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line green">CommonWeight = SafeRcp(BlendPrevHistory + BlendFilteredInput)</span>
+<span class="code-line yellow">FinalColor = BlendedPrev*w_prev + FilteredInput*w_cur</span></code></pre><div class="note n-green"><h3>说明</h3><p>本 shader 的<b>汇聚点</b>：历史与当前输入按各自 HDR 权重做<b>指数移动平均</b>。<span class="note-label diff">不同点</span>混合权重的分子分母（<span class="inline">BlendPrevHistory / BlendFilteredInput / CommonWeight</span>）源码显式声明为 <span class="inline">float</span>，而整个 pass 为省带宽跑 fp16——因为历史与输入亮度差极大时 fp16 权重会量化失真。运动钳制（<span class="inline">MaxValidity</span>）让快速运动像素压低历史占比减少拖影。</p></div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>Catmull-Rom 重采样输入 → 历史 clamp 进颜色盒 → 按 HDR 权重 + 运动钳制做 EMA 混合（权重用 full float）→ 输出更新历史 + 8bit validity。把"每帧一点新样本"稳稳累积成高分辨率成片。</p></div><div class="note"><h3>阅读建议</h3><p>累积质量档 permutation 与 histeresis 见 <a href="../Chapters/Update_ConvergenceAnnotated.html" class="inline">#5 正文</a>；历史可信度权重来源见 <a href="TSRRejectShading.usf.html" class="inline">RejectShading</a>；累积好的历史如何解析上屏见 <a href="TSRResolveHistory.usf.html" class="inline">ResolveHistory</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Update_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 历史更新与累积</a>
+<a class="tag" href="TSRRejectShading.usf.html"><span class="dot" style="background:var(--cyan)"></span>TSRRejectShading.usf（拒绝权重源）↗</a>
+<a class="tag" href="TSRResolveHistory.usf.html"><span class="dot" style="background:var(--cyan)"></span>TSRResolveHistory.usf（下游解析）↗</a>
+<a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>

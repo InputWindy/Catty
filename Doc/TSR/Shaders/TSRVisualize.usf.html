@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TSRVisualize.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:430px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_TSR_解析_总目录.html">← 返回《UE TSR》总目录</a><a href="../Chapters/Visualize_ConvergenceAnnotated.html">← 回到 #8 可视化调试与第三方上采样</a></div>
+<h1>TSRVisualize.usf 汇聚/发散批注版</h1><div class="subtitle">把 TSR 内部那些看不见的中间量（累积样本数、拒绝掩码、复活区域、历史 clamp……）<b>染成颜色叠在屏幕上</b>，是调参与排查鬼影/闪烁的头号工具。核心 <span class="inline">VisualizeCS</span> 按 <span class="inline">VisualizeId</span> 分派不同显示函数。<b>说明：完整文件 501 行</b>，下方内嵌分派入口的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>TSR 各中间缓冲</strong><small>历史/拒绝/重投影</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>按 VisualizeId 分派</strong><small>选一种诊断视图</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>染色映射</strong><small>数值→伪彩</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>叠屏调试图</strong><small>r.TSR.Visualize</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（501 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/TemporalSuperResolution/TSRVisualize.usf · VisualizeCS L496</span>
+<textarea class="embedded-source" readonly spellcheck="false">[numthreads(TILE_SIZE * TILE_SIZE, 1, 1)]
+void VisualizeCS(uint2 GroupId : SV_GroupID, uint GroupThreadIndex : SV_GroupIndex)
+{
+	FContext Ctx;
+	Ctx.OutputPixelPos = tsr_short2(OutputViewRectMin) +
+	    tsr_short2(GroupId) * tsr_short2(TILE_SIZE, TILE_SIZE) + Map8x8Tile2x2Lane(GroupThreadIndex);
+	Ctx.ScreenPos = ApplyScreenTransform(float2(Ctx.OutputPixelPos), OutputPixelPosToScreenPos);
+	// 处理镜头畸变后定位到输入像素
+	Ctx.InputUV       = fastClamp(..., InputInfo_UVViewportBilinearMin, InputInfo_UVViewportBilinearMax);
+	Ctx.InputPixelPos = fastClamp(..., tsr_short2(InputInfo_ViewportMin), tsr_short2(InputInfo_ViewportMax - 1));
+
+	tsr_half3 OutputColor = tsr_half(0.0);
+	BRANCH
+	if      (VisualizeId == 0) OutputColor = DisplayHistorySampleCount(Ctx);       // 每像素累积了几帧
+	else if (VisualizeId == 1) OutputColor = DisplayParallaxDisocclusionMask(Ctx); // 视差遮挡失效区
+	else if (VisualizeId == 2) OutputColor = DisplayHistoryRejection(Ctx);         // 拒绝强度
+	else if (VisualizeId == 3) OutputColor = DisplayHistoryClamp(Ctx);             // 历史被 clamp 程度
+	else if (VisualizeId == 4) OutputColor = DisplayResurrectionMask(Ctx);         // 历史复活区域
+	// ... 更多模式
+}</textarea>
+</div></section>
+
+<section class="card"><h2>0. 一个 CS，多种诊断视图（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">BRANCH by VisualizeId → 各 Display* 函数</span>
+<span class="code-line blue">复用生产追踪的中间缓冲，只做染色</span></code></pre><div class="note n-orange"><h3>说明</h3><p>Visualize 不参与画面生产，纯读 TSR 各 pass 留下的<b>中间缓冲</b>（累积样本数、拒绝掩码、重投影、复活区域），按 <span class="inline">r.TSR.Visualize</span> 选一种映射成伪彩叠屏。与各生产 pass 共享同一套 <span class="inline">ApplyScreenTransform</span> / 镜头畸变处理，保证可视化像素与生产像素一一对应。</p></div></div></section>
+
+<section class="card"><h2>1. 排障用法（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line green">SampleCount 偏低 → 该区历史不稳（噪/闪）</span>
+<span class="code-line yellow">Rejection 偏高 → 拒绝过度（糊/丢细节）</span></code></pre><div class="note n-green"><h3>说明</h3><p>实战：画面有<b>鬼影</b>看 <span class="inline">DisplayHistoryRejection</span>（该拒没拒）与 <span class="inline">DisplayParallaxDisocclusionMask</span>（遮挡判定对不对）；画面<b>糊/丢细节</b>看拒绝是否过度、<span class="inline">HistorySampleCount</span> 是否被反复清零；<b>细线闪烁</b>结合 <a href="TSRDetectThinGeometry.usf.html" class="inline">#7 薄几何</a>。TSR 通过 <span class="inline">ITemporalUpscaler</span> 接口与 DLSS/FSR/XeSS 互斥切换（见 #8 正文）。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Visualize_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#8 可视化调试与第三方上采样</a>
+<a class="tag" href="TSRRejectShading.usf.html"><span class="dot" style="background:var(--cyan)"></span>TSRRejectShading.usf（拒绝可视化源）↗</a>
+<a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>

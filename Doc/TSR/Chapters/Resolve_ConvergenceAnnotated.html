@@ -7,7 +7,7 @@
 <section class="card"><h2>本章接口速览 · 输入 / 输出 / 涉及 Shader</h2><div class="body">
 <div class="flow"><div class="node branch"><strong>输入 ← 上游</strong><small>#5 累积历史 + 空间 AA 兵底</small></div><div class="node func"><strong>本章 = 解析与空间抗锯齿</strong><small>ResolveHistory 重采样+锐化；历史全拒时 SpatialAA 兵底</small></div><div class="node out"><strong>输出 → 下游</strong><small>高分辨率无锯齿 SceneColor → 后处理链</small></div></div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
-<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRResolveHistory.usf / TSRSpatialAntiAliasing.usf</code></td><td>解析到输出分辨率+锐化；单帧空间 AA 兵底</td><td><span class="usf-todo">要点见本章正文</span></td></tr></table>
+<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRResolveHistory.usf / TSRSpatialAntiAliasing.usf</code></td><td>解析到输出分辨率+锐化；单帧空间 AA 兵底</td><td><a href="../Shaders/TSRResolveHistory.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table>
 <div class="iface-grp"><a class="tag" href="Update_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>← #5 历史更新</a><a class="tag" href="ThinGeom_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>#7 薄几何 →</a><a class="tag" href="Resolve_FunctionAppendix.html"><span class="dot" style="background:var(--yellow)"></span>本篇附录</a><a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--green)"></span>返回总目录</a></div>
 </div></section>
 

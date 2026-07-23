@@ -7,7 +7,7 @@
 <section class="card"><h2>本章接口速览 · 输入 / 输出 / 涉及 Shader</h2><div class="body">
 <div class="flow"><div class="node branch"><strong>输入 ← 上游</strong><small>#4 拒绝权重 + 当帧输入 + 上帧历史</small></div><div class="node func"><strong>本章 = 历史更新与累积（最大 pass）1426 行</strong><small>指数移动平均累积 + 权重松弛 + 重采样核</small></div><div class="node out"><strong>输出 → 下游</strong><small>更新后历史（供 #6 解析 + 下帧复用）</small></div></div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
-<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRUpdateHistory.usf</code>（1426 行）</td><td>按拒绝权重累积进历史 + 权重松弛 + TSRKernels</td><td><span class="usf-todo">要点见本章正文</span></td></tr></table>
+<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRUpdateHistory.usf</code>（1426 行）</td><td>按拒绝权重累积进历史 + 权重松弛 + TSRKernels</td><td><a href="../Shaders/TSRUpdateHistory.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table>
 <div class="iface-grp"><a class="tag" href="Reject_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>← #4 历史拒绝</a><a class="tag" href="Resolve_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#6 解析 →</a><a class="tag" href="Update_FunctionAppendix.html"><span class="dot" style="background:var(--yellow)"></span>本篇附录</a><a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--green)"></span>返回总目录</a></div>
 </div></section>
 

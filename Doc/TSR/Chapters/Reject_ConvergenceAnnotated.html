@@ -7,7 +7,7 @@
 <section class="card"><h2>本章接口速览 · 输入 / 输出 / 涉及 Shader</h2><div class="body">
 <div class="flow"><div class="node branch"><strong>输入 ← 上游</strong><small>#3 对齐历史 + 当帧输入 + 闪烁亮度</small></div><div class="node func"><strong>本章 = 历史拒绝（抗鬼影心脏）</strong><small>着色分析卷积 + 颜色空间 clamp + 闪烁抑制</small></div><div class="node out"><strong>输出 → 下游</strong><small>逐像素拒绝权重（供 #5 累积）</small></div></div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
-<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRRejectShading.usf</code>（+ ShadingAnalysis / ColorSpace ush）</td><td>卷积启发式历史可信度估计</td><td><span class="usf-todo">要点见本章正文</span></td></tr></table>
+<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRRejectShading.usf</code>（+ ShadingAnalysis / ColorSpace ush）</td><td>卷积启发式历史可信度估计</td><td><a href="../Shaders/TSRRejectShading.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table>
 <div class="iface-grp"><a class="tag" href="Reproject_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>← #3 历史抽取</a><a class="tag" href="Update_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#5 历史更新 →</a><a class="tag" href="Reject_FunctionAppendix.html"><span class="dot" style="background:var(--yellow)"></span>本篇附录</a><a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--green)"></span>返回总目录</a></div>
 </div></section>
 

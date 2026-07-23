@@ -7,7 +7,7 @@
 <section class="card"><h2>本章接口速览 · 输入 / 输出 / 涉及 Shader</h2><div class="body">
 <div class="flow"><div class="node branch"><strong>输入 ← 上游</strong><small>#2 膨胀速度 + 上帧历史纹理</small></div><div class="node func"><strong>本章 = 历史抽取与重投影</strong><small>DecimateHistory：亚像素重采样到当帧抖动网格 + 视差拒绝掩码</small></div><div class="node out"><strong>输出 → 下游</strong><small>对齐后历史 + parallax mask（供 #4 拒绝）</small></div></div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
-<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRDecimateHistory.usf</code></td><td>历史重投影/亚像素重采样 + disocclusion 处理</td><td><span class="usf-todo">要点见本章正文</span></td></tr></table>
+<table><tr><th>Shader</th><th>作用</th><th>解析</th></tr><tr><td><code>TSRDecimateHistory.usf</code></td><td>历史重投影/亚像素重采样 + disocclusion 处理</td><td><a href="../Shaders/TSRDecimateHistory.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table>
 <div class="iface-grp"><a class="tag" href="Velocity_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>← #2 运动矢量</a><a class="tag" href="Reject_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#4 历史拒绝 →</a><a class="tag" href="Reproject_FunctionAppendix.html"><span class="dot" style="background:var(--yellow)"></span>本篇附录</a><a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--green)"></span>返回总目录</a></div>
 </div></section>
 
