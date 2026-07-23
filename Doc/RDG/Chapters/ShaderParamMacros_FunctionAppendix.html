@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#10 附录 · SHADER_PARAMETER 家族</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}</style></head><body>
+<header><a class="back" href="ShaderParamMacros_ConvergenceAnnotated.html">← 返回 #10 主文档</a><h1>#10 附录 · SHADER_PARAMETER 家族</h1><div class="sub">本篇列出常用 <span class="inline">SHADER_PARAMETER_*</span> 宏与对应 <span class="inline">UBMT_*</span> 成员类型、源码行号（<span class="inline">ShaderParameterMacros.h</span>，1978 行）。</div></header>
+<main>
+
+<section class="card"><h2>宏 → UBMT 映射表（读/写语义）</h2><div class="body">
+<table><tr><th>宏</th><th>UBMT 类型</th><th>读/写</th><th>行号</th></tr>
+<tr><td><code>SHADER_PARAMETER(T, Name)</code></td><td>UBMT_INT32/FLOAT32...</td><td>常量（无资源依赖）</td><td>L1613</td></tr>
+<tr><td><code>SHADER_PARAMETER_RDG_TEXTURE(Type, Name)</code></td><td>UBMT_RDG_TEXTURE</td><td>读</td><td>L1697</td></tr>
+<tr><td><code>SHADER_PARAMETER_RDG_TEXTURE_SRV(Type, Name)</code></td><td>UBMT_RDG_TEXTURE_SRV</td><td>读</td><td>L1709</td></tr>
+<tr><td><code>SHADER_PARAMETER_RDG_TEXTURE_UAV(Type, Name)</code></td><td>UBMT_RDG_TEXTURE_UAV</td><td>写</td><td>—</td></tr>
+<tr><td><code>SHADER_PARAMETER_RDG_BUFFER_SRV(Type, Name)</code></td><td>UBMT_RDG_BUFFER_SRV</td><td>读</td><td>—</td></tr>
+<tr><td><code>SHADER_PARAMETER_RDG_BUFFER_UAV(Type, Name)</code></td><td>UBMT_RDG_BUFFER_UAV</td><td>写</td><td>L1757</td></tr>
+<tr><td><code>SHADER_PARAMETER_STRUCT_REF(StructType, Name)</code></td><td>UBMT_REFERENCED_STRUCT</td><td>引用 UB（#12）</td><td>L1854</td></tr>
+<tr><td><code>SHADER_PARAMETER_RDG_UNIFORM_BUFFER(Struct, Name)</code></td><td>UBMT_RDG_UNIFORM_BUFFER</td><td>引用 RDG UB（#7）</td><td>—</td></tr>
+<tr><td><code>RENDER_TARGET_BINDING_SLOTS()</code></td><td>UBMT_RENDER_TARGET_BINDING_SLOTS</td><td>写（光栅目标）</td><td>—</td></tr>
+</table>
+<div class="note green"><h3>要点</h3><p>RDG 遍历元数据时，把 <span class="inline">UBMT_RDG_*_SRV</span>/<span class="inline">_TEXTURE</span> 视为读、<span class="inline">UBMT_RDG_*_UAV</span> 与 <span class="inline">RENDER_TARGET_BINDING_SLOTS</span> 视为写，据此给资源连生产者/消费者边（#5）。<span class="inline">RENDER_TARGET_BINDING_SLOTS</span> 是光栅 pass 声明渲染目标的专用宏——它的存在让 #6 的 <span class="inline">BeginRenderPass</span> 能从参数结构体拿到 <span class="inline">GetRenderPassInfo()</span>。</p></div></div></section>
+
+<section class="card"><h2>结构体骨架宏（源码行号）</h2><div class="body">
+<table><tr><th>宏</th><th>作用</th><th>行号</th></tr>
+<tr><td><code>BEGIN_SHADER_PARAMETER_STRUCT(Name, DllStorage)</code></td><td>开始声明参数结构体</td><td>L1411</td></tr>
+<tr><td><code>END_SHADER_PARAMETER_STRUCT()</code></td><td>结束并生成 zzGetMembers 元数据收集</td><td>L1414</td></tr>
+<tr><td><code>BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT / BEGIN_UNIFORM_BUFFER_STRUCT</code></td><td>全局/uniform buffer 结构体（#12）</td><td>—</td></tr>
+</table></div></section>
+
+<section class="card"><h2>关联文档 / 导航</h2><div class="body">
+<div class="iface-grp"><b>主文档</b> <a class="tag" href="ShaderParamMacros_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#10 宏体系</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="ShaderParamBind_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#11 参数绑定</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main></body></html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#10 SHADER_PARAMETER 宏体系与元数据</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#10 SHADER_PARAMETER 宏体系与元数据</h1><div class="sub">Part 2 开篇。RDG pass 的"参数结构体"（#3 说它是依赖推导的唯一信息源）是怎么来的？答案是一套 <span class="inline">SHADER_PARAMETER_*</span> 宏——它们在<b>编译期</b>把成员声明展开成布局元数据 <span class="inline">FShaderParametersMetadata</span>，让运行时能遍历、绑定、校验。本篇讲清宏如何映射到 <span class="inline">UBMT_*</span> 成员类型。源码取自 <span class="inline">ShaderParameterMacros.h</span>（1978 行）。</div></header>
+<main>
+
+<section class="card"><h2>一个参数结构体长什么样 <span class="en">Example</span></h2><div class="body">
+<div class="codebox"><span class="c">// 典型用法（业务代码里到处是这个）</span>
+BEGIN_SHADER_PARAMETER_STRUCT(FMyPassParameters, )
+	SHADER_PARAMETER(FVector4f, Constant)                        <span class="c">// 普通常量</span>
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D, InputTexture)        <span class="c">// RDG 纹理（读）</span>
+	SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, InputSRV)        <span class="c">// RDG SRV（读）</span>
+	SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer&lt;float&gt;, OutputUAV)  <span class="c">// RDG UAV（写）</span>
+END_SHADER_PARAMETER_STRUCT()</div>
+<div class="note" style="margin:0"><h3>核心问题</h3><p>这段宏展开后，RDG 怎么知道 <span class="inline">InputTexture</span> 是"读"、<span class="inline">OutputUAV</span> 是"写"？答案就在每个宏映射的 <span class="inline">UBMT_*</span> 基类型里——它编码了成员是常量/SRV/UAV/UB 以及是否 RDG 追踪。</p></div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2"><span class="inline">SHADER_PARAMETER_*</span> 全家族与对应 <span class="inline">UBMT_*</span>、<span class="inline">FShaderParametersMetadata::FMember</span> 见 <a href="ShaderParamMacros_FunctionAppendix.html" style="color:#9ee8ff">→ 宏与元数据附录</a>。</p></div></section>
+
+<section class="card"><h2>宏 → UBMT 成员类型 → 元数据 <span class="en">Macro to metadata</span></h2><div class="body">
+<p>每个 <span class="inline">SHADER_PARAMETER_RDG_*</span> 宏都展开成一个 <span class="inline">INTERNAL_SHADER_PARAMETER_EXPLICIT</span>，第一个参数就是 <span class="inline">UBMT_*</span> 基类型。真实源码：</p>
+<div class="codebox"><span class="src">// ShaderParameterMacros.h : L1697-L1710</span><span class="k">#define</span> SHADER_PARAMETER_RDG_TEXTURE(ShaderType,MemberName) \
+	INTERNAL_SHADER_PARAMETER_EXPLICIT(<span class="k">UBMT_RDG_TEXTURE</span>, TShaderResourceParameterTypeInfo&lt;FRDGTexture*&gt;,
+	                                   FRDGTexture*, MemberName, , = nullptr, ..., TEXT(#ShaderType), false)
+
+<span class="k">#define</span> SHADER_PARAMETER_RDG_TEXTURE_SRV(ShaderType,MemberName) \
+	INTERNAL_SHADER_PARAMETER_EXPLICIT(<span class="k">UBMT_RDG_TEXTURE_SRV</span>, TShaderResourceParameterTypeInfo&lt;FRDGTextureSRV*&gt;,
+	                                   FRDGTextureSRV*, MemberName, , = nullptr, ...)</div>
+<div class="note blue"><h3>批注：UBMT 是关键</h3><p><span class="inline">UBMT_*</span>（Uniform Buffer Member Type）是引擎给每种参数成员打的<b>类型标签</b>：<span class="inline">UBMT_RDG_TEXTURE</span>（RDG 纹理）、<span class="inline">UBMT_RDG_TEXTURE_SRV</span>（RDG SRV=读）、<span class="inline">UBMT_RDG_BUFFER_UAV</span>（RDG UAV=写）、<span class="inline">UBMT_INT32</span>/<span class="inline">UBMT_FLOAT32</span>（常量）……宏把每个成员的 <b>UBMT 类型 + 偏移 + 名字 + shader 端类型字符串</b> 记进结构体的元数据。<b>RDG 就是靠遍历这些 UBMT 标签，判断每个资源成员是读（SRV/Texture）还是写（UAV/RenderTarget）</b>——这正是 #3 "参数结构体是依赖推导唯一信息源"的底层实现。<span class="inline">TShaderResourceParameterTypeInfo&lt;T&gt;</span> 是模板萃取，编译期算出该成员的对齐/大小/如何 memcpy。</p></div></div></section>
+
+<section class="card"><h2>BEGIN/END：编译期收集成员 <span class="en">Struct declaration</span></h2><div class="body">
+<div class="codebox"><span class="src">// ShaderParameterMacros.h : L1411-L1420</span><span class="k">#define</span> BEGIN_SHADER_PARAMETER_STRUCT(StructTypeName, DllStorage) \
+	INTERNAL_SHADER_PARAMETER_STRUCT_BEGIN(StructTypeName,, {}, \
+		INTERNAL_SHADER_PARAMETER_GET_STRUCT_METADATA(StructTypeName), \
+		INTERNAL_SHADER_PARAMETER_STRUCT_CREATE_UNIFORM_BUFFER)
+
+<span class="k">#define</span> END_SHADER_PARAMETER_STRUCT() \
+		zzLastMemberId; \
+	<span class="k">public</span>: \
+		<span class="k">static</span> TArray&lt;FShaderParametersMetadata::FMember&gt; zzGetMembers() { <span class="c">/* 逐成员回溯收集 */</span> }</div>
+<div class="note"><h3>批注：一个编译期链表技巧</h3><p><span class="inline">BEGIN/END</span> 之间的每个 <span class="inline">SHADER_PARAMETER_*</span> 宏，除了声明成员变量，还悄悄声明了一个带序号的 <span class="inline">zzMemberId</span> 与一个 append 函数。<span class="inline">END_SHADER_PARAMETER_STRUCT</span> 从 <span class="inline">zzLastMemberId</span> 反向回溯这条<b>编译期成员链</b>，把所有成员的 <span class="inline">FMember</span>（含 UBMT 类型、偏移、名字）收集成 <span class="inline">TArray</span>，构成该结构体的 <span class="inline">FShaderParametersMetadata</span>。这套"用重载决议 + 递增 ID 在编译期遍历成员"的技巧，是无反射的 C++ 里实现"结构体自省"的经典手法。有了元数据，运行时才能：① 绑定到 shader（#11）；② 让 RDG 遍历资源成员建依赖（#3/#5）；③ 校验（#8）。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. <span class="inline">SHADER_PARAMETER_*</span> 宏把每个成员映射到一个 <span class="inline">UBMT_*</span> 类型标签（区分常量/SRV=读/UAV=写/RDG 追踪与否）。</p>
+<p>2. <span class="inline">BEGIN/END_SHADER_PARAMETER_STRUCT</span> 用编译期成员链收集出 <span class="inline">FShaderParametersMetadata</span>（成员表）。</p>
+<p>3. <b>UBMT 标签是 RDG 判断读/写、进而推导依赖与屏障的底层依据</b>——呼应 #3 的"参数结构体是唯一信息源"。</p>
+<p>4. 元数据支撑三件事：绑定 shader（#11）、建依赖（#5）、校验（#8）。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="Utils_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#9 Utils</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="ShaderParamBind_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>#11 参数绑定到 RHI</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="Pass_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#3 Pass（参数结构体）</a><a class="tag" href="Compile_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#5 编译（遍历成员建依赖）</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="ShaderParamMacros_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇宏与元数据附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>
