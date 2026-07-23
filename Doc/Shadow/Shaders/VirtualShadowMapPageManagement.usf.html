@@ -1,0 +1,558 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualShadowMapPageManagement.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/PageManagement_ConvergenceAnnotated.html">← 回到 VSM 页管理</a></div>
+<h1>VirtualShadowMapPageManagement.usf 整源解析</h1><div class="subtitle">VSM 的<b>页管理</b>（440 行）：构建分层页标志（HZB 式金字塔）、把已映射的物理页向粗 mip 传播、初始化页表。是虚拟阴影图"哪些页需要、映射到哪块物理内存"的调度核心。核心 <span class="inline">GenerateHierarchicalPageFlags</span> / <span class="inline">PropagateMappedMips</span>。<b>下方内嵌完整 440 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>页请求标志</strong><small>PageFlags</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>生成分层标志</strong><small>GenerateHierarchicalPageFlags</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>映射 mip 传播</strong><small>PropagateMappedMips</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>页表 + 物理页映射</strong></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPageManagement.usf</span></h2><div class="body">
+<span class="source-path">GenerateHierarchicalPageFlags @ L163 · PropagateMappedMips @ L394</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	VirtualShadowMapPageManagement.usf: 
+=============================================================================*/
+
+#include "../Common.ush"
+#include "../WaveOpUtil.ush"
+#include "VirtualShadowMapProjectionStructs.ush"
+#include "VirtualShadowMapProjectionCommon.ush"
+#include "VirtualShadowMapPageAccessCommon.ush"
+#include "VirtualShadowMapStats.ush"
+#include "VirtualShadowMapPerPageDispatch.ush"
+
+StructuredBuffer&lt;FPhysicalPageMetaData&gt; PhysicalPageMetaData;
+RWTexture2D&lt;uint&gt; OutPageTable;
+RWStructuredBuffer&lt;uint4&gt; OutUncachedPageRectBounds;
+RWStructuredBuffer&lt;uint4&gt; OutAllocatedPageRectBounds;
+
+// Mip a 2x1 (i.e., 8x4 bit) mask into a 4x4 mask
+uint MipMask8x4(uint2 Mask2x1)
+{
+	// Do two 4x4 16-bit masks at once
+	uint Packed = Mask2x1.x | (Mask2x1.y &lt;&lt; 16u);
+
+	// merge rows
+	Packed |= Packed &gt;&gt; 4u;
+	// merge columns
+	Packed |= Packed &gt;&gt; 1u;
+	// Mask off garbage
+	Packed &amp;= 0x5050505u;
+	// Now we have mipped the bits but they are interleaved 
+	// [0000 0H0G 0000 0F0E 0000 0D0C 0000 0B0A] - each letter represents a 2x2 input region
+	// Move to [0000 00HG 0000 00FE 0000 00DC 0000 00BA]
+	Packed |= Packed &gt;&gt; 1u;
+	Packed &amp;= 0x3030303u;
+	// fold down the mipped rows (pairs of bits) to the correct place
+	// [0000 00HG 00HG 00FE 0000 00DC 00DC 00BA]
+	Packed |= Packed &gt;&gt; 4u;
+	// interleave the two results
+	// [0000 00HG 00HG 00FE 0000 00DC HGDC FEBA]
+	Packed |= Packed &gt;&gt; 14u;
+	// keep just the two last rows, mask off all the garbage
+	// [0000 0000 0000 0000 0000 0000 HGDC FEBA]
+	Packed &amp;= 0xFFu;
+	return Packed;
+}
+
+// Mip a 2x2 (i.e., 8x8 bit) mask into a 4x4 mask
+uint MipMask8x8(uint4 Mask2x2)
+{
+	 // layout dictated by gather
+	// x: (-, +)
+	// y: (+, +)
+	// z: (+, -)
+	// w: (-, -)
+
+	uint Result = (MipMask8x4(uint2(Mask2x2.x, Mask2x2.y)) &lt;&lt; 8u)
+		| MipMask8x4(uint2(Mask2x2.w, Mask2x2.z));
+
+	return Result;
+}
+
+// Mip a 4x4 mask &amp; use fractional position to position inside resulting 4x4 mask
+uint MipMask4x4(uint Mask4x4, uint2 FracPos)
+{
+	// not 100% sure I need to mask off 0x33u
+	uint Mask2x2 = MipMask8x4(uint2(Mask4x4, 0u)) &amp; 0x33u;
+	uint Shift = FracPos.y * 8u + FracPos.x * 2u;
+	uint Res4x4 = Mask2x2 &lt;&lt; Shift;
+	return Res4x4;
+}
+
+#ifdef GenerateHierarchicalPageFlags
+
+// Not yet set up in the UB
+Texture2D&lt;uint&gt; InPageFlags;
+Texture2D&lt;uint&gt; InPageReceiverMasks;
+
+RWTexture2D&lt;uint&gt; OutPageFlagMips_0;
+RWTexture2D&lt;uint&gt; OutPageFlagMips_1;
+RWTexture2D&lt;uint&gt; OutPageFlagMips_2;
+RWTexture2D&lt;uint&gt; OutPageFlagMips_3;
+RWTexture2D&lt;uint&gt; OutPageFlagMips_4;
+RWTexture2D&lt;uint&gt; OutPageFlagMips_5;
+//RWTexture2D&lt;uint&gt; OutPageFlagMips_6;
+
+RWTexture2D&lt;uint&gt; OutPageReceiverMaskMips_0;
+RWTexture2D&lt;uint&gt; OutPageReceiverMaskMips_1;
+RWTexture2D&lt;uint&gt; OutPageReceiverMaskMips_2;
+RWTexture2D&lt;uint&gt; OutPageReceiverMaskMips_3;
+RWTexture2D&lt;uint&gt; OutPageReceiverMaskMips_4;
+RWTexture2D&lt;uint&gt; OutPageReceiverMaskMips_5;
+RWTexture2D&lt;uint&gt; OutPageReceiverMaskMips_6;
+
+
+bool ProcessMipLevel(RWTexture2D&lt;uint&gt; OutPageFlagMip, uint Flag, FVSMPageOffset PageOffset, uint HMipLevel)
+{
+	// shift to the appropriate mip level
+	uint2 MipTexelAddress = PageOffset.TexelAddress &gt;&gt; HMipLevel;
+
+	uint PreviousValue = 0;
+	InterlockedOr(OutPageFlagMip[MipTexelAddress], Flag, PreviousValue);
+	// If this was already the value for this HMip, then whoever did that will continue up the hierarhcy.
+	return PreviousValue == Flag;
+}
+
+
+bool IntersectMask8x8(uint4 Mask2x2, uint2 Min, uint2 Max)
+{
+	// Assume: clamped to 8x8 rect
+
+	// general idea: work on 8x8 and pull out relevant sub-ranges.
+
+	// Make an 8-bit row mask &amp; then select bits from that, easier than figuring out the ranges for each sub-range 
+	uint NumXBits8 = Max.x - Min.x + 1u;
+	uint XMask8 = BitFieldMaskU32(NumXBits8, Min.x);
+	// XLow half (left half if you like)
+	uint XMaskLow = XMask8 &amp; 0xFu;
+	uint XMaskHigh = XMask8 &gt;&gt; 4u;
+
+	// make an 8-row mask
+	uint MaxY4 = Max.y &lt;&lt; 2u;
+	uint MinY4 = Min.y &lt;&lt; 2u;
+	uint NumYBits = MaxY4 - MinY4 + 1u; // +1u instead of 4 to avoid overflow - we only use it to mask off 0x1111 anyway so no need to mask the last few
+	uint YMask8 = BitFieldMaskU32(NumYBits, MinY4);
+	uint RowMultLow  = 0x1111u &amp; YMask8;
+	uint RowMultHigh = 0x1111u &amp; (YMask8 &gt;&gt; 16u);
+
+	// x: (-, +) y: (+, +) z: (+, -) w: (-, -)
+
+	uint4 TestMask;
+	TestMask.w = XMaskLow * RowMultLow;
+	TestMask.x = XMaskLow * RowMultHigh;
+	TestMask.z = XMaskHigh * RowMultLow;
+	TestMask.y = XMaskHigh * RowMultHigh;
+
+	return (Mask2x2.x &amp; TestMask.x) != 0u
+		|| (Mask2x2.y &amp; TestMask.y) != 0u
+		|| (Mask2x2.z &amp; TestMask.z) != 0u
+		|| (Mask2x2.w &amp; TestMask.w) != 0u;
+}
+
+
+void ProcessMaskMip4x4(RWTexture2D&lt;uint&gt; OutPageReceiverMaskMip, inout uint Mask4x4, inout uint2 MaskAddress)
+{
+	Mask4x4 = MipMask4x4(Mask4x4, MaskAddress &amp; 1u);
+	MaskAddress = MaskAddress &gt;&gt; 1u;
+	uint PrevMask = 0u;
+	InterlockedOr(OutPageReceiverMaskMip[MaskAddress], Mask4x4, PrevMask);
+}
+
+// Gather a 2x2 footprint given the upper-left coordinate
+uint4 GatherReceiverMask(uint2 TexelCoord)
+{
+	return GatherPageTable(InPageReceiverMasks, TexelCoord, 0u, VirtualShadowMap.PageReceiverMaskTextureSizeInvSize.zw);
+}
+
+/**
+* One thread per page physical table flag entry
+*/
+[numthreads(VSM_DEFAULT_CS_GROUP_X, 1, 1)]
+void GenerateHierarchicalPageFlags(uint ThreadId : SV_DispatchThreadID)
+{
+	// early out any overflowing threads.
+	if (ThreadId &gt;= VirtualShadowMap.MaxPhysicalPages)
+	{
+		return;
+	}
+	FPhysicalPageMetaData MetaData = PhysicalPageMetaData[ThreadId];
+
+	if (MetaData.Flags == 0U)
+	{
+		return;
+	}
+
+	// Use the group ID to ensure the compiler knows it is scalar / uniform
+	FVirtualShadowMapHandle VirtualShadowMapHandle = FVirtualShadowMapHandle::MakeFromId(MetaData.VirtualShadowMapId);
+	FVSMPageOffset GlobalPageTableEntryIndex = CalcPageOffset(VirtualShadowMapHandle, MetaData.MipLevel, MetaData.PageAddress);
+
+	uint Flag = InPageFlags[GlobalPageTableEntryIndex.GetResourceAddress()] &amp; VSM_PAGE_FLAGS_BITS_MASK;
+	if (Flag != 0u)
+	{
+		FVirtualShadowMapProjectionShaderData ProjectionData = GetVirtualShadowMapProjectionData(VirtualShadowMapHandle);
+
+		uint MipLevel = MetaData.MipLevel;
+		uint2 PageAddress = MetaData.PageAddress;
+		// No hierarchy to propagate to for single-page pages.
+		if (VirtualShadowMapHandle.IsSinglePage())
+		{
+			// Note: we need to set the page rect bounds for the last mip level, since that is the only one that is valid, logically, for a single-page VSM.
+			//       This is important since this is what filters all the rendering that would otherwise try to draw stuff to the other levels.
+			MipLevel = VSM_MAX_MIP_LEVELS - 1U;
+		}
+
+		// Compute the min/max rect of active pages
+		uint PageBoundIndex = VirtualShadowMapHandle.GetDataIndex() * VSM_MAX_MIP_LEVELS + MipLevel;
+		InterlockedMin(OutAllocatedPageRectBounds[PageBoundIndex].x, PageAddress.x);
+		InterlockedMin(OutAllocatedPageRectBounds[PageBoundIndex].y, PageAddress.y);
+		InterlockedMax(OutAllocatedPageRectBounds[PageBoundIndex].z, PageAddress.x);
+		InterlockedMax(OutAllocatedPageRectBounds[PageBoundIndex].w, PageAddress.y);
+
+		// Only add to the rendering page rect bounds if there is anything uncached
+		if ((Flag &amp; VSM_FLAG_ANY_UNCACHED) != 0)
+		{
+			InterlockedMin(OutUncachedPageRectBounds[PageBoundIndex].x, PageAddress.x);
+			InterlockedMin(OutUncachedPageRectBounds[PageBoundIndex].y, PageAddress.y);
+			InterlockedMax(OutUncachedPageRectBounds[PageBoundIndex].z, PageAddress.x);
+			InterlockedMax(OutUncachedPageRectBounds[PageBoundIndex].w, PageAddress.y);
+		}
+
+		// No hierarchy to propagate to for single-page pages.
+		if (VirtualShadowMapHandle.IsSinglePage())
+		{
+			return;
+		}
+
+		// Loop over H flag levels, this builds a mip pyramid over _each_ mip level in the page table
+		// the 0-th level in this hiearchy is the page table mip level itself.
+		uint MaxHLevel = VSM_MAX_MIP_LEVELS - MipLevel;
+
+// Manually unrolled to work with "array" of textures, 
+// NOTE: returns when done!
+		bool bDone = false;
+#define PROCESS_LEVEL(_Level_) \
+		if (_Level_ &lt; MaxHLevel &amp;&amp; !bDone) { \
+			bDone = ProcessMipLevel(OutPageFlagMips_##_Level_, Flag, GlobalPageTableEntryIndex, _Level_ + 1);	\
+		}
+
+		PROCESS_LEVEL(0);
+		PROCESS_LEVEL(1);
+		PROCESS_LEVEL(2);
+		PROCESS_LEVEL(3);
+		PROCESS_LEVEL(4);
+		PROCESS_LEVEL(5);
+
+#undef PROCESS_LEVEL
+
+		BRANCH
+		if (ProjectionData.bUseReceiverMask)
+		{
+			// 2x2 masks
+			uint2 MaskAddress = GlobalPageTableEntryIndex.GetResourceAddress() * 2u;
+
+			// 1. load 2x2 mask from level 0
+			uint4 Mask8x8 = GatherReceiverMask(MaskAddress);
+			//   construct 4x4 mask
+			uint Mask4x4 = MipMask8x8(Mask8x8);
+			//   Store back
+			MaskAddress = MaskAddress &gt;&gt; 1u;
+			uint PreviousMask4x4 = 0u;
+			InterlockedOr(OutPageReceiverMaskMips_0[MaskAddress], Mask4x4, PreviousMask4x4);
+			// early out if PreviousMask4x4 == Mask4x4? Will it ever?
+
+			// 2. propagate upwards, at this point it is all self-similar as we shrink a 4x4 -&gt; 2x2 word and store back
+			ProcessMaskMip4x4(OutPageReceiverMaskMips_1, Mask4x4, MaskAddress);
+			ProcessMaskMip4x4(OutPageReceiverMaskMips_2, Mask4x4, MaskAddress);
+			ProcessMaskMip4x4(OutPageReceiverMaskMips_3, Mask4x4, MaskAddress);
+			ProcessMaskMip4x4(OutPageReceiverMaskMips_4, Mask4x4, MaskAddress);
+			ProcessMaskMip4x4(OutPageReceiverMaskMips_5, Mask4x4, MaskAddress);
+			ProcessMaskMip4x4(OutPageReceiverMaskMips_6, Mask4x4, MaskAddress);			
+		}
+	}
+}
+
+#endif // GenerateHierarchicalPageFlags
+
+#ifdef PropagateMappedMips
+
+
+struct FMappedMipPropagator
+{
+	void Run(FPerPageDispatchSetup Setup)
+	{
+		if (Setup.VirtualShadowMapHandle.IsSinglePage())
+		{
+			return;
+		}
+
+		FVirtualShadowMapProjectionShaderData ProjectionData = GetVirtualShadowMapProjectionData(Setup.VirtualShadowMapHandle);
+	
+		if (ProjectionData.LightType == LIGHT_TYPE_DIRECTIONAL)
+		{
+			const uint NumLevel0Entries = VSM_LEVEL0_DIM_PAGES_XY * VSM_LEVEL0_DIM_PAGES_XY;
+			uint LoopEndXY = Setup.GetLoopEnd(0);
+			for (uint PageY = Setup.LoopStart.y; PageY &lt; LoopEndXY; PageY += Setup.LoopStride)
+			{
+				for (uint PageX = Setup.LoopStart.x; PageX &lt; LoopEndXY; PageX += Setup.LoopStride)
+				{
+					uint2 Level0Page;
+					Level0Page.x = PageX;
+					Level0Page.y = PageY;
+					// Directional lights propagate pages to their coarser/larger clipmap levels (and only use mip0 pages)
+					// Each clipmap level is a separate VSM, so we gather any mapped coarser pages as necessary and write only our own page output
+					// There's also technically a race similar to below with other threads writing the PT data we are reading,
+					// but it's still deterministic as long as we only look at pages with "bThisLODValid".
+					// There's some redundant work of course, but this shader is pretty cheap overall
+
+					FVSMPageOffset Page0Offset = CalcPageOffset(Setup.VirtualShadowMapHandle, 0, Level0Page);
+					FShadowPhysicalPage pPage0 = ShadowDecodePageTable(OutPageTable[Page0Offset.GetResourceAddress()]);
+
+					BRANCH
+					if (!pPage0.bThisLODValid)
+					{
+						const int OffsetScale = (VSM_LEVEL0_DIM_PAGES_XY &gt;&gt; 2);
+						int2 BaseOffset = OffsetScale * ProjectionData.ClipmapCornerRelativeOffset;
+						int2 BasePage   = int2(Level0Page) - BaseOffset;
+
+						// Search for first mapped page past this one
+						uint RemainingLevels = ProjectionData.ClipmapLevelCountRemaining;
+						for (uint ClipmapOffset = 1; ClipmapOffset &lt; RemainingLevels; ++ClipmapOffset)
+						{
+							FVirtualShadowMapHandle ClipmapLevelHandle = Setup.VirtualShadowMapHandle.MakeOffset(int(ClipmapOffset));
+							FVirtualShadowMapProjectionShaderData LevelProjectionData = GetVirtualShadowMapProjectionData(ClipmapLevelHandle);								
+							int2 LevelOffset = OffsetScale * LevelProjectionData.ClipmapCornerRelativeOffset;
+
+							int2 LevelPage = (BasePage + (LevelOffset &lt;&lt; ClipmapOffset)) &gt;&gt; ClipmapOffset;
+							if (IsVirtualShadowMapPageAddressValid(LevelPage, 0))
+							{
+								FVSMPageOffset LevelPageOffset = CalcPageOffset(ClipmapLevelHandle, 0, uint2(LevelPage));
+								FShadowPhysicalPage pPage = ShadowDecodePageTable(OutPageTable[LevelPageOffset.GetResourceAddress()]);
+								if (pPage.bThisLODValid)
+								{
+									OutPageTable[Page0Offset.GetResourceAddress()] = ShadowEncodePageTable(pPage.PhysicalAddress, ClipmapOffset);
+									break;
+								}
+							}
+							else
+							{
+								// TODO: We're off the edge... can this ever even happen in practice given the construction?
+							}
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			int MinLevel = Setup.MipLevelStart;
+			uint LoopEndXY = Setup.GetLoopEnd(MinLevel);
+			for (uint PageY = Setup.LoopStart.y; PageY &lt; LoopEndXY; PageY += Setup.LoopStride)
+			{
+				for (uint PageX = Setup.LoopStart.x; PageX &lt; LoopEndXY; PageX += Setup.LoopStride)
+				{
+					uint2 MinLevelPage;
+					MinLevelPage.x = PageX;
+					MinLevelPage.y = PageY;
+			
+					// Local lights propagate pages to their coarser mips
+					int MappedPageLevel = -1;
+					uint2 MappedPhysicalAddress = 0;
+
+					for (int Level = (VSM_MAX_MIP_LEVELS - 1); Level &gt;= MinLevel; --Level)
+					{
+						int LevelDelta = Level - MinLevel;
+						uint2 vPage = MinLevelPage &gt;&gt; LevelDelta;
+						FVSMPageOffset PageOffset = CalcPageOffset(Setup.VirtualShadowMapHandle, Level, vPage);
+						FShadowPhysicalPage pPage = ShadowDecodePageTable(OutPageTable[PageOffset.GetResourceAddress()]);
+
+						BRANCH
+						if (pPage.bThisLODValid)
+						{
+							// This page is mapped, so leave it alone and propagate downwards
+							MappedPageLevel = Level;
+							MappedPhysicalAddress = pPage.PhysicalAddress;
+						}
+						else if( MappedPageLevel &gt;= 0 )
+						{
+							// This page is not mapped; replace it with our suitably offset parent mapped page
+							// Ensure only one thread writes each value to avoid races, but we read on all threads as the broadcast
+							// Note that this can race with the other threads reading this value, but since bThisLODValid will
+							// always be false on these updated pages the values will be ignored. As long as the writes to the page
+							// table are atomic (currently a single DWORD), this is safe.
+							if (all((vPage &lt;&lt; LevelDelta) == MinLevelPage))
+							{
+								uint MipOffset = MappedPageLevel - Level;
+								OutPageTable[PageOffset.GetResourceAddress()] = ShadowEncodePageTable(MappedPhysicalAddress, MipOffset);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+};
+
+/**
+* One thread per page in level 0, launched as 1d groups, with 2D grid with Y dim ==  NumFullShadowMaps.
+* This is effectively just a big broadcast operation. There are more efficient ways to do this with
+* fewer threads and wave ops, but given the page counts just relying on memory coalescing is
+* good enough for now.
+*/
+[numthreads(PER_PAGE_THREAD_GROUP_SIZE_XY, PER_PAGE_THREAD_GROUP_SIZE_XY, 1)]
+void PropagateMappedMips(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	FPerPageDispatchSetup Setup; 
+	FMappedMipPropagator Propagator;
+	Setup.Execute(DispatchThreadId, Propagator);
+}
+
+#endif // PropagateMappedMips
+
+#ifdef PropagateFilterableRequestsCS
+
+RWTexture2D&lt;uint&gt; InOutPageRequestFlags;
+RWTexture2D&lt;uint&gt; InOutPageReceiverMasks;
+
+struct FRequestPropagator
+{
+	void Run(FPerPageDispatchSetup Setup)
+	{
+		if (Setup.VirtualShadowMapHandle.IsSinglePage())
+		{
+			return;
+		}
+
+		FVirtualShadowMapProjectionShaderData ProjectionData = GetVirtualShadowMapProjectionData(Setup.VirtualShadowMapHandle);
+	
+		if (ProjectionData.LightType == LIGHT_TYPE_DIRECTIONAL)
+		{
+			const uint NumLevel0Entries = VSM_LEVEL0_DIM_PAGES_XY * VSM_LEVEL0_DIM_PAGES_XY;
+			uint LoopEndXY = Setup.GetLoopEnd(0);
+			for (uint PageY = Setup.LoopStart.y; PageY &lt; LoopEndXY; PageY += Setup.LoopStride)
+			{
+				for (uint PageX = Setup.LoopStart.x; PageX &lt; LoopEndXY; PageX += Setup.LoopStride)
+				{
+					uint2 Level0Page;
+					Level0Page.x = PageX;
+					Level0Page.y = PageY;
+					// Directional lights propagate pages to their coarser/larger clipmap levels (and only use mip0 pages)
+					// Each clipmap level is a separate VSM, so we gather any mapped coarser pages as necessary and write only our own page output
+					// There's also technically a race similar to below with other threads writing the PT data we are reading,
+					// but it's still deterministic as long as we only look at pages with "bThisLODValid".
+					// There's some redundant work of course, but this shader is pretty cheap overall
+
+					FVSMPageOffset Page0Offset = CalcPageOffset(Setup.VirtualShadowMapHandle, 0, Level0Page);
+					uint Page0Flags = InOutPageRequestFlags[Page0Offset.GetResourceAddress()];
+
+					uint Mask4x4 = 0u;
+					if (ProjectionData.bUseReceiverMask)
+					{
+						uint2 MaskAddress = Page0Offset.GetResourceAddress() * 2u;
+						// 1. load 2x2 mask from level 0
+						uint4 Mask8x8 = GatherPageTableRW(InOutPageReceiverMasks, MaskAddress); 
+						//   construct 4x4 mask
+						Mask4x4 = MipMask8x8(Mask8x8);
+					}
+
+					BRANCH
+					if (Page0Flags != 0u)
+					{
+						const int OffsetScale = (VSM_LEVEL0_DIM_PAGES_XY &gt;&gt; 2);
+						int2 BaseOffset = OffsetScale * ProjectionData.ClipmapCornerRelativeOffset;
+						int2 BasePage   = int2(Level0Page) - BaseOffset;
+
+						// Search for first mapped page past this one
+						uint RemainingLevels = ProjectionData.ClipmapLevelCountRemaining;
+						for (uint ClipmapOffset = 1; ClipmapOffset &lt; RemainingLevels; ++ClipmapOffset)
+						{
+							FVirtualShadowMapHandle ClipmapLevelHandle = Setup.VirtualShadowMapHandle.MakeOffset(int(ClipmapOffset));
+							FVirtualShadowMapProjectionShaderData LevelProjectionData = GetVirtualShadowMapProjectionData(ClipmapLevelHandle);								
+							int2 LevelOffset = OffsetScale * LevelProjectionData.ClipmapCornerRelativeOffset;
+
+							int2 LevelMaskAddress = (BasePage + (LevelOffset &lt;&lt; ClipmapOffset)) &gt;&gt; (ClipmapOffset - 1u);
+							uint2 FractPage = uint2(LevelMaskAddress) &amp; 1u;
+							int2 LevelPage = LevelMaskAddress &gt;&gt; 1u;
+							if (IsVirtualShadowMapPageAddressValid(LevelPage, 0))
+							{
+								FVSMPageOffset LevelPageOffset = CalcPageOffset(ClipmapLevelHandle, 0, uint2(LevelPage));
+								uint PrevFlags = 0u;
+								uint2 PageTableAddress = LevelPageOffset.GetResourceAddress();
+								InterlockedOr(InOutPageRequestFlags[LevelPageOffset.GetResourceAddress()], VSM_FLAG_SECONDARY_REQUEST | VSM_FLAG_DETAIL_GEOMETRY, PrevFlags);
+								bool bResultUnchanged = (PrevFlags &amp; VSM_FLAG_SECONDARY_REQUEST) != 0u;
+
+								if (ProjectionData.bUseReceiverMask)
+								{
+									uint2 PageTableMaskAddress = PageTableAddress * 2u + FractPage;
+									uint PrevMask = 0u;
+									InterlockedOr(InOutPageReceiverMasks[PageTableMaskAddress], Mask4x4, PrevMask);
+									bResultUnchanged = bResultUnchanged &amp;&amp; PrevMask == Mask4x4;
+
+									Mask4x4 = MipMask4x4(Mask4x4, FractPage);
+								}
+								// We didn't change anything, some other thread will propagate upwards
+								if (bResultUnchanged)
+								{
+									break;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+};
+
+/**
+*/
+[numthreads(PER_PAGE_THREAD_GROUP_SIZE_XY, PER_PAGE_THREAD_GROUP_SIZE_XY, 1)]
+void PropagateFilterableRequestsCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	FPerPageDispatchSetup Setup; 
+	FRequestPropagator Propagator;
+	Setup.Execute(DispatchThreadId, Propagator);
+}
+
+#endif // PropagateFilterableRequestsCS
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 生成分层页标志金字塔（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">void ProcessMaskMip4x4(RWTexture2D&lt;uint&gt; OutPageReceiverMaskMip, inout uint Mask4x4, inout uint2 MaskAddress)</span>
+<span class="code-line blue">[numthreads(VSM_DEFAULT_CS_GROUP_X, 1, 1)] void GenerateHierarchicalPageFlags(uint ThreadId : SV_DispatchThreadID)</span>
+<span class="code-line green">// 把每页的"是否被请求"标志逐层 OR 上卷成 mip 金字塔（4×4 归约）</span>
+<span class="code-line yellow">// 供后续遍历时快速跳过整块无请求的区域</span></code></pre><div class="note"><h3>说明</h3><p>VSM 有海量页，逐页处理太慢。<span class="inline">GenerateHierarchicalPageFlags</span> 把每页的"本帧是否被请求/需要渲染"标志<b>逐层归约成金字塔</b>（<span class="inline">ProcessMaskMip4x4</span> 每次 4×4 OR 上卷）——就像 HZB。后续所有遍历（剔除、分配、渲染指令生成）都能在粗层<b>整块跳过</b>没有任何请求的区域，只下钻到有内容的页。这是 VSM 稀疏性的关键：只为屏幕真正需要阴影的地方付出代价。</p></div></div></section>
+
+<section class="card"><h2>1. 已映射 mip 向粗层传播（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">[numthreads(PER_PAGE_THREAD_GROUP_SIZE_XY, PER_PAGE_THREAD_GROUP_SIZE_XY, 1)]</span>
+<span class="code-line blue">void PropagateMappedMips(uint3 DispatchThreadId : SV_DispatchThreadID)</span>
+<span class="code-line green">// 若某精细页无独立物理页，但其粗 mip 页已映射 → 复用粗页地址</span>
+<span class="code-line yellow">// 避免为每个精细页都分配物理内存，缓存跨 mip 共享</span></code></pre><div class="note"><h3>说明</h3><p><b>汇聚点</b>：<span class="inline">PropagateMappedMips</span> 处理 mip 层级复用——当某精细级页本身没有分配独立物理页时，若它对应的<b>更粗 mip 页</b>已经映射，就让精细页<b>指向粗页</b>（降质但省内存，远处阴影够用）。这让 VSM 的物理页池在"每级都独立分配"与"内存爆炸"间取得平衡：近处高频用精细页，远处/次要处回退粗页。配合 <a href="VirtualShadowMapPhysicalPageManagement.usf.html" class="inline">物理页管理</a> 的分配/回收，构成 VSM 的虚拟→物理映射闭环。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/PageManagement_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>VSM 页管理</a>
+<a class="tag" href="VirtualShadowMapPhysicalPageManagement.usf.html"><span class="dot" style="background:var(--cyan)"></span>物理页管理↗</a>
+<a class="tag" href="VirtualShadowMapPageAccessCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>PageAccessCommon.ush↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
