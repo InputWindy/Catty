@@ -1,0 +1,287 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TSRSpatialAntiAliasing.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_TSR_解析_总目录.html">← 返回《UE TSR》总目录</a><a href="../Chapters/Resolve_ConvergenceAnnotated.html">← 回到 #6 解析历史到输出</a></div>
+<h1>TSRSpatialAntiAliasing.usf 整源解析</h1><div class="subtitle">TSR 的<b>空间抗锯齿兜底</b>：对历史被完全拒绝（新露出/剧变）没有可累积历史的像素，在<b>单帧内</b>做边缘导向的空间抗锯齿（类 FXAA/SMAA），避免这些区域露出低分辨率锯齿。核心 <span class="inline">SpatialAntiAliasingCS</span>（双像素向量化）。<b>下方内嵌完整 199 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>AntiAliasMask + 输入亮度</strong><small>#4 标记的历史失效区</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>无需 AA 快退</strong><small>bSkipAntiAliaser</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>3×3 亮度邻域找边</strong><small>边缘方向重采样</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>单帧 AA 输出</strong></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/TemporalSuperResolution/TSRSpatialAntiAliasing.usf</span></h2><div class="body">
+<span class="source-path">SpatialAntiAliasingCS @ L84（TILE_SIZE²/2 线程，DPV）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "TSRSpatialAntiAliasing.ush"
+
+
+//------------------------------------------------------- CONFIG
+
+#define TILE_SIZE 8
+
+#if DIM_QUALITY_PRESET == 1
+	#define CONFIG_ITERATIONS 3
+
+#elif DIM_QUALITY_PRESET == 2
+	#define CONFIG_ITERATIONS 8
+
+#else
+	#error unknown DIM_QUALITY_PRESET
+#endif
+
+#if CONFIG_COMPILE_FP16
+	// Take advantage of RDNA's v_pk_*_{uif}16 instructions
+	#define CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION 1
+#else
+	#define CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION 0
+#endif
+
+
+//------------------------------------------------------- PARAMETERS
+
+Texture2D&lt;tsr_ushort&gt; AntiAliasMaskTexture;
+Texture2D&lt;tsr_half&gt;  InputSceneColorLdrLumaTexture;
+
+RWTexture2D&lt;tsr_ushort2&gt; AntiAliasingOutput;
+
+
+//------------------------------------------------------- FUNCTIONS
+
+tsr_ushort2x2 Map8x8Tile2x2LaneDPV(uint GroupThreadIndex)
+#if CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION
+{
+	tsr_ushort T = tsr_ushort(GroupThreadIndex);
+
+	tsr_ushort2 GroupId;
+	GroupId.x =                                             ((T &gt;&gt; tsr_ushort(1 - 1)) &amp; tsr_ushort(0x03 &lt;&lt; 1));
+	GroupId.y = ((T &gt;&gt; tsr_ushort(0)) &amp; tsr_ushort(0x01)) | ((T &gt;&gt; tsr_ushort(3 - 1)) &amp; tsr_ushort(0x03 &lt;&lt; 1));
+	
+	return dpv_interleave_registers(GroupId, GroupId + tsr_ushort2(1, 0));
+}
+#else
+{
+	tsr_ushort2 GroupId = Map8x8Tile2x2Lane(GroupThreadIndex);
+	return dpv_interleave_mono_registers(GroupId);
+}
+#endif
+
+tsr_half SampleInputLDRLuma(tsr_short2 KernelCenter, tsr_short2 Offset)
+{
+	tsr_short2 SampleInputPixelPos = KernelCenter + ClampPixelOffset(
+		KernelCenter,
+		Offset, Offset,
+		InputPixelPosMin, InputPixelPosMax);
+	
+	return InputSceneColorLdrLumaTexture[SampleInputPixelPos];
+}
+
+tsr_half2 SampleInputLDRLuma(tsr_short2x2 KernelCenter, tsr_short2 Offset)
+{
+	tsr_short2x2 SampleInputPixelPos = KernelCenter + ClampPixelOffset(
+		KernelCenter,
+		dpv_interleave_mono_registers(Offset), Offset,
+		InputPixelPosMin, InputPixelPosMax);
+	
+	tsr_half2 InputLuma = dpv_interleave_registers(
+		InputSceneColorLdrLumaTexture[dpv_lo(SampleInputPixelPos)],
+		InputSceneColorLdrLumaTexture[dpv_hi(SampleInputPixelPos)]);
+
+	return InputLuma;
+}
+
+
+//------------------------------------------------------- ENTRY POINT
+
+#if CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION
+	[numthreads(TILE_SIZE * TILE_SIZE / 2, 1, 1)]
+#else
+	[numthreads(TILE_SIZE * TILE_SIZE, 1, 1)]
+#endif
+void SpatialAntiAliasingCS(
+	uint2 GroupId : SV_GroupID,
+	uint GroupThreadIndex : SV_GroupIndex)
+{
+	uint GroupWaveIndex = GetGroupWaveIndex(GroupThreadIndex, /* GroupSize = */ TILE_SIZE * TILE_SIZE);
+
+	float4x2 Debug = 0.0;
+	
+	tsr_short2x2 InputPixelPos = dpv_add(
+		tsr_short2(InputPixelPosMin) + tsr_short2(GroupId) * tsr_short2(TILE_SIZE, TILE_SIZE),
+		tsr_short2x2(Map8x8Tile2x2LaneDPV(GroupThreadIndex)));
+	
+	//Debug[0] = 1.0;
+
+	bool2 bAntiAlias;
+	bAntiAlias[0] = AntiAliasMaskTexture[dpv_lo(InputPixelPos)] &gt; tsr_ushort(0);
+	bAntiAlias[1] = AntiAliasMaskTexture[dpv_hi(InputPixelPos)] &gt; tsr_ushort(0);
+	
+	// Whether it is worth to anti-aliasing.
+	bool bSkipAntiAliaser = all(!bAntiAlias);
+
+	tsr_half2x2 TexelOffset;
+	tsr_half2 NoiseFiltering;
+
+	BRANCH
+	if (bSkipAntiAliaser)
+	{
+		TexelOffset = tsr_half(0.0);
+		NoiseFiltering = tsr_half(0.0);
+	}
+	else
+	{
+		#if CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION &amp;&amp; 1
+			tsr_half InputCache[3 * 4];
+			UNROLL_N(3)
+			for (int cy = 0; cy &lt; 3; cy++)
+			{
+				UNROLL_N(4)
+				for (int cx = 0; cx &lt; 4; cx++)
+				{
+					const uint ci = cx + 4 * cy;
+					InputCache[ci] = SampleInputLDRLuma(dpv_lo(InputPixelPos), tsr_short2(cx - 1, cy - 1));
+				}
+			}
+
+			#define ReadCache(x, y) tsr_half2(InputCache[(x + 1) + 4 * (y + 1)], InputCache[(x + 2) + 4 * (y + 1)])
+		#else
+			#define ReadCache(x, y) SampleInputLDRLuma(InputPixelPos, tsr_short2(x, y));
+		#endif
+		
+		tsr_half2 InputC = ReadCache( 0,  0);
+
+		tsr_half2 InputN = ReadCache( 0, -1);
+		tsr_half2 InputS = ReadCache( 0, +1);
+		tsr_half2 InputE = ReadCache(+1,  0);
+		tsr_half2 InputW = ReadCache(-1,  0);
+	
+		tsr_half2 InputNE = ReadCache(+1, -1);
+		tsr_half2 InputNW = ReadCache(-1, -1);
+		tsr_half2 InputSE = ReadCache(+1, +1);
+		tsr_half2 InputSW = ReadCache(-1, +1);
+
+		tsr_short2x2 BrowseDirection;
+		tsr_short2x2 EdgeSide;
+		tsr_half2 EdgeLuma;
+		FindBrowsingDirection(
+			InputC,
+			InputN, InputS, InputE, InputW,
+			InputNE, InputNW, InputSE, InputSW,
+			/* out */ NoiseFiltering,
+			/* out */ BrowseDirection,
+			/* out */ EdgeSide,
+			/* out */ EdgeLuma);
+
+		tsr_half2 LumaDelta = abs(EdgeLuma - InputC) * 0.5;
+		bool2 WorthBrowsing = LumaDelta &gt; SPATIAL_ANTI_ALIASER_MIN_LUMIMANCE;
+		tsr_half2 BrowseDelta = saturate(LumaDelta * rcp(tsr_half(SPATIAL_ANTI_ALIASER_MIN_LUMIMANCE)));
+		
+		tsr_ushort2 EdgeLengthP, EdgeLengthN;
+		bool2 bEdgeStopedByIncrementP, bEdgeStopedByIncrementN;
+		bool2 bEdgeStopedByDecrementP, bEdgeStopedByDecrementN;
+		
+		BrowseNeighborhoodBilinearOptimized(
+			/* Iterations = */ CONFIG_ITERATIONS,
+			/* Texture = */ InputSceneColorLdrLumaTexture,
+			InputC,
+			EdgeLuma,
+			InputPixelPos,
+			BrowseDirection,
+			EdgeSide,
+			/* out */ EdgeLengthP,
+			/* out */ EdgeLengthN,
+			/* out */ bEdgeStopedByIncrementP,
+			/* out */ bEdgeStopedByIncrementN,
+			/* out */ bEdgeStopedByDecrementP,
+			/* out */ bEdgeStopedByDecrementN);
+
+		tsr_half TexelOffsetLo = ComputeDistanceToEdge(
+			bEdgeStopedByIncrementN[0],
+			bEdgeStopedByIncrementP[0],
+			bEdgeStopedByDecrementN[0],
+			bEdgeStopedByDecrementP[0],
+			dpv_lo(EdgeLengthN),
+			dpv_lo(EdgeLengthP));
+		
+		tsr_half TexelOffsetHi = ComputeDistanceToEdge(
+			bEdgeStopedByIncrementN[1],
+			bEdgeStopedByIncrementP[1],
+			bEdgeStopedByDecrementN[1],
+			bEdgeStopedByDecrementP[1],
+			dpv_hi(EdgeLengthN),
+			dpv_hi(EdgeLengthP));
+		
+		FLATTEN
+		if (!WorthBrowsing[0])
+			TexelOffsetLo = 0.0;
+		
+		FLATTEN
+		if (!WorthBrowsing[1])
+			TexelOffsetHi = 0.0;
+
+		TexelOffset = dpv_scale(tsr_half2x2(EdgeSide), BrowseDelta * dpv_interleave_registers(TexelOffsetLo, TexelOffsetHi));
+	}
+
+	uint2 EncodedTexelOffset = EncodeSpatialAntiAliasingOffset(TexelOffset);
+
+	{
+		tsr_short2x2 OutputPixelPos = InputPixelPos;
+		
+		OutputPixelPos = InvalidateOutputPixelPos(OutputPixelPos, InputInfo_ViewportMax);
+		
+		AntiAliasingOutput[dpv_lo(OutputPixelPos)] = tsr_ushort2(dpv_lo(EncodedTexelOffset), round(dpv_lo(NoiseFiltering) * tsr_half(255.0)));
+		
+		#if CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION
+			AntiAliasingOutput[dpv_hi(OutputPixelPos)] = tsr_ushort2(dpv_hi(EncodedTexelOffset), round(dpv_hi(NoiseFiltering) * tsr_half(255.0)));
+		#endif
+
+		#if DEBUG_OUTPUT
+		{
+			DebugOutput[tsr_short3(dpv_lo(OutputPixelPos), 0)] = dpv_lo(Debug);
+
+			#if CONFIG_ENABLE_DUAL_PIXEL_VECTORIZATION
+				DebugOutput[tsr_short3(dpv_hi(OutputPixelPos), 0)] = dpv_hi(Debug);
+			#endif
+		}
+		#endif
+	}
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 掩码判定 + 无需 AA 快退（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">tsr_short2x2 InputPixelPos = dpv_add(InputPixelPosMin + GroupId*TILE_SIZE, Map8x8Tile2x2LaneDPV(GroupThreadIndex));</span>
+<span class="code-line blue">bAntiAlias[0] = AntiAliasMaskTexture[dpv_lo(InputPixelPos)] &gt; tsr_ushort(0);</span>
+<span class="code-line blue">bAntiAlias[1] = AntiAliasMaskTexture[dpv_hi(InputPixelPos)] &gt; tsr_ushort(0);</span>
+<span class="code-line green">bool bSkipAntiAliaser = all(!bAntiAlias);</span>
+<span class="code-line yellow">BRANCH if (bSkipAntiAliaser) { TexelOffset = 0; NoiseFiltering = 0; }</span></code></pre><div class="note"><h3>说明</h3><p>只有 <a href="TSRResolveHistory.usf.html" class="inline">Resolve</a>/<a href="TSRRejectShading.usf.html" class="inline">#4</a> 标记为"历史不可信"的像素（<span class="inline">AntiAliasMaskTexture &gt; 0</span>）才需要单帧空间 AA。<span class="inline">bSkipAntiAliaser</span> 让绝大多数有历史可用的像素直接快退（<span class="inline">TexelOffset=0</span>），只在少量新露出区花算力——这是 TSR 相对纯空间 AA 的效率优势。双像素向量化（<span class="inline">dpv_lo/dpv_hi</span>）一 lane 处理 2 像素。</p></div></div></section>
+
+<section class="card"><h2>1. 3×3 亮度邻域找边缘方向（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">InputCache[ci] = SampleInputLDRLuma(dpv_lo(InputPixelPos), tsr_short2(cx-1, cy-1));   // 缓存 3×4 亮度</span>
+<span class="code-line blue">tsr_half2 InputC = ReadCache(0, 0);</span>
+<span class="code-line blue">tsr_half2 InputN = ReadCache(0,-1); InputS = ReadCache(0,+1); InputE = ReadCache(+1,0); InputW = ReadCache(-1,0);</span>
+<span class="code-line green">tsr_half2 InputNE = ReadCache(+1,-1); InputNW = ReadCache(-1,-1); InputSE = ReadCache(+1,+1); InputSW = ReadCache(-1,+1);</span>
+<span class="code-line yellow">tsr_short2x2 BrowseDirection;   // 沿边缘方向搜索并算亚像素 TexelOffset</span></code></pre><div class="note"><h3>说明</h3><p>本 pass 的<b>汇聚点</b>：把 3×3（缓存成 3×4）<b>亮度邻域</b>载入寄存器（<span class="inline">SampleInputLDRLuma</span> 取 LDR 亮度），由中心与 8 邻居的亮度梯度判断边缘方向（<span class="inline">BrowseDirection</span>），沿边缘搜索算出亚像素级 <span class="inline">TexelOffset</span> 做边缘导向重采样——原理同 FXAA/SMAA 的边缘检测+混合，但集成进 TSR 只对失效区施加。质量档由 <span class="inline">r.TSR.RejectionAntiAliasingQuality</span> 控。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Resolve_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#6 解析历史到输出</a>
+<a class="tag" href="TSRSpatialAntiAliasing.ush.html"><span class="dot" style="background:var(--cyan)"></span>SpatialAntiAliasing.ush↗</a>
+<a class="tag" href="TSRResolveHistory.usf.html"><span class="dot" style="background:var(--cyan)"></span>ResolveHistory（掩码源）↗</a>
+<a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
