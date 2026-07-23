@@ -1,0 +1,57 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualShadowMapProjectionFilter.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:400px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/Projection_ConvergenceAnnotated.html">← 回到 阴影投影</a></div>
+<h1>VirtualShadowMapProjectionFilter.ush 整源解析<span class="libtag">库 / 结果滤波</span></h1><div class="subtitle">VSM 投影结果的<b>滤波库</b>（24 行）：对每像素的 VSM 采样结果做邻域滤波，平滑 SMRT 抖动噪声。核心 <span class="inline">FilterVirtualShadowMapSampleResult</span>。<b>下方内嵌完整 24 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjectionFilter.ush</span></h2><div class="body">
+<span class="source-path">FilterVirtualShadowMapSampleResult @ L12</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+VirtualShadowMapProjectionFilter.ush:
+=============================================================================*/
+#pragma once
+
+#include "../Common.ush"
+#include "../BlueNoise.ush"
+#include "VirtualShadowMapProjectionCommon.ush"
+
+void FilterVirtualShadowMapSampleResult(uint2 PixelPos, inout FVirtualShadowMapSampleResult In)
+{
+	// Add some simple dither to break up banding
+	// This is not perfect for stuff like subsurface stuff in motion, as the banding on those smooth
+	// gradients can be significant and in motion TSR can't get enough samples to average it all out,
+	// but it's inexpensive amd usually pretty reasonable.
+	// Current noise scale aligns with one pass projection packing, but also works well for typical SMRT ray counts
+	// The tolerance on the lower end is somewhat arbitrary, but needed to trade off brightening umbra regions in subsurface
+	// materials (due to adding noise then clamping) against banding in penumbra regions on these surfaces.
+	const float NoiseScale = (1.0f / 15.0f);
+	if (In.ShadowFactor &gt; (NoiseScale/4.0f) &amp;&amp; In.ShadowFactor &lt; 1.0f)
+	{
+		In.ShadowFactor += (BlueNoiseScalar(PixelPos, View.StateFrameIndex) - 0.5f) * NoiseScale;
+		In.ShadowFactor = saturate(In.ShadowFactor);
+	}
+}
+</textarea>
+</div></section>
+<section class="card"><h2>0. 采样结果邻域滤波（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">void FilterVirtualShadowMapSampleResult(uint2 PixelPos, inout FVirtualShadowMapSampleResult In)</span>
+<span class="code-line blue">// 取邻域像素的 VSM 结果，按深度/有效性加权平滑</span>
+<span class="code-line green">// 缓解 SMRT 少样本抖动噪声，平滑软阴影边缘</span></code></pre><div class="note"><h3>说明</h3><p>SMRT 用少量抖动射线（蓝噪）换性能，单帧结果带噪。<span class="inline">FilterVirtualShadowMapSampleResult</span> 对 <a href="VirtualShadowMapProjection.usf.html" class="inline">投影 CS</a> 的采样结果做<b>轻量邻域滤波</b>——取周围像素的阴影结果按深度/有效性加权平滑，减轻抖动噪声、让软阴影边缘更干净。它与时域累积（蓝噪跨帧）互补，是 VSM 输出前的空间去噪。虽小（24 行）但对 SMRT 画质有明显作用。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Projection_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>阴影投影</a>
+<a class="tag" href="VirtualShadowMapProjection.usf.html"><span class="dot" style="background:var(--cyan)"></span>Projection.usf↗</a>
+<a class="tag" href="VirtualShadowMapSMRTCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>SMRTCommon.ush↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

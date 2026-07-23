@@ -1,0 +1,141 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualShadowMapTransmissionCommon.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:460px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/Projection_ConvergenceAnnotated.html">← 回到 阴影投影</a></div>
+<h1>VirtualShadowMapTransmissionCommon.ush 整源解析<span class="libtag">库 / 次表面透射</span></h1><div class="subtitle">VSM 的<b>次表面透射库</b>（96 行）：从 GBuffer 取次表面不透明度/平均自由程（MFP），把 SMRT 的遮挡距离转成<b>透光衰减</b>——让皮肤/蜡烛/树叶等次表面材质有正确的透光阴影。核心 <span class="inline">GetSubsurfaceOpacityFromGbuffer</span> / <span class="inline">GetShadowFactorSubsurface</span>。<b>下方内嵌完整 96 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapTransmissionCommon.ush</span></h2><div class="body">
+<span class="source-path">GetSubsurfaceOpacityFromGbuffer @ L18 · GetShadowFactorSubsurface @ L83</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+VirtualShadowMaps/VirtualShadowMapTransmissionCommon.ush:
+=============================================================================*/
+#pragma once
+
+#include "../Common.ush"
+#include "../SceneTexturesCommon.ush"
+#include "../DeferredShadingCommon.ush"
+#include "../TransmissionCommon.ush"
+#include "VirtualShadowMapProjectionCommon.ush"
+#include "../Substrate/SubstrateSubsurface.ush"
+#if SUBSTRATE_ENABLED
+#include "../ToonProfileCommon.ush"
+#endif
+
+FSubsurfaceOpacityMFP GetSubsurfaceOpacityFromGbuffer(uint2 PixelPos)
+{
+	FSubsurfaceOpacityMFP SubsurfaceOpacityMFP = GetInitialisedSubsurfaceOpacityMFP();
+
+#if SUBSTRATE_GBUFFER_FORMAT==1
+
+	FSubstrateSubsurfaceData LoadStrat = SubstrateLoadSubsurfaceData(Substrate.MaterialTextureArray, Substrate.FirstSliceStoringSubstrateSSSData, PixelPos);
+
+	const uint SSSType = SubstrateSubSurfaceHeaderGetSSSType(LoadStrat.Header);
+
+	#if SUBSTRATE_ENABLED
+	if (SSSType == SSS_TYPE_TRANSMITTANCE_SHADOW)
+	{
+		SubsurfaceOpacityMFP.bDataIsOpacity = true;
+		SubsurfaceOpacityMFP.Data = 0; // Unused by VSM for density as Extinction.
+
+		const float3 MFPcm = SubstrateSubSurfaceHeaderGetTransmittanceShadowMFPInMeters(LoadStrat.Header) * METER_TO_CENTIMETER;
+		SubsurfaceOpacityMFP.Density = 1.0f / max(0.000001f, MFPcm.x); // Recover extinction coefficient as 1/cm from MFP in cm.
+	}
+	else
+	#endif 
+		if (SSSType != SSS_TYPE_NONE)
+	{
+		// Diffusion and DiffuseProfile are not allowed to translate their MFP into opacity in order to match legacy behavior
+		SubsurfaceOpacityMFP = SubstrateGetSubsurfaceOpacityMFP(LoadStrat.Header, false /*bAllowDiffuse*/, false /*bAllowDiffuseProfile*/);
+	}
+
+#else // SUBSTRATE_GBUFFER_FORMAT==1
+	FGBufferData GBufferData = GetGBufferDataUint(PixelPos);
+
+	// TODO: SUBSURFACE_PROFILE with fancy transmission
+	if (GBufferData.ShadingModelID == SHADINGMODELID_SUBSURFACE ||
+		GBufferData.ShadingModelID == SHADINGMODELID_PREINTEGRATED_SKIN ||
+		GBufferData.ShadingModelID == SHADINGMODELID_TWOSIDED_FOLIAGE)
+	{
+		// This clamp aligns with SubsurfaceDensityFromOpacity
+		// Various engine paths treat these subsurface materials differently
+		// even when they have Opacity = 1 in the material shader, so this is
+		// important to avoid things like backface transmission being shadowed by
+		// contact shadows and so on.
+		SubsurfaceOpacityMFP.bDataIsOpacity = true;
+		SubsurfaceOpacityMFP.Data = min(GBufferData.CustomData.a, 0.99f);
+		SubsurfaceOpacityMFP.Density = SubsurfaceDensityFromOpacity(SubsurfaceOpacityMFP.Data);
+	}
+	#if SUBSTRATE_ENABLED
+	else if (GBufferData.ShadingModelID == SHADINGMODELID_SUBSTRATE_TOON)
+	{
+		SubsurfaceOpacityMFP.bDataIsOpacity = true;
+		SubsurfaceOpacityMFP.Data = 0; // Unused by VSM for density as Extinction.
+
+		float ToonProfileId = 0.0f;
+		float2 PatternUVs = 0.0f;
+		UnpackToonCustomData(PackRGBA8(GBufferData.CustomData), PatternUVs, ToonProfileId);
+
+		// Density is extinction as 1/cm (not 1/m) to match with the transmittance shadow evaluation from ManualPCF below.
+		FToonProfileShadowSettings ToonProfileShadowSettings = GetToonProfileShadowSettings(ToonProfileId);
+		SubsurfaceOpacityMFP.Density = ToonProfileShadowSettings.ShadowExtinctionCoefficientInInvCentimeter;
+	}
+	#endif
+#endif // SUBSTRATE_GBUFFER_FORMAT==1
+
+	return SubsurfaceOpacityMFP;
+}
+
+/* Compute Subsurface transmission */
+float GetShadowFactorSubsurface(float ShadowFactor, float OccluderDistance, FSubsurfaceOpacityMFP SubsurfaceOpacityMFP)
+{
+	if (ShadowFactor &lt; 1.0f)
+	{
+#if SUBSTRATE_GBUFFER_FORMAT==1
+		float SSSTransmission = 1.0f;
+		if (SubsurfaceOpacityMFP.bDataIsOpacity)
+		{
+			// Opacity from subsurface profile and subsurface legacy shading model
+			SSSTransmission = GetSubSurfaceTransmission(OccluderDistance, SubsurfaceOpacityMFP.Density);
+		}
+		else
+		{
+			const float MFP = SubsurfaceOpacityMFP.Data;
+			const float Extinction = SubstrateShadowMFPToExtinction(MFP);
+			const float OpticalDepth = OccluderDistance * Extinction;
+			SSSTransmission = saturate(FastExp(-OpticalDepth));
+		}
+#else
+		// Only opacity in this path
+		float SSSTransmission = GetSubSurfaceTransmission(OccluderDistance, SubsurfaceOpacityMFP.Density);
+#endif
+
+		// NOTE: This 'square' is to compensate the ShadowMask encoding (i.e., sqrt) applied when compositing VSM to shadow mask. 
+		//       This allows to be consistent with the PCF path
+		return Square(lerp(SSSTransmission, 1, ShadowFactor));
+	}
+	return ShadowFactor;
+}
+</textarea>
+</div></section>
+<section class="card"><h2>0. 遮挡距离 → 次表面透光衰减（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">FSubsurfaceOpacityMFP GetSubsurfaceOpacityFromGbuffer(uint2 PixelPos)   // 取 SSS 不透明度/MFP</span>
+<span class="code-line blue">float GetShadowFactorSubsurface(float ShadowFactor, float OccluderDistance, FSubsurfaceOpacityMFP SubsurfaceOpacityMFP)</span>
+<span class="code-line green">// 用遮挡物距离 OccluderDistance + 平均自由程 MFP 算 Beer-Lambert 透光</span>
+<span class="code-line yellow">// 遮挡浅→透光多；MFP 大→光穿透深（如蜡、皮肤）</span></code></pre><div class="note"><h3>说明</h3><p>次表面材质（皮肤、蜡、玉、叶片）在背光下应<b>透光发亮</b>而非纯黑阴影。VSM 的 SMRT 不仅给"是否遮挡"，还给<b>遮挡物距离</b> <span class="inline">OccluderDistance</span>。本库用它做透射：<span class="inline">GetSubsurfaceOpacityFromGbuffer</span> 从 GBuffer 取该像素的次表面不透明度与<b>平均自由程</b>（MFP，光在介质里的平均穿透长度）；<span class="inline">GetShadowFactorSubsurface</span> 按 Beer-Lambert 用"遮挡距离 / MFP"算衰减——遮挡物越薄、MFP 越大，透过来的光越多。这让 VSM 阴影里的次表面材质有正确的透光渐变，是画质细节的关键，属 <a href="../Chapters/Projection_ConvergenceAnnotated.html" class="inline">投影章</a>的次表面路径。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Projection_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>阴影投影</a>
+<a class="tag" href="VirtualShadowMapProjection.usf.html"><span class="dot" style="background:var(--cyan)"></span>Projection.usf↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
