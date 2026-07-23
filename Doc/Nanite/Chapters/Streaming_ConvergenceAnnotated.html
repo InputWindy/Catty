@@ -24,7 +24,7 @@
 </div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章主体是 CPU 侧（<span class="inline">NaniteStreamingManager.cpp</span>）；唯一 GPU shader 是上传阶段的 transcode：</p>
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
-<tr><td><code>NaniteTranscode.usf</code></td><td>把磁盘页格式（位流/相对编码）transcode 成 GPU 可寻址的 FPackedCluster + 分区数据</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
+<tr><td><code>NaniteTranscode.usf</code></td><td>把磁盘页格式（位流/相对编码）transcode 成 GPU 可寻址的 FPackedCluster + 分区数据</td><td><a href="../Shaders/NaniteTranscode.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">FStreamingManager</span>、<span class="inline">FPageKey</span>、<span class="inline">FPendingPage</span>、<span class="inline">FRootPageInfo</span>、LRU 与页池全部符号，见 <a href="Streaming_FunctionAppendix.html" style="color:#9ee8ff">→ 流送管理器附录</a>。</p></div></section>
 
@@ -88,7 +88,7 @@ Offset = min(PageIndex, MaxStreamingPages) &lt;&lt; STREAMING_PAGE_SIZE_BITS(17)
 <section class="card"><h2>关联文档 / 接口连接 <span class="en">Related &amp; interfaces</span></h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="Encode_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#3 编码与页格式（磁盘页来源）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="InstanceCull_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#5 实例剔除（读 Hierarchy/写页请求）</a><a class="tag" href="CullRaster_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#6 光栅（读 ClusterPageData）</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteTranscode.usf（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/NaniteTranscode.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteTranscode.usf ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="Streaming_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="Encode_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#3 编码与页格式</a><a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 
