@@ -1,0 +1,644 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TSRDepthVelocityAnalysis.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:540px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_TSR_解析_总目录.html">← 返回《UE TSR》总目录</a><a href="../Chapters/Velocity_ConvergenceAnnotated.html">← 回到 #2 运动矢量与速度膨胀</a></div>
+<h1>TSRDepthVelocityAnalysis.ush 整源解析<span class="libtag">库 / 深度速度分析</span></h1><div class="subtitle">TSR 的<b>深度/速度分析</b>：算静态速度（相机运动导致的重投影）、按像素世界尺寸估深度误差（用于遮挡判定的容差）、深度边缘检测。是 #2 速度膨胀与 #3 disocclusion 判定的数学基础。<b>下方内嵌完整 532 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/TemporalSuperResolution/TSRDepthVelocityAnalysis.ush</span></h2><div class="body">
+<span class="source-path">ComputeStaticVelocity / ComputePixelDeviceZError / EncodeDeviceZError</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "TSRKernels.ush"
+#include "TSRReprojectionField.ush"
+
+
+//------------------------------------------------------- CONFIG
+
+/** Whether to use the velocity from SceneVelocityTexture. */
+#define CONFIG_USE_SCENE_VELOCITY 1
+
+/** Whether the dilation should be only on depth edges, improving texture reprojection accuracy on flat surfaces. */
+#define CONFIG_DEPTH_EDGE_DETECTION 1
+
+
+//------------------------------------------------------- DEFINITIONS
+
+#define MAX_DEVICE_Z_ERROR 64.0
+
+#define CONFIG_VELOCITY_SAMPLES 9
+#define CONFIG_VELOCITY_SAMPLE_PAIRS ((CONFIG_VELOCITY_SAMPLES - 1) / 2)
+
+
+//------------------------------------------------------- DEPTH &amp; VELOCITY UTILIES
+
+CALL_SITE_DEBUGLOC
+float3 ComputeStaticVelocity(float2 ScreenPos, float DeviceZ)
+{
+	float3 PosN = float3(ScreenPos, DeviceZ);
+
+	float4 ThisClip = float4(PosN, 1);
+	float4 PrevClip = mul( ThisClip, View.ClipToPrevClip );
+	float3 PrevScreen = PrevClip.xyz / PrevClip.w;
+	return PosN - PrevScreen;
+}
+
+/** Compute the devize Z error due to the size of a pixel in world space at that given depth. */
+CALL_SITE_DEBUGLOC
+float ComputePixelDeviceZError(float DeviceZ)
+{
+	float Depth = ConvertFromDeviceZ(DeviceZ);
+	float ErrorCorrectedDeviceZ = ConvertToDeviceZ(GetDepthPixelRadiusForProjectionType(Depth) * 2.0f + Depth);
+	float DeviceZError = abs(ErrorCorrectedDeviceZ - DeviceZ);
+	return DeviceZError;
+}
+
+/** Encode the devize Z error relatively to the closest depth to squeeze to 8bit per pixel */
+CALL_SITE_DEBUGLOC
+uint EncodeDeviceZError(float PrevClosestDeviceZ, float ParallaxDepthError)
+{
+	float PixelDeviceZError = float(MAX_DEVICE_Z_ERROR) * ComputePixelDeviceZError(PrevClosestDeviceZ);
+	float RelativeZError = ParallaxDepthError / PixelDeviceZError;
+	
+	uint EncodedDeviceZError = uint(ceil(saturate(RelativeZError) * 255.0));
+	return EncodedDeviceZError;
+}
+
+/** Inverse of EncodeDeviceZError() */
+CALL_SITE_DEBUGLOC
+float DecodeDeviceZError(float PrevClosestDeviceZ, uint EncodedDeviceZError)
+{
+	float PixelDeviceZError = ComputePixelDeviceZError(PrevClosestDeviceZ);
+	float RelativeZError = float(EncodedDeviceZError) * (float(MAX_DEVICE_Z_ERROR) / 255.0);
+	float ParallaxDepthError = PixelDeviceZError * RelativeZError;
+	return ParallaxDepthError;
+}
+
+
+//------------------------------------------------------- DEPTH &amp; VELOCITY FETCHES &amp; PROCESSING
+
+/* Loads all the 3x3's depth. */
+CALL_SITE_DEBUGLOC
+void FetchDepth3x3(
+	Texture2D&lt;float&gt; SceneDepthTexture,
+	tsr_short2 InputPixelPos,
+	out float DevizeZNeighborhood[CONFIG_BUTTERFLY_SAMPLES])
+{
+	UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+	for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+	{
+		tsr_short2 SampleInputPixelPos = GetNeighborhoodPixelPos(i, InputPixelPos);
+		
+		DevizeZNeighborhood[i] = SceneDepthTexture[SampleInputPixelPos];
+	}
+} // FetchDepthVelocity3x3()
+
+/* Loads all the 3x3's depth and velocities. */
+CALL_SITE_DEBUGLOC
+void FetchDepthVelocity3x3(
+	Texture2D&lt;float&gt; SceneDepthTexture,
+	Texture2D&lt;float4&gt; SceneVelocityTexture,
+	tsr_short2 InputPixelPos,
+	out float DevizeZNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	out float4 VelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES])
+{
+	UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+	for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+	{
+		tsr_short2 SampleInputPixelPos = GetNeighborhoodPixelPos(i, InputPixelPos);
+		
+		DevizeZNeighborhood[i] = SceneDepthTexture[SampleInputPixelPos];
+		VelocityNeighborhood[i] = SceneVelocityTexture[SampleInputPixelPos];
+	}
+} // FetchDepthVelocity3x3()
+
+CALL_SITE_DEBUGLOC
+void FetchAndComputeScreenVelocity(
+	Texture2D&lt;float4&gt; SceneVelocityTexture,
+	tsr_short2 InputPixelPos,
+	float ClosestDeviceZ,
+	tsr_short2 ReprojectionOffset,
+	out float3 ScreenVelocity,
+	out bool bHasPixelAnimation,
+	out bool bDisableAnimationAA)
+{
+	float4 EncodedVelocity = SceneVelocityTexture[InputPixelPos + ReprojectionOffset];
+
+	#if VELOCITY_ENCODE_HAS_PIXEL_ANIMATION
+		bHasPixelAnimation = DecodeHasPixelAnimationFromVelocityTexture(EncodedVelocity);
+	#else
+		bHasPixelAnimation = false;
+	#endif
+
+	#if VELOCITY_ENCODE_TEMPORAL_RESPONSIVENESS
+		bDisableAnimationAA = DecodeDisableAnimationAAFromVelocityTexture(EncodedVelocity);
+	#else
+		bDisableAnimationAA = false;
+	#endif
+	
+	#if CONFIG_USE_SCENE_VELOCITY
+	BRANCH
+	if (EncodedVelocity.x &gt; 0.0)
+	{
+		ScreenVelocity = DecodeVelocityFromTexture(EncodedVelocity);
+	}
+	else
+	#endif
+	{
+		float2 ScreenPos = ApplyScreenTransform(float2(int2(InputPixelPos)), InputPixelPosToScreenPos);
+		ScreenVelocity = ComputeStaticVelocity(ScreenPos, ClosestDeviceZ);
+	}
+} // FetchAndComputeScreenVelocity()
+
+/** Convert the fetches velocities to pixel velocities. */
+void ComputePixelVelocityNeighborhood(
+	tsr_short2 InputPixelPos,
+	float DevizeZNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	float4 VelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	out float2 PixelVelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	out float  DepthVelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	out bool   bIsDrawingVelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES])
+{
+	bool bHasAnyStaticPixels = false;
+	bool bHasAnyDynamicPixels = false;
+	{
+		UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+		for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+		{
+			#if CONFIG_USE_SCENE_VELOCITY
+				bool bIsDrawingVelocity = VelocityNeighborhood[i].x &gt; 0.0;
+			#else
+				const bool bIsDrawingVelocity = false;
+			#endif
+			bIsDrawingVelocityNeighborhood[i] = bIsDrawingVelocity;
+			bHasAnyStaticPixels  |= !bIsDrawingVelocity;
+			bHasAnyDynamicPixels |= bIsDrawingVelocity;
+		}
+
+		#if COMPILER_SUPPORTS_WAVE_VOTE
+			bHasAnyStaticPixels  = WaveActiveAnyTrue(bHasAnyStaticPixels);
+			bHasAnyDynamicPixels = WaveActiveAnyTrue(bHasAnyDynamicPixels);
+		#else
+			bHasAnyStaticPixels  = true;
+			bHasAnyDynamicPixels = true;
+		#endif
+	}
+	
+	#if CONFIG_USE_SCENE_VELOCITY
+	BRANCH
+	if (bHasAnyStaticPixels &amp;&amp; bHasAnyDynamicPixels)
+	{
+		UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+		for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+		{
+			tsr_short2 SampleInputPixelPos = GetNeighborhoodPixelPos(i, InputPixelPos);
+			float2 ScreenPos = ApplyScreenTransform(float2(int2(SampleInputPixelPos)), InputPixelPosToScreenPos);
+
+			float3 ScreenVelocity = ComputeStaticVelocity(ScreenPos, DevizeZNeighborhood[i]);
+			FLATTEN
+			if (VelocityNeighborhood[i].x &gt; 0.0)
+			{
+				ScreenVelocity = DecodeVelocityFromTexture(VelocityNeighborhood[i]);
+			}
+
+			PixelVelocityNeighborhood[i] = ScreenVelocity.xy * ScreenVelocityToInputPixelVelocity;
+			DepthVelocityNeighborhood[i] = ScreenVelocity.z;
+		}
+	}
+	else if (bHasAnyDynamicPixels) // &amp;&amp; !bHasAnyStaticPixels)
+	{
+		UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+		for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+		{
+			float3 ScreenVelocity = DecodeVelocityFromTexture(VelocityNeighborhood[i]);
+
+			PixelVelocityNeighborhood[i] = ScreenVelocity.xy * ScreenVelocityToInputPixelVelocity;
+			DepthVelocityNeighborhood[i] = ScreenVelocity.z;
+		}
+	}
+	else // if (bHasAnyStaticPixels &amp;&amp; !bHasAnyDynamicPixels
+	#endif // !CONFIG_USE_SCENE_VELOCITY
+	{
+		UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+		for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+		{
+			tsr_short2 SampleInputPixelPos = GetNeighborhoodPixelPos(i, InputPixelPos);
+			float2 ScreenPos = ApplyScreenTransform(float2(int2(SampleInputPixelPos)), InputPixelPosToScreenPos);
+
+			float3 ScreenVelocity = ComputeStaticVelocity(ScreenPos, DevizeZNeighborhood[i]);
+
+			PixelVelocityNeighborhood[i] = ScreenVelocity.xy * ScreenVelocityToInputPixelVelocity;
+			DepthVelocityNeighborhood[i] = ScreenVelocity.z;
+		}
+	}
+} // ComputePixelVelocityNeighborhood()
+
+
+//------------------------------------------------------- REPROJECTION FIELD FETCH &amp; PROCESSING
+
+CALL_SITE_DEBUGLOC
+void FetchReprojectionNeighborhood(
+	Texture2D&lt;uint&gt; ReprojectionVectorTexture,
+	tsr_short2 InputPixelPos,
+	out uint EncodedReprojectionVectorNeighborhood[CONFIG_BUTTERFLY_SAMPLES])
+{
+	tsr_short2 LaneOffsetSign = GetLaneOffsetSign();
+
+	UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+	for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+	{
+		tsr_short2 SampleInputPixelPos = GetNeighborhoodPixelPos(i, InputPixelPos);
+		EncodedReprojectionVectorNeighborhood[i] = ReprojectionVectorTexture[SampleInputPixelPos];
+	}
+} // FetchReprojectionNeighborhood()
+
+CALL_SITE_DEBUGLOC
+void ComputePixelVelocityNeighborhood(
+	uint EncodedReprojectionVectorNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	out float2 PixelVelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES])
+{
+	UNROLL_N(CONFIG_BUTTERFLY_SAMPLES)
+	for (uint i = 0; i &lt; CONFIG_BUTTERFLY_SAMPLES; i++)
+	{
+		PixelVelocityNeighborhood[i] = DecodeReprojectionVector(EncodedReprojectionVectorNeighborhood[i]) * ScreenVelocityToInputPixelVelocity;
+	}
+} // ComputePixelVelocityNeighborhood()
+
+
+//------------------------------------------------------- DEPTH ANALYSIS
+
+CALL_SITE_DEBUGLOC
+uint PackDepthAndOffset(const int2 Offset, float DeviceZ)
+{
+	return ((asuint(DeviceZ) &lt;&lt; 2) &amp; ~0xF) | (uint(1 + Offset.x) &lt;&lt; 0) | (uint(1 + Offset.y) &lt;&lt; 2);
+}
+
+CALL_SITE_DEBUGLOC
+void UnpackDepthAndOffset(uint Packed, out tsr_short2 Offset, out float DeviceZ)
+{
+	DeviceZ = asfloat((Packed &amp; ~0xF) &gt;&gt; 2);
+	Offset.x = tsr_short((Packed &gt;&gt; 0u) &amp; 0x3u) - tsr_short(1);
+	Offset.y = tsr_short((Packed &gt;&gt; 2u) &amp; 0x3u) - tsr_short(1);
+}
+
+/** Find the closest DevizeZ and its corresponding offset */
+void FindClosestDepthOffset(
+	float DevizeZNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	out float ClosestDeviceZ,
+	out tsr_short2 ReprojectionOffset)
+{
+	float DeviceZ = AccessNeighborhoodCenter(DevizeZNeighborhood);
+	float DeviceZError = ComputePixelDeviceZError(DeviceZ);
+	uint PackedDepthOffset = PackDepthAndOffset(/* Offset = */ int2(0, 0), DeviceZ);
+	
+	#if 0
+		UNROLL_N(4)
+		for (uint i = 0; i &lt; 4; i++)
+	#elif 1
+		UNROLL_N(2)
+		for (uint i = 0; i &lt; 4; i+= 2)
+	#else
+		UNROLL_N(2)
+		for (uint i = 1; i &lt; 4; i+= 2)
+	#endif
+	{
+		const int2 PairOffset = kPairOffsets[i];
+
+		float SampleDeviceZ0 = AccessNeighborhoodStaticOffset(DevizeZNeighborhood, +PairOffset);
+		float SampleDeviceZ1 = AccessNeighborhoodStaticOffset(DevizeZNeighborhood, -PairOffset);
+
+		#if CONFIG_DEPTH_EDGE_DETECTION
+		{
+			float DepthDiff = abs(SampleDeviceZ1 - SampleDeviceZ0);
+			float DepthVariation = (SampleDeviceZ0 + SampleDeviceZ1) * 0.5 - DeviceZ;
+
+			FLATTEN
+			if (DepthVariation &gt; max(DepthDiff * 0.25, DeviceZError))
+			{
+				PackedDepthOffset = max(PackedDepthOffset, PackDepthAndOffset(+PairOffset, SampleDeviceZ0));
+				PackedDepthOffset = max(PackedDepthOffset, PackDepthAndOffset(-PairOffset, SampleDeviceZ1));
+			}
+		}
+		#else
+		{
+			PackedDepthOffset = max(PackedDepthOffset, PackDepthAndOffset(+PairOffset, SampleDeviceZ0));
+			PackedDepthOffset = max(PackedDepthOffset, PackDepthAndOffset(-PairOffset, SampleDeviceZ1));
+		}
+		#endif
+	}
+
+	UnpackDepthAndOffset(PackedDepthOffset, /* out */ ReprojectionOffset, /* out */ ClosestDeviceZ);
+	
+	#if CONFIG_BUTTERFLY_KERNEL
+		tsr_short2 LaneOffsetSign = GetLaneOffsetSign();
+		ReprojectionOffset *= LaneOffsetSign;
+	#endif
+} // FindClosestDepthOffset()
+
+/** Compute the velocity jacobian along a two orthogonal axes, taking a common closest depth. */
+bool ComputeDepthBilaterals(
+	const int2 DirectionE,
+	const int2 DirectionS,
+	bool bCompute,
+	float DevizeZNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	inout float DepthError,
+	out tsr_half BilateralWeights[4])
+{
+	float DevizeZC = AccessNeighborhoodCenter(DevizeZNeighborhood);
+	float DevizeZE = AccessNeighborhoodStaticOffset(DevizeZNeighborhood, +DirectionE);
+	float DevizeZW = AccessNeighborhoodStaticOffset(DevizeZNeighborhood, -DirectionE);
+	float DevizeZS = AccessNeighborhoodStaticOffset(DevizeZNeighborhood, +DirectionS);
+	float DevizeZN = AccessNeighborhoodStaticOffset(DevizeZNeighborhood, -DirectionS);
+	
+	tsr_half WeightE;
+	tsr_half WeightW;
+	tsr_half WeightS;
+	tsr_half WeightN;
+		
+	bool bSuccess;
+	BRANCH
+	if (bCompute)
+	{
+		const float WeightOffset = 1.5;
+		const float PixelDistance = length(float2(DirectionE));
+
+		float VariationEW = abs(DevizeZC - (DevizeZE + DevizeZW) * 0.5);
+		float VariationSN = abs(DevizeZC - (DevizeZS + DevizeZN) * 0.5);
+
+		float DepthDiffE = abs(DevizeZE - DevizeZC);
+		float DepthDiffW = abs(DevizeZW - DevizeZC);
+		float DepthDiffS = abs(DevizeZS - DevizeZC);
+		float DepthDiffN = abs(DevizeZN - DevizeZC);
+	
+		float DepthDiffEW = abs(DevizeZE - DevizeZW);
+		float DepthDiffSN = abs(DevizeZS - DevizeZN);
+
+		float MinDepthDerivativeE = min3(DepthDiffEW, DepthDiffE, DepthDiffW);
+		float MinDepthDerivativeS = min3(DepthDiffSN, DepthDiffS, DepthDiffN);
+		
+		float PixelDeviceZError = ComputePixelDeviceZError(DevizeZC) * PixelDistance;
+
+		float FinalDepthDerivativeE = min(max(MinDepthDerivativeE, PixelDeviceZError), max(MinDepthDerivativeS, 8.0 * PixelDeviceZError));
+		float FinalDepthDerivativeS = min(max(MinDepthDerivativeS, PixelDeviceZError), max(MinDepthDerivativeE, 8.0 * PixelDeviceZError));
+
+		WeightE = tsr_half(saturate(WeightOffset - min(DepthDiffE, VariationEW) / FinalDepthDerivativeE));
+		WeightW = tsr_half(saturate(WeightOffset - min(DepthDiffW, VariationEW) / FinalDepthDerivativeE));
+		WeightS = tsr_half(saturate(WeightOffset - min(DepthDiffS, VariationSN) / FinalDepthDerivativeS));
+		WeightN = tsr_half(saturate(WeightOffset - min(DepthDiffN, VariationSN) / FinalDepthDerivativeS));
+
+	
+		tsr_half TotalWeightEW = WeightE + WeightW;
+		tsr_half TotalWeightSN = WeightS + WeightN;
+	
+		bool bSuccessEW = TotalWeightEW &gt; tsr_half(0.0);
+		bool bSuccessSN = TotalWeightSN &gt; tsr_half(0.0);
+
+		tsr_half InvTotalWeightEW = select(bSuccessEW, rcp(TotalWeightEW), tsr_half(0.0));
+		tsr_half InvTotalWeightSN = select(bSuccessSN, rcp(TotalWeightSN), tsr_half(0.0));
+
+		WeightE *= InvTotalWeightEW;
+		WeightW *= InvTotalWeightEW;
+		WeightS *= InvTotalWeightSN;
+		WeightN *= InvTotalWeightSN;
+		bSuccess = bSuccessEW || bSuccessSN;
+		
+		DepthError = max(DepthDiffE * WeightE + DepthDiffW * WeightW, DepthDiffS * WeightS + DepthDiffN * WeightN);
+	}
+	else
+	{
+		WeightE = tsr_half(1.0);
+		WeightW = tsr_half(1.0);
+		WeightS = tsr_half(1.0);
+		WeightN = tsr_half(1.0);
+		bSuccess = false;
+	}
+
+	BilateralWeights[0] = WeightE;
+	BilateralWeights[1] = WeightW;
+	BilateralWeights[2] = WeightS;
+	BilateralWeights[3] = WeightN;
+
+	return bSuccess;
+} // ComputeDepthBilaterals()
+
+/** Compute the depth error on horizontal and vertical. */
+float ComputeDepthError(float DevizeZNeighborhood[CONFIG_BUTTERFLY_SAMPLES])
+{
+	float DepthError;
+	tsr_half BilateralWeights[4];
+
+	ComputeDepthBilaterals(
+		kOffsetE, kOffsetS,
+		/* bCompute = */ true,
+		DevizeZNeighborhood,
+		/* inout */ DepthError,
+		/* out */ BilateralWeights);
+
+	return DepthError;
+}
+
+
+//------------------------------------------------------- VELOCITY ANALYSIS
+
+/** Computes the velocity's jacobian from the depth bilateral weighs. */
+CALL_SITE_DEBUGLOC
+void ComputeVelocityJacobian(
+	const int2 DirectionE,
+	const int2 DirectionS,
+	bool bCompute,
+	float2 PixelVelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	tsr_half BilateralWeights[4],
+	inout tsr_half2x2 ReprojectionJacobian)
+{
+	
+	float2 PixelVelocityC = AccessNeighborhoodCenter(PixelVelocityNeighborhood);
+	float2 PixelVelocityE = AccessNeighborhoodStaticOffset(PixelVelocityNeighborhood, +DirectionE);
+	float2 PixelVelocityW = AccessNeighborhoodStaticOffset(PixelVelocityNeighborhood, -DirectionE);
+	float2 PixelVelocityS = AccessNeighborhoodStaticOffset(PixelVelocityNeighborhood, +DirectionS);
+	float2 PixelVelocityN = AccessNeighborhoodStaticOffset(PixelVelocityNeighborhood, -DirectionS);
+	
+	tsr_half WeightE = BilateralWeights[0];
+	tsr_half WeightW = BilateralWeights[1];
+	tsr_half WeightS = BilateralWeights[2];
+	tsr_half WeightN = BilateralWeights[3];
+
+	BRANCH
+	if (bCompute)
+	{
+		tsr_half2 VelocityDeltaE = tsr_half2(PixelVelocityE - PixelVelocityC);
+		tsr_half2 VelocityDeltaW = tsr_half2(PixelVelocityC - PixelVelocityW);
+		tsr_half2 VelocityDeltaS = tsr_half2(PixelVelocityS - PixelVelocityC);
+		tsr_half2 VelocityDeltaN = tsr_half2(PixelVelocityC - PixelVelocityN);
+
+		ReprojectionJacobian[0] = VelocityDeltaE * WeightE + VelocityDeltaW * WeightW;
+		ReprojectionJacobian[1] = VelocityDeltaS * WeightS + VelocityDeltaN * WeightN;
+	}
+} // ComputeVelocityJacobian()
+
+/** Find the closest DevizeZ and its corresponding offset */
+void ComputeReprojectionJacobian(
+	float  DevizeZNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	float2 PixelVelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES],
+	out tsr_half2x2 ReprojectionJacobian,
+	out float DepthError)
+{
+	float DeviceZ = AccessNeighborhoodCenter(DevizeZNeighborhood);
+	
+	ReprojectionJacobian = tsr_half(0.0);
+	DepthError = 0.0;
+
+	// Horizontal &amp; vertical cardinals first as the pixels are closer than on diagonals
+	bool bSuccess;
+	{
+		const bool bCompute = true;
+		const int2 DirectionE = kOffsetE;
+		const int2 DirectionS = kOffsetS;
+
+		tsr_half BilateralWeights[4];
+		bSuccess = ComputeDepthBilaterals(
+			DirectionE, DirectionS,
+			bCompute,
+			DevizeZNeighborhood,
+			/* inout */ DepthError,
+			/* out */ BilateralWeights);
+		
+		ComputeVelocityJacobian(
+			DirectionE, DirectionS,
+			bCompute,
+			PixelVelocityNeighborhood,
+			BilateralWeights,
+			/* inout */ ReprojectionJacobian);
+	}
+	
+	// Compute diagonal jacobian if the horizontal/vertical failed
+#if CONFIG_BUTTERFLY_KERNEL &amp;&amp; COMPILER_SUPPORTS_WAVE_VOTE
+	if (WaveActiveAnyTrue(!bSuccess))
+#endif
+	{
+		const bool bCompute = !bSuccess;
+		const int2 DirectionE = kOffsetSE;
+		const int2 DirectionS = kOffsetSW;
+		
+		tsr_half BilateralWeights[4];
+		ComputeDepthBilaterals(
+			DirectionE, DirectionS,
+			bCompute,
+			DevizeZNeighborhood,
+			/* inout */ DepthError,
+			/* out */ BilateralWeights);
+		
+		ComputeVelocityJacobian(
+			DirectionE, DirectionS,
+			bCompute,
+			PixelVelocityNeighborhood,
+			BilateralWeights,
+			/* inout */ ReprojectionJacobian);
+			
+		// Rotate the diagonal jacobian back to horizontal/vertical
+		if (bCompute)
+		{
+			tsr_half2 DifferentialSE = ReprojectionJacobian[0];
+			tsr_half2 DifferentialSW = ReprojectionJacobian[1];
+			ReprojectionJacobian[0] = DifferentialSE * tsr_half(+0.5) + DifferentialSW * tsr_half(-0.5);
+			ReprojectionJacobian[1] = DifferentialSE * tsr_half(+0.5) + DifferentialSW * tsr_half(+0.5);
+		}
+	}
+	
+	// Flips the signs due to the butterfly kernel.
+	#if CONFIG_BUTTERFLY_KERNEL &amp;&amp; 1
+		tsr_half2 LaneOffsetSign = tsr_half2(GetLaneOffsetSign());
+		ReprojectionJacobian[0] *= LaneOffsetSign.x;
+		ReprojectionJacobian[1] *= LaneOffsetSign.y;
+	#endif
+} // ComputeReprojectionJacobian()
+
+/** Compute the reprojection edge from non-dilated to dilated screen velocity. */
+CALL_SITE_DEBUGLOC
+tsr_half ComputeReprojectionEdge(
+	float2 ScreenVelocity,
+	float2 DilatedScreenVelocity)
+{
+	tsr_half2 NeighborDeltaPixelVelocity = tsr_half2((DilatedScreenVelocity - ScreenVelocity) * ScreenVelocityToInputPixelVelocity);
+	tsr_half ReprojectionEdge = saturate(tsr_half(1.1) - dot(abs(NeighborDeltaPixelVelocity), tsr_half(1.1).xx));
+	return ReprojectionEdge;
+}
+
+/** Compute the reprojection edge from the pixel velocity neighborhood. */
+tsr_half ComputeReprojectionEdge(
+	float2 PixelVelocityNeighborhood[CONFIG_BUTTERFLY_SAMPLES])
+{
+	tsr_half ReprojectionEdge = tsr_half(0.0);
+
+	// Sample
+	float2 ScreenPixelVelocity = AccessNeighborhoodCenter(PixelVelocityNeighborhood);
+	tsr_short2 LaneOffsetSign = GetLaneOffsetSign();
+
+	UNROLL_N(CONFIG_VELOCITY_SAMPLE_PAIRS)
+	for (uint i = 0; i &lt; CONFIG_VELOCITY_SAMPLE_PAIRS; i++)
+	ISOLATE
+	{
+		const uint NeightbordId0 = i + 1;
+		const uint NeightbordId1 = i + 1 + CONFIG_VELOCITY_SAMPLE_PAIRS;
+			
+		#if CONFIG_VELOCITY_SAMPLES == 9
+			const int2 Offset0 = kOffsets3x3[kSquareIndexes3x3[NeightbordId0]];
+			const int2 Offset1 = kOffsets3x3[kSquareIndexes3x3[NeightbordId1]];
+		#elif CONFIG_VELOCITY_SAMPLES == 5
+			const int2 Offset0 = kOffsets3x3[kPlusIndexes3x3[NeightbordId0]];
+			const int2 Offset1 = kOffsets3x3[kPlusIndexes3x3[NeightbordId1]];
+		#endif
+
+		float2 NeighborPixelVelocity0 = AccessNeighborhoodStaticOffset(PixelVelocityNeighborhood, Offset0);
+		float2 NeighborPixelVelocity1 = AccessNeighborhoodStaticOffset(PixelVelocityNeighborhood, Offset1);
+
+		tsr_half2 NeighborDeltaPixelVelocity0 = tsr_half2(ScreenPixelVelocity - NeighborPixelVelocity0);
+		tsr_half2 NeighborDeltaPixelVelocity1 = tsr_half2(ScreenPixelVelocity - NeighborPixelVelocity1);
+			
+		// Reject high frequency on reprojection edge discontinuity.
+		{
+			tsr_half IsOverlapingEdge0 = tsr_half(1.0) - dot(saturate(abs(NeighborDeltaPixelVelocity0 * tsr_half2(tsr_short2(Offset0) * LaneOffsetSign))), tsr_half(1.0).xx); // * saturate(ScreenPixelVelocityLength - NeighborPixelVelocityLength0);
+			tsr_half IsOverlapingEdge1 = tsr_half(1.0) - dot(saturate(abs(NeighborDeltaPixelVelocity1 * tsr_half2(tsr_short2(Offset1) * LaneOffsetSign))), tsr_half(1.0).xx); // * saturate(ScreenPixelVelocityLength - NeighborPixelVelocityLength1);
+				
+			tsr_half IsOverlapingEdge = min(IsOverlapingEdge0, IsOverlapingEdge1);
+
+			if (i == 0)
+				ReprojectionEdge = IsOverlapingEdge;
+			else
+				ReprojectionEdge = min(ReprojectionEdge, IsOverlapingEdge);
+		}
+	} // for (uint i = 0; i &lt; CONFIG_VELOCITY_SAMPLE_PAIRS; i++)
+
+	// Remove noise from high frequency rejections.
+	ReprojectionEdge = saturate(ReprojectionEdge * tsr_half(1.1));
+	return ReprojectionEdge;
+} // ComputeReprojectionEdge()
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 静态速度 + 逐像素深度误差（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">float3 ComputeStaticVelocity(float2 ScreenPos, float DeviceZ) {</span>
+<span class="code-line orange">    float4 ThisClip = float4(ScreenPos, DeviceZ, 1);</span>
+<span class="code-line orange">    float4 PrevClip = mul(ThisClip, View.ClipToPrevClip);   // 用相机矩阵反投影到上帧</span>
+<span class="code-line orange">    return float3(ScreenPos, DeviceZ) - PrevClip.xyz / PrevClip.w; }</span>
+<span class="code-line blue">float ComputePixelDeviceZError(float DeviceZ) {   // 一个像素在该深度下的世界尺寸→ DeviceZ 误差容差</span>
+<span class="code-line green">    float ErrCorrDeviceZ = ConvertToDeviceZ(GetDepthPixelRadiusForProjectionType(Depth)*2 + Depth); ... }</span></code></pre><div class="note"><h3>说明</h3><p>两个基础量：<span class="inline">ComputeStaticVelocity</span> 只用<b>相机矩阵</b>（<span class="inline">ClipToPrevClip</span>）算出"仅因相机运动"的重投影位移——静态物体没有物体速度时用它。<span class="inline">ComputePixelDeviceZError</span> 算<b>一个像素在该深度下覆盖的世界尺寸</b>对应的 DeviceZ 误差——这个容差是 <a href="TSRDecimateHistory.usf.html" class="inline">#3</a> 判 disocclusion 的关键：历史深度与当前深度差异只有超过这个"一像素厚度"才算真被遮挡/露出，否则是正常的亚像素抖动。<span class="inline">EncodeDeviceZError</span> 相对最近深度归一化压进 8bit。<span class="inline">CONFIG_DEPTH_EDGE_DETECTION</span> 让膨胀只在深度边缘做，提平坦面的重投影精度。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Velocity_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#2 运动矢量与速度膨胀</a>
+<a class="tag" href="TSRDilateVelocity.usf.html"><span class="dot" style="background:var(--cyan)"></span>DilateVelocity↗</a>
+<a class="tag" href="TSRDecimateHistory.usf.html"><span class="dot" style="background:var(--cyan)"></span>DecimateHistory（深度容差）↗</a>
+<a class="tag" href="TSRReprojectionField.ush.html"><span class="dot" style="background:var(--cyan)"></span>ReprojectionField.ush↗</a>
+<a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
