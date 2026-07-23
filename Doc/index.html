@@ -40,6 +40,8 @@ main{padding:26px 36px 90px;max-width:1320px}
 .b-tsr .eyebrow{color:var(--cyan)}
 .b-shadow .accent{background:linear-gradient(90deg,var(--red),var(--purple))}
 .b-shadow .eyebrow{color:var(--red)}
+.b-rdg .accent{background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.b-rdg .eyebrow{color:var(--blue)}
 .flow{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px}
 @media(max-width:900px){.flow{grid-template-columns:1fr 1fr}}
 .node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:14px;min-height:96px}
@@ -61,9 +63,9 @@ footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
 
 <section class="card"><h2>文档集规模</h2><div class="body">
 <div class="stat">
-<span class="pill"><b>6</b> 本书</span>
-<span class="pill"><b>87</b> 个主题</span>
-<span class="pill"><b>174</b> 篇正文（主文档 + 附录）</span>
+<span class="pill"><b>7</b> 本书</span>
+<span class="pill"><b>106</b> 个主题</span>
+<span class="pill"><b>212</b> 篇正文（主文档 + 附录）</span>
 <span class="pill">对照 <b>UE 5.8</b> 源码</span>
 </div>
 </div></section>
@@ -122,6 +124,15 @@ footer{color:var(--muted);font-size:13px;padding:0 36px 50px;max-width:1320px}
 <div class="en">Shadow Map · CSM · VSM Clipmap · SMRT · DFShadow</div>
 <p>阴影要回答"从光源看，这个像素被谁挡住"。从传统 <b>阴影图 / CSM / 立方体 / Per-Object</b>，走到 UE5 划时代的 <b>VSM</b>（把阴影做成虚拟纹理，16K 虚拟分辨率、按需分页、跨帧缓存、SMRT 软阴影）。<b>5.8 方向光全面 Clipmap 化</b>是重点，另含距离场 / Capsule / Contact / 光追 / 移动端专项。</p>
 <div class="meta"><span class="chip">15 主题 · 30 篇</span><span class="chip">VSM Clipmap 重点</span><span class="chip">传统/VSM/专项三篇</span></div>
+<span class="go">进入总目录 →</span>
+</div></a>
+
+<a class="book b-rdg" href="RDG/UE_RDG_解析_总目录.html"><div class="accent"></div><div class="inner">
+<span class="eyebrow">RENDER DEPENDENCY GRAPH · 渲染公共底座</span>
+<h3>UE RDG 源码解析</h3>
+<div class="en">Resource / Pass / Builder · Compile / Execute · ERHIAccess · Transient</div>
+<p>前面六本书的<b>公共底座</b>——Nanite/Lumen/VSM/MegaLights/TSR 每个 pass 都跑在它上。把渲染写成<b>声明式</b>：只声明 pass 读写什么，RDG 自动做资源生命周期、瞬态内存复用、屏障推导、pass 剔除、异步计算与并行。四大部分：核心图 → 参数绑定 → 之下的 RHI 资源管理 → 工具与实战。</p>
+<div class="meta"><span class="chip">19 主题 · 38 篇</span><span class="chip">公共底座</span><span class="chip">声明式/自动屏障</span></div>
 <span class="go">进入总目录 →</span>
 </div></a>
 
