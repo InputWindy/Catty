@@ -1,0 +1,464 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MegaLightsVolumeShading.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:540px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_MegaLights_解析_总目录.html">← 返回《UE MegaLights》总目录</a><a href="../Chapters/MegaLightsVolume_ConvergenceAnnotated.html">← 回到 #6 体积光照</a></div>
+<h1>MegaLightsVolumeShading.usf 整源解析</h1><div class="subtitle">MegaLights 体积路径的<b>施光内核</b>：对每个 froxel 体素，拿追踪求出的样本可见性施光，累积成体积散射光照（供半透明材质 / 体积雾查询）。支持间接体素派发（<span class="inline">INDIRECT_VOXEL_DISPATCH</span>，只处理有效体素）+ 体积重采样。核心 <span class="inline">VolumeShadeLightSamplesCS</span>（8×8×8）。<b>下方内嵌完整 346 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>体素 + 样本可见性</strong><small>VoxelData / 体积样本</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>间接体素派发</strong><small>只处理有效体素</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>逐光施光</strong><small>体积散射</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>写体积光照</strong><small>供半透明查询</small></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/MegaLights/MegaLightsVolumeShading.usf</span></h2><div class="body">
+<span class="source-path">VolumeShadeLightSamplesCS @ L115（8×8×8）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "../Common.ush"
+#include "../SHCommon.ush"
+#include "../BlueNoise.ush"
+#include "../ComputeShaderUtils.ush"
+#include "MegaLights.ush"
+#include "MegaLightsVolume.ush"
+#include "../StochasticLighting/StochasticLightingUpsample.ush"
+
+float VolumeMinSampleWeight;
+float MaxShadingWeight;
+float MaxShadingWeightForHiddenLight;
+float3 VolumeFrameJitterOffset;
+float VolumeInverseSquaredLightDistanceBiasScale;
+uint3 VolumeSampleViewSize;
+uint3 DownsampledVolumeViewSize;
+uint3 NumSamplesPerVoxel;
+Texture3D&lt;uint&gt; VolumeLightSamples;
+
+#if TRANSLUCENCY_LIGHTING_VOLUME
+RWTexture3D&lt;float4&gt; RWTranslucencyVolumeResolvedLightingAmbient;
+RWTexture3D&lt;float4&gt; RWTranslucencyVolumeResolvedLightingDirectional;
+#else
+RWTexture3D&lt;float3&gt; RWVolumeResolvedLighting;
+#endif
+
+uint DebugLightId;
+uint ShadingPassIndex;
+
+#if INDIRECT_VOXEL_DISPATCH
+StructuredBuffer&lt;uint&gt; VoxelAllocator;
+StructuredBuffer&lt;uint&gt; VoxelData;
+#endif
+
+void LoadPackedLightSamples(inout uint PackedLightSamples[NUM_SAMPLES_PER_VOXEL_1D], int3 DownsampledVolumeCoord)
+{
+	DownsampledVolumeCoord = clamp(DownsampledVolumeCoord, int3(0, 0, 0), int3(DownsampledVolumeViewSize - 1));
+
+	for (uint SampleIndex = 0; SampleIndex &lt; NUM_SAMPLES_PER_VOXEL_1D; ++SampleIndex)
+	{
+		uint3 LightSampleCoord = DownsampledVolumeCoord * uint3(NUM_SAMPLES_PER_VOXEL_3D_X, NUM_SAMPLES_PER_VOXEL_3D_Y, NUM_SAMPLES_PER_VOXEL_3D_Z) 
+			+ uint3(SampleIndex % NUM_SAMPLES_PER_VOXEL_3D_X, SampleIndex / NUM_SAMPLES_PER_VOXEL_3D_X, 0);
+
+		PackedLightSamples[SampleIndex] = VolumeLightSamples[LightSampleCoord];
+	}
+}
+
+void AccumulateLightSample(uint PackedLightSamples[NUM_SAMPLES_PER_VOXEL_1D], inout uint NextLocalLightIndex)
+{
+	for (uint SampleIndex = 0; SampleIndex &lt; NUM_SAMPLES_PER_VOXEL_1D; ++SampleIndex)
+	{
+		FLightSample LightSample = UnpackLightSample(PackedLightSamples[SampleIndex]);
+
+	#if !TRANSLUCENCY_LIGHTING_VOLUME
+		// Unified volume reuses tracing between volumetric fog and translucency
+		if (!LightSample.bCastVolumetricShadow)
+		{
+			LightSample.bVisible = true;
+		}
+	#endif
+
+		if (LightSample.bVisible)
+		{
+			NextLocalLightIndex = min(NextLocalLightIndex, LightSample.LocalLightIndex);
+		}
+	}
+}
+
+void AccumulateLightSample(uint PackedLightSamples[NUM_SAMPLES_PER_VOXEL_1D], uint LocalLightIndex, float UpsampleWeight, inout uint NextLocalLightIndex, inout float SampleWeightSum)
+{
+	uint NumMergedSamples = 1;
+
+	for (uint SampleIndex = 0; SampleIndex &lt; NUM_SAMPLES_PER_VOXEL_1D; ++SampleIndex)
+	{
+		FLightSample LightSample = UnpackLightSample(PackedLightSamples[SampleIndex]);
+
+	#if !TRANSLUCENCY_LIGHTING_VOLUME
+		// Unified volume reuses tracing between volumetric fog and translucency
+		if (!LightSample.bCastVolumetricShadow)
+		{
+			LightSample.bVisible = true;
+		}
+	#endif
+
+		if (LightSample.LocalLightIndex == LocalLightIndex)
+		{
+			// Identical rays were skipped by marking such samples as weight=0
+			if (LightSample.Weight == 0.0f)
+			{
+				++NumMergedSamples;
+			}
+			else
+			{
+				if (LightSample.bVisible)
+				{
+					float ShadingWeight = min(LightSample.Weight, LightSample.bGuidedAsVisible ? MaxShadingWeight : MaxShadingWeightForHiddenLight);
+					SampleWeightSum += ShadingWeight * UpsampleWeight * NumMergedSamples;
+
+					NumMergedSamples = 1;
+				}
+			}
+		}
+
+		if (LightSample.bVisible &amp;&amp; LightSample.LocalLightIndex &gt; LocalLightIndex)
+		{
+			NextLocalLightIndex = min(NextLocalLightIndex, LightSample.LocalLightIndex);
+		}
+	}
+}
+
+/**
+ * Upsample light samples and apply all lights per voxel
+ */
+[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, THREADGROUP_SIZE)]
+void VolumeShadeLightSamplesCS(
+	uint3 DispatchThreadId : SV_DispatchThreadID,
+	uint3 GroupId : SV_GroupID,
+	uint GroupIndex : SV_GroupIndex)
+{
+#if INDIRECT_VOXEL_DISPATCH
+	const uint VoxelIndex = GetUnWrappedDispatchThreadId(GroupId, GroupIndex, THREADGROUP_SIZE * THREADGROUP_SIZE * THREADGROUP_SIZE);
+	if (VoxelIndex &gt;= VoxelAllocator[0])
+	{
+		return;
+	}
+	const uint PackedVolumeCoord = VoxelData[VoxelIndex];
+	uint3 VolumeCoord = uint3(PackedVolumeCoord &amp; 0x3FF, (PackedVolumeCoord &gt;&gt; 10) &amp; 0x3FF, (PackedVolumeCoord &gt;&gt; 20) &amp; 0x3FF);
+#else
+	uint3 VolumeCoord = DispatchThreadId.xyz;
+#endif
+	if (all(VolumeCoord &lt; VolumeViewSize))
+	{
+		FDebugContext DebugContext = InitVolumeDebugContext(VolumeCoord, /*bDownsampled*/ false, float2(0.5, 0.05));
+
+		const uint3 OutputVolumeCoord = VolumeCoord;
+
+		float SceneDepth = 0.0f;
+		const float3 TranslatedWorldPosition = ComputeCellTranslatedWorldPosition(VolumeCoord, VolumeFrameJitterOffset, SceneDepth);
+		const float3 CameraVector = normalize(TranslatedWorldPosition - View.TranslatedWorldCameraOrigin);
+
+		#if DEBUG_MODE
+		if (DebugContext.bIsActive)
+		{
+			Print(DebugContext, TEXT("VolumeShadeLightSamples"), FontTitle);
+			Newline(DebugContext);
+			Print(DebugContext, TEXT("Coord    : "));
+			Print(DebugContext, VolumeCoord, FontValue);
+			Newline(DebugContext);
+			Print(DebugContext, TEXT("TileCoord: "));
+			Print(DebugContext, GroupId.xyz, FontValue);
+			Newline(DebugContext);
+			Print(DebugContext, TEXT("TWS      : "));
+			Print(DebugContext, TranslatedWorldPosition, FontValue);
+			AddCrossTWS(DebugContext, TranslatedWorldPosition, 5.0f, float4(0, 0, 1, 1));
+		}
+		#endif
+
+#if TRANSLUCENCY_LIGHTING_VOLUME
+		float DistanceBiasSqr = 0.0f;
+		float LightVolumetricSoftFadeDistance = 0.0f;
+#else
+		float SceneDepth2 = 0.0f;
+		float SceneDepth3 = 0.0f;
+		float CellRadius = length(TranslatedWorldPosition - ComputeCellTranslatedWorldPosition(VolumeCoord + uint3(1, 1, 1), VolumeFrameJitterOffset, SceneDepth2));
+		float Cell2DRadius = length(TranslatedWorldPosition - ComputeCellTranslatedWorldPosition(VolumeCoord + uint3(1, 1, 0), VolumeFrameJitterOffset, SceneDepth3));
+		float LightVolumetricSoftFadeDistance = LightSoftFading * Cell2DRadius;
+		// Bias the inverse squared light falloff based on voxel size to prevent aliasing near the light source
+		float DistanceBiasSqr = max(CellRadius * VolumeInverseSquaredLightDistanceBiasScale, 1);
+		DistanceBiasSqr *= DistanceBiasSqr;
+#endif
+
+		bool bShadeSamples = true;
+
+#if RESAMPLE_VOLUME
+		{
+			float4 NDCPosition = mul(float4(TranslatedWorldPosition, 1), UnjitteredTranslatedWorldToClip);
+			NDCPosition.xy /= NDCPosition.w;
+
+			float3 ResampleUV = float3(NDCPosition.xy * float2(.5f, -.5f) + .5f, ComputeNormalizedZSliceFromDepth(ResampleVolumeZParams, ResampleVolumeInvBufferSize.z, NDCPosition.w));
+			VolumeCoord = floor(saturate(ResampleUV) * ResampleVolumeViewSize);
+
+			bShadeSamples &amp;= ResampleUV.z &lt;= 1.0f;
+		}
+#endif
+
+#if VOLUME_DOWNSAMPLE_FACTOR == 2
+		int3 DownsampledVolumeCoord000 = int3(VolumeCoord - 1) / VOLUME_DOWNSAMPLE_FACTOR;
+		int3 VolumeCoordOffset = VolumeCoord - DownsampledVolumeCoord000 * 2;
+		int3 SampleOffset000 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(0, 0, 0)) + uint3(0, 0, 0) * 2 - VolumeCoordOffset;
+		int3 SampleOffset100 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(1, 0, 0)) + uint3(1, 0, 0) * 2 - VolumeCoordOffset;
+		int3 SampleOffset010 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(0, 1, 0)) + uint3(0, 1, 0) * 2 - VolumeCoordOffset;
+		int3 SampleOffset110 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(1, 1, 0)) + uint3(1, 1, 0) * 2 - VolumeCoordOffset;
+		int3 SampleOffset001 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(0, 0, 1)) + uint3(0, 0, 1) * 2 - VolumeCoordOffset;
+		int3 SampleOffset101 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(1, 0, 1)) + uint3(1, 0, 1) * 2 - VolumeCoordOffset;
+		int3 SampleOffset011 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(0, 1, 1)) + uint3(0, 1, 1) * 2 - VolumeCoordOffset;
+		int3 SampleOffset111 = GetSampleVoxelCoordJitter(DownsampledVolumeCoord000 + uint3(1, 1, 1)) + uint3(1, 1, 1) * 2 - VolumeCoordOffset;
+
+		// Triangle filter weight between the shaded voxel and 8 neighbors
+		float4 InterpolationWeights0;
+		InterpolationWeights0.x = (2.0f - abs(SampleOffset000.x)) * (2.0f - abs(SampleOffset000.y)) * (2.0f - abs(SampleOffset000.z));
+		InterpolationWeights0.y = (2.0f - abs(SampleOffset100.x)) * (2.0f - abs(SampleOffset100.y)) * (2.0f - abs(SampleOffset100.z));
+		InterpolationWeights0.z = (2.0f - abs(SampleOffset010.x)) * (2.0f - abs(SampleOffset010.y)) * (2.0f - abs(SampleOffset010.z));
+		InterpolationWeights0.w = (2.0f - abs(SampleOffset110.x)) * (2.0f - abs(SampleOffset110.y)) * (2.0f - abs(SampleOffset110.z));
+
+		float4 InterpolationWeights1;
+		InterpolationWeights1.x = (2.0f - abs(SampleOffset001.x)) * (2.0f - abs(SampleOffset001.y)) * (2.0f - abs(SampleOffset001.z));
+		InterpolationWeights1.y = (2.0f - abs(SampleOffset101.x)) * (2.0f - abs(SampleOffset101.y)) * (2.0f - abs(SampleOffset101.z));
+		InterpolationWeights1.z = (2.0f - abs(SampleOffset011.x)) * (2.0f - abs(SampleOffset011.y)) * (2.0f - abs(SampleOffset011.z));
+		InterpolationWeights1.w = (2.0f - abs(SampleOffset111.x)) * (2.0f - abs(SampleOffset111.y)) * (2.0f - abs(SampleOffset111.z));
+#endif
+
+		float3 LightScattering = 0.0f;
+
+		float4 LightAmbient = 0.0f;
+		float4 LightDirectional = 0.0f;
+
+#if !TRANSLUCENCY_LIGHTING_VOLUME
+		const float FroxelFootprintMargin = 0.5f; // trilinear interpolation
+		bShadeSamples &amp;= IsFroxelVisible(OutputVolumeCoord, FroxelFootprintMargin);
+#endif
+
+		if (bShadeSamples)
+		{
+#if VOLUME_DOWNSAMPLE_FACTOR == 2
+			// Stochastic sample interpolation. Need to use at least samples 2 for good quality.
+			const float RandomScalar = BlueNoiseScalar(VolumeCoordToNoiseCoord(VolumeCoord), MegaLightsStateFrameIndex);
+			uint3 StochasticTrilinearOffset0 = GetStochasticTrilinearOffset((RandomScalar + 0.0f) / 2.0f, InterpolationWeights0, InterpolationWeights1);
+			uint3 StochasticTrilinearOffset1 = GetStochasticTrilinearOffset((RandomScalar + 1.0f) / 2.0f, InterpolationWeights0, InterpolationWeights1);
+
+			#if DEBUG_MODE
+			if (DebugContext.bIsActive)
+			{
+				Newline(DebugContext);
+				Print(DebugContext, TEXT("StOffset0: "));
+				Print(DebugContext, StochasticTrilinearOffset0, FontValue, 4, 1);
+				Newline(DebugContext);
+				Print(DebugContext, TEXT("StOffset1: "));
+				Print(DebugContext, StochasticTrilinearOffset1, FontValue, 4, 1);
+			}
+			#endif
+#endif
+
+			#if DEBUG_MODE
+			if (DebugContext.bIsActive)
+			{
+				Newline(DebugContext);
+				Print(DebugContext, TEXT("LightId   | Weight    | Lighting"), FontSilver);
+			}
+			#endif
+
+#if VOLUME_DOWNSAMPLE_FACTOR == 2
+			uint PackedLightSamples0[NUM_SAMPLES_PER_VOXEL_1D];
+			uint PackedLightSamples1[NUM_SAMPLES_PER_VOXEL_1D];
+			LoadPackedLightSamples(PackedLightSamples0, DownsampledVolumeCoord000 + StochasticTrilinearOffset0);
+			LoadPackedLightSamples(PackedLightSamples1, DownsampledVolumeCoord000 + StochasticTrilinearOffset1);
+#else
+			uint PackedLightSamples0[NUM_SAMPLES_PER_VOXEL_1D];
+			LoadPackedLightSamples(PackedLightSamples0, VolumeCoord);
+#endif
+
+			uint NextLocalLightIndex = MAX_LOCAL_LIGHT_INDEX;
+			AccumulateLightSample(PackedLightSamples0, NextLocalLightIndex);
+#if VOLUME_DOWNSAMPLE_FACTOR == 2
+			AccumulateLightSample(PackedLightSamples1, NextLocalLightIndex);
+#endif
+
+			while (NextLocalLightIndex &lt; MAX_LOCAL_LIGHT_INDEX)
+			{
+				const uint LocalLightIndex = WaveActiveMin(NextLocalLightIndex);
+				if (LocalLightIndex == NextLocalLightIndex)
+				{
+					NextLocalLightIndex = MAX_LOCAL_LIGHT_INDEX;
+					float SampleWeight = 0.0f;
+
+#if VOLUME_DOWNSAMPLE_FACTOR == 2
+					AccumulateLightSample(PackedLightSamples0, LocalLightIndex, 0.5f, NextLocalLightIndex, SampleWeight);
+					AccumulateLightSample(PackedLightSamples1, LocalLightIndex, 0.5f, NextLocalLightIndex, SampleWeight);
+#else
+					AccumulateLightSample(PackedLightSamples0, LocalLightIndex, 1.0f, NextLocalLightIndex, SampleWeight);
+#endif
+
+					// Normalize weight by a number of samples taken
+					SampleWeight /= float(NUM_SAMPLES_PER_VOXEL_1D);
+
+					const FForwardLightData ForwardLightData = GetForwardLightData(LocalLightIndex, 0);
+					const FDeferredLightData LightData = ConvertToDeferredLight(ForwardLightData);
+
+#if TRANSLUCENCY_LIGHTING_VOLUME
+					if (UnpackAffectsTranslucentLighting(ForwardLightData) == 0)
+					{
+						SampleWeight = 0.0f;
+					}
+#endif // TRANSLUCENCY_LIGHTING_VOLUME
+
+					#if DEBUG_MODE
+					if (DebugContext.bIsActive)
+					{
+						Newline(DebugContext);
+						Print(DebugContext, ForwardLightData.LightSceneId, Select(ForwardLightData.LightSceneId == DebugLightId, FontSelected, FontValue));
+						Print(DebugContext, SampleWeight, FontValue);
+					}
+					#endif
+
+					if (SampleWeight &gt; 0.0)
+					{
+						float3 L;
+						const float VolumetricScatteringIntensity = UnpackVolumetricScatteringIntensity(ForwardLightData);
+						const bool bUnifiedVolumeSampling = false;
+
+						float3 DiffuseLighting = GetMegaLightsVolumeLighting(TranslatedWorldPosition, CameraVector, DistanceBiasSqr, LightVolumetricSoftFadeDistance, LocalLightIndex, LightData, VolumetricScatteringIntensity, bUnifiedVolumeSampling, L);
+
+						const float Lum = Luminance(DiffuseLighting) * View.PreExposure;
+						SampleWeight *= SmoothFalloffMask(Lum, VolumeMinSampleWeight);
+
+						LightScattering += DiffuseLighting * SampleWeight;
+
+						const float DirectionalLightContribution = 0.0;
+						AccumulateSHLighting(L, DiffuseLighting * SampleWeight, DirectionalLightContribution, LightAmbient, LightDirectional);
+
+						#if DEBUG_MODE
+						if (DebugContext.bIsActive)
+						{
+							Print(DebugContext, DiffuseLighting, FontValue);
+						}
+						#endif
+					}
+				}
+			}
+		}
+
+		#if DEBUG_MODE
+		if (DebugContext.bIsActive)
+		{
+			Newline(DebugContext);
+			Print(DebugContext, TEXT("Lighting: "));
+			Print(DebugContext, LightScattering, FontValue);
+			AddTextBackground(DebugContext, FontBackground);
+		}
+		#endif
+
+		#if REFERENCE_MODE
+		//This is not the first shading pass, hence we try to accumulate from previous one
+		if (ShadingPassIndex &gt; 0)
+		{
+			float BlendFactor = 1.0f / float(ShadingPassIndex + 1.0f); //True as all pass have the same number of samples
+
+			#if TRANSLUCENCY_LIGHTING_VOLUME
+				const float4 PrevLightingAmbient = RWTranslucencyVolumeResolvedLightingAmbient[OutputVolumeCoord];
+				const float4 PrevLightingDirectional = RWTranslucencyVolumeResolvedLightingDirectional[OutputVolumeCoord];
+				LightAmbient = PrevLightingAmbient * (1.0f - BlendFactor) + LightAmbient * BlendFactor;
+				LightDirectional = PrevLightingDirectional * (1.0f - BlendFactor) + LightDirectional * BlendFactor;
+			#else
+				const float3 PrevLightScattering = RWVolumeResolvedLighting[OutputVolumeCoord] / View.PreExposure;
+				LightScattering = PrevLightScattering * (1.0f - BlendFactor) + LightScattering * BlendFactor;
+			#endif
+		}
+		#endif
+
+#if TRANSLUCENCY_LIGHTING_VOLUME
+		if (TranslucencyVolumeCascadeIndex == 1)
+		{
+			float FinalLerpFactor = GetBorderLerpFactor(OutputVolumeCoord, TranslucencyVolumeCascadeIndex);
+
+			if (!bShadeSamples)
+			{
+				FinalLerpFactor = 0.0f;
+			}
+
+			if (FinalLerpFactor &lt; 1)
+			{
+				float4 FallbackAmbient = 0;
+				float4 FallbackDirectional = 0;
+
+				for (uint DirectionalLightIndex = ForwardLightStruct.DirectionalMegaLightsSupportedStartIndex; DirectionalLightIndex &lt; ForwardLightStruct.NumDirectionalLights; ++DirectionalLightIndex)
+				{
+					uint LightIndex = ForwardLightStruct.DirectionalLightIndices[DirectionalLightIndex];
+					FForwardLightData ForwardLightData = GetForwardLightData(LightIndex, 0);
+					checkSlow(UnpackIsHandledByMegaLights(ForwardLightData));
+	
+					if (!UnpackAffectsTranslucentLighting(ForwardLightData))
+					{
+						continue;
+					}
+
+					FDeferredLightData LightData = ConvertToDeferredLight(ForwardLightData);
+					LightData.bRadialLight = false;
+					LightData.bInverseSquared = false;
+
+					float3 Lighting = LightData.Color / PI;
+
+					const float DirectionalLightContribution = 1.0f;
+					AccumulateSHLighting(LightData.Direction, Lighting, DirectionalLightContribution, FallbackAmbient, FallbackDirectional);
+				}
+
+				LightAmbient = lerp(FallbackAmbient, LightAmbient, FinalLerpFactor);
+				LightDirectional = lerp(FallbackDirectional, LightDirectional, FinalLerpFactor);
+			}
+		}
+
+		RWTranslucencyVolumeResolvedLightingAmbient[OutputVolumeCoord] = LightAmbient;
+		RWTranslucencyVolumeResolvedLightingDirectional[OutputVolumeCoord] = LightDirectional;
+#else // !TRANSLUCENCY_LIGHTING_VOLUME
+		RWVolumeResolvedLighting[OutputVolumeCoord] = LightScattering * View.PreExposure;
+#endif // !TRANSLUCENCY_LIGHTING_VOLUME
+	}
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 间接体素派发：只着色有效体素（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">#if INDIRECT_VOXEL_DISPATCH</span>
+<span class="code-line">const uint VoxelIndex = GetUnWrappedDispatchThreadId(GroupId, GroupIndex, THREADGROUP_SIZE^3);</span>
+<span class="code-line">if (VoxelIndex &gt;= VoxelAllocator[0]) return;</span>
+<span class="code-line blue">const uint PackedVolumeCoord = VoxelData[VoxelIndex];</span>
+<span class="code-line">uint3 VolumeCoord = uint3(PackedVolumeCoord &amp; 0x3FF, (PackedVolumeCoord &gt;&gt; 10) &amp; 0x3FF, (PackedVolumeCoord &gt;&gt; 20) &amp; 0x3FF);</span>
+<span class="code-line">#else</span>
+<span class="code-line">uint3 VolumeCoord = DispatchThreadId.xyz;</span>
+<span class="code-line">#endif</span></code></pre><div class="note"><h3>说明</h3><p>体积施光比屏幕更贵（体素数 = W×H×Z）。<span class="inline">INDIRECT_VOXEL_DISPATCH</span> 模式下只对<b>被采样阶段标记为有效</b>的体素（存进 <span class="inline">VoxelData</span> 紧凑列表，10bit×3 打包坐标）启动线程，用 <span class="inline">GetUnWrappedDispatchThreadId</span> 展开一维索引——空体素（相机后/雾外）完全不着色。非间接模式则直接用 3D DispatchThreadId。</p></div></div></section>
+
+<section class="card"><h2>1. 体素→世界 + 体积重采样（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line blue">const float3 TranslatedWorldPosition = ComputeCellTranslatedWorldPosition(VolumeCoord, VolumeFrameJitterOffset, SceneDepth);</span>
+<span class="code-line">float CellRadius = length(TranslatedWorldPosition - ComputeCellTranslatedWorldPosition(VolumeCoord + uint3(1,1,1), ...));</span>
+<span class="code-line yellow">float DistanceBiasSqr = max(CellRadius * VolumeInverseSquaredLightDistanceBiasScale, 1); DistanceBiasSqr *= DistanceBiasSqr;</span>
+<span class="code-line orange">#if RESAMPLE_VOLUME  // 从上帧体积重采样，跨帧稳定</span>
+<span class="code-line">    float3 ResampleUV = ...; VolumeCoord = floor(saturate(ResampleUV) * ResampleVolumeViewSize);</span>
+<span class="code-line">#endif</span></code></pre><div class="note"><h3>说明</h3><p>体积施光的关键差异：光源用 <b>体素尺寸相关的距离偏移</b>（<span class="inline">DistanceBiasSqr</span> 基于 <span class="inline">CellRadius</span>）软化平方反比衰减，避免体素靠近光源时的走样/爆点。<span class="inline">RESAMPLE_VOLUME</span> 把当前体素重投影到上帧体积做时域重采样，跨帧稳定。之后对该体素的样本逐光施光（体积散射相函数），累加进体积光照纹理，供半透明材质与体积雾查询——与 <a href="MegaLightsShading.usf.html" class="inline">屏幕 Shading</a> 的 Resolve 对称但输出到 3D 体积。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/MegaLightsVolume_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#6 体积光照</a>
+<a class="tag" href="MegaLightsVolumeSampling.usf.html"><span class="dot" style="background:var(--cyan)"></span>VolumeSampling（上游）↗</a>
+<a class="tag" href="MegaLightsVolumeRayTracing.usf.html"><span class="dot" style="background:var(--cyan)"></span>VolumeRayTracing（可见性）↗</a>
+<a class="tag" href="MegaLightsShading.usf.html"><span class="dot" style="background:var(--cyan)"></span>Shading（屏幕版对照）↗</a>
+<a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
