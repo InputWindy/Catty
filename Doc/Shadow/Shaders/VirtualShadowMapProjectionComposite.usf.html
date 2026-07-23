@@ -1,0 +1,90 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualShadowMapProjectionComposite.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:460px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/Projection_ConvergenceAnnotated.html">← 回到 阴影投影</a></div>
+<h1>VirtualShadowMapProjectionComposite.usf 整源解析</h1><div class="subtitle">VSM 投影的<b>合成</b>（48 行）：把 VSM 投影 CS 算出的 per-light 阴影结果<b>合成进屏幕 shadow mask</b>——按 tile 覆盖，或从 mask bits 解码多光合并。核心 <span class="inline">VirtualShadowMapCompositePS</span> / <span class="inline">VirtualShadowMapCompositeFromMaskBitsPS</span>。<b>下方内嵌完整 48 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjectionComposite.usf</span></h2><div class="body">
+<span class="source-path">VirtualShadowMapCompositeTileVS @ L14 · CompositePS @ L36 · CompositeFromMaskBitsPS @ L44</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "../Common.ush"
+#include "../SceneTexturesCommon.ush"
+#include "../LightShaderParameters.ush"
+#include "VirtualShadowMapMaskBitsCommon.ush"
+
+#ifndef WORK_TILE_SIZE
+#define WORK_TILE_SIZE 8
+#endif
+
+Buffer&lt;uint&gt; TileListData;
+
+void VirtualShadowMapCompositeTileVS(
+	in uint InstanceId : SV_InstanceID,
+	in uint VertexId : SV_VertexID,
+	out float4 Position : SV_POSITION)
+{
+	const uint TileData = TileListData[InstanceId.x];
+	const uint2 TileOrigin = WORK_TILE_SIZE * UnpackTileCoord12bits(TileData);
+
+	uint2 TileVertex = TileOrigin;
+	TileVertex.x += VertexId == 1 || VertexId == 2 || VertexId == 4 ? WORK_TILE_SIZE : 0;
+	TileVertex.y += VertexId == 2 || VertexId == 4 || VertexId == 5 ? WORK_TILE_SIZE : 0;
+
+	// Viewport is set on the view rect so no offset is needed.
+	Position = float4(float2(TileVertex) * View.ViewSizeAndInvSize.zw * float2(2.0f, -2.0f) + float2(-1.0, 1.0f), 0.5f, 1.0f);
+}
+
+Texture2D&lt;float2&gt; InputShadowFactor;
+Texture2D&lt;float&gt; InputDepthTexture;
+Texture2D&lt;uint4&gt; ShadowMaskBits;
+int CompositeVirtualShadowMapId;
+uint bModulateRGB;
+
+void VirtualShadowMapCompositePS(
+	in float4 SvPosition : SV_Position,
+	out float4 OutShadowMask : SV_Target)
+{
+	float2 ShadowFactor = InputShadowFactor.Load(int3(SvPosition.xy, 0));
+	OutShadowMask = (bModulateRGB != 0) ? ShadowFactor.xxxx : EncodeLightAttenuation(float4(ShadowFactor.x, ShadowFactor.y, ShadowFactor.x, ShadowFactor.y));
+}
+
+void VirtualShadowMapCompositeFromMaskBitsPS(
+	in float4 SvPosition : SV_Position,
+	out float4 OutShadowMask : SV_Target)
+{
+	const uint2 PixelPos = uint2(SvPosition.xy);
+
+	const float DeviceZ = InputDepthTexture.Load(int3(PixelPos, 0)).r;
+	const float SceneDepth = ConvertFromDeviceZ(DeviceZ);
+
+	// Possibly needed to do fallback single sample VSM lookup
+	const float3 TranslatedWorldPosition = SvPositionToTranslatedWorld(SvPosition);
+
+	float ShadowMask = GetVirtualShadowMapMaskForLight(
+		ShadowMaskBits[PixelPos], PixelPos, SceneDepth, CompositeVirtualShadowMapId, TranslatedWorldPosition);
+			
+	OutShadowMask = EncodeLightAttenuation(ShadowMask.xxxx);
+}
+</textarea>
+</div></section>
+<section class="card"><h2>0. 阴影结果合成进屏幕 mask（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">void VirtualShadowMapCompositeTileVS(...)   // 只覆盖有阴影结果的 tile</span>
+<span class="code-line blue">void VirtualShadowMapCompositePS(...)   // 采 VSM 投影结果 → 写 shadow mask 通道</span>
+<span class="code-line green">void VirtualShadowMapCompositeFromMaskBitsPS(...)   // 从打包 mask bits 解码多光合并</span></code></pre><div class="note"><h3>说明</h3><p><a href="VirtualShadowMapProjection.usf.html" class="inline">VirtualShadowMapProjection</a> 把每光阴影算进中间缓冲，本 shader 负责<b>合成</b>到延迟光照要用的屏幕 shadow mask：<span class="inline">CompositeTileVS</span> 只画有阴影结果的 tile（省填充），<span class="inline">CompositePS</span> 采样投影结果写进对应通道；<span class="inline">CompositeFromMaskBitsPS</span> 走<b>mask bits</b> 路径——多个 local light 的阴影位打包在一张位图里（见 <a href="VirtualShadowMapMaskBitsCommon.ush.html" class="inline">MaskBitsCommon</a>），一次解码合并，省多次 pass。合成结果供 LightRendering 乘进直接光。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Projection_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>阴影投影</a>
+<a class="tag" href="VirtualShadowMapProjection.usf.html"><span class="dot" style="background:var(--cyan)"></span>Projection.usf↗</a>
+<a class="tag" href="VirtualShadowMapMaskBitsCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>MaskBitsCommon.ush↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

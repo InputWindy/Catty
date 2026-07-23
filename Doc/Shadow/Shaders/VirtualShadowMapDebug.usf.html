@@ -1,0 +1,221 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualShadowMapDebug.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/VSMOverview_ConvergenceAnnotated.html">← 回到 VSM 总览</a></div>
+<h1>VirtualShadowMapDebug.usf 整源解析</h1><div class="subtitle">VSM 的<b>调试可视化</b>（153 行）：把 VSM 内部状态（页缓存命中/失效、mip 级、被谁请求、物理页占用）以伪色叠加到屏幕，供 <span class="inline">r.Shadow.Virtual.Visualize</span> 排查。核心 <span class="inline">DebugVisualizeVirtualSmCS</span>。<b>下方内嵌完整 153 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapDebug.usf</span></h2><div class="body">
+<span class="source-path">DebugVisualizeVirtualSmCS @ L136（VSM_DEFAULT_CS_GROUP_XY）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	VirtualShadowMapPageManagement.usf: 
+=============================================================================*/
+
+#include "../Common.ush"
+#include "../SceneTexturesCommon.ush"
+#include "VirtualShadowMapPageOverlap.ush"
+#include "VirtualShadowMapPageCacheCommon.ush"
+#include "VirtualShadowMapProjectionCommon.ush"
+#include "../Visualization.ush"
+#include "/Engine/Shared/VirtualShadowMapDefinitions.h"
+
+uint DebugTargetWidth;
+uint DebugTargetHeight;
+uint BorderWidth;
+uint VisualizeModeId;	// VIRTUAL_SHADOW_MAP_VISUALIZE_*
+int VirtualShadowMapId;
+
+StructuredBuffer&lt;FPhysicalPageMetaData&gt; PhysicalPageMetaData;
+RWTexture2D&lt;float4&gt; OutVisualize;
+
+static const float3 BlackColor = float3(0.0f, 0.0f, 0.0f);
+
+
+float3 DebugVisualizeClipmap(float2 PixelUV, FVirtualShadowMapProjectionShaderData ProjectionData0)
+{
+	float UVScale = 0.0f;
+	int LastValidLevelIndex = -1;
+
+#if 1
+	// First figure out a scale factor to zoom in on non-empty pages.
+	for (int Index = ProjectionData0.ClipmapLevelCountRemaining - 1; Index &gt;= 0; --Index)
+	{
+		FVirtualShadowMapHandle LevelSmHandle = ProjectionData0.VirtualShadowMapHandle.MakeOffset(Index);
+		uint4 AllocatedBounds = VirtualShadowMap.AllocatedPageRectBounds[LevelSmHandle.GetDataIndex() * VSM_MAX_MIP_LEVELS];
+
+		if (all(AllocatedBounds.xy &lt;= AllocatedBounds.zw))
+		{
+			FVirtualShadowMapProjectionShaderData Level = GetVirtualShadowMapProjectionData(LevelSmHandle);
+
+			float3 OriginTranslatedWorld = Level.ClipmapWorldOriginOffset;
+			float4 ShadowUVz = mul(float4(OriginTranslatedWorld, 1.0f), Level.TranslatedWorldToShadowUVMatrix);
+			const float2 PageCenter = ShadowUVz.xy * float(VSM_LEVEL0_DIM_PAGES_XY);
+			float2 AllocatedExtentPages = max(abs(float2(AllocatedBounds.xy) - PageCenter), abs(float2(AllocatedBounds.zw) - PageCenter));
+			
+			float NewUVScale = (2.0f + max(AllocatedExtentPages.x, AllocatedExtentPages.y)) / float(VSM_LEVEL0_DIM_PAGES_XY / 2);
+		
+			if (LastValidLevelIndex &lt; 0)
+			{
+				UVScale = NewUVScale;
+				LastValidLevelIndex = Index;
+			}
+			else
+			{
+				UVScale = max(UVScale, NewUVScale / float(1u &lt;&lt; (LastValidLevelIndex - Index)));
+			}
+		}
+	}
+#endif
+
+	if (LastValidLevelIndex &lt; 0)
+	{
+		return BlackColor;
+	}
+
+	const float2 CenteredPixelUV = PixelUV - 0.5f;
+
+	int PageOverlayCount = 0;
+
+	float3 ResultColor = BlackColor;
+	for (int Index = LastValidLevelIndex; Index &gt;= 0; --Index)
+	{
+		FVirtualShadowMapHandle LevelSmHandle = ProjectionData0.VirtualShadowMapHandle.MakeOffset(Index);
+
+		FVirtualShadowMapProjectionShaderData Level = GetVirtualShadowMapProjectionData(LevelSmHandle);
+
+		float3 OriginTranslatedWorld = Level.ClipmapWorldOriginOffset;
+		float4 ShadowUVz = mul(float4(OriginTranslatedWorld, 1.0f), Level.TranslatedWorldToShadowUVMatrix);
+
+		int2 vPage = int2((CenteredPixelUV * UVScale + ShadowUVz.xy) * float(VSM_LEVEL0_DIM_PAGES_XY));
+		UVScale *= 2.0f;
+
+		if (any(vPage &lt; 0) || any(vPage &gt;= VSM_LEVEL0_DIM_PAGES_XY))
+		{
+			continue;
+		}
+
+		FVSMPageOffset PageOffset = CalcPageOffset(LevelSmHandle, 0, vPage);
+		FShadowPhysicalPage pPage = ShadowGetPhysicalPage(PageOffset);
+
+		if (pPage.bThisLODValid)
+		{
+			FPhysicalPageMetaData MetaData = PhysicalPageMetaData[VSMPhysicalPageAddressToIndex(pPage.PhysicalAddress)];
+
+			PageOverlayCount += 1;
+			ResultColor = lerp(IntToColor(vPage.x + (vPage.y &lt;&lt; 10U)), IntToColor(Level.ClipmapLevel), 0.75f);
+
+		}
+	}
+
+	if (PageOverlayCount &gt; 0)
+	{
+		//ResultColor = GreenToRedTurbo(float(PageOverlayCount - 1) / float(8));
+	}
+
+	return ResultColor;
+}
+
+float4 DebugVisualizeClipmap(uint2 OutputPixel, int VirtualShadowMapId)
+{
+	// Figure out the square area do draw in (could be any sub-rect)
+	uint SquareDomainDim = min(DebugTargetWidth, DebugTargetHeight) - BorderWidth * 2U;
+
+	// fill background pixels
+	if (any(or(OutputPixel &lt; BorderWidth, OutputPixel &gt;(SquareDomainDim + BorderWidth))))
+	{
+		return float4(0, 0, 0, 0);
+	}
+
+	// The pixel we are drawing in 0-1 range UV within the domain
+	float2 PixelUV = float2(OutputPixel - BorderWidth) / float(SquareDomainDim);
+
+	FVirtualShadowMapProjectionShaderData ProjectionData = GetVirtualShadowMapProjectionData(FVirtualShadowMapHandle::MakeFromId(VirtualShadowMapId));
+	if (ProjectionData.LightType != LIGHT_TYPE_DIRECTIONAL)
+	{
+		return float4(0, 0, 0, 0);
+	}
+
+	return float4(DebugVisualizeClipmap(PixelUV, ProjectionData), 1.0);
+}
+
+
+[numthreads(VSM_DEFAULT_CS_GROUP_XY, VSM_DEFAULT_CS_GROUP_XY, 1)]
+void DebugVisualizeVirtualSmCS(uint2 PixelPos : SV_DispatchThreadID)
+{
+	if (any(PixelPos &gt;= uint2(DebugTargetWidth, DebugTargetHeight)))
+	{
+		return;
+	}
+	// NOTE: Important to *not* write output if it isn't a recognized mode, as a different
+	// pass may write that output instead.
+	float4 Output = float4(1, 0, 1, 0);
+
+	if (VisualizeModeId == VIRTUAL_SHADOW_MAP_VISUALIZE_CLIPMAP_VIRTUAL_SPACE)
+	{
+		Output = DebugVisualizeClipmap(PixelPos, VirtualShadowMapId);
+	}
+
+	if (Output.a &gt; 0)
+	{
+		OutVisualize[PixelPos] = Output;
+	}
+}
+
+int VisualizeVirtualShadowMapId;
+float VisualizeNaniteOverdrawScale;
+Texture2D DebugTexture;
+SamplerState DebugTextureSampler;
+
+float4 TonemapProjectionDebugTexturePS(
+	noperspective float4 UVAndScreenPos : TEXCOORD0
+) : SV_Target0
+{
+	bool bOneLightVisible = VisualizeVirtualShadowMapId &gt;= 0;
+
+	float2 UV = UVAndScreenPos.xy;
+	float4 Output = Texture2DSample(DebugTexture, DebugTextureSampler, UV);
+
+	if (VisualizeModeId == VIRTUAL_SHADOW_MAP_VISUALIZE_SMRT_RAY_COUNT)
+	{
+		if (Output.a &gt; 0)
+		{
+			float TotalRayCount = Output.r;
+			float TotalMaxRayCount = Output.g;
+			float IntensityMultiplier = bOneLightVisible ? 1.0 : smoothstep(0, 64, TotalMaxRayCount)+0.5;
+			Output.rgb = GreenToRedTurbo(IntensityMultiplier * TotalRayCount / TotalMaxRayCount);
+		}
+	}
+	else if (VisualizeModeId == VIRTUAL_SHADOW_MAP_VISUALIZE_NANITE_OVERDRAW)
+	{
+		const float OverdrawScale = clamp(VisualizeNaniteOverdrawScale / 100.0f, 0.0f, 1.0f);
+		const float OverdrawCount = Output.r;
+		const float OverdrawColor = 1 - exp2(-OverdrawCount * OverdrawScale);
+		Output = float4(ColorMapInferno(OverdrawColor), 0.0);
+		Output.a = smoothstep(-0.1, 0.1, dot(Output.rgb, 1.0/3.0));
+	}
+	return Output;
+}
+</textarea>
+</div></section>
+<section class="card"><h2>0. VSM 状态伪色可视化（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">[numthreads(VSM_DEFAULT_CS_GROUP_XY, VSM_DEFAULT_CS_GROUP_XY, 1)] void DebugVisualizeVirtualSmCS(uint2 PixelPos : SV_DispatchThreadID)</span>
+<span class="code-line blue">// 取该像素落到的 VSM 页 → 读页表/缓存状态</span>
+<span class="code-line green">// 按 clipmap 级 / 缓存命中 / 失效 / 物理页地址 映射到伪色</span>
+<span class="code-line yellow">// 叠加到调试输出纹理</span></code></pre><div class="note"><h3>说明</h3><p>VSM 全在 GPU 动态分配，肉眼无法直接看"哪页缓存了、哪页每帧重渲、mip 是否够"。<span class="inline">DebugVisualizeVirtualSmCS</span> 把这些内部状态<b>伪色化</b>叠到屏幕：按 clipmap 级着色（看分层是否合理）、按缓存命中/失效着色（红=每帧重渲，排查性能）、按物理页地址着色（看分配分布）。配合 <a href="VirtualShadowMapVisualize.ush.html" class="inline">Visualize.ush</a> 的模式选择，是调 VSM 性能与画质的主力工具。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/VSMOverview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>VSM 总览</a>
+<a class="tag" href="VirtualShadowMapVisualize.ush.html"><span class="dot" style="background:var(--cyan)"></span>Visualize.ush↗</a>
+<a class="tag" href="VirtualShadowMapPrintStats.usf.html"><span class="dot" style="background:var(--cyan)"></span>PrintStats.usf↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
