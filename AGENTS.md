@@ -231,5 +231,64 @@ Doc/
 ## 提交规范
 
 - Commit 格式：`docs(lumen): <描述> [AI-assisted]`，body 用多个 `-m` 列要点。
-- **推送前必须询问用户**，这是本项目铁律。本地 commit 可以直接做，`git push` 一定先问。
+- **推送前必须询问用户**，这是本项目铁律。本地 commit 可以直接做，`git push` 一定先问（除非用户对当前整块任务已明确授权「做完不用问」）。
 - PowerShell 环境：命令分隔用 `;`，不能用 `&&`。
+
+---
+
+# 实战经验（全书 Shader 整源升级，2026-07 补充）
+
+> 把 6 本书（Lumen / VirtualTexture / MegaLights / TSR / Shadow / Nanite）的 shader 文档统一拉齐到「**每个 shader 一篇独立文档 + 内嵌完整真实源码 + 真实多行代码批注**」标准后沉淀的经验。核心目标：**覆盖率 = 引擎该模块 shader 目录下每个 .usf/.ush 都有独立文档**，零伪代码、零节选。
+
+## 覆盖率的硬定义与自查
+
+- 覆盖率不是「主要 shader 都讲了」，而是**逐文件**：引擎目录（含 `Voxel/` 等子目录）里每个 `.usf`/`.ush` 都要有对应 `<名>.usf.html`/`<名>.ush.html`。
+- 收尾自查三件套（PowerShell，全部要 `-Encoding UTF8`）：
+  1. 数量对齐：文档侧 `.usf`/`.ush` 计数 == 引擎侧（含子目录）计数。
+  2. **逐文件名交叉校验**：遍历引擎每个 shader，`Test-Path` 对应 html，列出缺失（数量相等也可能张冠李戴，必须按名核）。
+  3. 残留标记归零：所有 `.usf.html`/`.ush.html` 里 `@@SRC@@` 计数 == 0。
+
+## 整源注入流水线（关键技术，CLM 兼容）
+
+先 Write 建「壳」（正文批注 + 一个 `@@SRC@@` ASCII 占位），再用脚本把真实源码注入占位，好处是 Write 时不必转义大段源码、批注和源码解耦：
+
+```powershell
+$usf = (Get-Content $src -Raw -Encoding UTF8) -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;'
+$p   = (Get-Content $doc -Raw -Encoding UTF8) -split '@@SRC@@'
+if($p.Count -eq 2){ Set-Content -Path $doc -Value ($p[0]+$usf+$p[1]) -Encoding UTF8 -NoNewline }
+```
+
+- **转义顺序必须 `&`→`<`→`>`**（先转 & 否则把 `&lt;` 里的 & 二次转义）。
+- 占位用纯 ASCII 标记 `@@SRC@@`，`-split` 后 `Count==2` 才写，避免误伤。
+- 读写**都要 `-Encoding UTF8`**，否则中文批注乱码；`-NoNewline` 防尾部多空行。
+- 多个源码目录（如 `Nanite/` 与 `Nanite/Voxel/`）用 hashtable 映射每个文件的基路径，一轮循环注入。
+- 源码放进 `<textarea class="embedded-source" readonly spellcheck="false">@@SRC@@</textarea>`。
+
+## PowerShell ConstrainedLanguage(CLM) 红线
+
+本机是 CLM 模式，**禁止 .NET 方法调用**。踩过：`$_.Line.Substring(...)`、`[Math]::Min(...)` 直接抛 `MethodInvocationNotSupportedInConstrainedLanguage`。
+
+- 需要看行/截断时改用 `Select-String` + `Select-Object -First N` 或直接 `Read` 文件，别用字符串方法。
+- `git push` 的进度输出会走 stderr 被 PowerShell 当报错、exitCode=1，但**看到 `<old>..<new>  master -> master` 就是成功**；再 `git status -sb` / `git log origin/master..HEAD` 确认 ahead 0。
+
+## 整源版单篇文档结构
+
+- header 双回链：`../<总目录>.html` + 对应章节 `../Chapters/<章>.html`。
+- 大主 shader（`.usf`）：一眼看懂 flow（node + arrow）→ 完整源码卡（`source-path` 标注关键符号@行号 + `embedded-source`）→ 若干 `grid2` 批注卡（左 `<pre><code>` 真实多行 `code-line`，用 blue/green/yellow/orange 着色；右 `.note` 说明）→ 关联文档卡。
+- 小型 `.usf` / 库 `.ush`：1 个整源卡 + 1~2 个真实代码批注卡 + 关联卡；`.ush` 标题加 `libtag` 紫色标签。
+- **整源版 CSS 差异**：`code-line{white-space:pre-wrap}`（节选版是 `pre`）；去掉旧节选版的 note-label/n-blue `<script>`。`embedded-source` 高度按源码行数调（小库 380~400px，大文件 600px）。
+- `source-path` 里的符号@行号先用 `Select-String` 读引擎真实签名，别凭记忆。
+
+## 重建既有节选版
+
+老书里若已有「节选/伪代码」版旧文档，直接用 Write **整体覆盖**成整源模板（含 `@@SRC@@`）再注入，不要在旧结构上打补丁。
+
+## 总目录的 Shader 全覆盖索引
+
+- 每本书总目录末尾挂一张**分组**全覆盖索引卡（按剔除/编码流送/着色/光追/体素/核心库/其余库等语义分组），用 `.tag` pill 链接列全部 shader，标注「已 100% 覆盖 N 篇」。
+- 收尾脚本再验一遍：把总目录里所有 `Shaders/xxx.html` 提出来 `Test-Path`，失效数必须为 0。
+
+## 批次节奏
+
+- 按语义分批（每批 6~13 篇）：建壳 → 批量注入 → 残留归零校验 → `git commit`（`docs(<book>): 批N ... [AI-assisted]`）。
+- 一本书全部批次 + 总目录索引都 commit 完，再统一 `git push`（推送前守铁律，除非已获整块授权）。
