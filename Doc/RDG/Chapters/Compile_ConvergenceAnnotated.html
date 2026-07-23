@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#5 RDG 编译 · 依赖分析 / Pass 剔除 / 生命周期</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:80px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#5 编译 · 依赖分析 / Pass 剔除 / 生命周期</h1><div class="sub"><span class="inline">Execute()</span> 的前半段是 <span class="inline">Compile()</span>：把"一串 pass"变成"一张可调度的图"。本篇跟着真实源码讲三件事——<b>建生产者-消费者依赖</b>（<span class="inline">AddPassDependency</span>）、<b>反向可达剔除</b>（从 cull root 出发标记 <span class="inline">bCulled</span>）、<b>引用计数决定资源生命周期</b>。源码取自 <span class="inline">RenderGraphBuilder.cpp</span>（<span class="inline">FRDGBuilder::Compile</span>）。</div></header>
+<main>
+
+<section class="card"><h2>编译三步 <span class="en">Three steps</span></h2><div class="body">
+<div class="flow">
+<div class="node merge"><strong>① 建依赖</strong><small>遍历每个 pass 参数<br>某资源的写者→读者连边</small></div>
+<div class="node gate"><strong>② 剔除</strong><small>从 cull root 反向可达<br>不可达 pass 标 bCulled</small></div>
+<div class="node func"><strong>③ 生命周期</strong><small>资源引用计数<br>定分配/释放时机</small></div>
+</div>
+<div class="note" style="margin-top:12px"><h3>为什么先编译</h3><p>声明阶段 pass 是<b>线性一串</b>、资源是<b>纯句柄</b>。要做到"只执行有用的 pass、只分配同时存活的资源、只插必要的屏障"，必须先把这串东西的<b>依赖关系</b>算出来。编译就是这个"从线性到图"的转换，受 CVar <span class="inline">GRDGCullPasses</span> 等控制。</p></div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">编译相关 CVar（<span class="inline">GRDGCullPasses</span> 等）、<span class="inline">Compile()</span> 各阶段的 named event、引用计数字段见 <a href="Compile_FunctionAppendix.html" style="color:#9ee8ff">→ 编译算法附录</a>。</p></div></section>
+
+<section class="card"><h2>① 建依赖：AddPassDependency <span class="en">Producer → Consumer</span></h2><div class="body">
+<p>依赖的最小单元是"消费者记住它的生产者"。真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L1160-L1185</span><span class="k">void</span> FRDGBuilder::AddPassDependency(FRDGPass* Producer, FRDGPass* Consumer)
+{
+	<span class="k">auto</span>&amp; Producers = Consumer->Producers;
+
+	<span class="k">if</span> (Producers.Find(Producer) == INDEX_NONE)   <span class="c">// 去重：同一生产者只连一次</span>
+	{
+		<span class="k">if</span> (Producer->Pipeline != Consumer->Pipeline)  <span class="c">// 跨管线（graphics↔async compute）</span>
+		{
+			<span class="k">const</span> <span class="k">auto</span> BinarySearchOrAdd = [](<span class="k">auto</span>&amp; Range, FRDGPassHandle Handle) { <span class="c">/* 有序插入 */</span> };
+			<span class="c">// Consumers could be culled, so we have to store all of them in a sorted list.</span>
+			<span class="c">// ...把跨管线依赖记进有序表，供执行期插跨队列 fence</span>
+		}
+	}
+}</div>
+<div class="note blue"><h3>批注</h3><p>关键两点：<b>① 去重</b>——<span class="inline">Producers.Find(Producer) == INDEX_NONE</span> 保证同一对生产/消费只连一条边。<b>② 跨管线特殊处理</b>——当生产者和消费者在<b>不同管线</b>（一个 graphics、一个 async compute）时，依赖被额外记进一个<b>有序表</b>（binary search 插入）。这是因为跨队列同步需要 fence，而执行期要按 pass 顺序找到"最近的跨管线依赖点"插 fence——有序表让这个查找是 O(log n)。谁调 <span class="inline">AddPassDependency</span>？编译期遍历每个 pass 的参数结构体，对每个被读的资源，把它<b>上一个写者</b>作为 Producer 连过来。</p></div></div></section>
+
+<section class="card"><h2>② 剔除：从 cull root 反向可达 <span class="en">Culling</span></h2><div class="body">
+<p>哪些 pass 是"根"（绝不能剔）？真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L2373-L2378</span><span class="k">const</span> <span class="k">bool</span> bCullPasses = GRDGCullPasses &gt; 0;
+Pass->bCulled = bCullPasses;   <span class="c">// 默认全部先标记为"待剔"</span>
+
+<span class="k">if</span> (bCullPasses &amp;&amp; (bIsCullRootProducer || Pass->bHasExternalOutputs
+                    || EnumHasAnyFlags(Pass->Flags, ERDGPassFlags::NeverCull)))
+{
+	CullPassStack.Emplace(Pass);   <span class="c">// 是根 → 入栈，从它开始反向标"存活"</span>
+}</div>
+<div class="note red"><h3>批注：剔除的三种"根"</h3><p>一个 pass 成为 cull root（不被剔）当且仅当满足三者之一：<b>① <span class="inline">bIsCullRootProducer</span></b>——它生产了某个 cull-root 资源（<span class="inline">bExternal</span>/<span class="inline">bExtracted</span> 的资源，见 #2）；<b>② <span class="inline">bHasExternalOutputs</span></b>——有图无法追踪的外部输出；<b>③ <span class="inline">NeverCull</span> 标志</b>（#3 讲的那个）。算法先把所有 pass 标 <span class="inline">bCulled=true</span>，把根压入 <span class="inline">CullPassStack</span>，然后从栈顶反向沿 <span class="inline">Producers</span> 边遍历，凡可达的清掉 <span class="inline">bCulled</span> ——<b>剩下仍为 true 的就是死代码，跳过不执行</b>。</p></div>
+<p>剔除后要把死 pass 占的资源引用还回去。真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L1387-L1418</span><span class="k">if</span> (bCullPasses)
+{
+	EpiloguePass->bCulled = 0;  ProloguePass->bCulled = 0;   <span class="c">// 哨兵永不剔（#3）</span>
+
+	<span class="k">for</span> (FRDGPassHandle PassHandle = ProloguePassHandle + 1; PassHandle &lt; EpiloguePassHandle; ++PassHandle)
+	{
+		FRDGPass* Pass = Passes[PassHandle];
+		<span class="k">if</span> (Pass->bCulled)
+		{
+			<span class="c">// Subtract reference counts from culled passes that were added during pass setup.</span>
+			<span class="k">for</span> (<span class="k">auto</span>&amp; PassState : Pass->TextureStates)
+				PassState.Texture->ReferenceCount -= PassState.ReferenceCount;
+			<span class="k">for</span> (<span class="k">auto</span>&amp; PassState : Pass->BufferStates)
+				PassState.Buffer->ReferenceCount -= PassState.ReferenceCount;
+		}
+	}
+}</div>
+<div class="note"><h3>批注</h3><p>这把剔除和生命周期缝合起来：pass setup 时每个 pass 给它引用的资源 <span class="inline">ReferenceCount += </span>；剔除后，被剔 pass 的引用要 <span class="inline">-= </span> 还回去。这样一个资源的 <span class="inline">ReferenceCount</span> 就精确反映"有多少个<b>存活</b>的 pass 还要用它"——降到 0 即可释放/回收（下一节）。哨兵 pass 在这里被显式清 <span class="inline">bCulled=0</span>，因为它们是图边界（#3）。</p></div></div></section>
+
+<section class="card"><h2>③ 生命周期：引用计数归零即释放 <span class="en">Lifetime by refcount</span></h2><div class="body">
+<div class="note green"><h3>算法本质</h3><p>结合上一节：资源的 <span class="inline">ReferenceCount</span> = 存活且引用它的 pass 数。编译期由此算出每个资源的<b>首次使用 pass</b>（第一个引用它的存活 pass —— 在此之前分配）与<b>末次使用 pass</b>（引用计数归零处 —— 在此之后释放/归还池）。这对区间就是资源的<b>生命周期</b>。两个资源的生命周期区间<b>不重叠</b>，它们就能在瞬态分配器里<b>别名到同一块显存</b>（#15 详解）——这正是 RDG 相比手动池化能自动省显存的根本机制。</p></div>
+<div class="note blue"><h3>为什么这套设计优雅</h3><p>整个编译没有任何"渲染算法"知识，纯粹是<b>图论 + 引用计数</b>：连边（依赖）→ 反向可达（剔除）→ 计数归零（生命周期）。正因如此，RDG 能不加改动地服务 Nanite/Lumen/TSR 等完全不同的渲染方案——它只关心 pass 声明了读写什么，不关心 pass 在算什么。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. 编译三步：<b>建依赖</b>（<span class="inline">AddPassDependency</span>，跨管线依赖记有序表供 fence）→ <b>剔除</b>（从 cull root 反向可达，不可达标 <span class="inline">bCulled</span>）→ <b>生命周期</b>（引用计数归零即释放）。</p>
+<p>2. <b>Cull root 三来源</b>：产 external/extracted 资源、有外部输出、<span class="inline">NeverCull</span>。哨兵 pass 永不剔。</p>
+<p>3. 资源 <span class="inline">ReferenceCount</span> = 存活引用它的 pass 数；剔除后要把死 pass 的引用减回。生命周期不重叠的资源可别名复用显存（#15）。</p>
+<p>4. 编译是<b>纯图论+引用计数</b>，不含渲染算法知识——这是 RDG 能通用的根本。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="Builder_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#4 FRDGBuilder</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="Execute_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#6 执行</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="Pass_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#3 Pass（NeverCull）</a><a class="tag" href="Resources_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#2 资源（cull root）</a><a class="tag" href="ResourcePool_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#15 资源池（别名）</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="Compile_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇编译算法附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>
