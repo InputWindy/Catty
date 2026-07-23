@@ -3,93 +3,688 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MegaLightsSampling.usf 代码解析</title>
+<title>MegaLightsSampling.usf 代码解析（整源）</title>
 <style>
-:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
 <div class="nav"><a href="../UE_MegaLights_解析_总目录.html">← 返回《UE MegaLights》总目录</a><a href="../Chapters/MegaLightsSampling_ConvergenceAnnotated.html">← 回到 #2 光源采样</a></div>
-<h1>MegaLightsSampling.usf 汇聚/发散批注版</h1><div class="subtitle">MegaLights 的<b>光源采样内核</b>：每个降采样像素从光源网格里按 <span class="inline">FLightTargetPDF</span>（假设完全可见的亮度 + log2 感知加权）+ <b>Guide by History</b> 重要性抽 N 个光源样本，写进 <span class="inline">RWLightSamples</span> 供追踪消费。核心 <span class="inline">GenerateLightSamplesCS</span>（8×8 线程组）。<b>说明：完整文件 640 行</b>，下方内嵌核心入口的真实源码。</div></header>
+<h1>MegaLightsSampling.usf 整源解析</h1><div class="subtitle">MegaLights 的<b>光源采样内核</b>：每个降采样像素在其光网格 cell 内，用<b>重要性采样</b>（结合上帧可见光哈希做 Guide by History）+ 蓝噪声，从众多局部光/方向光里抽出固定数量的<b>候选光样本</b>供后续追踪求可见性。核心 <span class="inline">GenerateLightSamplesCS</span>（8×8 线程组，按 tile 类型 permutation）。<b>下方内嵌完整 554 行真实源码</b>，逐段批注。</div></header>
 <main>
 
 <section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
-<div class="node branch"><strong>取像素 + 光网格</strong><small>ComputeLightGridCellIndex</small></div>
+<div class="node branch"><strong>降采样 tile</strong><small>DownsampledTileData</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><strong>重投影历史</strong><small>bGuideByHistory 引导 PDF</small></div>
+<div class="node func"><strong>取材质/深度/光网格</strong><small>ComputeLightGridCellIndex</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><strong>构 PDF + 蓝噪声抽样</strong><small>FLightTargetPDF → 抽 N 个</small></div>
+<div class="node func"><strong>Guide by History</strong><small>读上帧可见光哈希</small></div>
 <div class="arrow">▶</div>
-<div class="node out"><strong>PackLightSample</strong><small>写 RWLightSamples</small></div>
+<div class="node func"><strong>重要性采样 + 蓝噪声</strong><small>SampleLocal/DirectionalLight</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>PackLightSample</strong><small>候选样本→追踪</small></div>
 </div></section>
 
-<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（640 行文件的核心节选，逐行真实）</span></h2><div class="body">
-<span class="source-path">Engine/Shaders/Private/MegaLights/MegaLightsSampling.usf · GenerateLightSamplesCS L286</span>
-<textarea class="embedded-source" readonly spellcheck="false">RWTexture2D&lt;uint&gt; RWLightSamples;   // 输出：打包的光源样本
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/MegaLights/MegaLightsSampling.usf</span></h2><div class="body">
+<span class="source-path">GenerateLightSamplesCS @ L287 · SampleLocalLight @ L214 · SampleDirectionalLight @ L245 · SampleLight @ L117</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
 
-[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]   // 8×8
-void GenerateLightSamplesCS(uint3 GroupId : SV_GroupID, uint3 GroupThreadId : SV_GroupThreadID, uint3 DispatchThreadId : SV_DispatchThreadID)
+#ifndef NUM_SAMPLES_PER_PIXEL_1D
+	#define NUM_SAMPLES_PER_PIXEL_1D 1
+	#define NUM_SAMPLES_PER_PIXEL_2D_X 1
+	#define NUM_SAMPLES_PER_PIXEL_2D_Y 1
+#endif
+
+#ifndef TILE_TYPE
+	#define TILE_TYPE TILE_MODE_EMPTY
+#endif
+
+#include "MegaLightsSamplingDefinitionsCommon.ush"
+
+#include "../Common.ush"
+#include "/Engine/Shared/MegaLightsDefinitions.h"
+
+// This tile uses only unlit or default lit shading model
+#if TILE_TYPE == TILE_MODE_SIMPLE_SHADING || TILE_TYPE == TILE_MODE_SIMPLE_SHADING_RECT || TILE_TYPE == TILE_MODE_SIMPLE_SHADING_RECT_TEXTURED || TILE_TYPE == TILE_MODE_EMPTY
+	#define FORCE_SIMPLE_SHADING 1
+#endif
+
+// Substrate tile for faster shading
+#if SUBSTRATE_ENABLED 
+#if TILE_TYPE == TILE_MODE_SIMPLE_SHADING || TILE_TYPE == TILE_MODE_SIMPLE_SHADING_RECT || TILE_TYPE == TILE_MODE_SIMPLE_SHADING_RECT_TEXTURED || TILE_TYPE == TILE_MODE_EMPTY
+	#define SUBSTRATE_FASTPATH 1
+	#define SUBSTRATE_SINGLEPATH 0
+	#define SUBSTRATE_COMPLEXSPECIALPATH 0
+#elif TILE_TYPE == TILE_MODE_SINGLE_SHADING || TILE_TYPE == TILE_MODE_SINGLE_SHADING_RECT || TILE_TYPE == TILE_MODE_SINGLE_SHADING_RECT_TEXTURED
+	#define SUBSTRATE_FASTPATH 0 
+	#define SUBSTRATE_SINGLEPATH 1
+	#define SUBSTRATE_COMPLEXSPECIALPATH 0
+#elif TILE_TYPE == TILE_MODE_COMPLEX_SHADING || TILE_TYPE == TILE_MODE_COMPLEX_SHADING_RECT || TILE_TYPE == TILE_MODE_COMPLEX_SHADING_RECT_TEXTURED
+	#define SUBSTRATE_FASTPATH 0 
+	#define SUBSTRATE_SINGLEPATH 0
+	#define SUBSTRATE_COMPLEXSPECIALPATH 0
+#else // Special TILE_MODE_COMPLEX_SPECIAL_SHADING || TILE_MODE_COMPLEX_SPECIAL_SHADING_RECT || TILE_MODE_COMPLEX_SPECIAL_SHADING_RECT_TEXTURED
+	#define SUBSTRATE_FASTPATH 0
+	#define SUBSTRATE_SINGLEPATH 0
+	#define SUBSTRATE_COMPLEXSPECIALPATH 1
+#endif
+#endif
+
+#if SUBSTRATE_FASTPATH || SUBSTRATE_SINGLEPATH
+#define SUBSTRATE_LOAD_FROM_MATERIALCONTAINER 0
+#endif
+
+#include "../BlueNoise.ush"
+#include "MegaLightsLightTargetPDF.ush"
+#include "MegaLightsRayTracing.ush"
+#include "MegaLightsSampling.ush"
+#include "MegaLightsEstimateLight.ush"
+#include "MegaLightsVisibility.ush"
+#include "../LightFunctionAtlas/LightFunctionAtlasCommon.usf"
+#include "../StochasticLighting/StochasticLightingCommon.ush"
+
+// Allow register spilling on certain platform to avoid shader compilation issue
+#if SUBSTRATE_ENABLED
+#pragma warning(disable:7203)
+#endif
+
+ADAPTIVE_LICM
+
+uint2 DownsampledViewMin;
+uint2 DownsampledViewSize;
+float MinSampleWeightEstimate;
+uint2 NumSamplesPerPixel;
+int UseIESProfiles;
+int UseLightFunctionAtlas;
+uint bGuideByHistory;
+uint bMergeRays;
+uint bSupportSoftShadows;
+uint DebugVisualizeTraces;
+uint DebugVisualizeLight;
+uint DebugLightId;
+float HairNonShadowedLightMaxTraceDistance;
+
+RWTexture2D&lt;float&gt; RWDownsampledSceneDepth;
+RWTexture2D&lt;UNORM float3&gt; RWDownsampledSceneWorldNormal;
+RWTexture2D&lt;uint&gt; RWLightSamples;
+RWTexture2D&lt;uint&gt; RWLightSampleRays;
+
+Texture2D&lt;uint&gt; PackedPixelDataTexture;
+Texture2D&lt;uint2&gt; EncodedHistoryScreenCoordTexture;
+Texture2D MegaLightsDepthHistory;
+float4 HistorySubPixelGridSizeAndInvSize;
+uint2 HistoryScreenCoordDecodeShift;
+
+Buffer&lt;float&gt; LightPowerHistoryRatioBuffer;
+
+StructuredBuffer&lt;uint&gt; DownsampledTileAllocator;
+StructuredBuffer&lt;uint&gt; DownsampledTileData;
+
+StructuredBuffer&lt;uint&gt; VisibleLightHashHistory;
+StructuredBuffer&lt;uint&gt; HiddenLightHashHistory;
+uint2 HistoryVisibleLightHashViewMinInTiles;
+uint2 HistoryVisibleLightHashViewSizeInTiles;
+
+float LightHiddenPDFWeight;
+float LightHiddenPDFWeightForHistoryMiss;
+
+uint DownsampledTileDataStride;
+float2 DownsampledBufferInvSize;
+
+uint2 GetSampleCoord(uint2 DownsampledScreenCoord, uint LightSampleX, uint LightSampleY)
 {
-	uint DownsampledTileIndex = GroupId.x;
-	if (DownsampledTileIndex < DownsampledTileAllocator[TILE_TYPE])   // 只处理本 tile 类型的块
+	return DownsampledScreenCoord * NumSamplesPerPixel + uint2(LightSampleX, LightSampleY);
+}
+
+uint2 GetSampleCoord(uint2 DownsampledScreenCoord, uint LightSampleIndex)
+{
+	return GetSampleCoord(DownsampledScreenCoord, LightSampleIndex % NUM_SAMPLES_PER_PIXEL_2D_X, LightSampleIndex / NUM_SAMPLES_PER_PIXEL_2D_X);
+}
+
+float TransmissionSampleWeight;
+
+void SampleLight(
+	uint2 ScreenCoord,
+	float3 TranslatedWorldPosition,
+	const FMegaLightsMaterial Material,
+	uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE],
+	bool bHasValidHistory, 
+	uint ForwardLightIndex,
+	FDeferredLightData LightData,
+	FForwardLightData ForwardLightData,
+	uint LightLightingChannelMask,
+	inout FLightSampler LightSampler,
+	inout FDebugContext DebugContext)
+{
+	if ((Material.LightingChannelMask &amp; LightLightingChannelMask) == 0)
 	{
+		return;
+	}
+
+	const uint LightSceneId = ForwardLightData.LightSceneId;
+	const int PrevForwardLightIndex = ForwardLightData.PrevLocalLightIndex;
+
+	if (UseLightFunctionAtlas == 0)
+	{
+		LightData.LightFunctionAtlasLightIndex = 0;
+	}
+
+	if (UseIESProfiles == 0)
+	{
+		LightData.IESAtlasIndex = -1;
+	}
+						
+	if (!IsRectLightTileType(TILE_TYPE))
+	{
+		LightData.bRectLight = false;
+	}
+
+	if (!IsTexturedLightTileType(TILE_TYPE))
+	{
+		LightData.RectLightData.AtlasData.AtlasMaxLevel = MAX_RECT_ATLAS_MIP;
+	}
+
+	float4 LightAttenuation = 1.0f;
+	if (Material.bHasTransmission)
+	{
+		LightAttenuation.w = UnpackUseTransmission(ForwardLightData) ? TransmissionSampleWeight : 0.0f;
+	}
+
+	FLightTargetPDF LightTargetPDF = GetLocalLightTargetPDF(ForwardLightIndex, LightData, LightAttenuation, TranslatedWorldPosition, Material, ScreenCoord);
+
+	bool bWasVisibleInLastFrame = true;
+	if (bGuideByHistory &amp;&amp; LightTargetPDF.Weight &gt; 0.0 &amp;&amp; PrevForwardLightIndex &gt;= 0)
+	{
+		bWasVisibleInLastFrame = IsLightVisible(VisibleLightHash, PrevForwardLightIndex);
+		
+		if (!bWasVisibleInLastFrame)
+		{
+			float LightPowerHistoryRatio = LightPowerHistoryRatioBuffer[ForwardLightIndex];
+			float PrevWeightEstimate = LightTargetPDF.Luminance * LightPowerHistoryRatio;
+
+			// Only mark light as visible if it wasn't sampled last frame due to falling below min weight.
+			// Otherwise, the light could be shadowed and we don't want to send more samples to hidden lights
+			bWasVisibleInLastFrame = PrevWeightEstimate &lt; MinSampleWeight;
+		}
+	}
+
+	#if DEBUG_MODE
+	if (DebugContext.bIsActive)
+	{
+		Newline(DebugContext);
+		PrintLightType(DebugContext, LightData);
+		Print(DebugContext, LightSceneId, Select(LightSceneId == DebugLightId, FontSelected, FontValue), 10, 1);
+		Print(DebugContext, ForwardLightIndex, Select(LightSceneId == DebugLightId, FontSelected, FontValue), 10, 1);
+		Print(DebugContext, LightTargetPDF.Weight, Select(LightTargetPDF.Weight &gt; 0.0, FontWhite, FontGrey));
+		Print(DebugContext, LightData.LightFunctionAtlasLightIndex, Select(LightData.LightFunctionAtlasLightIndex != 0, FontWhite, FontGrey), 10, 1);
+		Print(DebugContext, LightData.IESAtlasIndex, Select(LightData.IESAtlasIndex != -1, FontWhite, FontGrey), 10, 1);
+		Print(DebugContext, bWasVisibleInLastFrame ? 1u : 0u, Select(LightTargetPDF.Weight &gt; 0.0 &amp;&amp;	bWasVisibleInLastFrame, FontWhite, FontGrey), 4, 1);
+
+		if ((DebugVisualizeLight != 0 &amp;&amp; LightTargetPDF.Weight &gt; 0.0 &amp;&amp; LightSceneId == DebugLightId) || DebugVisualizeLight == 2)
+		{
+			const float4 DebugLightColor = bWasVisibleInLastFrame ? float4(0, 1, 0, 1) : float4(0, 0.5f, 0, 1);
+			AddSphereTWS(DebugContext, LightData.TranslatedWorldPosition, 10.0f, DebugLightColor);
+			AddLineTWS(DebugContext, TranslatedWorldPosition, LightData.TranslatedWorldPosition, DebugLightColor);
+		}
+	}
+	#endif
+
+	if (LightTargetPDF.Weight &gt; 0.0)
+	{
+		if (!bWasVisibleInLastFrame)
+		{
+			LightTargetPDF.Weight *= bHasValidHistory ? LightHiddenPDFWeight : LightHiddenPDFWeightForHistoryMiss;
+		}
+
+		AddLightSample(LightSampler, LightTargetPDF.Weight, ForwardLightIndex, bWasVisibleInLastFrame, LightData.bRadialLight);
+	}
+}
+
+void SampleLocalLight(
+	uint2 ScreenCoord,
+	float3 TranslatedWorldPosition,
+	const FMegaLightsMaterial Material,
+	uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE],
+	bool bHasValidHistory,
+	uint LocalLightIndex,
+	inout FLightSampler LightSampler,
+	inout FDebugContext DebugContext)
+{
+	const FLocalLightData LocalLightData = GetLocalLightData(LocalLightIndex, 0);
+	FDeferredLightData LightData = ConvertToDeferredLight(LocalLightData);
+
+	float LightWeightEstimate = EstimateLocalLight(LightData, TranslatedWorldPosition);
+	if (LightWeightEstimate &gt;= MinSampleWeightEstimate)
+	{
+		SampleLight(
+			ScreenCoord, 
+			TranslatedWorldPosition,
+			Material,
+			VisibleLightHash,
+			bHasValidHistory,
+			LocalLightIndex,
+			LightData,
+			LocalLightData.Internal,
+			UnpackLightingChannelMask(LocalLightData),
+			LightSampler,
+			DebugContext);
+	}
+}
+
+void SampleDirectionalLight(
+	uint DirectionalLightIndex,
+	uint2 ScreenCoord,
+	float3 TranslatedWorldPosition,
+	const FMegaLightsMaterial Material,
+	uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE],
+	bool bHasValidHistory,
+	inout FLightSampler LightSampler,
+	inout FDebugContext DebugContext)
+{
+	uint LightIndex = ForwardLightStruct.DirectionalLightIndices[DirectionalLightIndex];
+	FForwardLightData ForwardLightData = GetForwardLightData(LightIndex, 0);
+
+	FDeferredLightData LightData = ConvertToDeferredLight(ForwardLightData);
+	LightData.bRadialLight = false;
+	LightData.bInverseSquared = false;
+
+	SampleLight(
+		ScreenCoord,
+		TranslatedWorldPosition,
+		Material,
+		VisibleLightHash,
+		bHasValidHistory,
+		LightIndex,
+		LightData,
+		ForwardLightData,
+		UnpackLightingChannelMask(ForwardLightData),
+		LightSampler,
+		DebugContext);
+}
+
+#ifdef GenerateLightSamplesCS
+
+#if DEBUG_MODE
+groupshared int SharedGridCellLightCount[2];
+groupshared int SharedLightLoopIterationCount[2];
+#endif
+
+/**
+ * Run one thread per sample and generate new light samples for tracing
+ */
+[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]
+void GenerateLightSamplesCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 GroupThreadId : SV_GroupThreadID,
+	uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint LinearThreadIndex = GroupThreadId.y * THREADGROUP_SIZE + GroupThreadId.x;
+	uint DownsampledTileIndex = GroupId.x;
+	if (DownsampledTileIndex &lt; DownsampledTileAllocator[TILE_TYPE])
+	{
+		uint LocalCandidateLightHiMask = 0;
 		uint2 DownsampledTileCoord = UnpackTile(DownsampledTileData[DownsampledTileIndex + TILE_TYPE * DownsampledTileDataStride]);
 		uint2 DownsampledScreenCoord = DownsampledTileCoord * TILE_SIZE + GroupThreadId.xy + DownsampledViewMin;
 
-		if (all(DownsampledScreenCoord < DownsampledViewMin + DownsampledViewSize))
+		int LightLoopIterationCount = 0;
+		int GridCellLightCount = 0;
+
+		if (all(DownsampledScreenCoord &lt; DownsampledViewMin + DownsampledViewSize))
 		{
 			uint2 ScreenCoord = DownsampledScreenCoordToScreenCoord(DownsampledScreenCoord);
+			FDebugContext DebugContext = InitDebugContext(DownsampledScreenCoord, /*bDownsampled*/ true, float2(0.05, 0.05));
+
 			const float2 ScreenUV = (ScreenCoord + 0.5f) * View.BufferSizeAndInvSize.zw;
 			FMegaLightsMaterial Material = LoadMaterial(ScreenUV, ScreenCoord);
 			const float SceneDepth = Material.Depth;
 
-			if (SceneDepth > 0)
+			if (SceneDepth &gt; 0)
 			{
-				const float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, SceneDepth);
-				// 从光源剔除网格取本像素相关的光源列表
-				const uint GridIndex = ComputeLightGridCellIndex(ScreenCoord - View.ViewRectMin.xy, SceneDepth, EyeIndex);
-				const FCulledLightsGridHeader Header = GetCulledLightsGridHeader(GridIndex);
-				const uint NumLightsInGridCell = min(Header.NumMegaLights, GetMaxLightsPerCell());
+				const float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, SceneDepth);		
 
-				// —— Guide by History：重投影上帧，拿到历史可见/隐藏光哈希 ——
+				const uint EyeIndex = 0; // TODO
+				const uint GridIndex = ComputeLightGridCellIndex(ScreenCoord - View.ViewRectMin.xy, SceneDepth, EyeIndex);
+				const FCulledLightsGridHeader CulledLightsGridHeader = GetCulledLightsGridHeader(GridIndex);
+				const uint NumLightsInGridCell = min(CulledLightsGridHeader.NumMegaLights, GetMaxLightsPerCell());
+				const uint NumLocalLights = GetNumLocalLights();
+
+				bool bHasValidHistory = false;
+				uint2 PrevScreenCoord = ScreenCoord;
+
+				#define REPROJECT_HISTORY_FOR_GUIDING 1
+				#if REPROJECT_HISTORY_FOR_GUIDING
 				if (bGuideByHistory)
 				{
-					FMegaLightsPackedPixelData PackedPixelData = PackedPixelDataTexture[ScreenCoord];
+					FMegaLightsPackedPixelData PackedPixelData = (FMegaLightsPackedPixelData)PackedPixelDataTexture[ScreenCoord];
+					uint2 EncodedHistoryScreenCoord = EncodedHistoryScreenCoordTexture[ScreenCoord];
+
 					bHasValidHistory = PackedPixelData.AnyHistoryValid();
-					// ... 用历史下调"被隐藏光"的 PDF 权重 ...
+
+					float4 Decoded = DecodeHistoryScreenCoord(EncodedHistoryScreenCoord, HistoryScreenCoordDecodeShift, HistorySubPixelGridSizeAndInvSize.zw);
+					PrevScreenCoord = uint2(Decoded.xy);
 				}
-				// ... 遍历网格光源构 FLightTargetPDF（GetLocalLightTargetPDF）→ 蓝噪声在离散分布抽 N 个 ...
+				#endif
+
+				#if DEBUG_MODE
+				if (DebugContext.bIsActive)
+				{
+					Print(DebugContext, TEXT("GenerateSamples"), FontTitle);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("ScreenCoord        : "));
+					Print(DebugContext, ScreenCoord.x, FontValue);
+					Print(DebugContext, ScreenCoord.y, FontValue);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("Roughness          : "));
+					Print(DebugContext, Material.Roughness, FontValue);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("TileType           : "));
+					PrintTileTypeString(DebugContext, TILE_TYPE, Select(IsSimpleShadingTileType(TILE_TYPE), FontGreen, FontRed));
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("View.PreExposure   : "));
+					Print(DebugContext, View.PreExposure, FontValue);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("NumLightsInGridCell: "));
+					Print(DebugContext, NumLightsInGridCell, FontValue);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("GridIndex          : "));
+					Print(DebugContext, GridIndex, FontValue);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("NumLocalLights     : "));
+					Print(DebugContext, NumLocalLights, Select(NumLocalLights &lt; MAX_LOCAL_LIGHT_INDEX + 1, FontLightGreen, FontRed));
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("ValidGuideHistory  : "));
+					Print(DebugContext, bHasValidHistory, FontValue);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("LightId | LocalLightId | Weight  | LFAtlas | IESAtlas | History"), FontSilver);
+				}
+				#endif
+
+				// Bilinear filtering approximation using stochastic offset
+				const float2 RandomVec2 = BlueNoiseVec2(DownsampledScreenCoord, MegaLightsStateFrameIndex);
+				PrevScreenCoord += (RandomVec2 - 0.5f) * VISIBLE_LIGHT_HASH_TILE_SIZE;
+
+				uint2 PrevScreenTileCoord = clamp(PrevScreenCoord / VISIBLE_LIGHT_HASH_TILE_SIZE, HistoryVisibleLightHashViewMinInTiles, HistoryVisibleLightHashViewMinInTiles + HistoryVisibleLightHashViewSizeInTiles - 1);
+				uint PrevScreenLinearTileCoord = PrevScreenTileCoord.y * HistoryVisibleLightHashViewSizeInTiles.x + PrevScreenTileCoord.x;
+
+				uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE];
+				for (uint IndexInHash = 0; IndexInHash &lt; VISIBLE_LIGHT_HASH_SIZE; ++IndexInHash)
+				{
+					VisibleLightHash[IndexInHash] = 0xFFFFFFFF;
+
+					if (bGuideByHistory)
+					{
+						VisibleLightHash[IndexInHash] = VisibleLightHashHistory[PrevScreenLinearTileCoord * VISIBLE_LIGHT_HASH_SIZE + IndexInHash];
+					}
+				}
+
+			#if REFERENCE_MODE
+				FLightSampler LightSampler;
+				InitLightSamplerFromSequence(LightSampler, DownsampledScreenCoord, MegaLightsStateFrameIndex);
+			#else
+				const float RandomScalar = BlueNoiseScalar(DownsampledScreenCoord, MegaLightsStateFrameIndex);
+				FLightSampler LightSampler = InitLightSamplerStratified(RandomScalar);
+			#endif
+
+				const uint ScalarGridIndex = WaveReadLaneFirst(GridIndex);
+				const bool bScalarGridCell = WaveActiveAllTrue(ScalarGridIndex == GridIndex);
+
+				GridCellLightCount = NumLightsInGridCell;
+
+				if (bScalarGridCell)
+				{
+					FCulledLightsGridHeader CulledLightsGridHeader = GetCulledLightsGridHeader(ScalarGridIndex);
+					uint NumLightsInGridCell = min(CulledLightsGridHeader.NumMegaLights, GetMaxLightsPerCell());
+
+					uint GridLightIndex = 0;
+					while(GridLightIndex &lt; NumLightsInGridCell)
+					{
+						uint LocalLightIndex = GetCulledLightDataGrid(CulledLightsGridHeader.MegaLightsDataStartIndex + GridLightIndex);
+						if (LocalLightIndex &gt;= MAX_LOCAL_LIGHT_INDEX)
+						{
+							break;
+						}
+						
+						++GridLightIndex;
+						++LightLoopIterationCount;
+						SampleLocalLight(ScreenCoord, TranslatedWorldPosition, Material, VisibleLightHash, bHasValidHistory, LocalLightIndex, LightSampler, DebugContext);
+					}
+				}
+				else
+				{
+					uint GridLightIndex = 0;
+					while(GridLightIndex &lt; NumLightsInGridCell)
+					{
+						const uint VectorLocalLightIndex = GetCulledLightDataGrid(CulledLightsGridHeader.MegaLightsDataStartIndex + GridLightIndex);
+						if (VectorLocalLightIndex &gt;= MAX_LOCAL_LIGHT_INDEX)
+						{
+							break;
+						}
+						
+						++LightLoopIterationCount;
+
+						uint LocalLightIndex = WaveActiveMin(VectorLocalLightIndex);
+						if (LocalLightIndex == VectorLocalLightIndex)
+						{
+							++GridLightIndex;
+							SampleLocalLight(ScreenCoord, TranslatedWorldPosition, Material, VisibleLightHash, bHasValidHistory, LocalLightIndex, LightSampler, DebugContext);
+						}
+					}
+				}
+
+				// sample directional lights
+				for (uint Index = ForwardLightStruct.DirectionalMegaLightsSupportedStartIndex; Index &lt; ForwardLightStruct.NumDirectionalLights; ++Index)
+				{
+					SampleDirectionalLight(Index, ScreenCoord, TranslatedWorldPosition, Material, VisibleLightHash, bHasValidHistory, LightSampler, DebugContext);
+				}
+
+				#if DEBUG_MODE
+				if (DebugContext.bIsActive)
+				{
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("Weight sum : "));
+					Print(DebugContext, LightSampler.WeightSum, FontValue);
+				
+					Newline(DebugContext);
+					Newline(DebugContext);
+					Print(DebugContext, TEXT("LightId | Weight | WasHidden | AsVis | Trace | UV          | Type"), FontSilver);
+				}
+				#endif
+
+				// Finalize samples
+				for (uint LightSampleIndex = 0; LightSampleIndex &lt; NUM_SAMPLES_PER_PIXEL_1D; ++LightSampleIndex)
+				{
+					FCandidateLightSample CandidateLightSample = UnpackCandidateLightSample(LightSampler.PackedSamples[LightSampleIndex]);
+
+					FLightSample LightSample = InitLightSample();
+					LightSample.bVisible = true;
+					LightSample.bGuidedAsVisible = bGuideByHistory ? CandidateLightSample.bLightWasVisible : true;
+					LightSample.LocalLightIndex = CandidateLightSample.LocalLightIndex;
+					LightSample.Weight = CandidateLightSample.Weight;
+
+					FLightSampleRay LightSampleRay = InitLightSampleRay();
+					LightSampleRay.bIsFirstPerson = Material.bIsFirstPerson;
+
+					uint2 SampleCoord = GetSampleCoord(DownsampledScreenCoord, LightSampleIndex);
+
+					if (LightSample.LocalLightIndex != MAX_LOCAL_LIGHT_INDEX)
+					{
+						const FForwardLightData ForwardLightData = GetForwardLightData(LightSample.LocalLightIndex, 0);
+						FDeferredLightData LightData = ConvertToDeferredLight(ForwardLightData);
+
+						const bool bAreaLight = IsAreaLight(LightData) &amp;&amp; bSupportSoftShadows;
+						if (bAreaLight)
+						{
+							#if REFERENCE_MODE
+								FRandomSequence RandSequence = RandomSequenceCreate(uint3(SampleCoord, MegaLightsStateFrameIndex), LightSampleIndex, NUM_SAMPLES_1D);
+								// The Get1D() are to skip the first two samples used in the lights selection above, ensuring area light uv sampling is uncorrelated to it.
+								RandSequence.Get1D();
+								LightSampleRay.UV = RandSequence.Get2D();
+							#else
+								LightSampleRay.UV = BlueNoiseVec2(SampleCoord, MegaLightsStateFrameIndex);
+							#endif
+						}
+
+						bool bWasHiddenInLastFrame = true;
+						bool bPenumbra = true;
+
+						if (bGuideByHistory &amp;&amp; bHasValidHistory &amp;&amp; ForwardLightData.PrevLocalLightIndex &gt;= 0)
+						{
+							if (CandidateLightSample.bLightWasVisible)
+							{
+								bWasHiddenInLastFrame = IsLightHidden(HiddenLightHashHistory, PrevScreenLinearTileCoord, ForwardLightData.PrevLocalLightIndex);
+
+								// If some rays were blocked and some hit the light then we are in a penumbra region
+								bPenumbra = bWasHiddenInLastFrame;
+							}
+							else
+							{
+								bPenumbra = false;
+							}
+						}
+
+						if (Material.bIsHair)
+						{
+							LightSampleRay.RayType = LIGHT_SAMPLE_RAY_TYPE_HAIR;
+						}
+						else if (Material.bIsTwoSided)
+						{
+							// Only need to mark rays which enter the surface
+							FLightSampleTrace LightSampleTrace = GetLightSampleTrace(TranslatedWorldPosition, LightSample.LocalLightIndex, LightSampleRay.UV);
+							const bool bRayEntersSurface = dot(LightSampleTrace.Direction, Material.WorldNormalForPositionBias) &lt; 0.0;
+							if (bRayEntersSurface)
+							{
+								LightSampleRay.RayType = LIGHT_SAMPLE_RAY_TYPE_TWO_SIDED;
+							}
+						}
+						else if (Material.bHasTransmission &amp;&amp; TransmissionSampleWeight &gt; 0.0f &amp;&amp; UnpackUseTransmission(ForwardLightData))
+						{
+							// Only need to mark rays which enter the surface
+							FLightSampleTrace LightSampleTrace = GetLightSampleTrace(TranslatedWorldPosition, LightSample.LocalLightIndex, LightSampleRay.UV);
+							const bool bRayEntersSurface = dot(LightSampleTrace.Direction, Material.WorldNormalForPositionBias) &lt; 0.0;
+							if (bRayEntersSurface)
+							{
+								LightSampleRay.RayType = LIGHT_SAMPLE_RAY_TYPE_TRANSMISSION;
+							}
+						}
+
+						const bool bCastShadows = UnpackCastShadow(ForwardLightData);
+						LightSampleRay.bCompleted = (bCastShadows || (Material.bIsHair &amp;&amp; HairNonShadowedLightMaxTraceDistance &gt; 0)) ? false : true;
+
+						LightSample.Weight = LightSampler.WeightSum / LightSample.Weight;
+					
+						if (bMergeRays &amp;&amp; !(bAreaLight &amp;&amp; (bPenumbra || LightSampleRay.RayType == LIGHT_SAMPLE_RAY_TYPE_TRANSMISSION)))
+						{
+							// Only check next sample for performance reasons. Sometimes it doesn't merge all the rays but it's rare
+							if (LightSampleIndex + 1 &lt; NUM_SAMPLES_PER_PIXEL_1D)
+							{
+								FCandidateLightSample NextCandidateLightSample = UnpackCandidateLightSample(LightSampler.PackedSamples[LightSampleIndex + 1]);
+								if (NextCandidateLightSample.LocalLightIndex == CandidateLightSample.LocalLightIndex)
+								{
+									LightSample.Weight = 0.0;
+									LightSample.bVisible = false;
+									LightSampleRay.bCompleted = true;
+								}
+							}
+						}
+
+						#if DEBUG_MODE
+						if (DebugContext.bIsActive)
+						{
+							Newline(DebugContext);						
+							Print(DebugContext, ForwardLightData.LightSceneId, Select(ForwardLightData.LightSceneId == DebugLightId, FontSelected, FontValue), 9, 1);
+							Print(DebugContext, LightSample.Weight, FontValue, 12);
+							Print(DebugContext, bWasHiddenInLastFrame ? 1u : 0u, FontValue, 10);
+							Print(DebugContext, LightSample.bGuidedAsVisible ? 1u : 0u, FontValue, 8);
+							Print(DebugContext, LightSampleRay.bCompleted ? 0u : 1u, FontValue, 7);
+							Print(DebugContext, LightSampleRay.UV, Select(bAreaLight, FontValue, FontSilver), 8, 3);
+							Print(DebugContext, LightSampleRay.RayType, FontValue, 2);
+							if (DebugVisualizeTraces == DEBUG_VISUALIZE_TRACES_SAMPLES)
+							{
+								const FLightSampleTrace LightSampleTrace = GetLightSampleTrace(TranslatedWorldPosition, LightSample.LocalLightIndex, LightSampleRay.UV);
+								float4 RayColor = float4(LightData.Color.xyz / Luminance(LightData.Color.xyz), 1.0f);
+								AddLineTWS(DebugContext, TranslatedWorldPosition, TranslatedWorldPosition + LightSampleTrace.Direction * LightSampleTrace.Distance, RayColor);
+							}
+						}
+						#endif
+					}
+
+					RWLightSamples[SampleCoord] = PackLightSample(LightSample);
+					RWLightSampleRays[SampleCoord] = PackLightSampleRay(LightSampleRay);
+				}
+			}
+			else
+			{
+				for (uint LightSampleIndex = 0; LightSampleIndex &lt; NUM_SAMPLES_PER_PIXEL_1D; ++LightSampleIndex)
+				{
+					RWLightSamples[GetSampleCoord(DownsampledScreenCoord, LightSampleIndex)] = PackLightSample(InitLightSample());
+					RWLightSampleRays[GetSampleCoord(DownsampledScreenCoord, LightSampleIndex)] = PackLightSampleRay(InitLightSampleRay());
+				}
+			}
+
+			#if DEBUG_MODE
+			AddTextBackground(DebugContext, FontBackground);
+			#endif
+
+			RWDownsampledSceneDepth[DownsampledScreenCoord] = SceneDepth;
+			RWDownsampledSceneWorldNormal[DownsampledScreenCoord] = EncodeNormal(Material.WorldNormalForPositionBias);
+		}
+	}
+}
+
+#endif // GenerateLightSamplesCS
+
+#ifdef ClearLightSamplesCS
+
+/**
+ * Clear data for empty tiles, which won't be processed by GenerateLightSamplesCS
+ */
+[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]
+void ClearLightSamplesCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 GroupThreadId : SV_GroupThreadID,
+	uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint DownsampledTileIndex = GroupId.x;
+	if (DownsampledTileIndex &lt; DownsampledTileAllocator[TILE_MODE_EMPTY])
+	{
+		uint2 DownsampledTileCoord = UnpackTile(DownsampledTileData[DownsampledTileIndex + TILE_MODE_EMPTY * DownsampledTileDataStride]);
+		uint2 DownsampledScreenCoord = DownsampledTileCoord * TILE_SIZE + GroupThreadId.xy + DownsampledViewMin;
+
+		if (all(DownsampledScreenCoord &lt; DownsampledViewMin + DownsampledViewSize))
+		{
+			for (uint LightSampleY = 0; LightSampleY &lt; NumSamplesPerPixel.y; ++LightSampleY)
+			{
+				for (uint LightSampleX = 0; LightSampleX &lt; NumSamplesPerPixel.x; ++LightSampleX)
+				{
+					const uint2 SampleCoord = GetSampleCoord(DownsampledScreenCoord, LightSampleX, LightSampleY);
+					RWLightSamples[SampleCoord] = PackLightSample(InitLightSample());
+					RWLightSampleRays[SampleCoord] = PackLightSampleRay(InitLightSampleRay());
+				}
 			}
 		}
 	}
-	// 抽中的样本打包写出；无效槽写 InitLightSample()
-	RWLightSamples[SampleCoord] = PackLightSample(LightSample);
 }
+
+#endif // ClearLightSamplesCS
 </textarea>
 </div></section>
 
-<section class="card"><h2>0. 按 tile 类型 + 降采样调度</h2><div class="body grid2"><pre><code><span class="code-line orange">if (DownsampledTileIndex < DownsampledTileAllocator[TILE_TYPE])</span>
-<span class="code-line green">DownsampledScreenCoord = TileCoord*TILE_SIZE + GroupThreadId + ViewMin</span></code></pre><div class="note n-orange"><h3>说明</h3><p>采样只在<b>降采样分辨率</b>上跑（<a href="../Chapters/MegaLightsOverview_ConvergenceAnnotated.html" class="inline">#1</a> 的 DownsampleMode），且按 <b>tile 类型</b>（TILE_TYPE permutation）间接派发——只对被分类为该类型的 tile 启动线程组。这是随机采样管线的通用省法：把工作限制到"确实要采样"的像素，空 tile 不占线程。</p></div></div></section>
+<section class="card"><h2>0. tile 分派与降采样定位（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">if (DownsampledTileIndex < DownsampledTileAllocator[TILE_TYPE])</span>
+<span class="code-line blue">DownsampledScreenCoord = TileCoord*TILE_SIZE + threadId</span></code></pre><div class="note n-orange"><h3>说明</h3><p>MegaLights 在<b>降分辨率</b>上采样以省开销：一个 8×8 线程组处理一个降采样 tile，只有 <span class="inline">DownsampledTileIndex</span> 落在该 <span class="inline">TILE_TYPE</span> 的已分配数内才干活（tile 分类见 #4）。<span class="inline">TILE_TYPE</span> 是 shader permutation 维度——简单/复杂 tile 编译不同分支。</p></div></div></section>
 
-<section class="card"><h2>1. 光源网格 + Guide by History（历史引导）</h2><div class="body grid2"><pre><code><span class="code-line blue">GridIndex = ComputeLightGridCellIndex(ScreenCoord, SceneDepth)</span>
-<span class="code-line yellow">if (bGuideByHistory) { 读 PackedPixelData/历史哈希 → 调 PDF }</span></code></pre><div class="note n-blue"><h3>说明</h3><p>先用<b>光源剔除网格</b>（与延迟光照共享的 <span class="inline">CulledLightsGrid</span>）拿到本像素相关的少量光源，而非遍历全部。<b>Guide by History</b> 重投影上一帧，读 <span class="inline">VisibleLightHash</span>：被上帧证明"看得见"的光提高 PDF、"被挡住"的光降低 PDF——这样样本不会浪费在必然返回遮挡的强光上。这与 <a href="../Chapters/MegaLightsSampling_ConvergenceAnnotated.html" class="inline">#2</a> 的采样哲学一致，哈希由 <a href="MegaLightsShading.usf.html" class="inline">Shading</a> 回写。</p></div></div></section>
+<section class="card"><h2>1. Guide by History：读上帧可见光哈希（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line green">if (bGuideByHistory) 读 PackedPixelData + 历史坐标</span>
+<span class="code-line blue">VisibleLightHashHistory[PrevScreenLinearTileCoord*...]</span></code></pre><div class="note n-green"><h3>说明</h3><p>时域引导的<b>读取端</b>：把当前像素按运动重投影到上帧 tile，读回<b>可见光哈希</b>（上帧这个 tile 里哪些光实际可见）。采样时优先抽历史上可见的光——这就是 MegaLights 降噪的关键闭环之读端（写端在 <a href="MegaLightsShading.usf.html" class="inline">Shading</a> 的 VisibleLightHash）。蓝噪声抖动（<span class="inline">BlueNoiseVec2</span>）避免 tile 边界硬接缝。</p></div></div></section>
 
-<section class="card"><h2>2. 构 PDF + 蓝噪声抽样（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line green">FLightTargetPDF = GetLocalLightTargetPDF(...)  // 假设完全可见的亮度 + log2</span>
-<span class="code-line yellow">蓝噪声在离散分布抽 N 个光源 + 光源上一点</span>
-<span class="code-line blue">RWLightSamples[SampleCoord] = PackLightSample(LightSample)</span></code></pre><div class="note n-green"><h3>说明</h3><p>本 shader 的<b>汇聚点</b>：为网格里每个光源算 <span class="inline">FLightTargetPDF</span>（在 <span class="inline">MegaLightsLightTargetPDF.ush</span>，假设完全可见跑分离式 BSDF 求亮度，再 <span class="inline">log2</span> 感知加权压制"强但被挡"的光），构成离散分布，用<b>蓝噪声</b>抽 <span class="inline">NumSamplesPerPixel</span> 个光源、每个再抽光源表面一点，<span class="inline">PackLightSample</span> 打包写进 <span class="inline">RWLightSamples</span>。可见性此刻未知——交给 <a href="MegaLightsRayTracing.usf.html" class="inline">追踪</a>。</p></div></div></section>
-
-<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>降采样 + tile 类型调度 → 光网格取候选光 + 历史引导调 PDF → <span class="inline">FLightTargetPDF</span> 构分布 + 蓝噪声抽 N 个 → <span class="inline">PackLightSample</span> 写 RWLightSamples。把"多光源"化为"固定预算重要性采样"。</p></div><div class="note"><h3>阅读建议</h3><p>采样设计动机见 <a href="../Chapters/MegaLightsSampling_ConvergenceAnnotated.html" class="inline">#2</a>；样本如何求可见性见 <a href="MegaLightsRayTracing.usf.html" class="inline">MegaLightsRayTracing.usf</a>；哈希回写见 <a href="MegaLightsShading.usf.html" class="inline">MegaLightsShading.usf</a>。</p></div></div></section>
+<section class="card"><h2>2. 重要性采样：FLightSampler 抽样（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line yellow">InitLightSamplerStratified(RandomScalar)</span>
+<span class="code-line blue">SampleLocalLight / SampleDirectionalLight → PackLightSample</span></code></pre><div class="note n-green"><h3>说明</h3><p>遍历光网格 cell 内的局部光（标量/向量两条路径，<span class="inline">WaveActiveMin</span> 做波前去重）+ 方向光，每盏调 <span class="inline">SampleLocalLight</span>/<span class="inline">SampleDirectionalLight</span> 累进 <span class="inline">FLightSampler</span>（按 <span class="inline">FLightTargetPDF</span> 加权蓄水池）。最后 <span class="inline">NUM_SAMPLES_PER_PIXEL</span> 个样本 <span class="inline">PackLightSample</span> 落盘，交给 <a href="MegaLightsRayTracing.usf.html" class="inline">RayTracing</a> 求可见性。</p></div></div></section>
 
 <section class="card"><h2>关联文档 / 接口</h2><div class="body">
 <a class="tag" href="../Chapters/MegaLightsSampling_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#2 光源采样</a>
-<a class="tag" href="MegaLightsRayTracing.usf.html"><span class="dot" style="background:var(--cyan)"></span>MegaLightsRayTracing.usf（追踪）↗</a>
-<a class="tag" href="MegaLightsShading.usf.html"><span class="dot" style="background:var(--cyan)"></span>MegaLightsShading.usf（着色/回写哈希）↗</a>
+<a class="tag" href="MegaLightsRayTracing.usf.html"><span class="dot" style="background:var(--cyan)"></span>MegaLightsRayTracing.usf（下游可见性）↗</a>
+<a class="tag" href="MegaLightsShading.usf.html"><span class="dot" style="background:var(--cyan)"></span>MegaLightsShading.usf（哈希写端）↗</a>
 <a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
 </div></section>
 </main>
-<script>
-document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
-</script>
 </body>
 </html>
