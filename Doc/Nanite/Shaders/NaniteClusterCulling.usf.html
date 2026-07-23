@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteClusterCulling.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:440px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/InstanceCull_ConvergenceAnnotated.html">← 回到 #5 实例剔除与层级遍历</a></div>
+<h1>NaniteClusterCulling.usf 汇聚/发散批注版</h1><div class="subtitle">Nanite 剔除漏斗的第二三级：拿 <a href="NaniteInstanceCulling.usf.html" class="inline">InstanceCull</a> 产出的候选节点，用 <b>persistent threads + 工作队列（FQueueState）</b>遍历 BVH，边走边做 LOD cut 与视锥/HZB 剔除，最终吐出 <b>VisibleCluster</b>。一个入口 <span class="inline">NodeAndClusterCull</span> 按 <span class="inline">CULLING_TYPE</span> 分派节点/簇/持久三态。<b>说明：完整文件 1153 行</b>，下方内嵌核心入口的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>候选节点</strong><small>来自 InstanceCull（QueueState）</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>NodeCull</strong><small>遍历 BVH 节点：LOD 判据 + 视锥/HZB，推子节点或候选簇</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>ClusterCull</strong><small>候选簇最终剔除测试 → VisibleCluster</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>VisibleClustersSWHW</strong><small>标好软/硬光栅 → #6</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（1153 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/Nanite/NaniteClusterCulling.usf · NodeAndClusterCull L968 / InitArgs L1044</span>
+<textarea class="embedded-source" readonly spellcheck="false">// ============ 剔除主入口：一个 CS，按 CULLING_TYPE 分派三态 ============
+[numthreads(NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE, 1, 1)]
+void NodeAndClusterCull(uint GroupID : SV_GroupID, uint GroupIndex : SV_GroupIndex)
+{
+#if CULLING_TYPE == NANITE_CULLING_TYPE_NODES
+	NodeCull<FNaniteTraversalClusterCullCallback>(GroupID, GroupIndex, QueueStateIndex);
+#elif CULLING_TYPE == NANITE_CULLING_TYPE_CLUSTERS
+	ClusterCull<FNaniteTraversalClusterCullCallback>(GroupID, GroupIndex, QueueStateIndex);
+#elif CULLING_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+	// persistent threads：一个内核里边遍历节点边剔除簇，负载均衡最好
+	PersistentNodeAndClusterCull<FNaniteTraversalClusterCullCallback>(GroupIndex, QueueStateIndex);
+#endif
+}
+
+// ============ InitArgs：清零队列状态、准备两趟的 indirect args ============
+[numthreads(1, 1, 1)]
+void InitArgs()
+{
+	// 清零 FQueueState、写 Main/Post 两趟的 RasterizeArgs，
+	// （开遮挡时）初始化 OccludedInstancesArgs —— 供后续 indirect dispatch 使用
+}
+
+// 光栅前钳制：保证给光栅的 indirect args 不越界、SW/HW 段不重叠
+Buffer<uint>              InRasterizerArgsSWHW;
+RWBuffer<uint>            OutSafeRasterizerArgsSWHW;
+RWStructuredBuffer<uint2> OutClusterCountSWHW;   // CalculateSafeRasterizerArgs 产出
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 输入输出契约</h2><div class="body grid2"><pre><code><span class="code-line blue">// 输入：候选节点/簇（QueueState，来自 InstanceCull）+ 层级/簇数据（#4）</span>
+<span class="code-line green">FQueueState  // 节点/簇的读写游标 + 计数（PassState[0]主 / [1]后）</span>
+<span class="code-line green">VisibleClustersSWHW  // 输出：可见簇，SW/HW 两段分别写</span></code></pre><div class="note n-blue"><h3>说明</h3><p>输入是 <a href="NaniteInstanceCulling.usf.html" class="inline">InstanceCull</a> 写进 <span class="inline">FQueueState</span> 的候选节点，以及 <a href="../Chapters/Streaming_ConvergenceAnnotated.html" class="inline">#4</a> 流入的 <span class="inline">Hierarchy</span>/<span class="inline">ClusterPageData</span>。输出是 <span class="inline">VisibleClustersSWHW</span>（一个 buffer 两端分别是软光栅段与硬光栅段），直接喂 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a> 光栅。遍历遇缺页时在此写 <span class="inline">StreamingRequests</span>（回 <a href="../Chapters/Streaming_ConvergenceAnnotated.html" class="inline">#4</a>）。</p></div></div></section>
+
+<section class="card"><h2>1. 一个入口三态分派</h2><div class="body grid2"><pre><code><span class="code-line orange">#if CULLING_TYPE == NANITE_CULLING_TYPE_NODES     NodeCull(...)</span>
+<span class="code-line orange">#elif ... == NANITE_CULLING_TYPE_CLUSTERS         ClusterCull(...)</span>
+<span class="code-line orange">#elif ... == PERSISTENT_NODES_AND_CLUSTERS        PersistentNodeAndClusterCull(...)</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span>三态都用同一 CS <span class="inline">NodeAndClusterCull</span> + 同一回调 <span class="inline">FNaniteTraversalClusterCullCallback</span>，围绕 <span class="inline">FQueueState</span> 工作队列协作。</p><p><span class="note-label diff">不同点</span><span class="inline">NODES</span> 遍历 BVH 节点（测 LOD/视锥/HZB，推子节点或候选簇）；<span class="inline">CLUSTERS</span> 对候选簇做最终剔除→VisibleCluster；<span class="inline">PERSISTENT_NODES_AND_CLUSTERS</span> 用<b>持久线程</b>在一个内核里边遍节点边剔簇（<span class="inline">r.Nanite.PersistentThreadsCulling</span>，默认 0，主机等固定硬件可开），省多轮 dispatch 的 barrier。</p></div></div></section>
+
+<section class="card"><h2>2. persistent 遍历：工作队列 + 常驻线程</h2><div class="body grid2"><pre><code><span class="code-line yellow">FQueueState.PassState[0/1].NodeWriteOffset / NodeCount</span>
+<span class="code-line yellow">FQueueState.PassState[0/1].ClusterWriteOffset</span>
+<span class="code-line green">// 常驻线程组自旋从队列取活：产出子节点就 push 回队列，空了取下一个</span></code></pre><div class="note n-green"><h3>说明</h3><p>BVH 遍历的工作量遍历前无法预知（实例深度差异大）。persistent culling 让固定数量线程组<b>常驻并自旋从队列取活</b>——谁产出子节点就 push 回队列、谁空了取下一个，天然负载均衡，一次 dispatch 完成整棵 BVH 的自适应遍历。LOD cut 就在节点遍历时按 <span class="inline">ParentError &gt; Threshold ≥ ClusterError</span> 定（见 <a href="../Chapters/ClusterDAG_ConvergenceAnnotated.html" class="inline">#2</a>/<a href="../Chapters/InstanceCull_ConvergenceAnnotated.html" class="inline">#5</a>）。<span class="inline">MaxNodes</span>/<span class="inline">MaxCandidateClusters</span> 是队列容量上限。</p></div></div></section>
+
+<section class="card"><h2>3. CalculateSafeRasterizerArgs：给光栅兜底</h2><div class="body grid2"><pre><code><span class="code-line blue">InRasterizerArgsSWHW → OutSafeRasterizerArgsSWHW</span>
+<span class="code-line yellow">// 钳制 indirect args：不越界、SW 段与 HW 段不重叠</span></code></pre><div class="note"><h3>说明</h3><p>剔除产出的可见簇数写进 SW/HW 两段。<span class="inline">CalculateSafeRasterizerArgs</span> 把光栅 indirect dispatch/draw 的参数<b>钳制</b>到安全范围，防止越界、防止 SW/HW 段在同一 buffer 里重叠——因为两段是从 buffer 两端相向分配的（见 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a>）。<span class="inline">InitArgs</span> 则在剔除前清零 QueueState、准备主/后趟的 args。</p></div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>一个 CS（<span class="inline">NodeAndClusterCull</span>）三态分派，围绕 <span class="inline">FQueueState</span> 工作队列 + persistent threads 遍历 BVH，边走边定 LOD cut 与剔除，产出 <span class="inline">VisibleClustersSWHW</span>。</p></div><div class="note"><h3>阅读建议</h3><p>先读 <a href="../Chapters/InstanceCull_ConvergenceAnnotated.html" class="inline">#5</a> persistent culling 与 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a> 剔除内核表；上游候选节点来自 <a href="NaniteInstanceCulling.usf.html" class="inline">NaniteInstanceCulling.usf</a>；HZB 遮挡见 <a href="NaniteHZBCull.ush.html" class="inline">NaniteHZBCull.ush</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="NaniteInstanceCulling.usf.html"><span class="dot" style="background:var(--green)"></span>NaniteInstanceCulling.usf（产出候选节点）↗</a>
+<a class="tag" href="../Chapters/CullRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#6 集群剔除与两路光栅化（消费 VisibleClustersSWHW）</a>
+<a class="tag" href="NaniteHZBCull.ush.html"><span class="dot" style="background:var(--cyan)"></span>NaniteHZBCull.ush（HZB 遮挡）↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>

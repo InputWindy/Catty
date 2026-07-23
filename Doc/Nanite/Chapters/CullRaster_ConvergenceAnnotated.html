@@ -26,7 +26,7 @@
 <table><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
 <tr><td><code>NaniteRasterizer.usf</code></td><td>软件光栅核心（MicropolyRasterize 逐像素扫描）</td><td><a href="../Shaders/NaniteRasterizer.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
 <tr><td><code>NaniteWritePixel.ush</code></td><td>写像素原语：64 位原子 max = 深度测试 + 写 id</td><td><a href="../Shaders/NaniteWritePixel.ush.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
-<tr><td><code>NaniteClusterCulling.usf</code></td><td>节点遍历 / 簇剔除（FQueueState 工作队列）</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
+<tr><td><code>NaniteClusterCulling.usf</code></td><td>节点遍历 / 簇剔除（FQueueState 工作队列）</td><td><a href="../Shaders/NaniteClusterCulling.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">本篇的 <span class="inline">WritePixel</span>、<span class="inline">FMicropolyRasterizeCS</span>、<span class="inline">ERasterScheduling</span>、<span class="inline">FRasterContext</span> 全部符号，见 <a href="CullRaster_FunctionAppendix.html" style="color:#9ee8ff">→ 光栅化附录</a>。</p></div></section>
 
@@ -123,7 +123,7 @@ InterlockedMax(OutDepthBuffer[PixelPos], DepthInt);              <span class="c"
 <section class="card"><h2>关联文档 / 接口连接 <span class="en">Related &amp; interfaces</span></h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="InstanceCull_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--orange)"></span>#5 实例剔除与层级遍历（产出 VisibleClustersSWHW）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="Shading_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>#7 Visibility Buffer 与材质着色（消费 VisBuffer64）</a><a class="tag" href="Shadow_ConvergenceAnnotated.html" style="text-decoration:none"><span class="dot" style="background:var(--purple)"></span>#9 阴影集成（VSM 物理页写入）</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/NaniteWritePixel.ush.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteWritePixel.ush ↗</a><a class="tag" href="../Shaders/NaniteRasterizer.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteRasterizer.usf ↗</a><span class="tag"><span class="dot" style="background:#a9b4c0"></span>NaniteClusterCulling.usf（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/NaniteWritePixel.ush.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteWritePixel.ush ↗</a><a class="tag" href="../Shaders/NaniteRasterizer.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteRasterizer.usf ↗</a><a class="tag" href="../Shaders/NaniteClusterCulling.usf.html" style="text-decoration:none"><span class="dot" style="background:var(--green)"></span>NaniteClusterCulling.usf ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="CullRaster_FunctionAppendix.html" style="text-decoration:none"><span class="dot" style="background:var(--cyan)"></span>本篇函数附录</a><a class="tag" href="../UE_Nanite_解析_总目录.html" style="text-decoration:none"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 
