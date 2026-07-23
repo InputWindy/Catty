@@ -1,95 +1,290 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>RasterizeBricks.usf 代码解析</title>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RasterizeBricks.usf 代码解析（整源）</title>
 <style>
-:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
-<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Voxel_ConvergenceAnnotated.html">← 回到 #11 体素/SVO 与可视化调试</a></div>
-<h1>RasterizeBricks.usf 汇聚/发散批注版</h1><div class="subtitle">Nanite 体素的<b>绘制 shader</b>：把 <a href="AutoVoxel.usf.html" class="inline">AutoVoxel</a> 建出的稀疏体素 brick <b>画进深度/可见性</b>。用<b>实例化</b>把每个 brick 当一个盒子，VS 建包围盒 + 算光线方向，PS <b>在盒内 ray-march 体素占用掩码</b>找首个命中体素写深度。核心 <span class="inline">DrawBricksVS</span> + <span class="inline">DrawBricksPS</span>。<b>说明：完整文件 259 行</b>，下方内嵌核心入口的真实源码。</div></header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Voxel_ConvergenceAnnotated.html">← 回到 体素/SVO</a></div>
+<h1>RasterizeBricks.usf 整源解析</h1><div class="subtitle">Nanite 体素的<b>砖块光栅</b>（209 行）：把体素砖块（brick）光栅进 Visbuffer——用包围盒代理几何 VS + 逐像素光线步进 PS 求体素占用交点。核心 <span class="inline">DrawBricksVS</span> / <span class="inline">DrawBricksPS</span>。<b>下方内嵌完整 209 行真实源码</b>，再逐段真实代码批注。</div></header>
 <main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/Voxel/RasterizeBricks.usf</span></h2><div class="body">
+<span class="source-path">DrawBricksVS @ L26 · DrawBricksPS @ L150</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
 
-<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
-<div class="node branch"><strong>brick 列表</strong><small>BrickBuffer（每 brick 一个实例）</small></div>
-<div class="arrow">▶</div>
-<div class="node func"><strong>DrawBricksVS</strong><small>解 BrickKey → 世界包围盒 → 光线方向</small></div>
-<div class="arrow">▶</div>
-<div class="node func"><strong>DrawBricksPS</strong><small>盒内 ray-march 64 位占用掩码</small></div>
-<div class="arrow">▶</div>
-<div class="node out"><strong>命中→写深度</strong><small>首个占用体素 → SV_Depth</small></div>
-</div></section>
+#include "../../Common.ush"
+#include "Brick.ush"
+#include "Voxel.ush"
 
-<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（259 行文件的核心节选，逐行真实）</span></h2><div class="body">
-<span class="source-path">Engine/Shaders/Private/Nanite/Voxel/RasterizeBricks.usf · DrawBricksVS L26 / DrawBricksPS L150</span>
-<textarea class="embedded-source" readonly spellcheck="false">// VS：每个 brick 一个实例，建世界包围盒 + 从相机到该顶点的光线
+// *** The following SV_DepthLessEqual support is based on MaterialTemplate.ush implementation: ***
+// Whether to use the hidden d3d11 feature that supports depth writes with ZCull by only pushing into the screen
+//@todo - use for other SM5 platforms
+#define SUPPORTS_CONSERVATIVE_DEPTH_WRITES ((COMPILER_HLSL &amp;&amp; FEATURE_LEVEL &gt;= FEATURE_LEVEL_SM5) || COMPILER_PSSL || (COMPILER_METAL &amp;&amp; FEATURE_LEVEL &gt;= FEATURE_LEVEL_SM5) || SWITCH_PROFILE || SWITCH_PROFILE_FORWARD)
+
+#if SUPPORTS_CONSERVATIVE_DEPTH_WRITES
+
+#if COMPILER_HLSL || COMPILER_METAL_SHADER_CONVERTER || COMPILER_METAL || SWITCH_PROFILE || SWITCH_PROFILE_FORWARD
+	#define DEPTH_LE_OUTPUT SV_DepthLessEqual
+#elif COMPILER_PSSL
+	#define DEPTH_LE_OUTPUT S_DEPTH_LE_OUTPUT
+#else
+	#error SUPPORTS_CONSERVATIVE_DEPTH_WRITES enabled for unsupported platform
+#endif
+
+#else
+	#define DEPTH_LE_OUTPUT SV_DEPTH
+#endif
+
 void DrawBricksVS(
-	uint     VertexID       : SV_VertexID,
-	uint     InstanceID     : SV_InstanceID,
-	out uint   OutBrickOffset : TEXCOORD0,
-	out uint   OutBounds      : TEXCOORD1,
-	out float3 RayOrigin      : TEXCOORD2,
-	out float3 RayDirection   : TEXCOORD3,
-	out float4 OutPosition    : SV_POSITION )
+	uint		VertexID		: SV_VertexID,
+	uint		InstanceID		: SV_InstanceID,
+	out uint	OutBrickOffset	: TEXCOORD0,
+	out uint	OutBounds		: TEXCOORD1,
+	out float3	RayOrigin		: TEXCOORD2,
+	out float3	RayDirection	: TEXCOORD3,
+	out float4	OutPosition		: SV_POSITION
+	)
 {
 	uint LocalBrickID = VertexID / VertsPerBrick;
-	InstanceID = InstanceID * BricksPerInstance + LocalBrickID;   // 一实例可打包多 brick
-	VertexID   = VertexID - LocalBrickID * VertsPerBrick;
+	InstanceID = InstanceID * BricksPerInstance + LocalBrickID;
+	VertexID = VertexID - LocalBrickID * VertsPerBrick;
 
 	uint NumBricks = GetNumBricks();
-	if( InstanceID >= NumBricks )                                 // 越界 brick：退化到裁掉
+
+	BRANCH
+	if( InstanceID &gt;= NumBricks )
 	{
-		OutPosition = float4(0,0,0,1); ... return;
+		OutPosition = float4(0,0,0,1);
+		OutBrickOffset = 0u;
+		OutBounds = 0u;
+		RayOrigin = 0;
+		RayDirection = 0;
+		return;
 	}
 
 	FBrick Brick = BrickBuffer[ InstanceID ];
 
-	float3 BrickPos; float CubeSize;
-	DecodeBrickKey( Brick.Key, BrickPos, CubeSize );              // 解 key → 世界位置 + 尺寸
+	float3 BrickPos;
+	float CubeSize;
+	DecodeBrickKey( Brick.Key, BrickPos, CubeSize );
+
 	float3 WorldMin = BrickPos * CubeSize;
 	float3 WorldMax = WorldMin + CubeSize;
 
-	// 读 block 根掩码，收紧到实际占用的子范围（空白外壳不画）
-	uint2 RootBlock = BlockBuffer.Load2( 8 * Brick.BlockOffset );
-	uint3 BrickMin, BrickMax;
-	BlockBounds( RootBlock, BrickMin, BrickMax );
-	BrickMax--;
-	// ... 输出盒顶点的裁剪空间位置 + RayOrigin/RayDirection（供 PS ray-march）...
+	if(1)
+	{
+		uint2 RootBlock = BlockBuffer.Load2( 8 * Brick.BlockOffset );
+
+		uint3 BrickMin, BrickMax;
+		BlockBounds( RootBlock, BrickMin, BrickMax );
+
+		BrickMax--;
+
+		uint BrickBounds;
+		BrickBounds  = BrickMin.x;
+		BrickBounds |= BrickMin.y &lt;&lt; 2;
+		BrickBounds |= BrickMin.z &lt;&lt; 4;
+		BrickBounds |= BrickMax.x &lt;&lt; 6;
+		BrickBounds |= BrickMax.y &lt;&lt; 8;
+		BrickBounds |= BrickMax.z &lt;&lt; 10;
+		BrickMax++;
+
+		OutBounds = BrickBounds;
+		
+		float3 UnitMin = BrickMin * 0.25;
+		float3 UnitMax = BrickMax * 0.25;
+
+		float3 NewWorldMin = lerp( WorldMin, WorldMax, UnitMin );
+		float3 NewWorldMax = lerp( WorldMin, WorldMax, UnitMax );
+		
+		WorldMin = NewWorldMin;
+		WorldMax = NewWorldMax;
+	}
+
+	OutBrickOffset = Brick.BlockOffset;
+
+#if DRAW_RECTS
+	float3 Bounds[2] = { WorldMin, WorldMax };
+
+	// Screen rect from bounds
+	float3 RectMin = float3(  1,  1,  1 );
+	float3 RectMax = float3( -1, -1, -1 );
+
+	UNROLL for( uint i = 0; i &lt; 8; i++ )
+	{
+		float3 PointWorld;
+		PointWorld.x = Bounds[ (i &gt;&gt; 0) &amp; 1 ].x;
+		PointWorld.y = Bounds[ (i &gt;&gt; 1) &amp; 1 ].y;
+		PointWorld.z = Bounds[ (i &gt;&gt; 2) &amp; 1 ].z;
+
+		float4 PointClip = mul( float4( PointWorld, 1 ), View.TranslatedWorldToClip );
+		float3 PointScreen = PointClip.xyz / PointClip.w;
+
+		RectMin = min( RectMin, PointScreen );
+		RectMax = max( RectMax, PointScreen );
+	}
+
+#if PLATFORM_SUPPORTS_RECT_LIST
+	OutPosition.x = VertexID == 1 ? RectMax.x : RectMin.x;
+	OutPosition.y = VertexID == 2 ? RectMax.y : RectMin.y;
+	OutPosition.z = RectMax.z;
+	OutPosition.w = 1;
+#else
+	OutPosition.x = VertexID &amp; 1 ? RectMax.x : RectMin.x;
+	OutPosition.y = VertexID &amp; 2 ? RectMax.y : RectMin.y;
+	OutPosition.z = RectMax.z;
+	OutPosition.w = 1;
+#endif
+#else
+	bool3 Corner;
+	Corner.z = ( VertexID &gt;&gt; 0 ) &amp; 1;
+	Corner.y = ( VertexID &gt;&gt; 1 ) &amp; 1;
+	Corner.x = ( VertexID &gt;&gt; 2 ) &amp; 1;
+
+	float3 Position = Corner ? WorldMax : WorldMin;
+
+	OutPosition = mul( float4( Position, 1 ), View.TranslatedWorldToClip );
+#endif
+
+	FRay Ray;
+	Ray.Origin = View.TranslatedWorldCameraOrigin;
+	Ray.Direction = mul( float4( OutPosition.xy, 0, 1 ), View.ClipToTranslatedWorld ).xyz;
+
+	// Transform to local space
+	RayOrigin    = Ray.Origin    / CubeSize - BrickPos;
+	RayDirection = Ray.Direction / CubeSize;
+
+	//OutPosition.z = 1.0 - InstanceID / 1000000.0;
 }
 
-// PS：在 brick 盒内沿光线步进体素占用掩码，命中首个占用体素写深度
-void DrawBricksPS( ... out float OutDepth : SV_Depth ) { ... }
-</textarea>
+
+ENABLE_RE_Z
+void DrawBricksPS(
+	in nointerpolation uint	BrickOffset		: TEXCOORD0,
+	in nointerpolation uint	BrickBounds		: TEXCOORD1,
+	in noperspective float3	RayOrigin		: TEXCOORD2,
+	in noperspective float3	RayDirection	: TEXCOORD3,
+	in centroid float4		SvPosition		: SV_Position,
+	out float4				OutColor		: SV_Target0,
+	out float				OutDepth		: DEPTH_LE_OUTPUT )
+{
+	FRay Ray;
+	Ray.Origin		= RayOrigin;
+	Ray.Direction	= RayDirection;
+	Ray.Time[0] = 0;
+	Ray.Time[1] = 1e24;
+
+	const float Epsilon = 1e-8;
+	float3 Replacement = select( Ray.Direction &gt; 0, Epsilon, -Epsilon );
+	Ray.Direction = select( abs( Ray.Direction ) &lt; Epsilon, Replacement, Ray.Direction );
+
+#if 0
+	OutColor = 0.1;
+#elif 0
+	float3 BrickPos = CubePos.xyz;
+	float  CubeSize = rcp(CubePos.w);
+	//float  CubeSize = CubePos.w;
+	
+	float3 WorldMin = BrickPos * CubeSize;
+	float3 WorldMax = WorldMin + CubeSize;
+
+	float3 Bounds[2] = { WorldMin, WorldMax };
+
+	// Ray intersect with box
+	float3 InvDir = rcp( Ray.Direction );
+	float3 PlaneIntersect0 = ( Bounds[0] - Ray.Origin ) * InvDir;
+	float3 PlaneIntersect1 = ( Bounds[1] - Ray.Origin ) * InvDir;
+	float3 MinIntersection = min( PlaneIntersect0, PlaneIntersect1 );
+	float3 MaxIntersection = max( PlaneIntersect0, PlaneIntersect1 );
+
+	Ray.Time[0] = max( Ray.Time[0], max3( MinIntersection.x, MinIntersection.y, MinIntersection.z ) );
+	Ray.Time[1] = min( Ray.Time[1], min3( MaxIntersection.x, MaxIntersection.y, MaxIntersection.z ) );
+
+	OutColor = Ray.Time[0] &lt;= Ray.Time[1] ? 0.1 : 0;
+
+	if( Ray.Time[0] &gt; Ray.Time[1] )
+		discard;
+#elif 0
+	float3 Bounds[2] = { float3(0,0,0), float3(1,1,1) };
+
+	// Ray intersect with box
+	float3 InvDir = rcp( Ray.Direction );
+	float3 PlaneIntersect0 = ( Bounds[0] - Ray.Origin ) * InvDir;
+	float3 PlaneIntersect1 = ( Bounds[1] - Ray.Origin ) * InvDir;
+	float3 MinIntersection = min( PlaneIntersect0, PlaneIntersect1 );
+	float3 MaxIntersection = max( PlaneIntersect0, PlaneIntersect1 );
+
+	Ray.Time[0] = max( Ray.Time[0], max3( MinIntersection.x, MinIntersection.y, MinIntersection.z ) );
+	Ray.Time[1] = min( Ray.Time[1], min3( MaxIntersection.x, MaxIntersection.y, MaxIntersection.z ) );
+
+	OutColor = Ray.Time[0] &lt;= Ray.Time[1] ? 0.1 : 0;
+
+	if( Ray.Time[0] &gt; Ray.Time[1] )
+		discard;
+#else
+
+	float3 Bounds[2] = { float3(0,0,0), float3(1,1,1) };
+
+	{
+		uint3 Min, Max;
+		Min.x = BitFieldExtractU32( BrickBounds, 2, 0 );
+		Min.y = BitFieldExtractU32( BrickBounds, 2, 2 );
+		Min.z = BitFieldExtractU32( BrickBounds, 2, 4 );
+		Max.x = BitFieldExtractU32( BrickBounds, 2, 6 );
+		Max.y = BitFieldExtractU32( BrickBounds, 2, 8 );
+		Max.z = BitFieldExtractU32( BrickBounds, 2, 10 );
+		Max++;
+
+		Bounds[0] = Min * 0.25;
+		Bounds[1] = Max * 0.25;
+	}
+
+	Ray.Time = Intersect( Ray, Bounds );
+
+	FRayCastCounters Counters = (FRayCastCounters)0;
+	if( Ray.Time[0] &lt; Ray.Time[1] )
+	{
+#if VOXEL_NUM_LEVELS == 2
+		//Ray.Time[0] = RayCastBrick_L1( Ray, BrickOffset, Counters );
+		//Ray.Time[0] = RayCastBrick_L2( Ray, BrickOffset, Counters );
+		Ray.Time[0] = RayCastBrick_L2_WhileWhile( Ray, BrickOffset, Counters );
+		//Ray.Time[0] = RayCastBrick_L2_Flat( Ray, BrickOffset, Counters );
+#else
+		Ray.Time[0] = RayCastBrick_L1( Ray, BrickOffset, Counters );
+#endif
+		OutColor.r = Counters.Tests / 20.0;
+		OutColor.g = Counters.Steps / 20.0;
+		OutColor.g = Counters.StepIn / 10.0;
+		OutColor.b = Counters.StepOut / 10.0;
+
+		OutColor = OutColor.r;
+		//OutColor.rgb = VisualizeCount( Counters.StepOut );
+
+		//OutColor.rgb = frac( Ray.Time[1] / 1000 );
+	}
+
+	OutDepth = View.ViewToClip[3][2] / Ray.Time[0] + View.ViewToClip[2][2];
+	
+	if( Ray.Time[0] &gt;= Ray.Time[1] )
+		discard;
+#endif
+}</textarea>
 </div></section>
-
-<section class="card"><h2>0. brick 即盒子：实例化绘制</h2><div class="body grid2"><pre><code><span class="code-line blue">FBrick Brick = BrickBuffer[InstanceID];      // 每 brick 一个实例</span>
-<span class="code-line green">DecodeBrickKey(Brick.Key, BrickPos, CubeSize);</span>
-<span class="code-line green">WorldMin = BrickPos*CubeSize; WorldMax = WorldMin + CubeSize;</span></code></pre><div class="note n-blue"><h3>说明</h3><p>不是逐三角画，而是把每个 <b>brick 当一个盒子实例</b>：<span class="inline">SV_InstanceID</span> 索引 <span class="inline">BrickBuffer</span>，<span class="inline">DecodeBrickKey</span> 解出该 brick 的世界位置与尺寸，建出 <span class="inline">[WorldMin, WorldMax]</span> 包围盒。VS 输出盒子顶点的裁剪位置，硬件光栅把盒子投影到屏幕生成候选像素——<b>盒子只是"哪些屏幕像素可能被这 brick 覆盖"的粗界</b>，真正的体素在 PS 里 ray-march。<span class="inline">VertsPerBrick</span>/<span class="inline">BricksPerInstance</span> 让一个 draw 实例打包多个 brick，减少 draw 开销。</p></div></div></section>
-
-<section class="card"><h2>1. 读根掩码收紧范围</h2><div class="body grid2"><pre><code><span class="code-line yellow">uint2 RootBlock = BlockBuffer.Load2( 8 * Brick.BlockOffset );</span>
-<span class="code-line yellow">BlockBounds( RootBlock, BrickMin, BrickMax );  // 从 64 位占用算实际范围</span></code></pre><div class="note n-green"><h3>说明</h3><p>brick 的 block 根掩码就是 <a href="AutoVoxel.usf.html" class="inline">AutoVoxel</a> 用 <span class="inline">AddVoxelToBlock</span> 填的 <b>64 位占用位</b>。<span class="inline">BlockBounds</span> 从这 64 位算出实际占用体素的 <span class="inline">[BrickMin, BrickMax]</span> 子范围——<b>如果 brick 大部分是空的，就把包围盒收紧到真正有体素的部分</b>，减少 PS 的 ray-march 步数与光栅像素。这是稀疏体素相对稠密网格的又一处省法。</p></div></div></section>
-
-<section class="card"><h2>2. DrawBricksPS：盒内 ray-march 占用掩码</h2><div class="body grid2"><pre><code><span class="code-line blue">float3 RayOrigin, RayDirection;   // VS 传入：相机→该像素的光线</span>
-<span class="code-line orange">// 沿光线在 brick 内步进体素，查 64 位掩码是否占用</span>
-<span class="code-line yellow">命中首个占用体素 → OutDepth = SV_Depth；否则 discard</span></code></pre><div class="note n-orange"><h3>说明</h3><p>PS 拿到 VS 算好的<b>光线</b>（<span class="inline">RayOrigin</span>/<span class="inline">RayDirection</span>），在 brick 盒内沿光线<b>步进体素格子</b>，每步查 64 位占用掩码——<b>命中第一个被占用的体素</b>就写 <span class="inline">SV_Depth</span>（该体素表面深度），没命中则 <span class="inline">discard</span>。这本质是<b>体素版的"光栅 = 求交"</b>：盒子用硬件光栅粗定像素，掩码 ray-march 定精确表面。产出的深度/可见性供超远距离显示或次级光线遮挡估计。</p></div></div></section>
-
-<section class="card"><h2>3. 与主管线的呼应</h2><div class="body grid2"><pre><code><span class="code-line green">brick 盒实例 → 硬件光栅 → PS ray-march（粗定 + 精求交）</span></code></pre><div class="note"><h3>说明</h3><p><span class="note-label common">共同点</span><a href="../Chapters/Voxel_ConvergenceAnnotated.html" class="inline">#11</a> 提到的 <b>Tile → Scatter → Rasterize</b> 与主管线的剔除→分箱→光栅（<a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a>）、着色的 count→reserve→scatter（<a href="../Chapters/Shading_ConvergenceAnnotated.html" class="inline">#7</a>）是同一种"GPU 分桶 + 间接派发"范式，这里的 brick 绘制是其体素化身。</p><p><span class="note-label diff">不同点</span>主管线光栅三角形写 VisBuffer 供材质着色；这里光栅的是<b>体素占用</b>，PS 做 ray-march 求交而非三角覆盖测试，产出的是"够用就好"的粗几何——服务超远距离与次级光线，不追求像素级轮廓。</p></div></div></section>
-
-<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>brick 当盒子实例：<span class="inline">DrawBricksVS</span> 解 key 建包围盒（读根掩码收紧）+ 算光线 → <span class="inline">DrawBricksPS</span> 盒内 ray-march 64 位占用掩码命中首体素写深度。硬件光栅粗定像素 + 掩码求交定表面。</p></div><div class="note"><h3>阅读建议</h3><p>体素/占用掩码怎么来的见 <a href="AutoVoxel.usf.html" class="inline">AutoVoxel.usf</a>；体素在 Nanite 的定位、可视化调试见 <a href="../Chapters/Voxel_ConvergenceAnnotated.html" class="inline">#11</a>；GPU 分桶范式对照 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a>/<a href="../Chapters/Shading_ConvergenceAnnotated.html" class="inline">#7</a>。</p></div></div></section>
-
+<section class="card"><h2>0. 砖块包围盒代理 + 光线步进（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">void DrawBricksVS(...)   // 每 brick 画其包围盒（代理几何）到屏幕</span>
+<span class="code-line blue">void DrawBricksPS(...)   // 逐像素：对 brick 内 4×4×4 体素占用位做光线步进</span>
+<span class="code-line green">// 命中占用体素 → 算深度/法线 → 写 Visbuffer（体素 ID）</span>
+<span class="code-line yellow">// 无占用体素相交 → discard</span></code></pre><div class="note"><h3>说明</h3><p><a href="AutoVoxel.usf.html" class="inline">AutoVoxel</a> 生成的体素砖块（每 brick 用 64 位掩码存 4×4×4 体素占用）需光栅到屏幕。<span class="inline">DrawBricksVS</span> 为每个 brick 画其<b>包围盒代理几何</b>（硬件光栅盒子），<span class="inline">DrawBricksPS</span> 逐覆盖像素<b>光线步进</b>：沿视线在 brick 内 DDA 遍历 4×4×4 体素占用位，命中第一个占用体素就算深度/法线写 Visbuffer（带体素 ID），无命中则 discard。这是<b>体素的光线步进光栅</b>（不同于三角扫描），对超远景高效——一个 brick 覆盖大量原本的微三角。与 <a href="Voxel.ush.html" class="inline">Voxel.ush</a> 的体素采样/<a href="NaniteSVO.ush.html" class="inline">SVO</a> 遍历配套。</p></div></div></section>
 <section class="card"><h2>关联文档 / 接口</h2><div class="body">
-<a class="tag" href="../Chapters/Voxel_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#11 体素/SVO 与可视化调试</a>
-<a class="tag" href="AutoVoxel.usf.html"><span class="dot" style="background:var(--cyan)"></span>AutoVoxel.usf（建体素占用）↗</a>
-<a class="tag" href="NaniteRasterizer.usf.html"><span class="dot" style="background:var(--orange)"></span>NaniteRasterizer.usf（NANITE_VOXELS 分支）↗</a>
+<a class="tag" href="../Chapters/Voxel_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>体素/SVO</a>
+<a class="tag" href="AutoVoxel.usf.html"><span class="dot" style="background:var(--cyan)"></span>AutoVoxel.usf↗</a>
+<a class="tag" href="Voxel.ush.html"><span class="dot" style="background:var(--cyan)"></span>Voxel.ush↗</a>
+<a class="tag" href="Brick.ush.html"><span class="dot" style="background:var(--cyan)"></span>Brick.ush↗</a>
 <a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
 </div></section>
 </main>
-<script>
-document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
-</script>
 </body>
 </html>

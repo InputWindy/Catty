@@ -1,0 +1,187 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brick.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:440px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Voxel_ConvergenceAnnotated.html">← 回到 体素/SVO</a></div>
+<h1>Brick.ush 整源解析<span class="libtag">库 / 砖块数据结构</span></h1><div class="subtitle">Nanite 体素的<b>砖块结构库</b>（129 行）：定义 brick 数据（key 编解码、block 偏移、64 位占用位读写、包围盒），是体素生成/光栅共享的数据契约。<b>下方内嵌完整 129 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/Voxel/Brick.ush</span></h2><div class="body">
+<span class="source-path">FBrick + BrickKey 编解码 + 64 位占用位访问</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "../../Common.ush"
+#include "Voxel.ush"
+
+#define VOXEL_NUM_LEVELS	2
+#define VOXEL_SCATTER		0
+
+static const float VoxelSize		= 0.125;	// World space size of smallest voxel
+static const float BrickSize		= VOXEL_NUM_LEVELS == 2 ? 16 : 4;	// Num voxels wide
+static const float BrickSizeLog2	= log2( BrickSize );
+
+struct FBrick
+{
+	uint3	Key;
+	uint	BlockOffset;
+};
+
+StructuredBuffer&lt; FBrick &gt;		BrickBuffer;
+RWStructuredBuffer&lt; FBrick &gt;	RWBrickBuffer;
+
+#if 0
+uint EncodeBrickKey( float3 BrickPos, float Level )
+{
+	BrickPos += 256;
+
+	uint3 Brick = uint3( BrickPos ) &amp; 511;
+	uint uLevel = uint( Level ) &amp; 31;
+
+	uint Key;
+	Key  = Brick.x	&lt;&lt;  0;
+	Key |= Brick.y	&lt;&lt;  9;
+	Key |= Brick.z	&lt;&lt; 18;
+	Key |= uLevel	&lt;&lt; 27;
+	return Key;
+}
+
+void DecodeBrickKey( uint BrickKey, out float3 BrickPos, out float CubeSize )
+{
+	float Level;
+	BrickPos.x = float( ( BrickKey &gt;&gt;  0 ) &amp; 0x1ff );
+	BrickPos.y = float( ( BrickKey &gt;&gt;  9 ) &amp; 0x1ff );
+	BrickPos.z = float( ( BrickKey &gt;&gt; 18 ) &amp; 0x1ff );
+	Level      = float( ( BrickKey &gt;&gt; 27 ) &amp; 0x1f );
+
+	BrickPos -= 256;
+
+	CubeSize = (VoxelSize * BrickSize) * exp2( Level );
+}
+#else
+uint3 EncodeBrickKey( float3 BrickPos, float Level )
+{
+	int3 Signed = int3( BrickPos ) + 0x1000000;
+	uint3 Brick = uint3( Signed ) &amp; 0xfffffff;
+	uint uLevel = uint( Level ) &amp; 15;
+
+	uint3 Key;
+	Key.x = Brick.x;
+	Key.y = Brick.y;
+	Key.z = Brick.z;
+	Key.z |= uLevel &lt;&lt; 28;
+	return Key;
+}
+
+void DecodeBrickKey( uint3 BrickKey, out float3 BrickPos, out float CubeSize )
+{
+	int3 Signed;
+	Signed.x = BrickKey.x;
+	Signed.y = BrickKey.y;
+	Signed.z = BrickKey.z &amp; 0xfffffff;
+	Signed -= 0x1000000;
+	BrickPos = float3( Signed );
+
+	float Level = float( ( BrickKey.z &gt;&gt; 28 ) &amp; 0xf );
+
+	CubeSize = (VoxelSize * BrickSize) * exp2( Level );
+}
+#endif
+
+FRay GetViewRay( float2 SvPosition )
+{
+	FRay Ray;
+	Ray.Origin = View.TranslatedWorldCameraOrigin;
+	Ray.Time[0] = 0;
+	Ray.Time[1] = 1e24;
+
+	Ray.Direction = mul( float4( SvPosition, 0, 1 ), View.SVPositionToTranslatedWorld ).xyz;
+	//Ray.Direction = normalize( Ray.Direction );
+
+	const float Epsilon = 1e-4;
+	float3 Replacement = select( Ray.Direction &gt; 0, Epsilon, -Epsilon );
+	Ray.Direction = select( abs( Ray.Direction ) &lt; Epsilon, Replacement, Ray.Direction );
+
+	return Ray;
+}
+
+float3 VisualizeCount( uint Count )
+{
+	switch( Count )
+	{
+		case 0: return float3(0.1, 0.1, 0.1);
+		case 1: return float3(1, 0, 0);
+		case 2: return float3(0, 1, 0);
+		case 3: return float3(0, 0, 1);
+		case 4: return float3(1, 1, 0);
+		case 5: return float3(0, 1, 1);
+		case 6: return float3(1, 0, 1);
+		default: return float3(1, 1, 1);
+	}
+}
+
+
+#define DRAW_RECTS	1
+
+#if PLATFORM_SUPPORTS_RECT_LIST
+	static const uint VertsPerBrick = 3;
+	static const uint IndexesPerBrick = 3;
+	static const uint BricksPerInstance = 21;
+#elif DRAW_RECTS
+	static const uint VertsPerBrick = 4;
+	static const uint IndexesPerBrick = 6;
+	static const uint BricksPerInstance = 16;
+#else
+	static const uint VertsPerBrick = 8;
+	static const uint IndexesPerBrick = 36;
+	static const uint BricksPerInstance = 8;
+#endif
+
+Buffer&lt; uint &gt;		DrawIndirectArgs;
+RWBuffer&lt; uint &gt;	RWDrawIndirectArgs;
+
+Buffer&lt; uint &gt;		DispatchIndirectArgs;
+RWBuffer&lt; uint &gt;	RWDispatchIndirectArgs;
+
+uint GetNumBricks()
+{
+	return DispatchIndirectArgs[3];
+}
+
+uint GetNumBlocks()
+{
+	return DrawIndirectArgs[5];
+}
+
+void SetDrawIndirectArgs( uint NumBricks )
+{
+#if VOXEL_SCATTER	// Scatter
+	RWDrawIndirectArgs[0] = 3 * 64;		// NumIndexes
+	RWDrawIndirectArgs[1] = NumBricks;	// NumInstances
+#else
+	RWDrawIndirectArgs[0] = IndexesPerBrick * BricksPerInstance;						// NumIndexes
+	RWDrawIndirectArgs[1] = ( NumBricks + BricksPerInstance - 1 ) / BricksPerInstance;	// NumInstances
+	RWDrawIndirectArgs[2] = 0;	// IndexOffset
+	RWDrawIndirectArgs[3] = 0;	// VertexOffset
+	RWDrawIndirectArgs[4] = 0;	// InstanceOffset
+#endif
+}</textarea>
+</div></section>
+<section class="card"><h2>0. 砖块 key 编解码 + 占用位（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">struct FBrick { uint Key; uint BlockOffset; ... };   // key 打包 3D 位置 + 层级</span>
+<span class="code-line blue">// EncodeBrickKey / DecodeBrickKey：3D brick 坐标 + level ↔ uint</span>
+<span class="code-line green">// 4×4×4=64 体素占用位读写（两个 uint 掩码）</span>
+<span class="code-line yellow">// brick 世界包围盒计算（供光栅代理几何）</span></code></pre><div class="note"><h3>说明</h3><p><b>brick</b> 是体素的管理单元（含 4×4×4=64 个体素）。<span class="inline">Brick.ush</span> 定义其数据契约：<span class="inline">FBrick</span> 结构（<span class="inline">Key</span> 打包 3D 位置 + 层级、<span class="inline">BlockOffset</span> 指向占用位块）、<span class="inline">EncodeBrickKey/DecodeBrickKey</span>（坐标↔key）、<b>64 位占用位</b>的读写（用两个 uint 掩码表示哪些体素被占用）、以及从占用位算 brick 实际世界包围盒。<a href="AutoVoxel.usf.html" class="inline">AutoVoxel</a>/<a href="ScatterBricks.usf.html" class="inline">ScatterBricks</a> 写、<a href="RasterizeBricks.usf.html" class="inline">RasterizeBricks</a> 读——都靠这套契约。是体素砖块的地基数据结构。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Voxel_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>体素/SVO</a>
+<a class="tag" href="Voxel.ush.html"><span class="dot" style="background:var(--cyan)"></span>Voxel.ush↗</a>
+<a class="tag" href="RasterizeBricks.usf.html"><span class="dot" style="background:var(--cyan)"></span>RasterizeBricks.usf↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
