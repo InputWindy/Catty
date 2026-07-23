@@ -1,0 +1,211 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MegaLightsFilterVisibleLightHash.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:480px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_MegaLights_解析_总目录.html">← 返回《UE MegaLights》总目录</a><a href="../Chapters/MegaLightsSampling_ConvergenceAnnotated.html">← 回到 #2 光源采样</a></div>
+<h1>MegaLightsFilterVisibleLightHash.usf 整源解析</h1><div class="subtitle">MegaLights 可见光哈希的<b>空间膨胀滤波</b>：把每个 tile 的可见/隐藏光哈希与其 4 邻居 <b>OR 合并</b>（十字 dilate），让 Guide by History 在 tile 边界/轻微错位时仍能命中——避免哈希过于局部导致引导失效。核心 <span class="inline">FilterVisibleLightHashCS</span> + 体积版。<b>下方内嵌完整 134 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>逐 tile 光哈希</strong><small>VisibleLightHash 写端产物</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>十字邻域 OR 合并</strong><small>AppendVisibleLightHash ±1</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>膨胀后哈希</strong><small>供下帧 Guide 读取</small></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/MegaLights/MegaLightsFilterVisibleLightHash.usf</span></h2><div class="body">
+<span class="source-path">FilterVisibleLightHashCS @ L51 · VolumeFilterVisibleLightHashCS @ L95</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#ifndef NUM_SAMPLES_PER_PIXEL_1D
+	#define NUM_SAMPLES_PER_PIXEL_1D 1
+	#define NUM_SAMPLES_PER_PIXEL_2D_X 1
+	#define NUM_SAMPLES_PER_PIXEL_2D_Y 1
+#endif
+
+#include "../Common.ush"
+#include "MegaLights.ush"
+#include "MegaLightsVisibility.ush"
+
+RWStructuredBuffer&lt;uint&gt; RWVisibleLightHash;
+RWStructuredBuffer&lt;uint&gt; RWHiddenLightHash;
+
+StructuredBuffer&lt;uint&gt; VisibleLightHashBuffer;
+StructuredBuffer&lt;uint&gt; HiddenLightHashBuffer;
+
+#ifdef FilterVisibleLightHashCS
+
+uint2 VisibleLightHashViewMinInTiles;
+uint2 VisibleLightHashViewSizeInTiles;
+
+void AppendVisibleLightHash(
+	uint2 BaseTileCoord,
+	int2 TileOffset,
+	inout uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE],
+	inout uint HiddenLightHash[HIDDEN_LIGHT_HASH_SIZE])
+{
+	int2 TileCoord = BaseTileCoord + TileOffset;
+
+	if (all(TileCoord &gt;= (int2)VisibleLightHashViewMinInTiles) &amp;&amp; all(TileCoord &lt; (int2)(VisibleLightHashViewMinInTiles + VisibleLightHashViewSizeInTiles)))
+	{
+		const uint LinearTileCoord = TileCoord.y * VisibleLightHashViewSizeInTiles.x + TileCoord.x;
+
+		for (uint IndexInHash = 0; IndexInHash &lt; VISIBLE_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			VisibleLightHash[IndexInHash] |= VisibleLightHashBuffer[LinearTileCoord * VISIBLE_LIGHT_HASH_SIZE + IndexInHash];
+		}
+
+		for (uint IndexInHash = 0; IndexInHash &lt; HIDDEN_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			HiddenLightHash[IndexInHash] |= HiddenLightHashBuffer[LinearTileCoord * HIDDEN_LIGHT_HASH_SIZE + IndexInHash];
+		}
+	}
+}
+
+/**
+ * Propagate visible light data by merging neighboring tiles.
+ */
+[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]
+void FilterVisibleLightHashCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 GroupThreadId : SV_GroupThreadID,
+	uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint2 TileCoord = DispatchThreadId.xy + VisibleLightHashViewMinInTiles;
+
+	if (all(TileCoord &gt;= VisibleLightHashViewMinInTiles) &amp;&amp; all(TileCoord &lt; VisibleLightHashViewMinInTiles + VisibleLightHashViewSizeInTiles))
+	{
+		uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE];
+		for (uint IndexInHash = 0; IndexInHash &lt; VISIBLE_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			VisibleLightHash[IndexInHash] = 0;
+		}
+
+		uint HiddenLightHash[HIDDEN_LIGHT_HASH_SIZE];
+		for (uint IndexInHash = 0; IndexInHash &lt; HIDDEN_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			HiddenLightHash[IndexInHash] = 0;
+		}
+
+		AppendVisibleLightHash(TileCoord, int2(0, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(TileCoord, int2(+1, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(TileCoord, int2(-1, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(TileCoord, int2(0, +1), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(TileCoord, int2(0, -1), VisibleLightHash, HiddenLightHash);
+
+		const uint LinearTileCoord = TileCoord.y * VisibleLightHashViewSizeInTiles.x + TileCoord.x;
+
+		for (uint IndexInHash = 0; IndexInHash &lt; VISIBLE_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			RWVisibleLightHash[LinearTileCoord * VISIBLE_LIGHT_HASH_SIZE + IndexInHash] = VisibleLightHash[IndexInHash];
+		}
+
+		for (uint IndexInHash = 0; IndexInHash &lt; HIDDEN_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			RWHiddenLightHash[LinearTileCoord * HIDDEN_LIGHT_HASH_SIZE + IndexInHash] = HiddenLightHash[IndexInHash];
+		}
+	}
+}
+
+#endif // FilterVisibleLightHashCS
+
+#ifdef VolumeFilterVisibleLightHashCS
+
+uint3 VolumeVisibleLightHashViewSizeInTiles;
+
+void AppendVisibleLightHash(uint3 BaseVoxelCoord, int3 VoxelOffset, inout uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE], inout uint HiddenLightHash[HIDDEN_LIGHT_HASH_SIZE])
+{
+	int3 VoxelCoord = BaseVoxelCoord + VoxelOffset;
+
+	if (all(VoxelCoord &gt;= 0) &amp;&amp; all(VoxelCoord &lt; int3(VolumeVisibleLightHashViewSizeInTiles)))
+	{
+		const uint LinearTileCoord = (VoxelCoord.z * VolumeVisibleLightHashViewSizeInTiles.y + VoxelCoord.y) * VolumeVisibleLightHashViewSizeInTiles.x + VoxelCoord.x;
+
+		for (uint IndexInHash = 0; IndexInHash &lt; VISIBLE_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			VisibleLightHash[IndexInHash] |= VisibleLightHashBuffer[LinearTileCoord * VISIBLE_LIGHT_HASH_SIZE + IndexInHash];
+		}
+
+		for (uint IndexInHash = 0; IndexInHash &lt; HIDDEN_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			HiddenLightHash[IndexInHash] |= HiddenLightHashBuffer[LinearTileCoord * HIDDEN_LIGHT_HASH_SIZE + IndexInHash];
+		}
+	}
+}
+
+/**
+ * Propagate visible light data by merging neighboring voxels.
+ */
+[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, THREADGROUP_SIZE)]
+void VolumeFilterVisibleLightHashCS(
+	uint3 GroupId : SV_GroupID,
+	uint3 GroupThreadId : SV_GroupThreadID,
+	uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint3 VoxelCoord = DispatchThreadId.xyz;
+
+	if (all(VoxelCoord &lt; VolumeVisibleLightHashViewSizeInTiles))
+	{
+		uint VisibleLightHash[VISIBLE_LIGHT_HASH_SIZE];
+		for (uint IndexInHash = 0; IndexInHash &lt; VISIBLE_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			VisibleLightHash[IndexInHash] = 0;
+		}
+
+		uint HiddenLightHash[HIDDEN_LIGHT_HASH_SIZE];
+		for (uint IndexInHash = 0; IndexInHash &lt; HIDDEN_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			HiddenLightHash[IndexInHash] = 0;
+		}
+
+		AppendVisibleLightHash(VoxelCoord, int3(0, 0, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(VoxelCoord, int3(+1, 0, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(VoxelCoord, int3(-1, 0, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(VoxelCoord, int3(0, +1, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(VoxelCoord, int3(0, -1, 0), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(VoxelCoord, int3(0, 0, +1), VisibleLightHash, HiddenLightHash);
+		AppendVisibleLightHash(VoxelCoord, int3(0, 0, -1), VisibleLightHash, HiddenLightHash);
+
+		const uint LinearTileCoord = (VoxelCoord.z * VolumeVisibleLightHashViewSizeInTiles.y + VoxelCoord.y) * VolumeVisibleLightHashViewSizeInTiles.x + VoxelCoord.x;
+
+		for (uint IndexInHash = 0; IndexInHash &lt; VISIBLE_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			RWVisibleLightHash[LinearTileCoord * VISIBLE_LIGHT_HASH_SIZE + IndexInHash] = VisibleLightHash[IndexInHash];
+		}
+
+		for (uint IndexInHash = 0; IndexInHash &lt; HIDDEN_LIGHT_HASH_SIZE; ++IndexInHash)
+		{
+			RWHiddenLightHash[LinearTileCoord * HIDDEN_LIGHT_HASH_SIZE + IndexInHash] = HiddenLightHash[IndexInHash];
+		}
+	}
+}
+
+#endif // VolumeFilterVisibleLightHashCS</textarea>
+</div></section>
+
+<section class="card"><h2>0. 十字邻域 OR 膨胀（核心）</h2><div class="body grid2"><pre><code><span class="code-line">uint2 TileCoord = DispatchThreadId.xy + VisibleLightHashViewMinInTiles;</span>
+<span class="code-line blue">AppendVisibleLightHash(TileCoord, int2( 0, 0), VisibleLightHash, HiddenLightHash);</span>
+<span class="code-line blue">AppendVisibleLightHash(TileCoord, int2(+1, 0), VisibleLightHash, HiddenLightHash);</span>
+<span class="code-line blue">AppendVisibleLightHash(TileCoord, int2(-1, 0), VisibleLightHash, HiddenLightHash);</span>
+<span class="code-line blue">AppendVisibleLightHash(TileCoord, int2( 0,+1), VisibleLightHash, HiddenLightHash);</span>
+<span class="code-line blue">AppendVisibleLightHash(TileCoord, int2( 0,-1), VisibleLightHash, HiddenLightHash);</span>
+<span class="code-line green">RWVisibleLightHash[LinearTileCoord * VISIBLE_LIGHT_HASH_SIZE + IndexInHash] = VisibleLightHash[IndexInHash];</span></code></pre><div class="note"><h3>说明</h3><p><span class="inline">AppendVisibleLightHash</span> 内部对邻居 tile 的哈希做 <span class="inline">|=</span>（OR 合并——哈希是位图，OR 即"并集"）。用<b>十字五点</b>（中心 + 上下左右）膨胀：这样即使当前像素重投影到上帧时落在相邻 tile、或运动导致轻微错位，Guide by History 读到的哈希仍<b>包含</b>该处可见光，不会因哈希太局部而漏掉引导。代价是隐藏光哈希也膨胀（更保守，可能少标"被挡"）。体积版 <span class="inline">VolumeFilterVisibleLightHashCS</span> 做 3D 六邻域同理。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/MegaLightsSampling_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#2 光源采样</a>
+<a class="tag" href="MegaLightsVisibleLightHash.usf.html"><span class="dot" style="background:var(--cyan)"></span>VisibleLightHash（哈希写端）↗</a>
+<a class="tag" href="MegaLightsSampling.usf.html"><span class="dot" style="background:var(--cyan)"></span>Sampling（Guide 读端）↗</a>
+<a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
