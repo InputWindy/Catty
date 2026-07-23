@@ -1,0 +1,147 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualShadowMapPageCacheCommon.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/Caching_ConvergenceAnnotated.html">← 回到 阴影缓存</a></div>
+<h1>VirtualShadowMapPageCacheCommon.ush 整源解析<span class="libtag">库 / 缓存策略</span></h1><div class="subtitle">VSM 的<b>页缓存策略库</b>（100 行）：判定某图元的材质/WPO 是否应<b>使动态阴影缓存失效</b>——WPO（世界位置偏移）动画会让阴影每帧变，需精细控制是否允许缓存。核心 <span class="inline">ShouldMaterialInvalidateShadowCache</span> / <span class="inline">VirtualShadowMapIsWPOAllowed</span>。<b>下方内嵌完整 100 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPageCacheCommon.ush</span></h2><div class="body">
+<span class="source-path">ShouldMaterialInvalidateShadowCache @ L11 · VirtualShadowMapIsWPOAllowed @ L26/L46</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+VirtualShadowMapPageCacheCommon.ush:
+=============================================================================*/
+#pragma once
+
+#include "../Nanite/NaniteDataDecode.ush"
+#include "VirtualShadowMapProjectionStructs.ush"
+
+bool ShouldMaterialInvalidateShadowCache(FPrimitiveSceneData PrimitiveData, bool bEnableWPO)
+{
+	// Determine if this instance will cause page invalidations.
+	bool bInvalidate = bEnableWPO;
+	// Ignore WPO disable distance for this if any of the materials have bAlwaysEvaluateWorldPositionOffset = true.
+	bInvalidate |= ((PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_HAS_ALWAYS_EVALUATE_WPO_MATERIALS) != 0u);
+	// Unless, of course, the primitive opts to disable shadow cache invalidations.
+	bInvalidate &amp;= ((PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_DISABLE_MATERIAL_INVALIDATIONS) == 0u);
+
+	return bInvalidate;
+}
+
+// NOTE: This logic must be constant, or else we could miss invalidations if it swaps suddenly.
+// Any changes to the underlying data (i.e. evaluate WPO flag) need to generate a GPUScene update and
+// associated VSM instance invalidation.
+bool VirtualShadowMapIsWPOAllowed(FPrimitiveSceneData PrimitiveData, FVirtualShadowMapHandle VirtualShadowMapHandle)
+{
+	// If always evaluate WPO is enabled, that takes priority
+	if ((PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_HAS_ALWAYS_EVALUATE_WPO_MATERIALS) != 0u)
+	{
+		return true;
+	}
+
+	bool bEvaluateWPO = (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_EVALUATE_WORLD_POSITION_OFFSET) != 0u;
+	bool bWPODisableDistance = (PrimitiveData.Flags &amp; PRIMITIVE_SCENE_DATA_FLAG_WPO_DISABLE_DISTANCE) != 0u;
+	if (bEvaluateWPO &amp;&amp; bWPODisableDistance &amp;&amp; VirtualShadowMapHandle.IsValid())
+	{
+		FVirtualShadowMapProjectionShaderData ProjectionData = GetVirtualShadowMapProjectionData(VirtualShadowMapHandle);
+		// NOTE: ProjectionData set to a safe value for this test even if this is not a clipmap
+		return ProjectionData.ClipmapLevelWPODistanceDisabledThresholdSquared &lt;= PrimitiveData.InstanceWPODisableDistanceSquared;		
+	}
+
+	return bEvaluateWPO;
+}
+
+bool VirtualShadowMapIsWPOAllowed(FPrimitiveSceneData PrimitiveData, int VirtualShadowMapId)
+{
+	return VirtualShadowMapIsWPOAllowed(PrimitiveData, FVirtualShadowMapHandle::MakeFromId(VirtualShadowMapId));
+}
+
+bool GetCachePrimitiveAsDynamic(uint PersistentPrimitiveIndex)
+{
+	// Dynamic primitives are not tracked, so we treat them as dynamic since they can't be cached by definition.
+	if (PersistentPrimitiveIndex &gt;= GetSceneData().MaxPersistentPrimitiveIndex)
+	{
+		return true;
+	}
+
+	uint PrimitiveIdWordOffset = PersistentPrimitiveIndex / 32U;
+	uint PrimitiveIdWordMask = 1U &lt;&lt; (PersistentPrimitiveIndex % 32U);
+	return (VirtualShadowMap.CachePrimitiveAsDynamic[PrimitiveIdWordOffset] &amp; PrimitiveIdWordMask) != 0;
+}
+
+bool GetCacheInstanceAsDynamic(uint InstanceId, int SceneRendererPrimaryViewId)
+{
+	uint WordOffset = InstanceId / 32U;
+	uint WordMask = 1U &lt;&lt; (InstanceId % 32U);
+#if USE_GLOBAL_GPU_SCENE_DATA
+	// TODO: Need to implement this properly for previous frame data UE-368517
+	return false;
+#else
+	uint ViewWordOffset = Scene.VSMCache.InstanceStateViewWordStride * SceneRendererPrimaryViewId * 2;
+	return (Scene.VSMCache.CacheInstanceAsDynamic[ViewWordOffset + WordOffset] &amp; WordMask) != 0;
+#endif
+}
+
+/**
+ * Returns true if, for the currect view &amp; frame, the instance transitioned from being static to dynamic or vice versa.
+ */
+bool GetCacheTransitioned(uint InstanceId, int SceneRendererPrimaryViewId)
+{
+	uint WordOffset = InstanceId / 32U;
+	uint WordMask = 1U &lt;&lt; (InstanceId % 32U);
+#if USE_GLOBAL_GPU_SCENE_DATA
+	// TODO: Need to implement this properly for previous frame data UE-368517
+	return false;
+#else
+	// Note: transitioned bits are stored after the other ones.
+	uint ViewWordOffset = Scene.VSMCache.InstanceStateViewWordStride * SceneRendererPrimaryViewId * 2 + Scene.VSMCache.InstanceStateViewWordStride;
+	return (Scene.VSMCache.CacheInstanceAsDynamic[ViewWordOffset + WordOffset] &amp; WordMask) != 0;
+#endif
+}
+
+bool ShouldCacheInstanceAsStatic(uint InstanceId, bool bViewUncached, bool bAllowWPO, int SceneRendererPrimaryViewId)
+{
+	if (bViewUncached || bAllowWPO)
+	{
+		return false;
+	}
+
+	FInstanceSceneData InstanceData = GetInstanceSceneDataUnchecked(InstanceId);
+	FPrimitiveSceneData PrimitiveData = GetPrimitiveData(InstanceData.PrimitiveId);
+	// TODO: Move this also to the per-instance bit vector?
+	// Whole primitive decision takes precentence
+	if (GetCachePrimitiveAsDynamic(PrimitiveData.PersistentPrimitiveIndex))
+	{
+		return false;
+	}
+
+	if (GetCacheInstanceAsDynamic(InstanceId, SceneRendererPrimaryViewId))
+	{
+		return false;
+	}
+
+	return true;
+}
+</textarea>
+</div></section>
+<section class="card"><h2>0. WPO 材质的缓存失效判定（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">bool ShouldMaterialInvalidateShadowCache(FPrimitiveSceneData PrimitiveData, bool bEnableWPO)</span>
+<span class="code-line blue">// 材质有 WPO 动画且启用 → 阴影每帧变 → 应使缓存失效</span>
+<span class="code-line green">bool VirtualShadowMapIsWPOAllowed(FPrimitiveSceneData PrimitiveData, FVirtualShadowMapHandle Handle)</span>
+<span class="code-line yellow">// 按距离/clipmap 级决定是否允许该图元跑 WPO（远处禁 WPO 保缓存）</span></code></pre><div class="note"><h3>说明</h3><p>VSM 缓存最怕<b>材质 WPO 动画</b>（植被摆动等）：几何顶点每帧偏移 → 阴影每帧变 → 若还复用缓存就错。<span class="inline">ShouldMaterialInvalidateShadowCache</span> 判定"这个图元的材质是否会让阴影变、从而必须失效缓存"。但全禁又浪费——<span class="inline">VirtualShadowMapIsWPOAllowed</span> 做<b>距离/级别自适应</b>：近处（精细 clipmap 级）允许 WPO 保精度，远处/粗级<b>禁用 WPO</b>（阴影固定、缓存复用），因为远处看不出摆动。这是画质与缓存收益的精细权衡，是 VSM 处理动画植被大世界的关键策略，属 <a href="../Chapters/Caching_ConvergenceAnnotated.html" class="inline">阴影缓存章</a>。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Caching_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>阴影缓存</a>
+<a class="tag" href="VirtualShadowMapCacheInvalidation.ush.html"><span class="dot" style="background:var(--cyan)"></span>CacheInvalidation.ush↗</a>
+<a class="tag" href="VirtualShadowMapPhysicalPageManagement.usf.html"><span class="dot" style="background:var(--cyan)"></span>物理页管理↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

@@ -1,0 +1,173 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualShadowMapProjectionStructs.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/VSMOverview_ConvergenceAnnotated.html">← 回到 VSM 总览</a></div>
+<h1>VirtualShadowMapProjectionStructs.ush 整源解析<span class="libtag">库 / VSM 数据结构</span></h1><div class="subtitle">VSM 的<b>投影数据结构</b>（114 行）：<span class="inline">FVirtualShadowMapProjectionShaderData</span> 定义每张 VSM 的投影矩阵/光型/世界中心/分辨率偏置等，CPU 打包、GPU 解包——所有 VSM pass 的共享数据契约。<b>下方内嵌完整 114 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjectionStructs.ush</span></h2><div class="body">
+<span class="source-path">FVirtualShadowMapProjectionShaderData + VSM_PSD_OFFSET_* 字节偏移</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "../LargeWorldCoordinates.ush"
+#include "../ByteBuffer.ush"
+#include "/Engine/Shared/VirtualShadowMapDefinitions.h"
+#include "VirtualShadowMapHandle.ush"
+
+#define VSM_PSD_OFFSET_RESOLUTION_LOD_BIAS 252 // todo: should use structuredbuffer or improvised offsetof instead
+#define VSM_PSD_OFFSET_LIGHT_TYPE 220
+
+// Rougly the same structure as in VirtualShadowMapArray.h, with some logic around LWC values
+struct FVirtualShadowMapProjectionShaderData
+{
+	float4x4 ShadowViewToClipMatrix;
+	float4x4 TranslatedWorldToShadowUVMatrix;
+	float4x4 ShadowUVToTranslatedWorldMatrix;
+	float4x4 TranslatedWorldToShadowUVNormalMatrix;
+
+	float3 LightDirection;
+	uint LightType;		// Matches ELightComponentType via defines in SSDDefinitions.ush
+
+	FDFVector3 PreViewTranslation;
+	float LightRadius;
+	float ResolutionLodBias;
+
+	float3 ClipmapWorldOriginOffset; // Clipmap origin, in shadow translated world
+
+	int2 ClipmapCornerRelativeOffset;
+	int ClipmapLevel;					// "Absolute" level, can be negative
+	int ClipmapLevelCountRemaining;		// Remaining levels, relative to this one
+	uint ClipmapLevelIndex;				// Level index, relative to the base level
+
+	uint Flags;
+	float ClipmapLevelWPODistanceDisabledThresholdSquared;
+	float LightSourceRadius;
+	float TexelDitherScale; // Per-light additional dither filtering
+	uint MinMipLevel; // Minimum mip level that is used for this mip chain (only valid for local lights)
+
+	int SceneRendererPrimaryViewId;
+	int PersistentViewId;
+
+	int LightId;
+
+	float2 DynamicDepthCullRange;
+
+	// Derived data for convenience when passing the structure around
+	FVirtualShadowMapHandle VirtualShadowMapHandle;
+	bool bUnCached; // see VSM_PROJ_FLAG_UNCACHED
+	bool bUnreferenced; // see VSM_PROJ_FLAG_UNREFERENCED
+	bool bIsCoarseClipLevel; // see VSM_PROJ_FLAG_IS_COARSE_CLIP_LEVEL
+	bool bHasPrefilteredDistant; // see VSM_PROJ_FLAG_HAS_PREFILTERED_DISTANT;
+	bool bUseReceiverMask; // see VSM_PROJ_FLAG_USE_RECEIVER_MASK
+	bool bForceCacheDynamicCoarse; // see VSM_PROJ_FLAG_FORCE_CACHE_DYNAMIC_COARSE
+};
+
+FVirtualShadowMapProjectionShaderData DecodeVirtualShadowMapProjectionData(ByteAddressBuffer ProjectionData, FVirtualShadowMapHandle VirtualShadowMapHandle)
+{
+	FVirtualShadowMapProjectionShaderData Result;
+	Result.VirtualShadowMapHandle = VirtualShadowMapHandle;
+
+	const uint VSMOffset = VirtualShadowMapHandle.GetDataIndex() * VSM_PSD_STRIDE;
+	uint CurrentLoadOffset = VSMOffset;
+	LoadAndIncrementOffset(Result.ShadowViewToClipMatrix, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.TranslatedWorldToShadowUVMatrix, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.ShadowUVToTranslatedWorldMatrix, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.TranslatedWorldToShadowUVNormalMatrix, ProjectionData, CurrentLoadOffset);
+
+	// NOTE: Stick with struct-element-sized loads for the moment since we may only be using subsets
+	// of the data in the calling code and we want to ensure the compiler has simple DCE options.
+	LoadAndIncrementOffset(Result.LightDirection, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.LightType, ProjectionData, CurrentLoadOffset);
+	checkSlow(VSM_PSD_OFFSET_LIGHT_TYPE == (CurrentLoadOffset - VSMOffset));
+		 
+	float3 PreViewTranslationHigh;
+	LoadAndIncrementOffset(PreViewTranslationHigh, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.LightRadius, ProjectionData, CurrentLoadOffset);
+
+	float3 PreViewTranslationLow;
+	LoadAndIncrementOffset(PreViewTranslationLow, ProjectionData, CurrentLoadOffset);
+	checkSlow(VSM_PSD_OFFSET_RESOLUTION_LOD_BIAS == (CurrentLoadOffset - VSMOffset));
+	LoadAndIncrementOffset(Result.ResolutionLodBias, ProjectionData, CurrentLoadOffset);
+
+	LoadAndIncrementOffset(Result.ClipmapWorldOriginOffset, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.LightSourceRadius, ProjectionData, CurrentLoadOffset);
+	
+	LoadAndIncrementOffset(Result.ClipmapCornerRelativeOffset, ProjectionData, CurrentLoadOffset);
+
+	uint ClipmapLevel_ClipmapLevelCountRemaining = 0;
+	LoadAndIncrementOffset(ClipmapLevel_ClipmapLevelCountRemaining, ProjectionData, CurrentLoadOffset);
+	if (int(ClipmapLevel_ClipmapLevelCountRemaining) != -1)
+	{
+		Result.ClipmapLevel						= int(ClipmapLevel_ClipmapLevelCountRemaining &gt;&gt; 16u) - VSM_PACKED_CLIP_LEVEL_BIAS;
+		Result.ClipmapLevelCountRemaining		= int(ClipmapLevel_ClipmapLevelCountRemaining &amp; 0xFFu);
+		Result.ClipmapLevelIndex				= (ClipmapLevel_ClipmapLevelCountRemaining &gt;&gt; 8u) &amp; 0xFFu;
+	}
+	else
+	{
+		Result.ClipmapLevel						= VSM_PACKED_CLIP_LEVEL_BIAS;
+		Result.ClipmapLevelCountRemaining		= -1;
+		Result.ClipmapLevelIndex				= 0;
+	}
+	uint PackedCullingViewId;
+	LoadAndIncrementOffset(PackedCullingViewId, ProjectionData, CurrentLoadOffset);
+
+	Result.SceneRendererPrimaryViewId = int(PackedCullingViewId &gt;&gt; 16u) - 1;
+	Result.PersistentViewId = int(PackedCullingViewId &amp; 0xFFFFu) - 1;
+
+	LoadAndIncrementOffset(Result.Flags, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.ClipmapLevelWPODistanceDisabledThresholdSquared, ProjectionData, CurrentLoadOffset);
+	
+	LoadAndIncrementOffset(Result.TexelDitherScale, ProjectionData, CurrentLoadOffset);
+	LoadAndIncrementOffset(Result.MinMipLevel, ProjectionData, CurrentLoadOffset);
+
+	LoadAndIncrementOffset(Result.LightId, ProjectionData, CurrentLoadOffset);
+
+	LoadAndIncrementOffset(Result.DynamicDepthCullRange, ProjectionData, CurrentLoadOffset);
+
+	// Computed data
+	Result.PreViewTranslation				= MakeDFVector3(PreViewTranslationHigh, PreViewTranslationLow);
+
+	Result.bUnCached = (Result.Flags &amp; VSM_PROJ_FLAG_UNCACHED) != 0u;
+	Result.bUnreferenced = (Result.Flags &amp; VSM_PROJ_FLAG_UNREFERENCED) != 0u;
+	Result.bIsCoarseClipLevel = (Result.Flags &amp; VSM_PROJ_FLAG_IS_COARSE_CLIP_LEVEL) != 0u;
+	Result.bHasPrefilteredDistant = (Result.Flags &amp; VSM_PROJ_FLAG_HAS_PREFILTERED_DISTANT) != 0U;
+	Result.bUseReceiverMask = (Result.Flags &amp; VSM_PROJ_FLAG_USE_RECEIVER_MASK) != 0u;
+	Result.bForceCacheDynamicCoarse = (Result.Flags &amp; VSM_PROJ_FLAG_FORCE_CACHE_DYNAMIC_COARSE) != 0;
+	
+	return Result;
+}
+
+FVirtualShadowMapProjectionShaderData GetVirtualShadowMapProjectionData(FVirtualShadowMapHandle VirtualShadowMapHandle)
+{
+	return DecodeVirtualShadowMapProjectionData(VirtualShadowMap.ProjectionData, VirtualShadowMapHandle);
+}
+
+FVirtualShadowMapProjectionShaderData GetVirtualShadowMapProjectionData(FVirtualShadowMapHandle VirtualShadowMapHandle, ByteAddressBuffer ProjectionDataBuffer)
+{
+	return DecodeVirtualShadowMapProjectionData(ProjectionDataBuffer, VirtualShadowMapHandle);
+}
+</textarea>
+</div></section>
+<section class="card"><h2>0. VSM 投影数据契约（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">#define VSM_PSD_OFFSET_LIGHT_TYPE 220</span>
+<span class="code-line orange">#define VSM_PSD_OFFSET_RESOLUTION_LOD_BIAS 252   // CPU/GPU 共享的字节偏移</span>
+<span class="code-line blue">struct FVirtualShadowMapProjectionShaderData {</span>
+<span class="code-line green">    float4x4 ShadowViewToClipMatrix; ... 光型/世界中心/clipmap 级/分辨率偏置 ...</span>
+<span class="code-line yellow">};   // 从 ByteAddressBuffer 按偏移解包</span></code></pre><div class="note"><h3>说明</h3><p>每张 VSM 需要一组投影参数（视→裁剪矩阵、光型 directional/spot/point、世界中心、clipmap 级、分辨率 LOD 偏置等）。<span class="inline">FVirtualShadowMapProjectionShaderData</span> 是它们的结构定义，由 CPU 端打包进 <span class="inline">ByteAddressBuffer</span>、GPU 各 pass 按 <span class="inline">VSM_PSD_OFFSET_*</span> 字节偏移解包（注释里明说这是权宜之计，理想应用 offsetof/StructuredBuffer）。这是页标记、投影、失效、节流等所有 VSM pass 共享的<b>数据契约</b>——统一了 CPU 与 GPU 对"一张 VSM 是什么"的理解。<span class="inline">Throttle</span> 改的 <span class="inline">ResolutionLodBias</span> 就写在这里。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/VSMOverview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>VSM 总览</a>
+<a class="tag" href="VirtualShadowMapHandle.ush.html"><span class="dot" style="background:var(--cyan)"></span>Handle.ush↗</a>
+<a class="tag" href="VirtualShadowMapThrottle.usf.html"><span class="dot" style="background:var(--cyan)"></span>Throttle.usf↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
