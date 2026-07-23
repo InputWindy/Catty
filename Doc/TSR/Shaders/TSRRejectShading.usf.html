@@ -1,78 +1,1012 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TSRRejectShading.usf 代码解析</title>
+<title>TSRRejectShading.usf 代码解析（整源）</title>
 <style>
-:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:450px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
 <div class="nav"><a href="../UE_TSR_解析_总目录.html">← 返回《UE TSR》总目录</a><a href="../Chapters/Reject_ConvergenceAnnotated.html">← 回到 #4 历史拒绝</a></div>
-<h1>TSRRejectShading.usf 汇聚/发散批注版</h1><div class="subtitle">TSR <b>抗鬼影的心脏</b>：用一套<b>着色分析卷积启发式</b>逐像素估计"重投影来的历史还能不能信"，结合颜色空间 HDR 加权、闪烁(moire)抑制、薄几何松弛，产出连续的<b>拒绝权重</b>。核心 <span class="inline">RejectShadingCS</span>（LANE_COUNT×WAVE_COUNT，张量化）。<b>说明：完整文件 954 行</b>，下方内嵌核心入口的真实源码。</div></header>
+<h1>TSRRejectShading.usf 整源解析</h1><div class="subtitle">TSR 最核心也最复杂的 pass：<b>着色拒绝</b>——对比重投影历史与当前输入，判断历史哪里"过时/失效"该被拒绝，产出 <span class="inline">RejectionBlend</span> 混合因子。含<b>摩尔纹（flickering）检测</b>、薄几何松弛、历史复活比较，大量用 tensor/tile 抽象跑卷积网络式分析。核心 <span class="inline">RejectShadingCS</span>。<b>下方内嵌完整 842 行真实源码</b>，再逐段真实代码批注。</div></header>
 <main>
 
 <section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
-<div class="node branch"><strong>对齐历史 + 当帧输入</strong><small>#3 输出 + DecimateMask</small></div>
+<div class="node branch"><strong>输入色 + 重投影历史</strong><small>#3 产物</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><strong>着色分析卷积</strong><small>tensor 化邻域比对</small></div>
+<div class="node func"><strong>摩尔纹检测</strong><small>抗闪烁启发式</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><strong>颜色空间 + 闪烁抑制</strong><small>HDR 加权 / moire</small></div>
+<div class="node func"><strong>拒绝度量 + 复活比较</strong><small>历史 vs 输入</small></div>
 <div class="arrow">▶</div>
-<div class="node out"><strong>拒绝权重</strong><small>供 #5 累积定占比</small></div>
+<div class="node out"><strong>RejectionBlend 因子</strong><small>供 #5 累积</small></div>
 </div></section>
 
-<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（954 行文件的核心节选，逐行真实）</span></h2><div class="body">
-<span class="source-path">Engine/Shaders/Private/TemporalSuperResolution/TSRRejectShading.usf · RejectShadingCS L451</span>
-<textarea class="embedded-source" readonly spellcheck="false">[numthreads(LANE_COUNT * WAVE_COUNT, 1, 1)]     // 波前张量布局，非规则 8×8
-void RejectShadingCS(uint2 GroupId : SV_GroupID, uint GroupThreadIndex : SV_GroupIndex)
-{
-	GGroupId = GroupId;  GGroupThreadIndex = GroupThreadIndex;
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/TemporalSuperResolution/TSRRejectShading.usf</span></h2><div class="body">
+<span class="source-path">RejectShadingCS @ L451（LANE_COUNT*WAVE_COUNT 线程，tensor/tile 抽象）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
 
-	// 用 tensor 类型（tsr_tensor_*）做 lane 向量化的卷积分析
-	tsr_tensor_half MoireError;
+//------------------------------------------------------- INCLUDES
+
+#define CONFIG_THIN_GEOMETRY_DETECTION (DIM_THIN_GEOMETRY_DETECTION)
+
+#include "TSRShadingAnalysis.ush"
+#include "TSRReprojectionField.ush"
+
+
+//------------------------------------------------------- CONFIG
+
+#define DEBUG_ARRAY_SIZE 8
+
+#define DEBUG_DISABLE_PADDING 0
+
+#define DEBUG_DIGESTABLE 0
+
+/** Whether to detect flickering. */
+#define CONFIG_MOIRE_DETECTION (DIM_FLICKERING_DETECTION)
+
+#define CONFIG_HISTORY_RESURRECTION (DIM_HISTORY_RESURRECTION)
+
+
+//------------------------------------------------------- CONSTANTS
+
+#if CONFIG_LDS_DESPILL
+	static const uint kDespillInput = LDS_DESPILL_THREAD_COUNT * LDS_DESPILL_OFFSET * 0;
+	static const uint kDespillHistory = LDS_DESPILL_THREAD_COUNT * LDS_DESPILL_OFFSET * 1;
+#endif
+
+
+//------------------------------------------------------- PARAMETERS
+
+FScreenTransform InputPixelPosToTranslucencyTextureUV;
+float4x4 ClipToResurrectionClip;
+float2 ResurrectionJacobianXMul;
+float2 ResurrectionJacobianXAdd;
+float2 ResurrectionJacobianYMul;
+float2 ResurrectionJacobianYAdd;
+float2 TranslucencyTextureUVMin;
+float2 TranslucencyTextureUVMax;
+float3 HistoryGuideQuantizationError;
+float3 SceneColorOutputQuantizationError;
+float TheoricBlendFactor;
+uint TileOverscan;
+uint bEnableResurrection;
+uint bEnableFlickeringHeuristic;
+
+
+Texture2D&lt;tsr_halfC_resource&gt; InputTexture;
+Texture2D&lt;tsr_half_resource&gt;  InputMoireLumaTexture;
+Texture2D&lt;tsr_half4_resource&gt; InputSceneTranslucencyTexture;
+Texture2D&lt;tsr_half4_resource&gt; ReprojectedHistoryGuideTexture;
+Texture2D&lt;tsr_half_resource&gt;  ReprojectedHistoryGuideMetadataTexture;
+Texture2D&lt;tsr_half4_resource&gt; ReprojectedHistoryMoireTexture;
+#if CONFIG_HISTORY_RESURRECTION
+	Texture2D&lt;tsr_half4_resource&gt; ResurrectedHistoryGuideTexture;
+	Texture2D&lt;tsr_half_resource&gt;  ResurrectedHistoryGuideMetadataTexture;
+#endif
+Texture2D&lt;tsr_half2_resource&gt; DecimateMaskTexture;
+Texture2D&lt;tsr_ushort_resource&gt; IsMovingMaskTexture;
+Texture2D&lt;tsr_ushort_resource&gt; ThinGeometryTexture;
+Texture2D&lt;float2&gt; ClosestDepthTexture;
+
+RWTexture2DArray&lt;tsr_half4_resource&gt; HistoryGuideOutput;
+RWTexture2DArray&lt;tsr_half4_resource&gt; HistoryMoireOutput;
+RWTexture2D&lt;tsr_half4_resource&gt;  HistoryRejectionOutput;
+RWTexture2DArray&lt;uint&gt;  ReprojectionFieldOutput;
+RWTexture2D&lt;tsr_halfC_resource&gt;  InputSceneColorOutput;
+RWTexture2D&lt;tsr_half_resource&gt;   InputSceneColorLdrLumaOutput;
+RWTexture2D&lt;tsr_ushort_resource&gt; AntiAliasMaskOutput;
+
+
+//------------------------------------------------------- GLOBALS
+
+static uint2 GGroupId = 0;
+
+static tsr_tensor_half4 Debug[DEBUG_ARRAY_SIZE];
+
+
+//------------------------------------------------------- INPUT FETCHES
+
+tsr_short2 ComputeElementPixelPos(const uint ElementIndex)
+{
+	tsr_short2 ClampedFetchPixelPos = ComputeElementInputPixelPos(
+		/* LaneStride = */ uint2(LANE_STRIDE_X, LANE_STRIDE_Y),
+		TileOverscan,
+		InputInfo_ViewportMin,
+		InputInfo_ViewportMax,
+		GGroupId,
+		GGroupThreadIndex,
+		ElementIndex);
+
+	return ClampedFetchPixelPos;
+}
+
+tsr_tensor_short2 ComputePixelPos()
+{
+	tsr_tensor_short2 PixelPos;
+
+	UNROLL_N(SIMD_SIZE)
+	for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+	{
+		PixelPos.SetElement(ElementIndex, ComputeElementPixelPos(ElementIndex));
+	}
+
+	return PixelPos;
+}
+
+tsr_short2 ComputeElementOutputPixelPos(const uint ElementIndex)
+{
+	return ComputeElementOutputPixelPos(
+		/* LaneStride = */ uint2(LANE_STRIDE_X, LANE_STRIDE_Y),
+		TileOverscan,
+		InputInfo_ViewportMin,
+		InputInfo_ViewportMax,
+		GGroupId,
+		GGroupThreadIndex,
+		ElementIndex);
+}
+
+void FetchThinGeometryEdge(
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_half HistoryRelaxationWeight,
+	out tsr_tensor_bool IsClusterHoleRegion)
+{
+	UNROLL_N(SIMD_SIZE)
+	for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+	{
+		tsr_short2 ClampedFetchPixelPos = PixelPos.GetElement(ElementIndex);
+		tsr_short EncodedThinGeometryWeight = tsr_short(ThinGeometryTexture[ClampedFetchPixelPos]);
+		
+		tsr_half Weight = tsr_half(EncodedThinGeometryWeight &gt;&gt; tsr_ushort(1)) * rcp(tsr_half(127.0));
+		bool UseMultiplyOperation = (EncodedThinGeometryWeight &amp; tsr_ushort(0x1))!= tsr_ushort(0x0);
+
+		HistoryRelaxationWeight.SetElement(ElementIndex, Weight);
+		IsClusterHoleRegion.SetElement(ElementIndex, UseMultiplyOperation);
+	}
+} // FetchMoireInput()
+
+void FetchDecimateMask(
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_half VelocityEdge,
+	out tsr_tensor_bool bIsDisoccluded,
+	out tsr_tensor_bool bHasPixelAnimation,
+	out tsr_tensor_bool bIsResurrectionOffScreen)
+{
+	UNROLL_N(SIMD_SIZE)
+	for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+	{
+		tsr_short2 ClampedFetchPixelPos = PixelPos.GetElement(ElementIndex);
+		
+		tsr_half2 DecimateMask = tsr_half2(DecimateMaskTexture[ClampedFetchPixelPos]);
+
+		tsr_ushort BitMask = tsr_ushort(DecimateMask.r * tsr_half(255.0));
+
+		VelocityEdge.SetElement(ElementIndex, DecimateMask.g);
+		bIsDisoccluded.SetElement(ElementIndex,     (BitMask &amp; tsr_ushort(0x23)) != tsr_ushort(0));
+		bHasPixelAnimation.SetElement(ElementIndex, (BitMask &amp; tsr_ushort(0x4)) != tsr_ushort(0));
+		bIsResurrectionOffScreen.SetElement(ElementIndex, (BitMask &amp; tsr_ushort(0x30)) != tsr_ushort(0));
+	}
+} // FetchDecimateMask()
+
+void FetchSceneColorAndTranslucency(
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_halfC OriginalOpaqueInput,
+	out tsr_tensor_half4 OriginalTranslucencyInput)
+{
+	UNROLL_N(SIMD_SIZE)
+	for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+	{
+		tsr_short2 ClampedFetchPixelPos = PixelPos.GetElement(ElementIndex);
+		
+		float2 TranslucencyTextureUV = ApplyScreenTransform(float2(ClampedFetchPixelPos), InputPixelPosToTranslucencyTextureUV);
+		TranslucencyTextureUV = fastClamp(TranslucencyTextureUV, TranslucencyTextureUVMin, TranslucencyTextureUVMax);
+		
+		OriginalOpaqueInput.SetElement(ElementIndex, tsr_halfC(InputTexture[ClampedFetchPixelPos]));
+		OriginalTranslucencyInput.SetElement(ElementIndex, tsr_half4(InputSceneTranslucencyTexture.SampleLevel(GlobalBilinearClampedSampler, TranslucencyTextureUV, 0)));
+	}
+} // FetchSceneColorAndTranslucency()
+
+void FetchHistoryGuide(
+	Texture2D&lt;tsr_half4_resource&gt; HistoryGuideTexture,
+	Texture2D&lt;tsr_half_resource&gt;  HistoryGuideMetadataTexture,
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_halfC History,
+	out tsr_tensor_half  HistoryUncertainty)
+{
+	UNROLL_N(SIMD_SIZE)
+	for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+	#if CONFIG_SCENE_COLOR_ALPHA
+	{
+		tsr_short2 ClampedFetchPixelPos = PixelPos.GetElement(ElementIndex);
+
+		History.SetElement(ElementIndex, tsr_half4(HistoryGuideTexture[ClampedFetchPixelPos]));
+		HistoryUncertainty.SetElement(ElementIndex, tsr_half(HistoryGuideMetadataTexture[ClampedFetchPixelPos]));
+	}
+	#else
+	{
+		tsr_short2 ClampedFetchPixelPos = PixelPos.GetElement(ElementIndex);
+
+		tsr_half4 ReprojectedGuide = tsr_half4(HistoryGuideTexture[ClampedFetchPixelPos]);
+		History.SetElement(ElementIndex, ReprojectedGuide.rgb);
+		HistoryUncertainty.SetElement(ElementIndex, ReprojectedGuide.a);
+	}
+	#endif
+} // FetchHistoryGuide()
+
+// Fetch the previous history history.
+void FetchReprojectedHistoryGuide(
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_halfC History,
+	out tsr_tensor_half  HistoryUncertainty)
+{
+	FetchHistoryGuide(
+		ReprojectedHistoryGuideTexture,
+		ReprojectedHistoryGuideMetadataTexture,
+		PixelPos,
+		/* out */ History,
+		/* out */ HistoryUncertainty);
+}
+
+#if CONFIG_MOIRE_DETECTION
+
+void FetchMoireInput(
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_half MoireInput,
+	out tsr_tensor_half4 PrevMoireHistory,
+	out tsr_tensor_half bIsStatic)
+{
+	UNROLL_N(SIMD_SIZE)
+	for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+	{
+		tsr_short2 ClampedFetchPixelPos = PixelPos.GetElement(ElementIndex);
+		
+		MoireInput.SetElement(ElementIndex, tsr_half(InputMoireLumaTexture[ClampedFetchPixelPos]));
+		PrevMoireHistory.SetElement(ElementIndex, tsr_half4(ReprojectedHistoryMoireTexture[ClampedFetchPixelPos]));
+		bIsStatic.SetElement(ElementIndex, tsr_half(1.0) - tsr_half(IsMovingMaskTexture[ClampedFetchPixelPos]) * rcp(tsr_half(255.0)));
+	}
+} // FetchMoireInput()
+
+#endif // CONFIG_MOIRE_DETECTION
+
+#if CONFIG_HISTORY_RESURRECTION
+
+// Fetch the resurrected history.
+void FetchResurrectedHistoryGuide(
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_halfC History,
+	out tsr_tensor_half  HistoryUncertainty)
+{
+	FetchHistoryGuide(
+		ResurrectedHistoryGuideTexture,
+		ResurrectedHistoryGuideMetadataTexture,
+		PixelPos,
+		/* out */ History,
+		/* out */ HistoryUncertainty);
+}
+
+// Returns whether resurrected frame is closer than previous frame on per pixel basis.
+CALL_SITE_DEBUGLOC
+tsr_tensor_bool IsResurrectedFrameCloserThanPreviousFrame(tsr_tensor_bool bIsResurrectionOffScreen, tsr_tensor_halfC ExposedInput, tsr_tensor_halfC ExposedHistory, tsr_tensor_halfC ExposedResurrectedHistory)
+{
+	tsr_tensor_halfC PrevMatch         = abs(ExposedInput - ExposedHistory);
+	tsr_tensor_halfC ResurrectionMatch = abs(ExposedInput - ExposedResurrectedHistory);
+
+	tsr_tensor_halfC MatchDiff = PrevMatch - ResurrectionMatch;
+	#if CONFIG_SCENE_COLOR_ALPHA
+		tsr_tensor_half TotalMatchDiff = Sum3x3(MatchDiff[0] + MatchDiff[1] + MatchDiff[2] + MatchDiff[3]);
+	#else
+		tsr_tensor_half TotalMatchDiff = Sum3x3(MatchDiff[0] + MatchDiff[1] + MatchDiff[2]);
+	#endif
+
+	tsr_tensor_half bResurrectedPixelIsCloser = saturate((TotalMatchDiff - tsr_tensor_half::Const(tsr_half(0.05 * 3.0 * 9.0))) * tsr_tensor_half::Const(tsr_half(POSITIVE_INFINITY)));
+
+	tsr_tensor_bool bResurrectionIsCloser = and(Sum3x3(bResurrectedPixelIsCloser) &gt; tsr_tensor_half::Const(4.0), not(bIsResurrectionOffScreen));
+
+	//tsr_tensor_bool bResurrectionIsCloser = MedianBool3x3((TotalMatchDiff - tsr_tensor_half::Const(tsr_half(0.05 * 3.0 * 9.0))));
+
+	return bResurrectionIsCloser;
+}
+
+// Whether it is worth for the entire tile to MeasureRejection() on the resurrected frame.
+CALL_SITE_DEBUGLOC
+bool IsWorthMeasuringRejectionOfResurrectedFrame(tsr_tensor_half PrevRejectionBlendFinal, tsr_tensor_bool bResurrectionIsCloser)
+{
+	bool bComputeResurrection;
+	BRANCH
+	if (bEnableResurrection)
+	{
+		tsr_tensor_bool bPrevIsNotGoodEnough = PrevRejectionBlendFinal &lt; tsr_tensor_half::Const(0.5);
+		tsr_tensor_bool bIsValidTilePixel = IsValidTilePixel&lt;LANE_STRIDE_X, LANE_STRIDE_Y&gt;(TileOverscan);
+		tsr_tensor_bool bShouldComputeResurrection = and(and(bResurrectionIsCloser, bPrevIsNotGoodEnough), bIsValidTilePixel);
+
+		bComputeResurrection = AnyThread(AnyComponent(bShouldComputeResurrection));
+	}
+	else
+	{
+		bComputeResurrection = false;
+	}
+
+	return bComputeResurrection;
+}
+
+// Final logic whether the resurrection must actually happen on per pixel basis.
+CALL_SITE_DEBUGLOC
+tsr_tensor_bool ShouldResurrectHistory(tsr_tensor_half PrevRejectionBlendFinal, tsr_tensor_half ResurrectionRejectionBlendFinal, tsr_tensor_bool bResurrectionIsCloser)
+{
+	tsr_tensor_bool bIsValidTilePixel = IsValidTilePixel&lt;LANE_STRIDE_X, LANE_STRIDE_Y&gt;(TileOverscan);
+	tsr_tensor_bool bResurrectionIsBetter = (ResurrectionRejectionBlendFinal - PrevRejectionBlendFinal) &gt; tsr_tensor_half::Const(0.1);
+	tsr_tensor_bool bResurrectHistory = and(and(bResurrectionIsCloser, bResurrectionIsBetter), bIsValidTilePixel);
+
+	return bResurrectHistory;
+}
+
+// Load the depth for ComputeResurrectionVelocity()
+CALL_SITE_DEBUGLOC
+void FetchDeviceZ(
+	tsr_tensor_short2 PixelPos,
+	out tsr_tensor_float DeviceZ)
+{
+	UNROLL_N(SIMD_SIZE)
+	for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+	{
+		tsr_short2 ClampedFetchPixelPos = PixelPos.GetElement(ElementIndex);
+		
+		DeviceZ.SetElement(ElementIndex, ClosestDepthTexture[ClampedFetchPixelPos].g);
+	}
+} // FetchMoireInput()
+
+// Overwrite the reprojection field for pixels that needs resurrection.
+CALL_SITE_DEBUGLOC
+void OverwriteReprojectionFieldWithResurrection(tsr_tensor_bool bResurrectHistory, tsr_tensor_float DeviceZ)
+{
+	uint EncodedReprojectionVector[SIMD_SIZE];
+	uint EncodedReprojectionJacobian[SIMD_SIZE];
+
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		UNROLL_N(SIMD_SIZE)
+		for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+		ISOLATE
+		{
+			float LocalDeviceZ = DeviceZ.GetElement(ElementIndex);
+		
+			tsr_short2 InputPixelPos = ComputeElementPixelPos(ElementIndex);
+			float2 ScreenPos = ApplyScreenTransform(float2(InputPixelPos), InputPixelPosToScreenPos);
+			
+			float4 ThisClip = float4(ScreenPos, DeviceZ.GetElement(ElementIndex), 1);
+			float4 ResurrectionClip = mul(ThisClip, ClipToResurrectionClip);
+			float  ResurrectionProjection = rcp(ResurrectionClip.w);
+			float2 ResurrectionReprojectionVector = ScreenPos - ResurrectionClip.xy * ResurrectionProjection;
+			EncodedReprojectionVector[ElementIndex] = EncodeReprojectionVector(ResurrectionReprojectionVector);
+
+			// Compute the Jacobian from the PrevClip. Should technically take into account the depth delta along X and Y, but it's costly to compute, and it's using the dilated DeviceZ anyway, and not even using a 2x3 jacobian.
+			tsr_half2x2 ResurrectionJacobian;
+			ResurrectionJacobian[0] = tsr_half2(ResurrectionJacobianXMul) * tsr_half(ResurrectionProjection) + tsr_half2(ResurrectionJacobianXAdd);
+			ResurrectionJacobian[1] = tsr_half2(ResurrectionJacobianYMul) * tsr_half(ResurrectionProjection) + tsr_half2(ResurrectionJacobianYAdd);
+
+			EncodedReprojectionJacobian[ElementIndex] = EncodeReprojectionJacobian(ResurrectionJacobian);
+		}
+	}
+
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		UNROLL_N(SIMD_SIZE)
+		for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+		{
+			tsr_short2 OutputPixelPos = ComputeElementOutputPixelPos(ElementIndex);
+			OutputPixelPos.x = select(bResurrectHistory.GetElement(ElementIndex), OutputPixelPos.x, tsr_short(-1));
+
+			ReprojectionFieldOutput[tsr_short3(OutputPixelPos, kReprojectionVectorOutputIndex)]   = EncodedReprojectionVector[ElementIndex];
+			ReprojectionFieldOutput[tsr_short3(OutputPixelPos, kReprojectionJacobianOutputIndex)] = EncodedReprojectionJacobian[ElementIndex];
+		}
+	}
+} // OverwriteReprojectionFieldWithResurrection()
+
+#endif // CONFIG_HISTORY_RESURRECTION
+
+
+//------------------------------------------------------- UPDATE GUDIE
+
+// Update the guide for next frame.
+CALL_SITE_DEBUGLOC
+tsr_tensor_halfC UpdateGuide(tsr_tensor_halfC ExposedInput, tsr_tensor_halfC ExposedHistory, tsr_tensor_bool bIsDisoccluded, tsr_tensor_half RejectionBlendFinal)
+{
+	tsr_tensor_bool bIsOffScreen = tsr_tensor_bool::Const(false);
+
+	tsr_tensor_half TotalBlend = select(or(bIsOffScreen, bIsDisoccluded), tsr_tensor_half::Const(1.0), saturate(tsr_tensor_half::Const(1.0) - RejectionBlendFinal * tsr_tensor_half::Const(4.0)));
+	tsr_tensor_half RejectedBlendFactor = max(tsr_tensor_half::Const(tsr_half(TheoricBlendFactor)), tsr_tensor_half::Const(1.0) - RejectionBlendFinal);
+
+	tsr_tensor_half BlendFinal = max(RejectedBlendFactor, TotalBlend);
+
+	tsr_tensor_halfC FinalGuide = ExposedInput * tsr_tensor_halfC::Vectorize(BlendFinal) - ExposedHistory * tsr_tensor_halfC::Vectorize(BlendFinal - 1.0);
+	return FinalGuide;
+}
+
+
+//------------------------------------------------------- REGISTER PRESSURE HELPERS
+
+#if CONFIG_LDS_DESPILL || CONFIG_CACHE_REFETCH
+
+void RefetchInputAndHistoryFromLDSOrCache(
+	out tsr_tensor_halfC Input,
+	out tsr_tensor_half  InputUncertainty,
+	out tsr_tensor_halfC History,
+	out tsr_tensor_half  HistoryUncertainty)
+#if CONFIG_LDS_DESPILL
+{
+	Deconcatenate(tsr_tensor_half4::LoadLDSSpill(kDespillInput), /* out */ Input, /* out */ InputUncertainty);
+	Deconcatenate(tsr_tensor_half4::LoadLDSSpill(kDespillHistory), /* out */ History, /* out */ HistoryUncertainty);
+}
+#else
+{
+	tsr_tensor_short2 PixelPos = ComputePixelPos();
+
+	tsr_tensor_halfC OriginalOpaqueInput;
+	tsr_tensor_half4 OriginalTranslucencyInput;
+	tsr_tensor_halfC OriginalHistory;
+	tsr_tensor_half  OriginalHistoryUncertainty;
+	tsr_tensor_half  VelocityEdge;
+	tsr_tensor_bool  bIsDisoccluded;
+	tsr_tensor_bool  bHasPixelAnimation;
+	tsr_tensor_bool  bIsResurrectionOffScreen;
+
+	FetchDecimateMask(PixelPos, /* out */ VelocityEdge, /* out */ bIsDisoccluded, /* out */ bHasPixelAnimation, /* out */ bIsResurrectionOffScreen);
+	FetchSceneColorAndTranslucency(PixelPos, /* out */ OriginalOpaqueInput, /* out */ OriginalTranslucencyInput);
+	FetchReprojectedHistoryGuide(
+		PixelPos,
+		/* out */ OriginalHistory,
+		/* out */ OriginalHistoryUncertainty);
+
+	tsr_tensor_halfC OriginalInput = ComposeTranslucencyForRejection(OriginalOpaqueInput, OriginalTranslucencyInput, bHasPixelAnimation);
+
+	Input            = OriginalInput;
+	InputUncertainty = VelocityEdge;
+	History            = OriginalHistory;
+	HistoryUncertainty = OriginalHistoryUncertainty;
+}
+#endif
+
+#endif // CONFIG_LDS_DESPILL || CONFIG_CACHE_REFETCH
+
+
+//------------------------------------------------------- ENTRY POINT
+
+#if COMPILER_SUPPORTS_WAVE_SIZE &amp;&amp; DIM_WAVE_SIZE &gt; 0
+WAVESIZE(DIM_WAVE_SIZE)
+#endif
+[numthreads(LANE_COUNT * WAVE_COUNT, 1, 1)]
+void RejectShadingCS(
+	uint2 GroupId : SV_GroupID,
+	uint GroupThreadIndex : SV_GroupIndex)
+{
+	GGroupId = GroupId;
+	GGroupThreadIndex = GroupThreadIndex;
+
+	UNROLL_N(DEBUG_ARRAY_SIZE)
+	for (uint DebugId = 0; DebugId &lt; DEBUG_ARRAY_SIZE; DebugId++)
+	{
+		Debug[DebugId].SetAllElements(0.0);
+	}
+	#if CONFIG_THIN_GEOMETRY_DETECTION
+	bool bApplyThinGeometryRelaxation = false;
+	#endif	
+	// Analyses the moire pattern overtime.
+	tsr_tensor_half  MoireError;
 	#if CONFIG_MOIRE_DETECTION
 	BRANCH
 	if (bEnableFlickeringHeuristic)
-	PLATFORM_SPECIFIC_ISOLATE {
-		tsr_tensor_half   VelocityEdge;
-		tsr_tensor_bool   bIsDisoccluded, bHasPixelAnimation, bIsResurrectionOffScreen;
-		tsr_tensor_halfC  OriginalOpaqueInput;
-		tsr_tensor_half4  OriginalTranslucencyInput;
-		tsr_tensor_half   MoireInput;
-		tsr_tensor_half4  PrevMoireHistory;
-		tsr_tensor_half   bIsStatic;
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		// Load its own data
+		tsr_tensor_half  VelocityEdge;
+		tsr_tensor_bool  bIsDisoccluded;
+		tsr_tensor_bool  bHasPixelAnimation;
+		tsr_tensor_bool  bIsResurrectionOffScreen;
+		tsr_tensor_halfC OriginalOpaqueInput;
+		tsr_tensor_half4 OriginalTranslucencyInput;
+		tsr_tensor_half  MoireInput;
+		tsr_tensor_half4 PrevMoireHistory;
+		tsr_tensor_half  bIsStatic;
+		PLATFORM_SPECIFIC_ISOLATE
+		{
+			tsr_tensor_short2 PixelPos = ComputePixelPos();
+		
+			FetchDecimateMask(PixelPos, /* out */ VelocityEdge, /* out */ bIsDisoccluded, /* out */ bHasPixelAnimation, /* out */ bIsResurrectionOffScreen);
+			FetchSceneColorAndTranslucency(PixelPos, /* out */ OriginalOpaqueInput, /* out */ OriginalTranslucencyInput);
+			FetchMoireInput(
+				PixelPos,
+				/* out */ MoireInput,
+				/* out */ PrevMoireHistory,
+				/* out */ bIsStatic);
+		}
+		
+		#if CONFIG_THIN_GEOMETRY_DETECTION
+		tsr_tensor_half ThinGeometryRelaxationFactor = tsr_tensor_half::Const(0);
+		if (ThinGeometryAffectMoireError)
+		{
+			tsr_tensor_short2 PixelPos = ComputePixelPos();
+			tsr_tensor_bool IsThinGeometryRegion;
+			FetchThinGeometryEdge(PixelPos, ThinGeometryRelaxationFactor, IsThinGeometryRegion);
+			bApplyThinGeometryRelaxation = AnyThread(AnyComponent(ThinGeometryRelaxationFactor &gt; tsr_tensor_half::Const(0)));
+		}
+		#endif
 
-		tsr_tensor_short2 PixelPos = ComputePixelPos();
-		FetchDecimateMask(PixelPos, VelocityEdge, bIsDisoccluded, bHasPixelAnimation, bIsResurrectionOffScreen);
-		FetchSceneColorAndTranslucency(PixelPos, OriginalOpaqueInput, OriginalTranslucencyInput);
-		FetchMoireInput(PixelPos, MoireInput, PrevMoireHistory, bIsStatic);
-		// ... 分析周期性闪烁(moire)随时间的变化，抑制其污染历史
+		tsr_tensor_half4 MoireHistory;
+		ComputeMoireError(
+			bIsDisoccluded,
+			bIsStatic,
+			MoireInput,
+			OriginalOpaqueInput,
+			OriginalTranslucencyInput,
+			PrevMoireHistory,
+		#if CONFIG_THIN_GEOMETRY_DETECTION
+			ThinGeometryRelaxationFactor,
+			bApplyThinGeometryRelaxation,
+		#endif
+			/* out */ MoireHistory,
+			/* out */ MoireError);
+
+		// Stores moire output to save VGPR for what is next.
+		UNROLL_N(SIMD_SIZE)
+		for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+		{
+			const tsr_short2 OutputPixelPos = ComputeElementOutputPixelPos(ElementIndex);
+			const tsr_short2 OutputHistoryPixelPos = OutputPixelPos - tsr_short2(InputInfo_ViewportMin);
+
+			HistoryMoireOutput[tsr_short3(OutputHistoryPixelPos, 0)] = MoireHistory.GetElement(ElementIndex);
+		}
 	}
+	else
+	#endif // CONFIG_MOIRE_DETECTION
+	{
+		MoireError = tsr_tensor_half::Const(0.0);
+	}
+	
+	// Load all the history data.
+	tsr_tensor_half  VelocityEdge;
+	tsr_tensor_bool  bIsDisoccluded;
+	tsr_tensor_bool  bHasPixelAnimation;
+	tsr_tensor_bool  bIsResurrectionOffScreen;
+	tsr_tensor_halfC OriginalOpaqueInput;
+	tsr_tensor_half4 OriginalTranslucencyInput;
+	tsr_tensor_halfC OriginalHistory;
+	tsr_tensor_half  OriginalHistoryUncertainty;
+	#if CONFIG_HISTORY_RESURRECTION
+		tsr_tensor_halfC OriginalResurrectedHistory;
+		tsr_tensor_half  OriginalResurrectedHistoryUncertainty;
 	#endif
-	// 着色分析：邻域颜色盒 + HDR 加权对比历史与当前 → 连续拒绝权重 RejectionBlendFinal
-	// 薄几何(#7)命中时施加松弛，避免细线被误拒
-}</textarea>
+	{
+		#if CONFIG_HISTORY_RESURRECTION
+		BRANCH
+		if (bEnableResurrection)
+		PLATFORM_SPECIFIC_ISOLATE
+		{
+			tsr_tensor_short2 PixelPos = ComputePixelPos();
+
+			FetchDecimateMask(PixelPos, /* out */ VelocityEdge, /* out */ bIsDisoccluded, /* out */ bHasPixelAnimation, /* out */ bIsResurrectionOffScreen);
+			FetchSceneColorAndTranslucency(PixelPos, /* out */ OriginalOpaqueInput, /* out */ OriginalTranslucencyInput);
+			FetchReprojectedHistoryGuide(
+				PixelPos,
+				/* out */ OriginalHistory,
+				/* out */ OriginalHistoryUncertainty);
+			FetchResurrectedHistoryGuide(
+				PixelPos,
+				/* out */ OriginalResurrectedHistory,
+				/* out */ OriginalResurrectedHistoryUncertainty);
+		}
+		else // if (!bEnableResurrection)
+		#endif // CONFIG_HISTORY_RESURRECTION
+		PLATFORM_SPECIFIC_ISOLATE
+		{
+			tsr_tensor_short2 PixelPos = ComputePixelPos();
+
+			FetchDecimateMask(PixelPos, /* out */ VelocityEdge, /* out */ bIsDisoccluded, /* out */ bHasPixelAnimation, /* out */ bIsResurrectionOffScreen);
+			FetchSceneColorAndTranslucency(PixelPos, /* out */ OriginalOpaqueInput, /* out */ OriginalTranslucencyInput);
+			FetchReprojectedHistoryGuide(
+				PixelPos,
+				/* out */ OriginalHistory,
+				/* out */ OriginalHistoryUncertainty);
+			#if CONFIG_HISTORY_RESURRECTION
+				OriginalResurrectedHistory            = tsr_tensor_halfC::Const(0.0);
+				OriginalResurrectedHistoryUncertainty = tsr_tensor_half::Const(0.0);
+			#endif
+		}
+	}
+	
+	// Despill to LDS to make room in VGPRs for the outputing of InputSceneColorOutput
+	#if CONFIG_LDS_DESPILL
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		Concatenate(OriginalHistory, OriginalHistoryUncertainty).StoreLDSSpill(kDespillHistory);
+	}
+	#endif // CONFIG_LDS_DESPILL
+
+	// Compute AA Luma and compose separate translucency into scene color for optimised HistoryUpdate.
+	{
+		tsr_tensor_halfC CenterFinalSceneColor = ComposeTranslucency(OriginalOpaqueInput, OriginalTranslucencyInput);
+		CenterFinalSceneColor = min(CenterFinalSceneColor, tsr_tensor_halfC::Const(tsr_half(Max10BitsFloat)));
+		
+		tsr_tensor_half CenterLumaLDR = ComputeSpatialAntiAliaserLumaLDR(CenterFinalSceneColor);
+
+		PLATFORM_SPECIFIC_ISOLATE
+		{
+			UNROLL_N(SIMD_SIZE)
+			for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+			{
+				const tsr_short2 OutputPixelPos = ComputeElementOutputPixelPos(ElementIndex);
+				
+			#if CONFIG_ENABLE_STOCASTIC_QUANTIZATION
+				// Banding removal due to loss of precision when saving 16 bit float data into 11_11_10 float.
+				// Adding dithering based on mantissa bits precision stored in SceneColorOutputQuantizationError
+				uint Random = Rand3DPCG16(int3(OutputPixelPos.xy, View.StateFrameIndexMod8)).x;
+				tsr_half E = tsr_half(Rand16ToFloat(Random));
+				tsr_halfC DitheredColor = CenterFinalSceneColor.GetElement(ElementIndex);
+				DitheredColor.xyz = (tsr_half3)QuantizeForFloatRenderTarget(DitheredColor.xyz, E, SceneColorOutputQuantizationError);
+
+				InputSceneColorOutput[OutputPixelPos] = DitheredColor;
+			#else
+				InputSceneColorOutput[OutputPixelPos] = CenterFinalSceneColor.GetElement(ElementIndex);
+			#endif
+				
+				InputSceneColorLdrLumaOutput[OutputPixelPos] = CenterLumaLDR.GetElement(ElementIndex);
+			}
+		}
+	}
+
+	tsr_tensor_halfC OriginalInput = ComposeTranslucencyForRejection(OriginalOpaqueInput, OriginalTranslucencyInput, bHasPixelAnimation);
+	
+	// Despill to LDS to make room in VGPRs for the convolutions of MeasureRejection()
+	#if CONFIG_LDS_DESPILL
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		Concatenate(OriginalInput, VelocityEdge).StoreLDSSpill(kDespillInput);
+	}
+	#endif // CONFIG_LDS_DESPILL
+
+	// Measure rejection
+	tsr_tensor_half RejectionBlendFinal = tsr_tensor_half::Const(1.0);
+	tsr_tensor_half RejectionClampBlend = tsr_tensor_half::Const(1.0);
+	tsr_tensor_bool bAliasingIsVisible = tsr_tensor_bool::Const(false);
+#if CONFIG_THIN_GEOMETRY_DETECTION
+	tsr_tensor_half ThinGeometryRelaxationFactor = tsr_tensor_half::Const(0);
+	{
+		tsr_tensor_short2 PixelPos = ComputePixelPos();
+		tsr_tensor_bool IsThinGeometryRegion;
+		#if CONFIG_MOIRE_DETECTION
+			BRANCH
+			if (bApplyThinGeometryRelaxation || !ThinGeometryAffectMoireError || !bEnableFlickeringHeuristic)
+			{
+				FetchThinGeometryEdge(PixelPos, ThinGeometryRelaxationFactor, IsThinGeometryRegion);
+			}
+	
+			BRANCH
+			if (!ThinGeometryAffectMoireError || !bEnableFlickeringHeuristic)
+			{
+				bApplyThinGeometryRelaxation = AnyThread(AnyComponent(ThinGeometryRelaxationFactor &gt; tsr_tensor_half::Const(0)));
+			}
+		#else
+			FetchThinGeometryEdge(PixelPos, ThinGeometryRelaxationFactor, IsThinGeometryRegion);
+			bApplyThinGeometryRelaxation = AnyThread(AnyComponent(ThinGeometryRelaxationFactor &gt; tsr_tensor_half::Const(0)));
+		#endif
+	}
+#endif
+	#if CONFIG_HISTORY_RESURRECTION
+		tsr_tensor_bool bResurrectionIsCloser;
+	#endif
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		// Reload all the data from LDS or cache with moire to avoid register pressure
+		tsr_tensor_halfC Input = OriginalInput;
+		tsr_tensor_halfC History;
+		#if CONFIG_LDS_DESPILL
+			tsr_tensor_half HistoryUncertainty;
+			Deconcatenate(tsr_tensor_half4::LoadLDSSpill(kDespillHistory), /* out */ History, /* out */ HistoryUncertainty);
+		#else
+			History = OriginalHistory;
+		#endif
+
+		// Convert input to shading LDR
+		tsr_tensor_halfC ExposedInput = LinearToSMCS(Input * tsr_half(ExposureOffsetFactor));
+		tsr_tensor_halfC ExposedHistory = GCSToSMCS(History);
+			
+		// Check whether the history resurrection is closer to input, to discard and no pay the register pressure of OriginalResurrectedHistory
+		#if CONFIG_HISTORY_RESURRECTION
+		BRANCH
+		if (bEnableResurrection)
+		{
+			tsr_tensor_halfC ExposedResurrectedHistory = GCSToSMCS(OriginalResurrectedHistory);
+				
+			bResurrectionIsCloser = IsResurrectedFrameCloserThanPreviousFrame(bIsResurrectionOffScreen, ExposedInput, ExposedHistory, ExposedResurrectedHistory);
+		}
+		else
+		{
+			bResurrectionIsCloser = tsr_tensor_bool::Const(false);
+		}
+		#endif
+		
+		// Mutual Annihilation
+		tsr_tensor_halfC ExposedInputMin;
+		tsr_tensor_halfC ExposedInputMax;
+		MinMax3x3(ExposedInput, /* out */ ExposedInputMin, /* out */ ExposedInputMax);
+
+		bAliasingIsVisible = IsAliasingVisible(ExposedInputMax - ExposedInputMin);
+
+		tsr_tensor_halfC ClampedInput = Clamp3x3(ExposedInput, fastClamp(ExposedHistory, ExposedInputMin, ExposedInputMax));
+		tsr_tensor_halfC ClampedHistory = AnnihilateToGuide3x3(ExposedHistory, /* Guide = */ ExposedInput);
+
+		MeasureRejection(
+			/* InputC0 = */    ExposedInput,
+			/* InputC2 = */    ClampedInput,
+			/* HistoryC2 = */  ClampedHistory,
+			/* MoireError = */ MoireError,
+#if CONFIG_THIN_GEOMETRY_DETECTION
+			ThinGeometryRelaxationFactor,
+			bApplyThinGeometryRelaxation,
+#endif
+			/* bEnableMoireError = */ CONFIG_MOIRE_DETECTION != 0 &amp;&amp; bEnableFlickeringHeuristic != 0,
+			/* out */ RejectionBlendFinal,
+			/* out */ RejectionClampBlend);
+	}
+	
+	// Try resurrecting the history if necessary
+	tsr_tensor_bool bResurrectHistory = tsr_tensor_bool::Const(false);
+	#if CONFIG_HISTORY_RESURRECTION
+	bool bComputeResurrection = IsWorthMeasuringRejectionOfResurrectedFrame(RejectionBlendFinal, bResurrectionIsCloser);
+	BRANCH
+	if (bComputeResurrection)
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		// Reload the resurrected history from cache.
+		tsr_tensor_halfC Input;
+		tsr_tensor_halfC ResurrectedHistory;
+		tsr_tensor_half  ResurrectedHistoryUncertainty;
+		#if CONFIG_CACHE_REFETCH || CONFIG_LDS_DESPILL
+		{
+			tsr_tensor_short2 PixelPos = ComputePixelPos();
+		
+			FetchResurrectedHistoryGuide(
+				PixelPos,
+				/* out */ ResurrectedHistory,
+				/* out */ ResurrectedHistoryUncertainty);
+				
+			#if CONFIG_LDS_DESPILL
+				Input = ResizeChannels&lt;3&gt;(tsr_tensor_half4::LoadLDSSpill(kDespillInput));
+			#else
+				tsr_tensor_halfC OriginalOpaqueInput;
+				tsr_tensor_half4 OriginalTranslucencyInput;
+				FetchSceneColorAndTranslucency(PixelPos, /* out */ OriginalOpaqueInput, /* out */ OriginalTranslucencyInput);
+
+				Input = ComposeTranslucencyForRejection(OriginalOpaqueInput, OriginalTranslucencyInput, bHasPixelAnimation);
+			#endif
+		}
+		#else
+		ResurrectedHistory = OriginalResurrectedHistory;
+		Input = OriginalInput;
+		#endif
+		
+		// Convert input to shading LDR
+		tsr_tensor_halfC ExposedInput = LinearToSMCS(Input * tsr_half(ExposureOffsetFactor));
+		tsr_tensor_halfC ExposedResurrectedHistory = GCSToSMCS(ResurrectedHistory);
+			
+		// Mutual Annihilation
+		tsr_tensor_halfC ClampedResurrectedInput, ClampedResurrectedHistory;
+		AnnihilateMutually3x3(ExposedInput, ExposedResurrectedHistory, /* out */ ClampedResurrectedInput, /* out */ ClampedResurrectedHistory);
+
+		tsr_tensor_half ResurrectionRejectionBlendFinal = tsr_tensor_half::Const(1.0);
+		tsr_tensor_half ResurrectionRejectionClampBlend = tsr_tensor_half::Const(1.0);
+		MeasureRejection(
+			/* InputC0 = */    ExposedInput,
+			/* InputC2 = */    ClampedResurrectedInput,
+			/* HistoryC2 = */  ClampedResurrectedHistory,
+			/* MoireError = */ tsr_tensor_half::Const(0.0),
+#if CONFIG_THIN_GEOMETRY_DETECTION
+			/*ThinGeometryRelaxationFactor */tsr_tensor_half::Const(0),
+			false,
+#endif
+			/* bEnableMoireError = */ CONFIG_MOIRE_DETECTION != 0 &amp;&amp; bEnableFlickeringHeuristic != 0,
+			/* out */ ResurrectionRejectionBlendFinal,
+			/* out */ ResurrectionRejectionClampBlend);
+			
+		bResurrectHistory = ShouldResurrectHistory(RejectionBlendFinal, ResurrectionRejectionBlendFinal, bResurrectionIsCloser);
+
+		RejectionBlendFinal = select(bResurrectHistory, ResurrectionRejectionBlendFinal, RejectionBlendFinal);
+		RejectionClampBlend = select(bResurrectHistory, ResurrectionRejectionClampBlend, RejectionClampBlend);
+	} // if (bComputeResurrection)
+	#endif // CONFIG_HISTORY_RESURRECTION
+	
+	// Update the guide for next frame.
+	tsr_tensor_halfC FinalGuide;
+	tsr_tensor_half  InputUncertainty;
+	tsr_tensor_half  HistoryUncertainty;
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		// Reload all the data from LDS or cache
+		tsr_tensor_halfC Input;
+		tsr_tensor_halfC History;
+		#if CONFIG_LDS_DESPILL || CONFIG_CACHE_REFETCH
+			RefetchInputAndHistoryFromLDSOrCache(
+				/* out */ Input,
+				/* out */ InputUncertainty,
+				/* out */ History,
+				/* out */ HistoryUncertainty);
+		#else
+			Input            = OriginalInput;
+			InputUncertainty = VelocityEdge;
+			History            = OriginalHistory;
+			HistoryUncertainty = OriginalHistoryUncertainty;
+		#endif
+	
+		// Apply resurrection
+		#if CONFIG_HISTORY_RESURRECTION
+		BRANCH
+		if (AnyComponent(bResurrectHistory))
+		PLATFORM_SPECIFIC_ISOLATE
+		{
+			// Reload the resurrected history from cache.
+			tsr_tensor_halfC ResurrectedHistory;
+			tsr_tensor_half  ResurrectedHistoryUncertainty;
+			tsr_tensor_float DeviceZ;
+			PLATFORM_SPECIFIC_ISOLATE
+			{
+				tsr_tensor_short2 PixePos = ComputePixelPos();
+				
+				#if CONFIG_CACHE_REFETCH
+					FetchResurrectedHistoryGuide(
+						PixePos,
+						/* out */ ResurrectedHistory,
+						/* out */ ResurrectedHistoryUncertainty);
+				#else
+					ResurrectedHistory            = OriginalResurrectedHistory;
+					ResurrectedHistoryUncertainty = OriginalResurrectedHistoryUncertainty;
+				#endif
+					
+				FetchDeviceZ(PixePos, /* out */ DeviceZ);
+			}
+
+			// Apply the resurrection on the guide immediatly to free up registers.
+			History = select(tsr_tensor_boolC::Vectorize(bResurrectHistory), ResurrectedHistory, History);
+			HistoryUncertainty = select(bResurrectHistory, ResurrectedHistoryUncertainty, HistoryUncertainty);
+			
+			// Apply the resurrection the reprojection field.
+			OverwriteReprojectionFieldWithResurrection(bResurrectHistory, DeviceZ);
+		}
+		#endif // CONFIG_HISTORY_RESURRECTION
+
+		// Convert input to same color space as the accumulation
+		tsr_tensor_halfC ExposedInput   = AddPerceptionAdd(Input * tsr_half(ExposureOffsetFactor),                /* DestPerceptionAdd = */ kHistoryAccumulationPreceptionAdd);
+		tsr_tensor_halfC ExposedHistory = AddPerceptionAdd(GCSToLinear(History), /* DestPerceptionAdd = */ kHistoryAccumulationPreceptionAdd);
+		
+		tsr_tensor_halfC ExposedFinalGuide = UpdateGuide(ExposedInput, ExposedHistory, bIsDisoccluded, RejectionBlendFinal);
+
+		FinalGuide = LinearToGCS(RemovePerceptionAdd(ExposedFinalGuide, /* SourcePerceptionAdd = */ kHistoryAccumulationPreceptionAdd));
+	}
+
+	// Controls how the history and its validity is clamped.
+	tsr_tensor_half  DisableHistoryClamp;
+	tsr_tensor_half  IncreaseValidityMultiplier;
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		DisableHistoryClamp        = select(and(bIsDisoccluded, not(bResurrectHistory)), tsr_tensor_half::Const(0.0), min(RejectionClampBlend, min(InputUncertainty, Min3x3(HistoryUncertainty))));
+		IncreaseValidityMultiplier = select(and(bIsDisoccluded, not(bResurrectHistory)), tsr_tensor_half::Const(0.0), RejectionClampBlend);
+	}
+	
+	// Whether to run spatial anti-aliaser on the frame. Must match SpatialAntiAliasingLerp.
+	tsr_tensor_bool bSpatialAntiAlias = ShouldSpatialAntiAlias(bIsDisoccluded, bResurrectHistory, bAliasingIsVisible, RejectionBlendFinal);
+
+	// Output data.
+	PLATFORM_SPECIFIC_ISOLATE
+	{
+		const uint LaneIndex = GGroupThreadIndex;
+
+		UNROLL_N(SIMD_SIZE)
+		for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+		{
+			const tsr_short2 LaneSimdPixelOffset = GetElementPixelOffsetInTile(LANE_STRIDE_X, LANE_STRIDE_Y, GGroupThreadIndex, ElementIndex);
+			const tsr_short2 OutputPixelPos = ComputeElementOutputPixelPos(ElementIndex);
+			const tsr_short2 OutputHistoryPixelPos = OutputPixelPos - tsr_short2(InputInfo_ViewportMin);
+
+			tsr_halfC FinalGuideColor = FinalGuide.GetElement(ElementIndex);
+			
+			tsr_half BitMask = (
+				select(bIsDisoccluded.GetElement(ElementIndex),    tsr_half(0x0), tsr_half(0x1) * rcp(tsr_half(255.0))) + 
+				select(bResurrectHistory.GetElement(ElementIndex), tsr_half(0x2) * rcp(tsr_half(255.0)), tsr_half(0x0)));
+
+			#if CONFIG_ENABLE_STOCASTIC_QUANTIZATION
+			{
+				uint Random = Rand3DPCG16(int3(LaneSimdPixelOffset, View.StateFrameIndexMod8)).x;
+				tsr_half E = tsr_half(Rand16ToFloat(Random));
+		
+				FinalGuideColor.rgb = QuantizeForUNormRenderTarget(FinalGuideColor.rgb, E.x, HistoryGuideQuantizationError);
+			}
+			#endif
+
+			#if CONFIG_SCENE_COLOR_ALPHA
+				HistoryGuideOutput[tsr_short3(OutputHistoryPixelPos, 0)] = FinalGuideColor;
+				HistoryGuideOutput[tsr_short3(OutputHistoryPixelPos, 1)] = tsr_half4(InputUncertainty.GetElement(ElementIndex), 0, 0, 0);
+			#else
+				HistoryGuideOutput[tsr_short3(OutputHistoryPixelPos, 0)] = tsr_half4(FinalGuideColor.xyz, InputUncertainty.GetElement(ElementIndex));
+			#endif
+			{
+				const tsr_half kHalfOverTwoFiftySix = tsr_half(0.5) * tsr_half(rcp(256.0));
+				const tsr_half k255HalfOverTwoFiftySix = tsr_half(255.5) * tsr_half(rcp(256.0));
+				HistoryRejectionOutput[OutputPixelPos] = tsr_half4(
+					RejectionBlendFinal.GetElement(ElementIndex) - kHalfOverTwoFiftySix,
+					DisableHistoryClamp.GetElement(ElementIndex) - kHalfOverTwoFiftySix,
+					k255HalfOverTwoFiftySix - IncreaseValidityMultiplier.GetElement(ElementIndex),
+					BitMask);
+			}
+			AntiAliasMaskOutput[OutputPixelPos] = select(bSpatialAntiAlias.GetElement(ElementIndex), tsr_ushort(1), tsr_ushort(0));
+		}
+	}
+	
+	#if DEBUG_OUTPUT
+	{
+		// Mark the top left corner of the tile for debugging purposes.
+		#if DEBUG_DISABLE_PADDING == 2
+		if (GGroupThreadIndex == 0)
+		{
+			UNROLL_N(DEBUG_ARRAY_SIZE)
+			for (uint DebugId = 0; DebugId &lt; DEBUG_ARRAY_SIZE; DebugId++)
+			{
+				Debug[DebugId].SetElement(/* ElementIndex = */ 0, 1.0);
+			}
+		}
+		#endif // DEBUG_DISABLE_PADDING == 2
+	
+		UNROLL_N(SIMD_SIZE)
+		for (uint ElementIndex = 0; ElementIndex &lt; SIMD_SIZE; ElementIndex++)
+		{
+			const tsr_short2 OutputPixelPos = ComputeElementOutputPixelPos(
+				/* LaneStride = */ uint2(LANE_STRIDE_X, LANE_STRIDE_Y),
+				TileOverscan,
+				InputInfo_ViewportMin,
+				InputInfo_ViewportMax,
+				GGroupId,
+				GGroupThreadIndex,
+				ElementIndex,
+				/* OutputDataOffset = */ int2(0, 0),
+				/* OutputResDivisor = */ 1,
+				/* bDebugDisablePadding = */ DEBUG_DISABLE_PADDING != 0);
+
+			UNROLL_N(DEBUG_ARRAY_SIZE)
+			for (uint DebugId = 0; DebugId &lt; DEBUG_ARRAY_SIZE; DebugId++)
+			{
+				DebugOutput[tsr_short3(OutputPixelPos, DebugId)] = float4(Debug[DebugId].GetElement(ElementIndex));
+			}
+		}
+	}
+	#endif // DEBUG_OUTPUT
+}
+</textarea>
 </div></section>
 
-<section class="card"><h2>0. 着色分析卷积：连续权重而非硬 clamp（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">tsr_tensor_* 张量化的邻域卷积分析</span>
-<span class="code-line blue">对比历史 vs 当前 → 连续可信度</span></code></pre><div class="note n-orange"><h3>说明</h3><p>传统 TAA 用邻域 min/max 硬 clamp 历史，粗暴且在大幅上采样下丢细节。TSR 改用<b>着色分析</b>：在感知均匀的<b>颜色空间</b>（TSRColorSpace，HDR 加权让高光不压倒暗部）里做卷积，输出<b>连续</b>的拒绝权重——历史越像当前着色越可信。整个 pass 用 <span class="inline">tsr_tensor_*</span> 类型做 lane 向量化以在波前内高效卷积。</p></div></div></section>
+<section class="card"><h2>0. 摩尔纹（闪烁）检测（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">if (bEnableFlickeringHeuristic) PLATFORM_SPECIFIC_ISOLATE {</span>
+<span class="code-line blue">    tsr_tensor_short2 PixelPos = ComputePixelPos();</span>
+<span class="code-line blue">    FetchDecimateMask(PixelPos, VelocityEdge, bIsDisoccluded, bHasPixelAnimation, bIsResurrectionOffScreen);</span>
+<span class="code-line blue">    FetchSceneColorAndTranslucency(PixelPos, OriginalOpaqueInput, OriginalTranslucencyInput);</span>
+<span class="code-line">    FetchMoireInput(PixelPos, MoireInput, PrevMoireHistory, bIsStatic);</span>
+<span class="code-line green">    ComputeMoireError(bIsDisoccluded, ..., /* out */ MoireHistory, MoireError);</span>
+<span class="code-line yellow">    // 薄几何影响摩尔时先取 ThinGeometryRelaxationFactor</span>
+<span class="code-line">}</span></code></pre><div class="note"><h3>说明</h3><p>时域上采最怕<b>亚像素摩尔纹闪烁</b>——细密纹理在抖动网格上逐帧忽明忽暗。<span class="inline">bEnableFlickeringHeuristic</span> 开启时，本段用 <span class="inline">FetchMoireInput</span> 取当前摩尔输入 + 上帧摩尔历史，<span class="inline">ComputeMoireError</span> 沿时间分析闪烁幅度，得到 <span class="inline">MoireError</span>。这个误差后面会<b>放宽拒绝</b>（不因闪烁而误判历史失效）从而稳定画面。<span class="inline">tsr_tensor_*</span> 是 TSR 把一组像素打包成"张量"在波前内并行处理的抽象（见 <a href="TSRConvolutionNetwork.ush.html" class="inline">ConvolutionNetwork.ush</a>）。</p></div></div></section>
 
-<section class="card"><h2>1. 闪烁(moire)抑制 + 薄几何松弛（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line green">CONFIG_MOIRE_DETECTION: 跟踪周期性闪烁</span>
-<span class="code-line yellow">薄几何命中 → 松弛拒绝，保细线</span></code></pre><div class="note n-green"><h3>说明</h3><p>两类特殊情形单独处理：<b>moire/闪烁</b>（栅栏、网格纹理在亚像素抖动下周期性明暗）用 <span class="inline">FetchMoireInput</span> 跟踪其历史，避免被误判为"历史失效"而反复重置；<b>薄几何</b>（<a href="TSRDetectThinGeometry.usf.html" class="inline">#7</a> 标记的细线/电线）施加<b>松弛</b>，否则会因太细被卷积判为噪声而拒掉、导致闪烁消失。最终连续拒绝权重交给 <a href="TSRUpdateHistory.usf.html" class="inline">#5 UpdateHistory</a> 定历史占比。</p></div></div></section>
+<section class="card"><h2>1. 拒绝度量 + 历史复活比较（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">tsr_tensor_half RejectionBlendFinal = tsr_tensor_half::Const(1.0);</span>
+<span class="code-line blue">tsr_tensor_halfC ExposedInput = LinearToSMCS(Input * tsr_half(ExposureOffsetFactor));</span>
+<span class="code-line blue">tsr_tensor_halfC ExposedHistory = GCSToSMCS(History);</span>
+<span class="code-line green">if (bEnableResurrection) {</span>
+<span class="code-line green">    tsr_tensor_halfC ExposedResurrectedHistory = GCSToSMCS(OriginalResurrectedHistory);</span>
+<span class="code-line green">    bResurrectionIsCloser = IsResurrectedFrameCloserThanPreviousFrame(bIsResurrectionOffScreen, ExposedInput, ExposedHistory, ExposedResurrectedHistory);</span>
+<span class="code-line">}</span></code></pre><div class="note"><h3>说明</h3><p>本 pass 的<b>汇聚点</b>：把输入与历史都转到 <b>SMCS</b>（Shading Metric Color Space，感知均匀的比较空间，见 <a href="TSRColorSpace.ush.html" class="inline">ColorSpace.ush</a>）再度量差异，算出 <span class="inline">RejectionBlendFinal</span>（1=完全信任历史，趋 0=拒绝历史用当前输入）。<span class="inline">IsResurrectedFrameCloserThanPreviousFrame</span> 判断"复活历史"是否比上帧历史更接近当前输入——若是则用复活历史，专治 disocclusion 后被错误拒绝导致的糊/闪。薄几何区（细线/栏杆）用 <span class="inline">ThinGeometryRelaxationFactor</span> 放宽拒绝防止细节被判失效。产物驱动 <a href="TSRUpdateHistory.usf.html" class="inline">#5 UpdateHistory</a> 的累积权重。</p></div></div></section>
 
 <section class="card"><h2>关联文档 / 接口</h2><div class="body">
 <a class="tag" href="../Chapters/Reject_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#4 历史拒绝</a>
-<a class="tag" href="TSRDecimateHistory.usf.html"><span class="dot" style="background:var(--cyan)"></span>TSRDecimateHistory.usf（上游）↗</a>
-<a class="tag" href="TSRUpdateHistory.usf.html"><span class="dot" style="background:var(--cyan)"></span>TSRUpdateHistory.usf（下游）↗</a>
-<a class="tag" href="TSRDetectThinGeometry.usf.html"><span class="dot" style="background:var(--cyan)"></span>TSRDetectThinGeometry.usf（松弛信号）↗</a>
+<a class="tag" href="TSRDecimateHistory.usf.html"><span class="dot" style="background:var(--cyan)"></span>DecimateHistory（上游）↗</a>
+<a class="tag" href="TSRUpdateHistory.usf.html"><span class="dot" style="background:var(--cyan)"></span>UpdateHistory（下游）↗</a>
+<a class="tag" href="TSRConvolutionNetwork.ush.html"><span class="dot" style="background:var(--cyan)"></span>ConvolutionNetwork.ush↗</a>
+<a class="tag" href="TSRColorSpace.ush.html"><span class="dot" style="background:var(--cyan)"></span>ColorSpace.ush↗</a>
 <a class="tag" href="../UE_TSR_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
 </div></section>
 </main>
-<script>
-document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
-</script>
 </body>
 </html>
