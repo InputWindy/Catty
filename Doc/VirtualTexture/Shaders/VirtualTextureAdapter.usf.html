@@ -1,0 +1,152 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualTextureAdapter.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><a href="../Chapters/RVT_ConvergenceAnnotated.html">← 回到 #5 RVT</a></div>
+<h1>VirtualTextureAdapter.usf 整源解析</h1><div class="subtitle">VT 的<b>纹理适配拷贝</b>：把源纹理按需拷贝到目标物理页，可选顺带做 BC1/BC3/BC4 GPU 块压缩或格式转换（sRGB）——用于把外部/流式来源的数据搬进 VT 物理池。核心 <span class="inline">CopyCompressCS</span>（8×8 线程，按 <span class="inline">COMPRESSION_FORMAT</span> permutation 分派）。<b>下方内嵌完整 84 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>源纹理 + 目标矩形</strong><small>SourceTexture / DestRect</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>采样定位</strong><small>SourceUV + TexelOffsets</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>按格式压缩/转换</strong><small>NONE/BC1/BC3/BC4</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>写目标物理页</strong></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualTextureAdapter.usf</span></h2><div class="body">
+<span class="source-path">CopyCompressCS @ L33（8×8 线程，COMPRESSION_FORMAT permutation）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Common.ush"
+#include "BlockCompressionCommon.ush"
+#include "BCCompressionCommon.ush"
+
+#define COMPRESSION_FORMAT_NONE 0
+#define COMPRESSION_FORMAT_BC1  1
+#define COMPRESSION_FORMAT_BC3  2
+#define COMPRESSION_FORMAT_BC4  3
+#define COMPRESSION_FORMAT_BC5  4
+#define COMPRESSION_FORMAT_BC6  5
+#define COMPRESSION_FORMAT_BC7  6
+
+#if SOURCE_TEXTURE_A
+Texture2D&lt;float4&gt; SourceTextureA;
+#define SourceTexture SourceTextureA
+#else
+Texture2D&lt;float4&gt; SourceTextureB;
+#define SourceTexture SourceTextureB
+#endif
+SamplerState TextureSampler;
+
+RWTexture2D&lt;float4&gt; DestTexture;
+RWTexture2D&lt;uint2&gt; DestCompressTexture_64bit;
+RWTexture2D&lt;uint4&gt; DestCompressTexture_128bit;
+
+float2 SourceUV;
+float2 TexelSize;
+float2 TexelOffsets;
+int4 DestRect;
+
+[numthreads(8, 8, 1)]
+void CopyCompressCS(uint3 ThreadId : SV_DispatchThreadID)
+{
+	const int2 DestPos = DestRect.xy + ThreadId.xy;
+	if (any(DestPos &gt;= DestRect.zw))
+	{
+		return;
+	}
+
+	const float2 UV = 
+		SourceUV + 
+		TexelOffsets.x * TexelSize * ThreadId.xy +
+		TexelOffsets.y * TexelSize;
+
+#if COMPRESSION_FORMAT ==  COMPRESSION_FORMAT_NONE
+
+	float4 Output = SourceTexture.SampleLevel(TextureSampler, UV, 0);
+#if TEXTURE_SRGB
+	Output.xyz = LinearToSrgb(Output.xyz);
+#endif
+	DestTexture[DestPos] = Output;
+
+#elif COMPRESSION_FORMAT == COMPRESSION_FORMAT_BC1
+	
+	float3 BlockRGB[16];
+	ReadBlockRGB(SourceTexture, TextureSampler, UV, TexelSize, BlockRGB);
+	
+#if TEXTURE_SRGB
+	DestCompressTexture_64bit[DestPos] = CompressBC1Block_SRGB(BlockRGB);
+#else
+	DestCompressTexture_64bit[DestPos] = CompressBC1Block(BlockRGB);
+#endif
+
+#elif COMPRESSION_FORMAT == COMPRESSION_FORMAT_BC3
+	
+	float3 BlockRGB[16];
+	ReadBlockRGB(SourceTexture, TextureSampler, UV, TexelSize, BlockRGB);
+	float BlockA[16];
+	ReadBlockAlpha(SourceTexture, TextureSampler, UV, TexelSize, BlockA);
+
+#if TEXTURE_SRGB
+	DestCompressTexture_128bit[DestPos] = CompressBC3Block_SRGB(BlockRGB, BlockA);
+#else
+	DestCompressTexture_128bit[DestPos] = CompressBC3Block(BlockRGB, BlockA);
+#endif
+
+#elif COMPRESSION_FORMAT == COMPRESSION_FORMAT_BC4
+
+	float BlockX[16];
+	ReadBlockX(SourceTexture, TextureSampler, UV, TexelSize, BlockX);
+	DestCompressTexture_64bit[DestPos] = CompressBC4Block(BlockX);
+
+#elif COMPRESSION_FORMAT == COMPRESSION_FORMAT_BC5
+
+	float BlockX[16];
+	float BlockY[16];
+	ReadBlockXY(SourceTexture, TextureSampler, UV, TexelSize, BlockX, BlockY);
+	DestCompressTexture_128bit[DestPos] = CompressBC5Block(BlockX, BlockY);
+
+#elif COMPRESSION_FORMAT == COMPRESSION_FORMAT_BC6
+
+	float3 BlockRGB[16];
+	ReadBlockRGB(SourceTexture, TextureSampler, UV, TexelSize, BlockRGB);
+	DestCompressTexture_128bit[DestPos] = CompressBC6HBlock(BlockRGB);
+
+#elif COMPRESSION_FORMAT == COMPRESSION_FORMAT_BC7
+
+	float3 BlockRGB[16];
+	ReadBlockRGB(SourceTexture, TextureSampler, UV, TexelSize, BlockRGB);
+	DestCompressTexture_128bit[DestPos] = CompressBC7Block(BlockRGB);
+
+#endif
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 按压缩格式分派拷贝（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">const int2 DestPos = DestRect.xy + ThreadId.xy; if (any(DestPos &gt;= DestRect.zw)) return;</span>
+<span class="code-line">const float2 UV = SourceUV + TexelOffsets.x * TexelSize * ThreadId.xy + TexelOffsets.y * TexelSize;</span>
+<span class="code-line blue">#if COMPRESSION_FORMAT == COMPRESSION_FORMAT_NONE   DestTexture[DestPos] = SourceTexture.SampleLevel(...);   // 可选 sRGB</span>
+<span class="code-line green">#elif ... BC1   ReadBlockRGB(...); DestCompressTexture_64bit[DestPos] = CompressBC1Block_SRGB(BlockRGB);</span>
+<span class="code-line green">#elif ... BC3   ReadBlockRGB + ReadBlockAlpha; DestCompressTexture_128bit[DestPos] = CompressBC3Block(...);</span>
+<span class="code-line yellow">#elif ... BC4   ReadBlockX(...); DestCompressTexture_64bit[DestPos] = CompressBC4Block(BlockX);</span></code></pre><div class="note"><h3>说明</h3><p>相比 <a href="VirtualTextureCompress.usf.html" class="inline">VirtualTextureCompress</a>（RVT 现画后的固定管线压缩），本 shader 是更通用的<b>适配拷贝</b>：按 <span class="inline">COMPRESSION_FORMAT</span> permutation 一条 shader 覆盖多路——<span class="inline">NONE</span>（直拷 + 可选 sRGB 转换）、<span class="inline">BC1</span>（RGB）、<span class="inline">BC3</span>（RGB+Alpha）、<span class="inline">BC4</span>（单通道，如高度/掩码）。<span class="inline">TexelOffsets</span> 支持采样偏移/边界处理。用于把来源数据（外部资源、流式块、格式不匹配的纹理）统一搬进 VT 物理页的目标格式——是 VT 物理池的通用"入库"通道。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/RVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 RVT</a>
+<a class="tag" href="VirtualTextureCompress.usf.html"><span class="dot" style="background:var(--cyan)"></span>VirtualTextureCompress（RVT 专用压缩）↗</a>
+<a class="tag" href="../Chapters/SVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#6 SVT（流式入库）</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

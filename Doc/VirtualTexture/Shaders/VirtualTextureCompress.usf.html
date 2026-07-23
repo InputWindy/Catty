@@ -1,93 +1,523 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>VirtualTextureCompress.usf 代码解析</title>
+<title>VirtualTextureCompress.usf 代码解析（整源）</title>
 <style>
-:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:560px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
 <div class="nav"><a href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><a href="../Chapters/RVT_ConvergenceAnnotated.html">← 回到 #5 RVT</a></div>
-<h1>VirtualTextureCompress.usf 汇聚/发散批注版</h1><div class="subtitle">RVT 现画后的<b>GPU 块压缩 shader</b>：把 <a href="VirtualTextureMaterial.usf.html" class="inline">VirtualTextureMaterial.usf</a> 渲进临时目标的未压缩像素，<b>一个线程组 8×8、每线程压一个 4×4 块</b>，实时编码成 BC1/BC3/ETC2/ASTC 写进物理页。核心 <span class="inline">CompressBaseColorCS</span> / <span class="inline">CompressBaseColorNormalSpecularCS</span>。<b>说明：完整文件 471 行</b>，下方内嵌核心内核的真实源码。</div></header>
+<h1>VirtualTextureCompress.usf 整源解析</h1><div class="subtitle">RVT 的<b>GPU 块压缩</b>：把 RVT 渲染出的未压缩页（BaseColor/Normal/Specular/Roughness）在 GPU 上实时压成 BC1/BC3 或移动端 ETC2 块格式，直接写进物理纹理——省显存、免 CPU 压缩。核心 <span class="inline">CompressBaseColor*CS</span>（8×8 线程，每线程压一个 4×4 块）。<b>下方内嵌完整 412 行真实源码</b>，再逐段真实代码批注。</div></header>
 <main>
 
 <section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
-<div class="node branch"><strong>未压缩临时目标</strong><small>Material.usf 渲出的 RGB/Normal…</small></div>
+<div class="node branch"><strong>RVT 渲染的未压缩页</strong><small>RenderTexture0..N</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><strong>ReadBlock 取 4×4</strong><small>每线程读 16 个纹素</small></div>
+<div class="node func"><strong>读 4×4 块</strong><small>ReadBlockRGB/Alpha</small></div>
 <div class="arrow">▶</div>
-<div class="node func"><strong>CompressBlock</strong><small>按平台编 BC1/BC3/ETC2/ASTC</small></div>
+<div class="node func"><strong>GPU 块压缩</strong><small>BC1/BC3/ETC2</small></div>
 <div class="arrow">▶</div>
-<div class="node out"><strong>写物理页</strong><small>64/128 位块 → 压缩物理纹理</small></div>
+<div class="node out"><strong>写物理纹理</strong><small>压缩块 UAV</small></div>
 </div></section>
 
-<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（471 行文件的核心节选，逐行真实）</span></h2><div class="body">
-<span class="source-path">Engine/Shaders/Private/VirtualTextureCompress.usf · CompressBaseColorCS L119 / CompressBaseColorNormalSpecularCS L158</span>
-<textarea class="embedded-source" readonly spellcheck="false">// 每线程压一个 4×4 块：8×8 线程组 = 32×32 像素
-[numthreads(8,8,1)]
-void CompressBaseColorCS(uint3 ThreadId : SV_DispatchThreadID)
-{
-	if (any(ThreadId.xy * 4 >= SourceRect.zw)) return;   // 越界块丢弃
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualTextureCompress.usf</span></h2><div class="body">
+<span class="source-path">CompressBaseColorCS @ L119（8×8 线程，每线程 4×4 块）· CompressBaseColorNormalSpecularCS @ L158</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
 
-	uint2  SamplePos   = SourceRect.xy + ThreadId.xy * 4;
+/*=============================================================================
+	VirtualTextureCompress.usf: 
+	Compression pass for runtime virtual texture
+=============================================================================*/
+
+#include "Common.ush"
+#include "BlockCompressionCommon.ush"
+#include "BCCompressionCommon.ush"
+#include "ASTCCompressionCommon.ush"
+#include "ETCCompressionCommon.ush"
+
+#ifndef ETC_PROFILE
+#define ETC_PROFILE 0
+#endif
+
+#ifndef ASTC_PROFILE
+#define ASTC_PROFILE 0
+#endif
+
+#ifndef PACK_RG32_RGBA16
+#define PACK_RG32_RGBA16 0
+#endif
+
+#if PACK_RG32_RGBA16
+#define TYPE_64BIT uint4
+#else
+#define TYPE_64BIT uint2
+#endif
+
+#ifndef USE_SRC_TEXTURE_ARRAY
+#define USE_SRC_TEXTURE_ARRAY 0
+#endif
+
+#ifndef USE_DST_TEXTURE_ARRAY
+#define USE_DST_TEXTURE_ARRAY 0
+#endif
+
+#if USE_SRC_TEXTURE_ARRAY
+#define SourceTextureType Texture2DArray
+#else
+#define SourceTextureType Texture2D
+#endif
+
+#if USE_DST_TEXTURE_ARRAY
+#define DestTextureType RWTexture2DArray
+#else
+#define DestTextureType RWTexture2D
+#endif
+
+SourceTextureType&lt;float4&gt; RenderTexture0;
+SamplerState TextureSampler0;
+SourceTextureType&lt;float4&gt; RenderTexture1;
+SamplerState TextureSampler1;
+SourceTextureType&lt;float4&gt; RenderTexture2;
+SamplerState TextureSampler2;
+
+// Outputs can be 64bit or 128 bit depending on formats.
+// The 64 bit type can be uint2 or uint4 depending on platform support.
+DestTextureType&lt;TYPE_64BIT&gt; OutCompressTexture0_64bit;
+DestTextureType&lt;TYPE_64BIT&gt; OutCompressTexture1_64bit;
+DestTextureType&lt;TYPE_64BIT&gt; OutCompressTexture2_64bit;
+DestTextureType&lt;uint4&gt; OutCompressTexture0_128bit;
+DestTextureType&lt;uint4&gt; OutCompressTexture1_128bit;
+DestTextureType&lt;uint4&gt; OutCompressTexture2_128bit;
+
+uint4 SourceRect;
+DECLARE_SCALAR_ARRAY(uint, DestPos, MAX_BATCH_SIZE * MAX_DST_LAYERS * 2);
+
+#if PACK_RG32_RGBA16
+/** Pack RG32 to RGBA16 for output. */
+uint4 PackRG32(in uint2 u2)
+{
+	uint x0 = (u2.x &gt;&gt; 16) &amp; 0x0000ffff;
+	uint y0 = (u2.y &gt;&gt; 16) &amp; 0x0000ffff;
+	uint x1 = (u2.x) &amp; 0x0000ffff;
+	uint y1 = (u2.y) &amp; 0x0000ffff;
+	return uint4(x1, x0, y1, y0);
+}
+#else
+uint2 PackRG32(in uint2 u2)
+{
+	return u2;
+}
+#endif // PACK_RG32_RGBA16
+
+#if USE_SRC_TEXTURE_ARRAY
+float3 GetSourceUV(float2 UV, uint3 ThreadId) { return float3(UV, ThreadId.z); }
+#else
+float2 GetSourceUV(float2 UV, uint3 ThreadId) { return UV; }
+#endif
+
+#if USE_DST_TEXTURE_ARRAY
+uint3 GetDestPos(uint LayerIndex, uint3 ThreadId) { return ThreadId; }
+#else
+uint2 GetDestPos(uint LayerIndex, uint3 ThreadId) 
+{
+	// clamp() shouldn't be necessary here, but has the side effect of fixing a load scheduling bug for one shader compiler (UE-304803).
+	uint BatchIndex = clamp(ThreadId.z, 0, MAX_BATCH_SIZE - 1);
+	uint ArrayIndex = (BatchIndex * MAX_DST_LAYERS + LayerIndex) * 2;
+	uint2 BasePos = uint2(GET_SCALAR_ARRAY_ELEMENT(DestPos, ArrayIndex), GET_SCALAR_ARRAY_ELEMENT(DestPos, (ArrayIndex + 1)));
+	return BasePos + ThreadId.xy; 
+}
+#endif
+
+#if VERTEXSHADER
+/** Trivial vertex shader for copy shaders. */
+void CopyVS(in uint VertexId : SV_VertexID, out float4 OutPosition : SV_POSITION, out float2 OutTexCoord : TEXCOORD0)
+{
+	OutTexCoord = float2(((VertexId + 1) / 3) &amp; 1, VertexId &amp; 1);
+	OutPosition.xy = float2(OutTexCoord.x, 1.f - OutTexCoord.y) * 2.f - 1.f;
+	OutPosition.zw = float2(0, 1);
+}
+#endif // VERTEXSHADER
+
+#if COMPUTESHADER
+/** Compress base color to a single BC1 target. */
+[numthreads(8,8,1)]
+void CompressBaseColorCS(
+	uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 &gt;= SourceRect.zw))
+	{
+		return;
+	}
+
+	uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;
 	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
-	float2 SampleUV    = (float2(SamplePos) + 0.5f) * TexelUVSize;
+	float2 SampleUV = (float2(SamplePos) + 0.5f) * TexelUVSize;
 
 	float3 BlockBaseColor[16];
-	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);  // 读 4×4=16 纹素
-
+	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);
 #if ASTC_PROFIlE
 	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_SRGB(BlockBaseColor));
 #elif ETC_PROFILE
 	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_SRGB(BlockBaseColor));
-#else   // 桌面：BC1
+#else
 	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBC1Block_SRGB(BlockBaseColor));
 #endif
 }
+#endif // COMPUTESHADER
 
-// 3 层布局：BaseColor + Normal + Specular 一次压两张 128 位目标
-[numthreads(8,8,1)]
-void CompressBaseColorNormalSpecularCS(uint3 ThreadId : SV_DispatchThreadID)
+#if PIXELSHADER
+/** Simple copy of base color used for thumbnails. */
+void CopyBaseColorPS(
+	in float4 InPosition : SV_POSITION, 
+	in noperspective float2 InTexCoord : TEXCOORD0, 
+	out float4 OutColor0 : SV_Target0)
 {
-	// ... ReadBlock 出 BlockBaseColor / BlockNormalX / BlockNormalY / BlockSpecular ...
-#if ASTC_PROFIlE
+	float3 BaseColor = RenderTexture0.SampleLevel(TextureSampler0, InTexCoord, 0).xyz;
+	OutColor0 = float4(BaseColor, 1.f);
+}
+#endif // PIXELSHADER
+
+#if COMPUTESHADER
+/** Compress base color, normal, roughness and specular to BC3 target pair. */
+[numthreads(8,8,1)]
+void CompressBaseColorNormalSpecularCS(
+	uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 &gt;= SourceRect.zw))
+	{
+		return;
+	}
+
+	uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;
+	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
+	float2 SampleUV = (float2(SamplePos) + 0.5f) * TexelUVSize;
+
+	float3 BlockBaseColor[16];
+	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);
+
+	float BlockNormalX[16];
+	float BlockNormalY[16];
+	ReadBlockXY(RenderTexture1, TextureSampler1, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockNormalX, BlockNormalY);
+
+	float3 BlockSpecular[16];
+	ReadBlockRGB(RenderTexture2, TextureSampler2, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockSpecular);
+
+	for (int i=0; i&lt;16; i++)
+	{
+		BlockSpecular[i].z = round(BlockSpecular[i].z);
+	}
+#if ASTC_PROFILE
 	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ASTC_SRGBA(BlockBaseColor, BlockNormalX);
-	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ASTC_RGBA (BlockSpecular,  BlockNormalY);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ASTC_RGBA(BlockSpecular, BlockNormalY);
 #elif ETC_PROFILE
 	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ETC2_SRGBA(BlockBaseColor, BlockNormalX);
-	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RGBA (BlockSpecular,  BlockNormalY);
-#else   // 桌面：BC3
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RGBA(BlockSpecular, BlockNormalY);
+#else
 	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBC3Block_SRGB(BlockBaseColor, BlockNormalX);
-	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBC3Block   (BlockSpecular,  BlockNormalY);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBC3Block(BlockSpecular, BlockNormalY);
 #endif
 }
+#endif // COMPUTESHADER
+
+#if COMPUTESHADER
+/** Compress base color, normal, roughness to BC1 &amp; BC3. */
+[numthreads(8, 8, 1)]
+void CompressBaseColorNormalRoughnessCS(
+	uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 &gt;= SourceRect.zw))
+	{
+		return;
+	}
+
+	uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;
+	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
+	float2 SampleUV = (float2(SamplePos) + 0.5f) * TexelUVSize;
+
+	// Note that this format uses non sRGB BaseColor format with manual encode/decode.
+	// So that we don't use _SRGB forms of the block compression functions below.
+	float3 BlockBaseColor[16];
+	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);
+
+	float3 BlockNormalXRougnnessY[16];
+	const float BlockNormalZ[16]={ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 
+								   1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+	ReadBlockRGB(RenderTexture1, TextureSampler2, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockNormalXRougnnessY);
+#if ASTC_PROFILE
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_RGB(BlockBaseColor));
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ASTC_RGBA(BlockNormalXRougnnessY, BlockNormalZ);
+#elif ETC_PROFILE
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_RGB(BlockBaseColor));
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RGBA(BlockNormalXRougnnessY, BlockNormalZ);
+#else
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBC1Block(BlockBaseColor));
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBC3Block(BlockNormalXRougnnessY, BlockNormalZ);
+#endif
+}
+#endif // COMPUTESHADER
+
+#if PIXELSHADER
+/** Copy path used when we disable texture compression, because we need to keep the same final channel layout. */
+void CopyBaseColorNormalSpecularPS(
+	in float4 InPosition : SV_POSITION, 
+	in noperspective float2 InTexCoord : TEXCOORD0, 
+	out float4 OutColor0 : SV_Target0,
+	out float4 OutColor1 : SV_Target1)
+{
+	float3 BaseColor = RenderTexture0.SampleLevel(TextureSampler0, InTexCoord, 0).xyz;
+	float2 NormalXY = RenderTexture1.SampleLevel(TextureSampler1, InTexCoord, 0).xy;
+	float3 RoughnessSpecularNormalZ = RenderTexture2.SampleLevel(TextureSampler2, InTexCoord, 0).xyz;
+	
+	RoughnessSpecularNormalZ.z = round(RoughnessSpecularNormalZ.z);
+	
+	OutColor0 = float4(BaseColor, NormalXY.x);
+	OutColor1 = float4(RoughnessSpecularNormalZ, NormalXY.y);
+}
+#endif // PIXELSHADER
+
+#if COMPUTESHADER
+/** Compress base color, normal, roughness and specular to BC3, BC5, BC1 target set. */
+[numthreads(8,8,1)]
+void CompressBaseColorNormalSpecularYCoCgCS(
+	uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 &gt;= SourceRect.zw))
+	{
+		return;
+	}
+
+	uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;
+	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
+	float2 SampleUV = (float2(SamplePos) + 0.5f) * TexelUVSize;
+
+	float3 BlockBaseColor[16];
+	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);
+
+	float BlockNormalX[16];
+	float BlockNormalY[16];
+	ReadBlockXY(RenderTexture1, TextureSampler1, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockNormalX, BlockNormalY);
+
+	float3 BlockSpecular[16];
+	ReadBlockRGB(RenderTexture2, TextureSampler2, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockSpecular);
+
+	for (int i=0; i&lt;16; i++)
+	{
+		BlockSpecular[i].z = round(BlockSpecular[i].z);
+	}
+
+#if ASTC_PROFILE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ASTC_YCoCg(BlockBaseColor);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RG(BlockNormalX, BlockNormalY);
+	OutCompressTexture2_64bit[GetDestPos(2, ThreadId)] = PackRG32(CompressBlock_ETC2_RGB(BlockSpecular));
+#elif ETC_PROFILE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ETC2_YCoCg(BlockBaseColor);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RG(BlockNormalX, BlockNormalY);
+	OutCompressTexture2_64bit[GetDestPos(2, ThreadId)] = PackRG32(CompressBlock_ETC2_RGB(BlockSpecular));
+#else
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBC3BlockYCoCg(BlockBaseColor);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBC5Block(BlockNormalX, BlockNormalY);
+	OutCompressTexture2_64bit[GetDestPos(2, ThreadId)] = PackRG32(CompressBC1Block(BlockSpecular));
+#endif
+}
+#endif // COMPUTESHADER
+
+#if PIXELSHADER
+/** Copy path used when we disable texture compression, because we need to keep the same final channel layout. */
+void CopyBaseColorNormalSpecularYCoCgPS(
+	in float4 InPosition : SV_POSITION, 
+	in noperspective float2 InTexCoord : TEXCOORD0, 
+	out float4 OutColor0 : SV_Target0,
+	out float4 OutColor1 : SV_Target1,
+	out float4 OutColor2 : SV_Target2)
+{
+	float3 YCoCg = RGB2YCoCg(RenderTexture0.SampleLevel(TextureSampler0, InTexCoord, 0).xyz);
+	float2 NormalXY = RenderTexture1.SampleLevel(TextureSampler1, InTexCoord, 0).xy;
+	float3 RoughnessSpecularNormalZ = RenderTexture2.SampleLevel(TextureSampler2, InTexCoord, 0).xyz;
+	
+	RoughnessSpecularNormalZ.z = round(RoughnessSpecularNormalZ.z);
+	
+	OutColor0 = float4(YCoCg.yz, 0, YCoCg.x);
+	OutColor1 = float4(NormalXY, 0, 1);
+	OutColor2 = float4(RoughnessSpecularNormalZ, 1);
+}
+#endif // PIXELSHADER
+
+#if COMPUTESHADER
+/** Compress base color, normal, roughness, specular and mask to BC3, BC5, BC3 target set. */
+[numthreads(8,8,1)]
+void CompressBaseColorNormalSpecularMaskYCoCgCS(
+	uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 &gt;= SourceRect.zw))
+		return;
+
+	uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;
+	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
+	float2 SampleUV = (float2(SamplePos) + 0.5f) * TexelUVSize;
+
+	float3 BlockBaseColor[16];
+	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);
+
+	float BlockNormalX[16];
+	float BlockNormalY[16];
+	float BlockMask[16];
+	ReadBlockXYA(RenderTexture1, TextureSampler1, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockNormalX, BlockNormalY, BlockMask);
+
+	float3 BlockSpecular[16];
+	ReadBlockRGB(RenderTexture2, TextureSampler2, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockSpecular);
+
+	for (int i=0; i&lt;16; i++)
+	{
+		BlockSpecular[i].z = round(BlockSpecular[i].z);
+	}
+
+#if ASTC_PROFILE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ASTC_YCoCg(BlockBaseColor);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RG(BlockNormalX, BlockNormalY);
+	OutCompressTexture2_128bit[GetDestPos(2, ThreadId)] = CompressBlock_ASTC_RGBA(BlockSpecular, BlockMask);
+#elif ETC_PROFILE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ETC2_YCoCg(BlockBaseColor);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBlock_ETC2_RG(BlockNormalX, BlockNormalY);
+	OutCompressTexture2_128bit[GetDestPos(2, ThreadId)] = CompressBlock_ETC2_RGBA(BlockSpecular, BlockMask);
+#else
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBC3BlockYCoCg(BlockBaseColor);
+	OutCompressTexture1_128bit[GetDestPos(1, ThreadId)] = CompressBC5Block(BlockNormalX, BlockNormalY);
+	OutCompressTexture2_128bit[GetDestPos(2, ThreadId)] = CompressBC3Block(BlockSpecular, BlockMask);
+#endif
+}
+#endif // COMPUTESHADER
+
+#if PIXELSHADER
+/** Copy path used when we disable texture compression, because we need to keep the same final channel layout. */
+void CopyBaseColorNormalSpecularMaskYCoCgPS(
+	in float4 InPosition : SV_POSITION, 
+	in noperspective float2 InTexCoord : TEXCOORD0, 
+	out float4 OutColor0 : SV_Target0,
+	out float4 OutColor1 : SV_Target1,
+	out float4 OutColor2 : SV_Target2)
+{
+	float3 YCoCg = RGB2YCoCg(RenderTexture0.SampleLevel(TextureSampler0, InTexCoord, 0).xyz);
+	float3 NormalXYMask = RenderTexture1.SampleLevel(TextureSampler1, InTexCoord, 0).xyz;
+	float3 RoughnessSpecularNormalZ = RenderTexture2.SampleLevel(TextureSampler2, InTexCoord, 0).xyz;
+	
+	RoughnessSpecularNormalZ.z = round(RoughnessSpecularNormalZ.z);
+	
+	OutColor0 = float4(YCoCg.yz, 0, YCoCg.x);
+	OutColor1 = float4(NormalXYMask.xy, 0, 1);
+	OutColor2 = float4(RoughnessSpecularNormalZ, NormalXYMask.z);
+}
+#endif // PIXELSHADER
+
+#if COMPUTESHADER
+/** Compress 4 channel mask to BC3. */
+[numthreads(8,8,1)]
+void CompressMask4CS(
+	uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 &gt;= SourceRect.zw))
+	{
+		return;
+	}
+
+	uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;
+	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
+	float2 SampleUV = (float2(SamplePos) + 0.5f) * TexelUVSize;
+
+	float3 BlockXYZ[16];
+	ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockXYZ);
+
+	float BlockW[16];
+	ReadBlockX(RenderTexture1, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockW);
+
+#if ASTC_PROFILE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ASTC_RGBA(BlockXYZ, BlockW);
+#elif ETC_PROFILE
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBlock_ETC2_RGBA(BlockXYZ, BlockW);
+#else
+	OutCompressTexture0_128bit[GetDestPos(0, ThreadId)] = CompressBC3Block(BlockXYZ, BlockW);
+#endif
+}
+#endif // COMPUTESHADER
+
+#if PIXELSHADER
+/** Copy path used when we disable texture compression, because we need to keep the same final channel layout. */
+void CopyMask4PS(
+	in float4 InPosition : SV_POSITION, 
+	in noperspective float2 InTexCoord : TEXCOORD0, 
+	out float4 OutColor0 : SV_Target0)
+{
+	float3 MaskXYZ = RenderTexture0.SampleLevel(TextureSampler0, InTexCoord, 0).xyz;
+	float MaskW = RenderTexture1.SampleLevel(TextureSampler1, InTexCoord, 0).x;
+	
+	OutColor0 = float4(MaskXYZ, MaskW);
+}
+#endif // PIXELSHADER
+
+#if COMPUTESHADER
+/** Compress displacement to a single BC4 target. */
+[numthreads(8, 8, 1)]
+void CompressDisplacementCS(
+	uint3 ThreadId : SV_DispatchThreadID)
+{
+	if (any(ThreadId.xy * 4 &gt;= SourceRect.zw))
+	{
+		return;
+	}
+
+	uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;
+	float2 TexelUVSize = 1.f / float2(SourceRect.zw);
+	float2 SampleUV = (float2(SamplePos) + 0.5f) * TexelUVSize;
+
+	float Block[16];
+	ReadBlockX(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, Block);
+#if ASTC_PROFILE
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_Alpha(Block));
+#elif ETC_PROFILE
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_Alpha(Block));
+#else
+	OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBC4Block(Block));
+#endif
+}
+#endif // COMPUTESHADER
+
+#if PIXELSHADER
+/** Copy world height or displacement (without compression)
+  * This path is used when want to copy the world height or displacement data into a thumbnail. */
+void CopyWorldHeightPS(
+	in float4 InPosition : SV_POSITION,
+	in noperspective float2 InTexCoord : TEXCOORD0,
+	out float4 OutColor0 : SV_Target0)
+{
+	float WorldHeight = RenderTexture0.SampleLevel(TextureSampler0, InTexCoord, 0).r;
+	OutColor0 = float4(WorldHeight.xxx, 1.f);
+}
+#endif // PIXELSHADER
 </textarea>
 </div></section>
 
-<section class="card"><h2>0. 为什么要 GPU 实时压缩</h2><div class="body grid2"><pre><code><span class="code-line blue">临时目标（未压缩 RGBA8）→ CompressCS → 压缩物理页（BC/ASTC）</span></code></pre><div class="note n-blue"><h3>说明</h3><p><a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a> 的 <span class="inline">bCompressTextures=true</span> 要求物理页用 <b>GPU 压缩格式</b>存（BC/ASTC），显存占用降到 1/4~1/8。但材质是渲进未压缩临时目标的，所以缺页现画后必须<b>在 GPU 上实时块压缩</b>一遍（离线烘焙的 SVT 不需要，页里已是压缩格式）。这就是本 shader 的存在意义——它是 RVT 相对 SVT 独有的一步，代价是每次现画多一趟 compute。</p></div></div></section>
+<section class="card"><h2>0. 读 4×4 块 + 按平台选压缩格式（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">if (any(ThreadId.xy * 4 &gt;= SourceRect.zw)) return;   // 每线程一个 4×4 块</span>
+<span class="code-line blue">uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;</span>
+<span class="code-line blue">float3 BlockBaseColor[16];</span>
+<span class="code-line blue">ReadBlockRGB(RenderTexture0, TextureSampler0, GetSourceUV(SampleUV, ThreadId), TexelUVSize, BlockBaseColor);</span>
+<span class="code-line orange">#if ASTC_PROFIlE || ETC_PROFILE</span>
+<span class="code-line green">    OutCompressTexture0_64bit[GetDestPos(0, ThreadId)] = PackRG32(CompressBlock_ETC2_SRGB(BlockBaseColor));</span>
+<span class="code-line green">#else OutCompressTexture0_64bit[...] = PackRG32(CompressBC1Block_SRGB(BlockBaseColor)); #endif</span></code></pre><div class="note"><h3>说明</h3><p>每个 8×8 线程负责一个 <b>4×4 纹素块</b>（8×8 线程组覆盖 32×32 纹素）。<span class="inline">ReadBlockRGB</span> 采样出块的 16 个纹素，再按<b>平台 permutation</b> 压缩：桌面走 <b>BC1</b>（DXT1，RGB 4bpp）、移动端走 <b>ETC2</b>，输出 64bit/块写进物理纹理 UAV。SRGB 变体保证 gamma 正确。这是 RVT "渲染即缓存"的关键——material pass 产出未压缩页后立即 GPU 压缩，无需 CPU 往返，物理纹理直接存 GPU 原生块格式供采样。</p></div></div></section>
 
-<section class="card"><h2>1. 一线程一 4×4 块</h2><div class="body grid2"><pre><code><span class="code-line yellow">[numthreads(8,8,1)]  // 组内 64 线程 = 32×32 像素</span>
-<span class="code-line green">uint2 SamplePos = SourceRect.xy + ThreadId.xy * 4;  // 每线程负责一块</span>
-<span class="code-line green">ReadBlockRGB(..., BlockBaseColor);  // 读该块 4×4=16 个纹素</span></code></pre><div class="note n-green"><h3>说明</h3><p>BC/ASTC 都是 <b>4×4 像素为一个压缩块</b>，所以映射极自然：一个线程压一个块，<span class="inline">ThreadId.xy * 4</span> 定位块左上角，<span class="inline">ReadBlock</span> 采回 16 个纹素到本地数组。8×8 线程组一次覆盖 32×32 像素。<span class="inline">GetDestPos</span> 把块坐标映到物理页里的目标位置。越界块（超出 <span class="inline">SourceRect</span>）直接 return——RVT 页边缘不满整块时的保护。</p></div></div></section>
-
-<section class="card"><h2>2. 按平台 + 布局分派（发散核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">#if ASTC_PROFIlE   CompressBlock_ASTC_*   // 移动</span>
-<span class="code-line orange">#elif ETC_PROFILE  CompressBlock_ETC2_*   // 部分移动</span>
-<span class="code-line orange">#else              CompressBC1/BC3Block  // 桌面</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span>不管什么格式，流程都是"读 4×4 块 → 调 <span class="inline">CompressBlock_*</span> 编码 → 写目标"，且都有<b>按 MaterialType 的多套内核</b>：<span class="inline">CompressBaseColorCS</span>(单层 64 位) / <span class="inline">CompressBaseColorNormalSpecularCS</span>(3 层写两张 128 位)。</p><p><span class="note-label diff">不同点</span>压缩格式随平台 permutation 分三路：桌面 <b>BC1/BC3</b>（64/128 位块）、移动 <b>ASTC</b>、部分移动 <b>ETC2</b>。法线的 X/Y 分开塞进不同块的 alpha 通道以保精度（<span class="inline">BlockNormalX</span>/<span class="inline">BlockNormalY</span>）。这套 permutation 与 <a href="VirtualTextureMaterial.usf.html" class="inline">Material.usf</a> 的 MRT 布局宏严格对应——写入侧产出几张 MRT，压缩侧就有几路对应内核。</p></div></div></section>
-
-<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>一线程一 4×4 块：读 16 纹素 → 按平台（BC1/BC3/ETC2/ASTC）+ 布局（1层/3层）实时块压缩 → 写压缩物理页。这是 RVT <span class="inline">bCompressTextures</span> 现画后的独有一趟 compute。</p></div><div class="note"><h3>阅读建议</h3><p>被压的临时目标从哪来见 <a href="VirtualTextureMaterial.usf.html" class="inline">VirtualTextureMaterial.usf</a>；何时触发（RenderFinalize→Finalize）与 RVT 整体见 <a href="../Chapters/RVT_ConvergenceAnnotated.html" class="inline">#5</a>；SVT 页已是压缩格式、不走这里，见 <a href="../Chapters/SVT_ConvergenceAnnotated.html" class="inline">#6</a>。</p></div></div></section>
+<section class="card"><h2>1. 多 target 变体：BaseColor+Normal+Specular（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">void CompressBaseColorNormalSpecularCS(uint3 ThreadId : SV_DispatchThreadID)   // BC3 target 对</span>
+<span class="code-line blue">// 分别读 BaseColor / Normal / Specular+Roughness 块</span>
+<span class="code-line green">// 压成多张 BC3/BC5 物理纹理（RVT layer 布局：Layer0 色, Layer1 法线, ...）</span>
+<span class="code-line yellow">void CopyBaseColorPS(...)   // 缩略图用的简单未压缩拷贝</span></code></pre><div class="note"><h3>说明</h3><p>RVT 支持多种<b>页布局</b>（page layout）：只有 BaseColor 的走 <a href="#" class="inline">CompressBaseColorCS</a>；带法线/高光/粗糙度的走 <span class="inline">CompressBaseColorNormalSpecularCS</span> 压成多张 BC3/BC5 物理纹理层（对应 RVT 的 <span class="inline">BaseColor,Normal,Roughness,Specular</span> layer）。此外还有 <span class="inline">CopyBaseColorPS</span>（PixelShader 路径）做缩略图用的简单拷贝。所有变体通过 permutation 编成不同 shader，由 C++ 侧按 RVT 资产的材质类型选择——产物即 <a href="VirtualTextureMaterial.usf.html" class="inline">material pass</a> 渲染页的最终落盘格式。</p></div></div></section>
 
 <section class="card"><h2>关联文档 / 接口</h2><div class="body">
-<a class="tag" href="VirtualTextureMaterial.usf.html"><span class="dot" style="background:var(--green)"></span>VirtualTextureMaterial.usf（未压缩来源）↗</a>
-<a class="tag" href="../Chapters/RVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 RVT 运行时虚拟纹理</a>
-<a class="tag" href="../Chapters/SVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#6 SVT（离线已压缩对比）</a>
+<a class="tag" href="../Chapters/RVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 RVT</a>
+<a class="tag" href="VirtualTextureMaterial.usf.html"><span class="dot" style="background:var(--cyan)"></span>VirtualTextureMaterial.usf（渲染页）↗</a>
+<a class="tag" href="VirtualTextureAdapter.usf.html"><span class="dot" style="background:var(--cyan)"></span>VirtualTextureAdapter.usf（拷贝压缩）↗</a>
 <a class="tag" href="../UE_VirtualTexture_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
 </div></section>
 </main>
-<script>
-document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
-</script>
 </body>
 </html>

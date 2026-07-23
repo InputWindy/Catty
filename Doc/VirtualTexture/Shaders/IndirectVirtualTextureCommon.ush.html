@@ -1,0 +1,109 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IndirectVirtualTextureCommon.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:480px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><a href="../Chapters/VTOverview_ConvergenceAnnotated.html">← 回到 #1 总览</a></div>
+<h1>IndirectVirtualTextureCommon.ush 整源解析<span class="libtag">库 / 间接 VT 集合</span></h1><div class="subtitle">VT 的<b>间接虚拟纹理集合</b>（TextureCollection）：把一组 VT 打包成集合，材质用一个索引即可访问其中任意一张——支持"纹理集合"式的间接寻址（如可替换的地形层）。核心 <span class="inline">FIndirectVirtualTextureInfo</span> + <span class="inline">LoadIndirectVirtualTexture</span>。<b>下方内嵌完整 64 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Public/IndirectVirtualTextureCommon.ush</span></h2><div class="body">
+<span class="source-path">FIndirectVirtualTextureInfo + GetIndirectVirtualTextureUniform / LoadIndirectVirtualTexture</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "/Engine/Public/IndirectVirtualTexture.ush"
+#include "/Engine/Private/VirtualTextureCommon.ush"
+
+struct FIndirectVirtualTextureInfo
+{
+	uint BlockX;
+	uint BlockY;
+	uint BlockWidth;
+	uint BlockHeight;
+	uint MaxLevel;
+};
+
+FIndirectVirtualTextureUniform GetIndirectVirtualTextureUniform(uint4 MaterialTextureCollectionPackedUniforms0, uint4 MaterialTextureCollectionPackedUniforms1
+																		  , uint4 MaterialTextureCollectionPackedUniforms2, uint4 MaterialTextureCollectionPackedUniforms3)
+{
+	FIndirectVirtualTextureUniform Out = (FIndirectVirtualTextureUniform)0;
+#if TEXTURE_COLLECTION_PACKED_UNIFORMS
+	Out.UniformCountSub1          = MaterialTextureCollectionPackedUniforms0.w;
+	Out.PackedPageTableUniform[0] = MaterialTextureCollectionPackedUniforms1;
+	Out.PackedPageTableUniform[1] = MaterialTextureCollectionPackedUniforms2;
+	Out.PackedUniform             = MaterialTextureCollectionPackedUniforms3;
+#endif // TEXTURE_COLLECTION_PACKED_UNIFORMS
+	return Out;
+}
+
+uint GetIndirectVirtualTextureCount(in FIndirectVirtualTextureUniform Uniform)
+{
+	return Uniform.UniformCountSub1 + 1;
+}
+
+FIndirectVirtualTextureEntry LoadIndirectVirtualTexture(in FIndirectVirtualTexture Collection, in FIndirectVirtualTextureUniform Uniform, uint CollectionIndex)
+{
+	CollectionIndex = min(Uniform.UniformCountSub1, CollectionIndex);
+
+	FIndirectVirtualTextureEntry Out = (FIndirectVirtualTextureEntry)0;
+	Out.PackedCoordinateAndSize = Collection[CollectionIndex];
+	return Out;
+}
+
+FIndirectVirtualTextureInfo UnpackIndirectVirtualTexture(in FIndirectVirtualTextureEntry Entry)
+{
+	FIndirectVirtualTextureInfo Out = (FIndirectVirtualTextureInfo)0;
+	Out.BlockX      = Entry.PackedCoordinateAndSize.x  &amp; 0xFFFF;
+	Out.BlockY      = Entry.PackedCoordinateAndSize.x &gt;&gt; 16;
+	Out.BlockWidth  = Entry.PackedCoordinateAndSize.y &amp; 0xFFF;
+	Out.BlockHeight = (Entry.PackedCoordinateAndSize.y &gt;&gt; 12) &amp; 0xFFF;
+	Out.MaxLevel    = Entry.PackedCoordinateAndSize.y &gt;&gt; 24;
+	return Out;
+}
+
+VTPageTableUniform UnpackIndirectVirtualTexturePageTableUniform(in FIndirectVirtualTextureEntry Entry, uint4 A, uint4 B)
+{
+	VTPageTableUniform Out = VTPageTableUniform_Unpack(A, B);
+	
+	FIndirectVirtualTextureInfo Info = UnpackIndirectVirtualTexture(Entry);
+
+	// Allow packing textures of different sizes and in turn number of mip levels
+	// So, to avoid lower physical mip levels "leaking" in, limit the level
+	// to that of this entry only.
+	Out.MaxLevel = Info.MaxLevel;
+	
+	// This avoids both:
+	//  1. Re-mapping the UV coordinates manually from 0-1 to the physical region
+	//  2. Manual sampler addressing handling on the texture region borders
+	Out.SizeInPages     = uint2(Info.BlockWidth, Info.BlockHeight);
+	Out.XOffsetInPages += Info.BlockX;
+	Out.YOffsetInPages += Info.BlockY;
+	
+	return Out;
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 间接 VT 集合的索引寻址（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">struct FIndirectVirtualTextureInfo { uint BlockX; uint BlockY; uint BlockWidth; uint BlockHeight; uint MaxLevel; };</span>
+<span class="code-line blue">uint GetIndirectVirtualTextureCount(FIndirectVirtualTextureUniform Uniform) { return Uniform.UniformCountSub1 + 1; }</span>
+<span class="code-line green">FIndirectVirtualTextureEntry LoadIndirectVirtualTexture(Collection, Uniform, uint CollectionIndex) {</span>
+<span class="code-line green">    CollectionIndex = min(Uniform.UniformCountSub1, CollectionIndex);   // clamp 防越界</span>
+<span class="code-line yellow">    Out.PackedCoordinateAndSize = Collection[CollectionIndex]; ... }</span></code></pre><div class="note"><h3>说明</h3><p>普通 VT 是"材质直接绑一张"，而<b>间接 VT（TextureCollection）</b>让材质持有一个 VT <b>集合</b>，运行时用 <span class="inline">CollectionIndex</span> 动态选一张——典型用途是<b>可切换/数据驱动的纹理层</b>（如地形不同图层、批量实例各用不同贴图但共享一份材质）。<span class="inline">FIndirectVirtualTextureInfo</span> 描述集合里每张 VT 在虚拟地址空间的 block 位置与最大 mip，<span class="inline">LoadIndirectVirtualTexture</span> 按索引取出对应条目（<span class="inline">min</span> clamp 防越界）。放在 <span class="inline">Public/</span> 是因为材质编译器要在生成的材质代码里引用它。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/VTOverview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#1 总览</a>
+<a class="tag" href="IndirectVirtualTexture.ush.html"><span class="dot" style="background:var(--cyan)"></span>IndirectVirtualTexture.ush（声明）↗</a>
+<a class="tag" href="VirtualTextureCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>VirtualTextureCommon.ush（采样核心）↗</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

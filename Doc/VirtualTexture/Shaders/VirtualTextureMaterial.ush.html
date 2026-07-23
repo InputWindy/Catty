@@ -1,0 +1,108 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VirtualTextureMaterial.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:460px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><a href="../Chapters/RVT_ConvergenceAnnotated.html">← 回到 #5 RVT</a></div>
+<h1>VirtualTextureMaterial.ush 整源解析<span class="libtag">库 / RVT 材质输出</span></h1><div class="subtitle">RVT 页渲染的<b>材质输出 helper</b>：给 material pass 提供 RVT 专用的 mip 级别、自定义数据等参数读取接口，桥接材质图的 RuntimeVirtualTexture 输出与页渲染。<b>下方内嵌完整 65 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/VirtualTextureMaterial.ush</span></h2><div class="body">
+<span class="source-path">GetRuntimeVirtualTextureMipLevel / GetRuntimeVirtualTextureCustomData 等</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+// Expose public values from the runtime virtual texture output pass to the material shaders.
+
+#pragma once
+
+#include "Common.ush"
+
+#if !defined(IS_VIRTUAL_TEXTURE_MATERIAL)
+#define IS_VIRTUAL_TEXTURE_MATERIAL 0
+#endif
+#if !defined(OUT_BASECOLOR)
+#define OUT_BASECOLOR 0
+#endif
+#if !defined(OUT_BASECOLOR_NORMAL_ROUGHNESS)
+#define OUT_BASECOLOR_NORMAL_ROUGHNESS 0
+#endif
+#if !defined(OUT_BASECOLOR_NORMAL_SPECULAR)
+#define OUT_BASECOLOR_NORMAL_SPECULAR 0
+#endif
+#if !defined(OUT_MASK4)
+#define OUT_MASK4 0
+#endif
+#if !defined(OUT_WORLDHEIGHT)
+#define OUT_WORLDHEIGHT 0
+#endif
+#if !defined(OUT_DISPLACEMENT)
+#define OUT_DISPLACEMENT 0
+#endif
+
+float4 GetRuntimeVirtualTextureMipLevel()
+{
+#if IS_VIRTUAL_TEXTURE_MATERIAL
+	return RuntimeVirtualTexturePassParameters.MipLevel;
+#else
+	return 0;
+#endif
+}
+
+float4 GetRuntimeVirtualTextureCustomData()
+{
+#if IS_VIRTUAL_TEXTURE_MATERIAL
+	return RuntimeVirtualTexturePassParameters.CustomMaterialData;
+#else
+	return 0;
+#endif
+}
+
+bool IsRuntimeVirtualTextureBaseColor()
+{
+	return (IS_VIRTUAL_TEXTURE_MATERIAL &amp;&amp; OUT_BASECOLOR);
+}
+
+bool IsRuntimeVirtualTextureBaseColorNormalRoughness()
+{
+	return (IS_VIRTUAL_TEXTURE_MATERIAL &amp;&amp; OUT_BASECOLOR_NORMAL_ROUGHNESS);
+}
+
+bool IsRuntimeVirtualTextureBaseColorNormalSpecular()
+{
+	return (IS_VIRTUAL_TEXTURE_MATERIAL &amp;&amp; OUT_BASECOLOR_NORMAL_SPECULAR);
+}
+
+bool IsRuntimeVirtualTextureMask4()
+{
+	return (IS_VIRTUAL_TEXTURE_MATERIAL &amp;&amp; OUT_MASK4);
+}
+
+bool IsRuntimeVirtualTextureWorldHeight()
+{
+	return (IS_VIRTUAL_TEXTURE_MATERIAL &amp;&amp; OUT_WORLDHEIGHT);
+}
+
+bool IsRuntimeVirtualTextureDisplacement()
+{
+	return (IS_VIRTUAL_TEXTURE_MATERIAL &amp;&amp; OUT_DISPLACEMENT);
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. RVT 材质参数读取接口（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">float4 GetRuntimeVirtualTextureMipLevel()   // 当前渲染页的 mip 级别信息</span>
+<span class="code-line blue">float4 GetRuntimeVirtualTextureCustomData()   // 材质自定义数据（喂给材质图节点）</span></code></pre><div class="note"><h3>说明</h3><p>本头是 <a href="VirtualTextureMaterial.usf.html" class="inline">VirtualTextureMaterial.usf</a>（RVT 页渲染 PS）与材质图之间的<b>参数桥</b>：材质图里的 <span class="inline">RuntimeVirtualTextureReplace</span>/mip 相关节点通过这些 helper 拿到"正在渲染哪一 mip 级别的页""RVT pass 传入的自定义数据"，从而让同一份材质在 <b>RVT 烘焙路径</b>与<b>常规着色路径</b>下表现一致。是把材质编译系统对接到 RVT 渲染的胶水层。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/RVT_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 RVT</a>
+<a class="tag" href="VirtualTextureMaterial.usf.html"><span class="dot" style="background:var(--cyan)"></span>VirtualTextureMaterial.usf（页渲染）↗</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

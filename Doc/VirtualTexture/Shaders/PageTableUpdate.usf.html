@@ -1,0 +1,161 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PageTableUpdate.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_VirtualTexture_解析_总目录.html">← 返回《UE 虚拟纹理》总目录</a><a href="../Chapters/VTProducer_ConvergenceAnnotated.html">← 回到 #2 生产者与页表</a></div>
+<h1>PageTableUpdate.usf 整源解析</h1><div class="subtitle">VT 的<b>页表更新</b>：把 CPU 端算好的"虚拟页→物理页"映射批量刷进页表纹理。用一个<b>无顶点缓冲的实例化四边形</b>光栅化——每条更新覆盖页表里对应 vLevel 的一块区域，PS 只做常量写入。核心 <span class="inline">PageTableUpdateVS</span> + <span class="inline">PageTableUpdatePS_1/2/4</span>。<b>下方内嵌完整 111 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>更新列表</strong><small>UpdateBuffer(RGBA16)</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>解 Morton 虚拟页 + 物理页</strong><small>VS 造四边形</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>光栅化覆盖页表区</strong><small>vLevel 决定块大小</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>PS 常量写页项</strong><small>页表纹理</small></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/PageTableUpdate.usf</span></h2><div class="body">
+<span class="source-path">PageTableUpdateVS @ L21 · PageTableUpdatePS_1/2/4 @ L86/94/103</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Common.ush"
+
+uint2 PageTableSize;
+uint FirstUpdate;
+uint NumUpdates;
+
+Buffer&lt;uint4&gt; UpdateBuffer;
+
+uint ReverseMortonCode2( uint x )
+{
+	x &amp;= 0x55555555;
+	x = (x ^ (x &gt;&gt; 1)) &amp; 0x33333333;
+	x = (x ^ (x &gt;&gt; 2)) &amp; 0x0f0f0f0f;
+	x = (x ^ (x &gt;&gt; 4)) &amp; 0x00ff00ff;
+	x = (x ^ (x &gt;&gt; 8)) &amp; 0x0000ffff;
+	return x;
+}
+
+void PageTableUpdateVS(
+	uint VertexID : SV_VertexID,
+	uint InstanceID : SV_InstanceID,
+	out nointerpolation uint OutColor : TEXCOORD0,
+	out float4 OutPosition : SV_POSITION
+	)
+{
+	OutPosition =  float4(0, 0, 0, 1);
+	OutColor = 0;
+
+	// needs to be the same on C++ side (faster on NVIDIA and AMD)
+	uint QuadsPerInstance = 8;
+	uint UpdateIndex = FirstUpdate + InstanceID * QuadsPerInstance + (VertexID &gt;&gt; 2);
+
+	BRANCH
+	if( UpdateIndex - FirstUpdate &gt;= NumUpdates )
+	{
+		return;
+	}
+
+	// UpdatePacked is R16G16B16A16_UINT
+	uint4 UpdatePacked = UpdateBuffer[ UpdateIndex ];
+
+	uint vLevel = ( UpdatePacked.w &gt;&gt; 0 ) &amp; 0xff;
+	uint vLogSize = ( UpdatePacked.w &gt;&gt; 8 ) &amp; 0xff;
+	uint vSize = 1u &lt;&lt; vLogSize;
+
+	// Little Endian
+	uint vAddress = UpdatePacked.x | (UpdatePacked.y &lt;&lt; 16);
+	
+	uint2 vPage;
+	vPage.x = ReverseMortonCode2( vAddress );
+	vPage.y = ReverseMortonCode2( vAddress &gt;&gt; 1 );
+
+	uint2 pPage;
+	pPage.x = ( UpdatePacked.z &gt;&gt; 0 ) &amp; 0xff;
+	pPage.y = ( UpdatePacked.z &gt;&gt; 8 ) &amp; 0xff;
+	
+	uint2 CornerOffset = uint2(
+		(VertexID &gt;&gt; 0) &amp; 1,
+		(VertexID &gt;&gt; 1) &amp; 1
+	);
+	
+	uint2 vCorner = vPage + vSize * CornerOffset;
+	OutPosition.xy = ( (float2)vCorner / PageTableSize ) * float2( 2, -2 ) + float2( -1, 1 );
+
+#if USE_16BIT
+	// We can assume pPage fits in 6 bits and pack the final output to 16 bits
+	const uint PageCoordinateBitCount = 6;
+#else
+	const uint PageCoordinateBitCount = 8;
+#endif
+
+	// We want to store the quantity vPagesWideInLevel (computed as VIRTUALTEXTURE_MAX_PAGETABLE_SIZE &gt;&gt; vLevel)
+	// We then want to scale by (1/VIRTUALTEXTURE_MAX_PAGETABLE_SIZE), to avoid the need to explicitly factor this into other uniforms
+	// So scale factor becomes (VIRTUALTEXTURE_MAX_PAGETABLE_SIZE &gt;&gt; vLevel) / VIRTUALTEXTURE_MAX_PAGETABLE_SIZE, which simplifies to (1 / exp2(vLevel)) or (1 / (1 &lt;&lt; vLevel))
+	// We will store vLevel in the page table and calculate (1 / (1 &lt;&lt; vLevel)) on load
+	// Also nice that this avoids need to depend on specific value of VIRTUALTEXTURE_MAX_PAGETABLE_SIZE
+	uint Page = vLevel;
+	Page |= pPage.x &lt;&lt; 4;
+	Page |= pPage.y &lt;&lt; (4 + PageCoordinateBitCount);
+	
+	OutColor = Page;
+}
+
+void PageTableUpdatePS_1(
+	nointerpolation uint InColor : TEXCOORD0,
+	out uint OutColor : SV_Target0
+	)
+{
+	OutColor = InColor; 
+}
+
+void PageTableUpdatePS_2(
+	nointerpolation uint InColor : TEXCOORD0,
+	out uint2 OutColor : SV_Target0
+	)
+{
+	// splat output to RGBA channels, color write mask will be configured to write to the correct channel
+	OutColor = InColor.xx;
+}
+
+void PageTableUpdatePS_4(
+	nointerpolation uint InColor : TEXCOORD0,
+	out uint4 OutColor : SV_Target0
+	)
+{
+	// splat output to RGBA channels, color write mask will be configured to write to the correct channel
+	OutColor = InColor.xxxx;
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. VS 解码更新项 → 造覆盖四边形（发散点）</h2><div class="body grid2"><pre><code><span class="code-line orange">uint UpdateIndex = FirstUpdate + InstanceID * QuadsPerInstance + (VertexID &gt;&gt; 2);   // 每实例 8 个四边形</span>
+<span class="code-line blue">uint4 UpdatePacked = UpdateBuffer[UpdateIndex];   // R16G16B16A16_UINT</span>
+<span class="code-line blue">uint vLevel = (UpdatePacked.w &gt;&gt; 0) &amp; 0xff; uint vSize = 1u &lt;&lt; ((UpdatePacked.w &gt;&gt; 8) &amp; 0xff);</span>
+<span class="code-line green">vPage.x = ReverseMortonCode2(vAddress); vPage.y = ReverseMortonCode2(vAddress &gt;&gt; 1);   // Morton→2D</span>
+<span class="code-line yellow">uint2 vCorner = vPage + vSize * CornerOffset; OutPosition.xy = ((float2)vCorner / PageTableSize) * float2(2,-2) + float2(-1,1);</span></code></pre><div class="note"><h3>说明</h3><p>页表更新用<b>光栅化</b>而非 UAV 写——因为一条更新要覆盖页表里 <span class="inline">vSize×vSize</span> 的一块（mip 越粗块越大），画个四边形让硬件填充最省事。VS <b>无顶点缓冲</b>：由 <span class="inline">VertexID/InstanceID</span> 索引 <span class="inline">UpdateBuffer</span>（RGBA16 打包的更新项），解出虚拟页地址（<span class="inline">ReverseMortonCode2</span> 把 Z-order Morton 码还原成 2D 页坐标——VT 页表按 Morton 排布保证空间局部性）、mip 级别 <span class="inline">vLevel</span>、物理页 <span class="inline">pPage</span>，再由 <span class="inline">CornerOffset</span> 生成四边形四角映到 NDC。</p></div></div></section>
+
+<section class="card"><h2>1. 打包页项 + PS 常量写入（汇聚点）</h2><div class="body grid2"><pre><code><span class="code-line orange">uint Page = vLevel;   // 低 4 位存 mip 级别</span>
+<span class="code-line blue">Page |= pPage.x &lt;&lt; 4; Page |= pPage.y &lt;&lt; (4 + PageCoordinateBitCount);   // 物理页 xy</span>
+<span class="code-line green">OutColor = Page;   // VS 输出 nointerpolation，PS 直接常量写</span>
+<span class="code-line yellow">void PageTableUpdatePS_1(...) { OutColor = InColor; }   // PS_2/PS_4 splat 到 RG/RGBA</span></code></pre><div class="note"><h3>说明</h3><p>本 pass 的<b>汇聚点</b>：把 <span class="inline">vLevel</span>（低 4 位）+ 物理页坐标 <span class="inline">pPage.xy</span> 打包成一个页表项 <span class="inline">Page</span>——采样时读出这个项就能算出物理池里对应的 tile 位置（<span class="inline">1/(1&lt;&lt;vLevel)</span> 的缩放技巧见源码注释，避免依赖具体页表尺寸）。<span class="inline">USE_16BIT</span> 时物理页压到 6 位。PS 有 <span class="inline">_1/_2/_4</span> 三个变体（对应页表纹理是 R/RG/RGBA 几通道），把 <span class="inline">nointerpolation</span> 的常量值 splat 到目标通道（配合颜色写掩码只写对应通道）。这是 <a href="../Chapters/VTProducer_ConvergenceAnnotated.html" class="inline">#2 页表</a>把间接寻址表刷新到 GPU 的机制。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/VTProducer_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#2 生产者与页表</a>
+<a class="tag" href="VirtualTextureCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>VirtualTextureCommon.ush（页表采样）↗</a>
+<a class="tag" href="../Chapters/VTFeedback_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#3 反馈（页请求来源）</a>
+<a class="tag" href="../UE_VirtualTexture_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
