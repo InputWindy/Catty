@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#2 RDG 资源模型 · FRDGTexture / Buffer / View 与生命周期</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:80px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;margin:2px 0}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#2 资源模型 · FRDGTexture / Buffer / View 与生命周期</h1><div class="sub">图的第一类节点是<b>虚拟资源</b>。本篇讲清 RDG 资源的继承层次（<span class="inline">FRDGResource</span> → <span class="inline">FRDGViewableResource</span> → <span class="inline">FRDGTexture</span>/<span class="inline">FRDGBuffer</span>）、"虚拟句柄 vs 已分配 RHI"的关键区别、<span class="inline">bExternal</span>/<span class="inline">bExtracted</span>/<span class="inline">bProduced</span> 生命周期标志，以及 debug 下的 RHI 访问校验。所有类/字段取自 <span class="inline">RenderGraphResources.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>继承层次一眼看懂 <span class="en">Class hierarchy</span></h2><div class="body">
+<div class="flow">
+<div class="node"><strong>FRDGResource</strong><small>所有 RDG 资源基类<br>持 <span class="inline">Name</span> + <span class="inline">ResourceRHI</span> 指针</small></div>
+<div class="node merge"><strong>FRDGViewableResource</strong><small>可被 View 引用的资源<br>bExternal/bExtracted/bProduced</small></div>
+<div class="node func"><strong>FRDGTexture / FRDGBuffer</strong><small>具体纹理/缓冲<br>持 Desc + Flags</small></div>
+<div class="node out"><strong>FRDGView 家族</strong><small>SRV/UAV：对资源的一个视图</small></div>
+</div>
+<div class="note" style="margin-top:12px"><h3>两条继承线</h3><p>一条是"可被视图引用的资源"：<span class="inline">FRDGResource</span> → <span class="inline">FRDGViewableResource</span> → <span class="inline">FRDGTexture</span>/<span class="inline">FRDGBuffer</span>；另一条是"视图"：<span class="inline">FRDGView</span> → <span class="inline">FRDGShaderResourceView</span>(SRV)/<span class="inline">FRDGUnorderedAccessView</span>(UAV)。此外还有 <span class="inline">FRDGUniformBuffer</span> 也直接继承 <span class="inline">FRDGResource</span>（见 #7）。</p></div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2">各资源类的完整字段、<span class="inline">FRDGTextureDesc</span>/<span class="inline">FRDGBufferDesc</span> 结构、句柄类型见 <a href="Resources_FunctionAppendix.html" style="color:#9ee8ff">→ 资源类型附录</a>。</p></div></section>
+
+<section class="card"><h2>基类 FRDGResource：虚拟句柄 + 延迟 RHI <span class="en">Virtual handle</span></h2><div class="body">
+<p>RDG 资源的基类只做两件事：记个调试名，持一个<b>可能为空</b>的 RHI 指针。这是真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphResources.h : L134-L183</span><span class="k">class</span> <span class="f">FRDGResource</span>
+{
+<span class="k">public</span>:
+	FRDGResource(<span class="k">const</span> FRDGResource&amp;) = <span class="k">delete</span>;
+	<span class="k">virtual</span> ~FRDGResource() = <span class="k">default</span>;
+
+	<span class="c">// Name of the resource for debugging purpose.</span>
+	<span class="k">const</span> TCHAR* <span class="k">const</span> Name = <span class="k">nullptr</span>;
+
+	<span class="c">/** Marks this resource as actually used. Tracks which pass dependencies were unnecessary. */</span>
+<span class="k">#if</span> RDG_ENABLE_DEBUG
+	<span class="k">virtual</span> <span class="k">void</span> MarkResourceAsUsed();
+<span class="k">#else</span>
+	<span class="k">inline</span> <span class="k">void</span> MarkResourceAsUsed() {}
+<span class="k">#endif</span>
+
+	FRHIResource* GetRHI() <span class="k">const</span>
+	{
+		IF_RDG_ENABLE_DEBUG(ValidateRHIAccess());
+		<span class="k">return</span> ResourceRHI;
+	}
+
+<span class="k">protected</span>:
+	FRHIResource* ResourceRHI = <span class="k">nullptr</span>;
+<span class="k">#if</span> RDG_ENABLE_DEBUG
+	<span class="k">void</span> ValidateRHIAccess() <span class="k">const</span>;
+	uint8 bAllowRHIAccess : 1;   <span class="c">// 见 private 段</span>
+<span class="k">#endif</span>
+	<span class="k">friend</span> FRDGBuilder;
+};</div>
+<div class="note blue"><h3>批注：为什么 GetRHI 要校验</h3><p>核心一行是 <span class="inline">FRHIResource* ResourceRHI = nullptr</span>——<b>声明资源时它就是空的</b>，直到执行期被瞬态分配器回填。所以 <span class="inline">GetRHI()</span> 只能在 <b>pass 执行 lambda 内</b>调用（那时 RHI 已分配好）；若在声明期误调，debug 构建的 <span class="inline">ValidateRHIAccess()</span> 会断言报错。这就是源码注释反复强调的"The following methods may only be called during pass execution"。<span class="inline">MarkResourceAsUsed()</span> 则服务于校验：追踪某个被声明为依赖的资源是否<b>真的</b>被用到，帮开发者发现多余依赖。</p></div></div></section>
+
+<section class="card"><h2>FRDGViewableResource：三个生命周期标志 <span class="en">Lifetime flags</span></h2><div class="body">
+<p>可被视图引用的资源在基类上加了三个决定<b>生命周期与剔除</b>的布尔。真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphResources.h : L293-L358</span><span class="k">class</span> <span class="f">FRDGViewableResource</span> : <span class="k">public</span> FRDGResource
+{
+<span class="k">public</span>:
+	<span class="k">const</span> ERDGViewableResourceType Type;
+
+	<span class="c">/** externally registered (user holds a ref outside the graph). */</span>
+	<span class="k">bool</span> IsExternal() <span class="k">const</span> { <span class="k">return</span> bExternal; }
+
+	<span class="c">/** queued for extraction at the end of graph execution. */</span>
+	<span class="k">bool</span> IsExtracted() <span class="k">const</span> { <span class="k">return</span> bExtracted; }
+
+	<span class="c">/** a prior pass produced contents for this resource (any subresource write). */</span>
+	<span class="k">bool</span> HasBeenProduced() <span class="k">const</span> { <span class="k">return</span> bProduced; }
+
+<span class="k">protected</span>:
+	<span class="k">bool</span> IsCullRoot() <span class="k">const</span>
+	{
+		<span class="k">return</span> bExternal || bExtracted;
+	}
+};</div>
+<div class="note"><h3>逐标志批注</h3>
+<p><b>bExternal</b>：资源是从图外注册进来的（<span class="inline">RegisterExternalTexture</span>，见 #16），用户在图外持有它的引用。</p>
+<p><b>bExtracted</b>：资源被 <span class="inline">QueueTextureExtraction</span> 排队要在图执行结束时提取出去（跨帧持有）。</p>
+<p><b>bProduced</b>：图中已有 pass 对它做过写操作——用来判断"读一个还没被写过的资源"这种错误。</p>
+<p>关键是 <span class="inline">IsCullRoot() = bExternal || bExtracted</span>：<b>外部或被提取的资源是剔除的"根"</b>——因为它们的内容要被图外世界使用，产生它们的 pass 绝不能被剔掉。这正是 <b>#5 编译</b>剔除算法的起点：从所有 cull root 反向遍历，凡不可达的 pass 就是死代码。</p></div></div></section>
+
+<section class="card"><h2>FRDGTexture：具体纹理 <span class="en">Concrete texture</span></h2><div class="body">
+<div class="codebox"><span class="src">// RenderGraphResources.h : L569-L598</span><span class="k">class</span> <span class="f">FRDGTexture</span> <span class="k">final</span> : <span class="k">public</span> FRDGViewableResource
+{
+<span class="k">public</span>:
+	<span class="k">static</span> <span class="k">const</span> ERDGViewableResourceType StaticType = ERDGViewableResourceType::Texture;
+
+	<span class="k">const</span> FRDGTextureDesc Desc;    <span class="c">// 尺寸/格式/mip/flags——创建时给定</span>
+	<span class="k">const</span> ERDGTextureFlags Flags;
+
+	<span class="c">/** Returns the allocated RHI texture. (pass execution only) */</span>
+	<span class="k">inline</span> FRHITexture* GetRHI() <span class="k">const</span>
+	{
+		<span class="k">return</span> static_cast&lt;FRHITexture*&gt;(FRDGResource::GetRHI());
+	}
+	<span class="k">inline</span> FRDGTextureHandle GetHandle() <span class="k">const</span> { <span class="k">return</span> Handle; }
+};</div>
+<div class="note green"><h3>批注</h3><p><span class="inline">FRDGTexture</span> 是 <span class="inline">final</span>，持一个不可变的 <span class="inline">FRDGTextureDesc</span>（尺寸、格式、mip 数、用途 flags——见附录）。它的 <span class="inline">GetRHI()</span> 把基类的 <span class="inline">FRHIResource*</span> 向下转成 <span class="inline">FRHITexture*</span>（RDG 之下真正的 GPU 纹理，见 #13）。<span class="inline">FRDGTextureHandle</span> 是个轻量索引句柄——图内部大量用 handle 而非裸指针来引用资源，便于数组化存储与序列化调试。<span class="inline">FRDGBuffer</span> 结构完全对称（持 <span class="inline">FRDGBufferDesc</span>，<span class="inline">GetRHI()</span> 转 <span class="inline">FRHIBuffer*</span>）。</p></div></div></section>
+
+<section class="card"><h2>资源的一生 <span class="en">Lifecycle</span></h2><div class="body">
+<div class="flow">
+<div class="node branch"><strong>1 声明</strong><small>CreateTexture → 得句柄<br>ResourceRHI 仍为 null</small></div>
+<div class="node func"><strong>2 编译</strong><small>算首末次使用<br>定分配/释放时机</small></div>
+<div class="node func"><strong>3 分配</strong><small>瞬态分配器给 RHI<br>回填 ResourceRHI</small></div>
+<div class="node merge"><strong>4 使用</strong><small>pass lambda 内 GetRHI()<br>绑定到 shader</small></div>
+<div class="node out"><strong>5 回收/提取</strong><small>帧末回池复用<br>或 Extract 跨帧</small></div>
+</div>
+<div class="note blue"><h3>一句话</h3><p>一个 RDG 资源从"纯句柄"（无显存）→ 编译期确定生命周期 → 执行期分配真实 RHI → pass 内使用 → 帧末回收或提取。理解这条线，就理解了为什么 <span class="inline">GetRHI()</span> 不能在声明期调、为什么 RDG 能把生命周期不重叠的资源别名到同一块显存（#15）。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. 层次：<span class="inline">FRDGResource</span>（名+RHI指针基类）→ <span class="inline">FRDGViewableResource</span>（+生命周期标志）→ <span class="inline">FRDGTexture</span>/<span class="inline">FRDGBuffer</span>；视图另成 <span class="inline">FRDGView</span> 家族。</p>
+<p>2. RDG 资源是<b>虚拟句柄</b>：<span class="inline">ResourceRHI</span> 声明期为 null，执行期才回填，故 <span class="inline">GetRHI()</span> 只能在 pass lambda 内调。</p>
+<p>3. <b>三个标志</b> <span class="inline">bExternal</span>/<span class="inline">bExtracted</span>/<span class="inline">bProduced</span>：前两者构成剔除根 <span class="inline">IsCullRoot()</span>，是 #5 剔除算法的起点。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="Overview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#1 总览</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="Pass_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#3 Pass</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="RHIResources_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#13 RHI 资源对象模型（GetRHI 转到的东西）</a><a class="tag" href="ResourcePool_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#15 资源池演进（分配/别名）</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="Resources_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇资源类型附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

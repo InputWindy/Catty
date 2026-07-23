@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#3 RDG Pass · 图的执行节点</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:80px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#3 Pass · 图的执行节点</h1><div class="sub">图的第二类节点是 <b>pass</b>——一次 GPU 工作。本篇讲清 <span class="inline">FRDGPass</span> 的核心字段、pass 如何用<b>参数结构体</b>声明它读写哪些资源（这是 RDG 推导依赖与屏障的<b>唯一信息来源</b>）、以及 <span class="inline">ERDGPassFlags</span> 如何决定 pass 走哪条管线、能否被剔除/合并/并行。类/字段取自 <span class="inline">RenderGraphPass.h</span>、<span class="inline">RenderGraphDefinitions.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一个 pass 由什么构成 <span class="en">Anatomy of a pass</span></h2><div class="body">
+<div class="flow">
+<div class="node branch"><strong>EventName</strong><small>调试/profile 名<br>RDG_EVENT_NAME(...)</small></div>
+<div class="node merge"><strong>ParameterStruct</strong><small>声明读写了哪些资源<br>= 依赖/屏障的信息源</small></div>
+<div class="node out"><strong>PassFlags</strong><small>Raster/Compute/Async…<br>决定管线与编译行为</small></div>
+<div class="node func"><strong>Execute Lambda</strong><small>真正录制 RHI 命令<br>执行期调用</small></div>
+</div>
+<div class="note" style="margin-top:12px"><h3>核心洞察</h3><p>RDG 能自动做依赖/屏障/剔除，全靠 <b>ParameterStruct</b>——开发者在参数结构体里用宏声明每个资源是 SRV(读)/UAV(写)/RenderTarget(写) 等，RDG <b>只从这里</b>获知 pass 的读写意图。lambda 里手动 <span class="inline">GetRHI()</span> 用了但没在参数结构体声明的资源，RDG 一无所知——这正是最常见的 RDG bug 来源（校验层 #8 会抓）。</p></div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2"><span class="inline">FRDGPass</span> 全部字段、<span class="inline">TRDGLambdaPass</span> 模板、<span class="inline">FRDGDispatchPass</span>/<span class="inline">FRDGSentinelPass</span> 等特殊 pass 见 <a href="Pass_FunctionAppendix.html" style="color:#9ee8ff">→ Pass 类型附录</a>；<span class="inline">ERDGPassFlags</span> 全枚举见 <a href="Overview_FunctionAppendix.html" style="color:#9ee8ff">#1 附录</a>。</p></div></section>
+
+<section class="card"><h2>FRDGPass：核心字段 <span class="en">Core fields</span></h2><div class="body">
+<p>pass 的构造签名与关键成员，真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphPass.h : L220, L390-L394</span>FRDGPass(FRDGEventName&amp;&amp; InName, FRDGParameterStruct InParameterStruct,
+        ERDGPassFlags InFlags, ERDGPassTaskMode InTaskMode);
+
+<span class="c">// 关键成员（不可变）：</span>
+<span class="k">const</span> ERDGPassFlags   Flags;      <span class="c">// Raster/Compute/AsyncCompute/Copy/NeverCull...</span>
+<span class="k">const</span> ERDGPassTaskMode TaskMode;   <span class="c">// 同步 / 并行任务 / 异步</span>
+<span class="k">const</span> ERHIPipeline    Pipeline;   <span class="c">// Graphics 还是 AsyncCompute pipe（由 Flags 派生）</span>
+FRDGPassHandle          Handle;     <span class="c">// pass 在图里的索引句柄</span>
+uint32                  Workload = 1;</div>
+<div class="note blue"><h3>批注</h3><p>四个入参正好对应"一个 pass 是什么"：名字、参数结构体（读写声明）、flags、任务模式。<span class="inline">Pipeline</span> 由 <span class="inline">Flags</span> 派生——含 <span class="inline">AsyncCompute</span> 就走 async compute pipe，否则走 graphics pipe；<b>#6 执行</b>据此把 pass 分到不同队列并在队列间插同步。<span class="inline">Handle</span> 是 pass 的索引句柄（同 #2 资源的 handle 思路），图内部用它排序、建依赖数组。<span class="inline">Workload</span> 是负载权重，用于并行录制时的任务均衡。</p></div>
+<p>取参数结构体的访问器（编译期遍历它来建依赖）：</p>
+<div class="codebox"><span class="src">// RenderGraphPass.h : L238-L251</span>ERDGPassFlags GetFlags() <span class="k">const</span> { <span class="k">return</span> Flags; }
+ERHIPipeline  GetPipeline() <span class="k">const</span> { <span class="k">return</span> Pipeline; }
+FRDGParameterStruct GetParameters() <span class="k">const</span> { <span class="k">return</span> ParameterStruct; }</div>
+<div class="note"><h3>批注</h3><p><span class="inline">GetParameters()</span> 返回的 <span class="inline">FRDGParameterStruct</span> 就是 #5 编译期"遍历所有 pass 的参数、找出资源的生产者/消费者"的入口——编译器逐个 pass 调 <span class="inline">GetParameters()</span>，遍历其中的资源成员及其访问类型，据此连边。</p></div></div></section>
+
+<section class="card"><h2>PassFlags 决定 pass 的命运 <span class="en">Flags drive everything</span></h2><div class="body">
+<p><span class="inline">ERDGPassFlags</span>（uint16 位标志，完整源码见 #1 附录）不是装饰，它直接改变编译/执行行为：</p>
+<table><tr><th>标志</th><th>影响的阶段</th><th>后果</th></tr>
+<tr><td><code>Raster</code>/<code>Compute</code>/<code>Copy</code></td><td>执行</td><td>graphics pipe 上用光栅/计算/拷贝命令</td></tr>
+<tr><td><code>AsyncCompute</code></td><td>执行</td><td>派发到异步计算队列，需跨队列 fence 同步</td></tr>
+<tr><td><code>NeverCull</code></td><td>编译（剔除）</td><td>该 pass 及其生产者永不被剔——输出图无法追踪时必打</td></tr>
+<tr><td><code>SkipRenderPass</code>/<code>NeverMerge</code></td><td>执行（合并）</td><td>退出 RDG 的 RenderPass 合并优化</td></tr>
+<tr><td><code>NeverParallel</code></td><td>执行（并行）</td><td>强制只在渲染线程执行</td></tr>
+</table>
+<div class="note green"><h3>最常踩的坑：忘了 NeverCull</h3><p>如果一个 pass 的效果<b>不体现在任何被后续 pass 读取或被提取的 RDG 资源上</b>（比如它只是往一个图外 buffer 写、或做 GPU readback、或有别的副作用），RDG 的剔除算法（#5）会认为"没人要它的输出"而把它<b>整个剔掉</b>，表现为"我的 pass 怎么没执行"。解法：给它加 <span class="inline">ERDGPassFlags::NeverCull</span>（或用现成的 <span class="inline">Readback = Copy | NeverCull</span>）。这是 RDG 新手最常见的困惑之一。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. 一个 pass = <b>EventName + ParameterStruct + PassFlags + Execute Lambda</b>。</p>
+<p>2. <b>ParameterStruct 是 RDG 推导依赖/屏障/剔除的唯一信息源</b>——lambda 里用但没声明的资源，RDG 不知道。</p>
+<p>3. <span class="inline">ERDGPassFlags</span> 直接改变编译/执行：管线选择、是否剔除、是否合并、是否并行。<b>输出不可追踪的 pass 必须 <span class="inline">NeverCull</span></b>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="Resources_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#2 资源模型</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="Builder_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#4 FRDGBuilder</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="Compile_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#5 编译（用 GetParameters 建依赖）</a><a class="tag" href="ShaderParamMacros_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>#10 参数结构体宏</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="Pass_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇 Pass 类型附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>
