@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#8 RDG Validation · 校验层</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#8 Validation · 校验层</h1><div class="sub">RDG 在非发布构建下（<span class="inline">RDG_ENABLE_DEBUG</span>，#1）自带一套<b>校验层</b>，把"pass 声明与实际使用不符""读未写资源""生命周期外访问"等隐蔽 bug 在开发期就 assert 出来。本篇讲 <span class="inline">FRDGUserValidation</span>（用户 API 校验）与 <span class="inline">FRDGBarrierValidation</span>（屏障校验）的检查点。源码取自 <span class="inline">RenderGraphValidation.h</span>。</div></header>
+<main>
+
+<section class="card"><h2>两个校验器 <span class="en">Two validators</span></h2><div class="body">
+<table><tr><th>校验器</th><th>管什么</th></tr>
+<tr><td><code>FRDGUserValidation</code></td><td>用户 API 层：AddPass 参数合法性、执行前后状态、资源访问是否越界生命周期</td></tr>
+<tr><td><code>FRDGBarrierValidation</code></td><td>屏障层：transition 是否正确、是否有资源在错误访问态被用</td></tr>
+</table>
+<div class="note" style="margin-top:12px"><h3>零成本抽象</h3><p>这些校验全部包在 <span class="inline">RDG_ENABLE_DEBUG</span> 里（#1），<b>发布版彻底编空</b>。开发期它们是发现 RDG 用法错误的第一道防线——尤其是 #3 讲的"lambda 里用了但没在参数结构体声明"这类问题。</p></div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2"><span class="inline">FRDGUserValidation</span> 全部 <span class="inline">Validate*</span> 检查点、<span class="inline">TryMarkForClobber</span> clobber 机制见 <a href="Validation_FunctionAppendix.html" style="color:#9ee8ff">→ 校验点附录</a>。</p></div></section>
+
+<section class="card"><h2>FRDGUserValidation：用户 API 校验 <span class="en">User validation</span></h2><div class="body">
+<p>校验器的检查点分布在图的关键时刻，真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphValidation.h : L40-L113（节选）</span><span class="k">class</span> <span class="f">FRDGUserValidation</span> <span class="k">final</span>
+{
+<span class="k">public</span>:
+	<span class="c">/** Validate pass creation. */</span>
+	<span class="k">void</span> ValidateAddPass(<span class="k">const</span> <span class="k">void</span>* ParameterStruct, <span class="k">const</span> FShaderParametersMetadata* Metadata,
+	                    <span class="k">const</span> FRDGEventName&amp; Name, ERDGPassFlags Flags);
+	<span class="k">void</span> ValidateAddPass(<span class="k">const</span> FRDGPass* Pass);
+
+	<span class="c">/** Validate pass state before and after execution. */</span>
+	<span class="k">void</span> ValidateExecutePassBegin(<span class="k">const</span> FRDGPass* Pass);
+	<span class="k">void</span> ValidateExecutePassEnd(<span class="k">const</span> FRDGPass* Pass);
+
+	<span class="c">/** Validate graph state before and after execution. */</span>
+	<span class="k">void</span> ValidateExecuteBegin();
+	<span class="k">void</span> ValidateExecuteEnd();
+
+	<span class="c">/** Attempts to mark a resource for clobbering. If already marked, returns false. */</span>
+	<span class="k">bool</span> TryMarkForClobber(FRDGViewableResource* Resource) <span class="k">const</span>;
+};</div>
+<div class="note blue"><h3>批注：检查点分布</h3><p><b>创建时</b> <span class="inline">ValidateAddPass</span>：检查参数结构体与其元数据（#10）是否匹配、flags 是否自洽（如 <span class="inline">SkipRenderPass</span> 只能配 <span class="inline">Raster</span>）。<b>执行前后</b> <span class="inline">ValidateExecutePassBegin/End</span>：这对是抓"漏声明"的关键——它会检查 pass lambda 实际访问的资源是否都在参数结构体里声明过、是否处于正确访问态。<b>整图前后</b> <span class="inline">ValidateExecuteBegin/End</span>：检查图整体一致性（如是否有被 extract 的资源从未被写）。回顾 #6 执行篇：<span class="inline">ExecuteSerialPass</span> 里就有 <span class="inline">IF_RDG_ENABLE_DEBUG(UserValidation.ValidateExecutePassBegin(Pass))</span> 的调用。</p></div></div></section>
+
+<section class="card"><h2>Clobber：主动"投毒"暴露漏声明 <span class="en">Resource clobbering</span></h2><div class="body">
+<div class="note red"><h3>TryMarkForClobber 的妙用</h3><p><span class="inline">TryMarkForClobber</span> 支撑一个强力调试功能（CVar <span class="inline">r.RDG.ClobberResources</span>）：开启后，RDG 在资源被<b>写之前</b>先用一个显眼的"垃圾值"填满它。这样——如果某个 pass<b>读到了这个垃圾值</b>，就说明它读的资源其实没被正确产生（漏了依赖或漏了声明），画面会出现明显异常，一眼定位。这是"用可见的错误逼出隐藏的漏声明"的经典手法。配合 <span class="inline">r.RDG.CullPasses 0</span>（#5）与 Validation assert，构成 RDG 三件调试利器。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. 校验层全包在 <span class="inline">RDG_ENABLE_DEBUG</span> 里，发布版编空；开发期是 RDG 用法错误的第一道防线。</p>
+<p>2. <span class="inline">FRDGUserValidation</span> 检查点：创建（<span class="inline">ValidateAddPass</span>）、执行前后（<span class="inline">ValidateExecutePassBegin/End</span>，抓漏声明）、整图前后。</p>
+<p>3. <b>Clobber</b>（<span class="inline">TryMarkForClobber</span> + <span class="inline">r.RDG.ClobberResources</span>）：写前投毒，读到垃圾即暴露漏依赖/漏声明。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="UniformBlackboard_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#7 UB + Blackboard</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="Utils_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#9 Utils</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="Pass_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#3 Pass（漏声明的坑）</a><a class="tag" href="Compile_ConvergenceAnnotated.html"><span class="dot" style="background:var(--red)"></span>#5 编译（CullPasses 调试）</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="Validation_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇校验点附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>
