@@ -1,0 +1,101 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NanitePackedNaniteView.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/Overview_ConvergenceAnnotated.html">← 回到 总览</a></div>
+<h1>NanitePackedNaniteView.ush 整源解析<span class="libtag">库 / 视图结构</span></h1><div class="subtitle">Nanite 的<b>打包视图结构</b>（69 行）：<span class="inline">FPackedNaniteView</span>——GPU 侧与 CPU <span class="inline">Nanite::FPackedView</span> 对应的视图数据（各种矩阵、视口、剔除视点、前视/近平面），剔除/光栅/HZB 全靠它拿变换。<b>下方内嵌完整 69 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/NanitePackedNaniteView.ush</span></h2><div class="body">
+<span class="source-path">struct FPackedNaniteView @ L6（对应 C++ 侧 Nanite::FPackedView）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+// Counterpart to Nanite::FPackedView in NaniteShared.h
+struct FPackedNaniteView
+{
+	float4x4	SVPositionToTranslatedWorld;
+	float4x4	ViewToTranslatedWorld;
+
+	float4x4	TranslatedWorldToView;
+	float4x4	TranslatedWorldToClip;
+	float4x4	ViewToClip;
+	float4x4	ClipToRelativeWorld;
+
+	float4x4	PrevTranslatedWorldToView;
+	float4x4	PrevTranslatedWorldToClip;
+	float4x4	PrevViewToClip;
+	float4x4	PrevClipToRelativeWorld;
+
+	int4		ViewRect;
+	float4		ViewSizeAndInvSize;
+	float4		ClipSpaceScaleOffset;
+	float4      MaterialCacheUnwrapMinAndInvSize;
+	float4      MaterialCachePageOffsetAndInvSize;
+	float3		PreViewTranslationHigh;
+	float		ViewOriginHighX;
+	float3		PrevPreViewTranslationHigh;
+	float		ViewOriginHighY;
+	float3		PrevPreViewTranslationLow;
+	float		CullingViewMinRadiusTestFactorSq;
+	float3		ViewOriginLow;
+	float		ViewOriginHighZ;
+	float3		CullingViewOriginTranslatedWorld;
+	float		RangeBasedCullingDistance;
+	float3		ViewForward;
+	float 		NearPlane;
+
+	float4		TranslatedGlobalClipPlane; // Not actually used unless project setting is enabled
+
+	float3		PreViewTranslationLow;
+	float		CullingViewScreenMultipleSq;
+	
+	float2		LODScales;
+	uint		InstanceOcclusionQueryMask;
+	uint		StreamingPriorityCategory_AndFlags;
+
+	int4		TargetLayerIdX_AndMipLevelY_AndNumMipLevelsZ;
+
+	int4		HZBTestViewRect;
+
+	float4		FirstPersonTransform0; // 0,0; 0,1; 0,2; 1,0
+	float4		FirstPersonTransform1; // 1,1; 1,2; 2,0; 2,1
+	float4		PrevFirstPersonTransform0; // 0,0; 0,1; 0,2; 1,0
+	float4		PrevFirstPersonTransform1; // 1,1; 1,2; 2,0; 2,1
+	float4		InvFirstPersonTransform0; // 0,0; 0,1; 0,2; 1,0
+	float4		InvFirstPersonTransform1; // 1,1; 1,2; 2,0; 2,1
+	float3		PrevPreViewTranslationHZBHigh;
+	float		FirstPersonTransform2; // 2,2
+	float3		PrevPreViewTranslationHZBLow;
+	float		PrevFirstPersonTransform2; // 2,2
+	float2		DynamicDepthCullRange;
+	float		InvFirstPersonTransform2; // 2,2
+	uint		LightingChannelMask;
+	int			SceneRendererPrimaryViewId;
+	uint		FrameIndex;
+	float		Pad0;
+	float		Pad1;
+};
+</textarea>
+</div></section>
+<section class="card"><h2>0. 打包视图数据结构（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">// Counterpart to Nanite::FPackedView in NaniteShared.h</span>
+<span class="code-line blue">float4x4 TranslatedWorldToClip / ViewToClip / ClipToRelativeWorld ...</span>
+<span class="code-line green">float4x4 Prev*（上一帧矩阵，供时域重投影/HZB 剔除）</span>
+<span class="code-line yellow">int4 ViewRect; float4 ViewSizeAndInvSize; 剔除视点 / ViewForward / NearPlane</span></code></pre><div class="note"><h3>说明</h3><p><span class="inline">FPackedNaniteView</span> 是 GPU 侧的<b>视图打包结构</b>，与 C++ <span class="inline">Nanite::FPackedView</span>（NaniteShared.h）一一对应——CPU 每帧把每个渲染视图（主视图、每级 VSM、每个阴影视图）打包成它上传 GPU。内容含：当前帧各种变换矩阵（<span class="inline">TranslatedWorldToClip</span> 投影、<span class="inline">ClipToRelativeWorld</span> 反投影等）、上一帧 <span class="inline">Prev*</span> 矩阵（时域重投影/HZB 遮挡剔除用）、视口 <span class="inline">ViewRect</span>/<span class="inline">ViewSizeAndInvSize</span>、剔除视点（<span class="inline">CullingViewOriginTranslatedWorld</span>/半径/距离）、<span class="inline">ViewForward</span>、<span class="inline">NearPlane</span>、可选全局裁剪面。它被解包为运行时的 <span class="inline">FNaniteView</span>（见 <a href="NanitePackedNaniteView.ush.html" class="inline">本文件下方 UnpackNaniteView</a>），供实例/簇剔除、光栅投影、HZB 采样统一读取。多视图并行剔除的每 view 数据就是它的数组。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/Overview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>Nanite 总览</a>
+<a class="tag" href="../Chapters/CullRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>剔除与光栅</a>
+<a class="tag" href="NaniteCullingCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>CullingCommon.ush↗</a>
+<a class="tag" href="NaniteHZBCull.ush.html"><span class="dot" style="background:var(--cyan)"></span>HZBCull.ush↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

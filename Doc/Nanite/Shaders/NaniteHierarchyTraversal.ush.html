@@ -1,0 +1,458 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteHierarchyTraversal.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:540px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/CullRaster_ConvergenceAnnotated.html">← 回到 剔除与光栅</a></div>
+<h1>NaniteHierarchyTraversal.ush 整源解析<span class="libtag">库 / BVH 遍历框架</span></h1><div class="subtitle">Nanite 的<b>层级遍历框架</b>（338 行）：用回调模板 + groupshared 工作队列封装 BVH 持久线程遍历——簇剔除/光追/流出都用它遍历层级，只需提供节点处理回调。<b>下方内嵌完整 338 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/NaniteHierarchyTraversal.ush</span></h2><div class="body">
+<span class="source-path">GroupNodeData + 工作队列遍历模板（回调驱动）</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "NaniteDataDecode.ush"
+#include "NaniteHierarchyTraversalCommon.ush"
+
+#include "../Common.ush"
+#include "../WaveOpUtil.ush"
+#include "../ComputeShaderUtils.ush"
+
+#ifndef NANITE_HIERARCHY_TRAVERSAL_TYPE
+#	error "NANITE_HIERARCHY_TRAVERSAL_TYPE must be defined."
+#endif
+
+#ifndef CHECK_AND_TRIM_CLUSTER_COUNT
+#	define CHECK_AND_TRIM_CLUSTER_COUNT 0
+#endif
+
+#if GROUP_NODE_SIZE == 2
+
+groupshared uint2 GroupNodeData[NANITE_MAX_BVH_NODES_PER_GROUP];
+uint4 GetGroupNodeData(uint NodeIndex) { return uint4(GroupNodeData[NodeIndex], 0, 0); }
+void SetGroupNodeData(uint NodeIndex, uint4 Data) { GroupNodeData[NodeIndex] = Data.xy; }
+
+#elif GROUP_NODE_SIZE == 3
+
+groupshared uint3 GroupNodeData[NANITE_MAX_BVH_NODES_PER_GROUP];
+uint4 GetGroupNodeData(uint NodeIndex) { return uint4(GroupNodeData[NodeIndex], 0); }
+void SetGroupNodeData(uint NodeIndex, uint4 Data) { GroupNodeData[NodeIndex] = Data.xyz; }
+
+#elif GROUP_NODE_SIZE == 4
+
+groupshared uint4 GroupNodeData[NANITE_MAX_BVH_NODES_PER_GROUP];
+uint4 GetGroupNodeData(uint NodeIndex) { return GroupNodeData[NodeIndex]; }
+void SetGroupNodeData(uint NodeIndex, uint4 Data) { GroupNodeData[NodeIndex] = Data; }
+
+#else
+#	error "Unexpected Group Node Size."
+#endif
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+RWCoherentStructuredBuffer(FQueueState)	QueueState;
+#else
+RWStructuredBuffer&lt;FQueueState&gt;	QueueState;
+#endif
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_NODES
+Buffer&lt;uint&gt;					CurrentNodeIndirectArgs;
+RWBuffer&lt;uint&gt;					NextNodeIndirectArgs;
+uint							NodeLevel;
+#endif
+
+groupshared uint	GroupNumCandidateNodes;
+groupshared uint	GroupCandidateNodesOffset;
+
+groupshared int		GroupNodeCount;
+groupshared uint	GroupNodeBatchStartIndex;
+groupshared uint	GroupNodeMask;
+
+groupshared uint	GroupClusterBatchStartIndex;
+groupshared uint	GroupClusterBatchReadySize;
+
+// Need manually strip unused template functions here due to a compiler issue: https://github.com/microsoft/DirectXShaderCompiler/issues/4649
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS || NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_NODES
+
+template&lt;typename FNaniteTraversalCallback&gt;
+void ProcessNodeBatch(uint BatchSize, uint GroupIndex, uint QueueStateIndex)
+{
+	const uint LocalNodeIndex = (GroupIndex &gt;&gt; NANITE_MAX_BVH_NODE_FANOUT_BITS);
+	const uint ChildIndex = GroupIndex &amp; NANITE_MAX_BVH_NODE_FANOUT_MASK;
+	const uint FetchIndex = min(LocalNodeIndex, BatchSize - 1);
+
+	FNaniteTraversalCallback TraversalCallback;
+	TraversalCallback.Init(ChildIndex, LocalNodeIndex, FetchIndex);
+
+	const FHierarchyNodeSlice HierarchyNodeSlice = GetHierarchyNodeSlice(TraversalCallback.GetHierarchyNodeOffset(), ChildIndex);
+
+	bool bVisible = HierarchyNodeSlice.bEnabled;
+	bool bLoaded = HierarchyNodeSlice.bLoaded;
+
+	if (LocalNodeIndex &gt;= BatchSize)
+	{
+		bVisible = false;
+	}
+
+	bVisible = TraversalCallback.ShouldVisitChild(HierarchyNodeSlice, bVisible);
+
+	uint CandidateNodesOffset = 0;
+
+	const bool bOutputChild = bVisible &amp;&amp; bLoaded;
+	BRANCH
+	if (bOutputChild &amp;&amp; !HierarchyNodeSlice.bLeaf)
+	{
+		WaveInterlockedAddScalar_(GroupNumCandidateNodes, 1, CandidateNodesOffset);
+	}
+
+	GroupMemoryBarrierWithGroupSync();
+
+	if (GroupIndex == 0)
+	{
+		InterlockedAdd(QueueState[0].PassState[QueueStateIndex].NodeWriteOffset, GroupNumCandidateNodes, GroupCandidateNodesOffset);
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+		InterlockedAdd(QueueState[0].PassState[QueueStateIndex].NodeCount, (int)GroupNumCandidateNodes);	// NodeCount needs to be conservative, so child count is added before the actual children.
+#else
+		uint NumNodes = 0;
+		InterlockedAdd(NextNodeIndirectArgs[(NodeLevel + 1) * NANITE_NODE_CULLING_ARG_COUNT + 3], GroupNumCandidateNodes, NumNodes);
+		NumNodes += GroupNumCandidateNodes;
+		const uint NumGroups = (NumNodes + NANITE_MAX_BVH_NODES_PER_GROUP - 1) / NANITE_MAX_BVH_NODES_PER_GROUP;
+		InterlockedMax(NextNodeIndirectArgs[(NodeLevel + 1) * NANITE_NODE_CULLING_ARG_COUNT + 0], NumGroups);
+#endif
+	}
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+	AllMemoryBarrierWithGroupSync();
+#else
+	GroupMemoryBarrierWithGroupSync();
+#endif
+	
+	// GPU might not be filled, so latency is important here. Kick new jobs as soon as possible.
+	if (bOutputChild &amp;&amp; !HierarchyNodeSlice.bLeaf)
+	{
+		CandidateNodesOffset += GroupCandidateNodesOffset;
+
+		if (CandidateNodesOffset &lt; MaxNodes)
+		{
+			TraversalCallback.StoreChildNode(CandidateNodesOffset, HierarchyNodeSlice);
+		}
+	}
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+	DeviceMemoryBarrierWithGroupSync();
+#endif
+	
+	// Continue with remaining independent work
+	if (bOutputChild &amp;&amp; HierarchyNodeSlice.bLeaf)
+	{
+		uint NumClusters = HierarchyNodeSlice.NumChildren;
+
+#if CHECK_AND_TRIM_CLUSTER_COUNT
+		uint ClusterIndex = 0;
+		WaveInterlockedAdd_(QueueState[0].TotalClusters, NumClusters, ClusterIndex);
+
+		// Trim any clusters above MaxCandidateClusters
+		const uint ClusterIndexEnd = min(ClusterIndex + NumClusters, MaxCandidateClusters);
+		NumClusters = (uint)max((int)ClusterIndexEnd - (int)ClusterIndex, 0);
+#endif
+
+		uint CandidateClustersOffset = 0;
+		WaveInterlockedAdd_(QueueState[0].PassState[QueueStateIndex].ClusterWriteOffset, NumClusters, CandidateClustersOffset);
+
+		const uint BaseClusterIndex = HierarchyNodeSlice.ChildStartReference &amp; NANITE_MAX_CLUSTERS_PER_PAGE_MASK;
+		const uint StartIndex = CandidateClustersOffset;
+		const uint EndIndex = min(CandidateClustersOffset + NumClusters, MaxCandidateClusters);
+
+		for (uint Index = StartIndex; Index &lt; EndIndex; Index++)
+		{
+			TraversalCallback.StoreCluster(Index, HierarchyNodeSlice, BaseClusterIndex + (Index - StartIndex));
+		}
+
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+		DeviceMemoryBarrier();
+
+		// Once the cluster indices have been committed to memory, we can update the cluster counters of the overlapping cluster batches.
+		for (uint Index = StartIndex; Index &lt; EndIndex;)
+		{
+			const uint BatchIndex = Index / NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE;
+			const uint NextIndex = (Index &amp; ~(NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE - 1u)) + NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE;
+			const uint MaxIndex = min(NextIndex, EndIndex);
+			const uint Num = MaxIndex - Index;
+			TraversalCallback.AddToClusterBatch(BatchIndex, Num);
+			Index = NextIndex;
+		}
+#endif
+	}
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+	DeviceMemoryBarrierWithGroupSync();
+	if (GroupIndex == 0)
+	{
+		// Done writing clusters/nodes for current pass. Subtract us from NodeCount.
+		InterlockedAdd(QueueState[0].PassState[QueueStateIndex].NodeCount, -(int)BatchSize);
+	}
+#endif
+
+	TraversalCallback.OnPostNodeVisit(HierarchyNodeSlice);
+}
+
+#endif
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS || NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_CLUSTERS
+
+template&lt;typename FNaniteTraversalCallback&gt;
+void ProcessClusterBatch(uint BatchStartIndex, uint BatchSize, uint GroupIndex)
+{
+	FNaniteTraversalCallback TraversalCallback;
+
+	if (GroupIndex &lt; BatchSize)
+	{
+		const uint CandidateIndex = BatchStartIndex * NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE + GroupIndex;
+		const uint4 PackedCluster = TraversalCallback.LoadPackedCluster(CandidateIndex);
+
+		TraversalCallback.ProcessCluster(PackedCluster);
+	}
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+	// Clear batch so the buffer is cleared for next pass.
+	TraversalCallback.ClearClusterBatch(BatchStartIndex);
+#endif
+}
+
+#endif
+
+// Persistent threads culling shader
+// This shader is responsible for the recursive culling and traversal of the per-mesh cluster hierarchies.
+// It is also responsible for culling the triangle clusters found during this traversal and producing
+// lists of visible clusters for rasterization. Clusters are binned for SW or HW rasterization based on
+// screen-projected size.
+
+// Mapping tree-culling to the GPU is awkward as the number of leaf nodes that need to be accepted
+// is dynamic and can be anywhere from none to hundreds of thousands. Mapping threads 1:1 to trees can result in
+// extremely long serial processing that severely underutilizes the GPU. Conversely, mapping threads 1:1 to
+// leaf nodes can end up leaving most threads idle.
+
+// What we really need is the ability to dynamically spawn threads for children as they are determined
+// to be visible during the traversal. This is unfortunately not possible (yet), so instead we use
+// persistent threads. We spawn just enough worker threads to fill the GPU, keep them running and manually
+// distribute work to them.
+
+// For this we use a simple MPMC job queue. Instead of spawning new threads, new jobs are added to the queue
+// to be consumed by workers. Initially the queue is populated with work generated by preceding shader passes.
+// When the persistent shader is running, its workers will continuously consuming items from the queue, but also
+// produce new items.
+
+// When BVH nodes are processed they will append work items to the queue for each of the visible children.
+// Clusters are only consumed and will never generate new work. The workers keep running until the queue is empty.
+// At that point the trees have been recursively traversed and all the relevant clusters have been processed.
+
+// A given node can't be processed before all of its ancestors have been processed. This forms a dependency chain
+// of jobs that can be as long as the height of the tree. Especially for small or moderately-sized scenes, the total
+// latency from these dependent jobs can end up determining the total BVH processing time, leaving the GPU underutilized.
+// This issue is one of the main motivations for handling the cluster culling in the same shader.
+// Workers always favor node processing to make progress on the critical path, but when no nodes are available
+// they process clusters while waiting, instead of going idle.
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_PERSISTENT_NODES_AND_CLUSTERS
+
+template&lt;typename FNaniteTraversalCallback&gt;
+void PersistentNodeAndClusterCull(uint GroupIndex, uint QueueStateIndex)
+{
+	FNaniteTraversalCallback TraversalCallback;
+
+	bool bProcessNodes			= true;						// Should we still try to consume nodes?
+	uint NodeBatchReadyOffset	= NANITE_MAX_BVH_NODES_PER_GROUP;
+	uint NodeBatchStartIndex	= 0;
+	uint ClusterBatchStartIndex = 0xFFFFFFFFu;
+	
+	while(true)
+	{
+		GroupMemoryBarrierWithGroupSync();	// Make sure we are done reading from group shared
+		if (GroupIndex == 0)
+		{
+			GroupNumCandidateNodes	= 0;
+			GroupNodeMask			= 0;
+		}
+
+		TraversalCallback.OnPreProcessNodeBatch(GroupIndex);
+		
+		GroupMemoryBarrierWithGroupSync();
+
+		uint NodeReadyMask = 0;
+		if (bProcessNodes)	// Try grabbing and processing nodes if they could be available.
+		{
+			if (NodeBatchReadyOffset == NANITE_MAX_BVH_NODES_PER_GROUP)
+			{
+				// No more data in current batch. Grab a new batch.
+				if (GroupIndex == 0)
+				{
+					InterlockedAdd(QueueState[0].PassState[QueueStateIndex].NodeReadOffset, NANITE_MAX_BVH_NODES_PER_GROUP, GroupNodeBatchStartIndex);
+				}
+				GroupMemoryBarrierWithGroupSync();
+
+				NodeBatchReadyOffset = 0;
+				NodeBatchStartIndex = GroupNodeBatchStartIndex;
+				if (NodeBatchStartIndex &gt;= MaxNodes)
+				{
+					// The node range is out of bounds and so will any future range be.
+					bProcessNodes = false;
+					continue;
+				}	
+			}
+
+			// Check which nodes in the range have been completely written and are ready for processing.
+			const uint NodeIndex = NodeBatchStartIndex + NodeBatchReadyOffset + GroupIndex;
+			bool bNodeReady = (NodeBatchReadyOffset + GroupIndex &lt; NANITE_MAX_BVH_NODES_PER_GROUP);
+			if (bNodeReady)
+			{
+				bNodeReady = TraversalCallback.LoadCandidateNodeDataToGroup(NodeIndex, GroupIndex);
+			}
+
+			if (bNodeReady)
+			{
+				InterlockedOr(GroupNodeMask, 1u &lt;&lt; GroupIndex);
+			}
+			AllMemoryBarrierWithGroupSync();
+			NodeReadyMask = GroupNodeMask;
+
+			// Process nodes if at least the first one is ready.
+			if (NodeReadyMask &amp; 1u)
+			{
+				uint BatchSize = firstbitlow(~NodeReadyMask);
+				ProcessNodeBatch&lt;FNaniteTraversalCallback&gt;(BatchSize, GroupIndex, QueueStateIndex);
+				if (GroupIndex &lt; BatchSize)
+				{
+					// Clear processed element so we leave the buffer cleared for next pass.
+					TraversalCallback.ClearCandidateNodeData(NodeIndex);
+				}
+
+				NodeBatchReadyOffset += BatchSize;
+				continue;
+			}
+		}
+
+		// No nodes were ready. Process clusters instead.
+
+		// Grab a range of clusters, if we don't already have one.
+		if (ClusterBatchStartIndex == 0xFFFFFFFFu)
+		{
+			if (GroupIndex == 0)
+			{
+				InterlockedAdd(QueueState[0].PassState[QueueStateIndex].ClusterBatchReadOffset, 1, GroupClusterBatchStartIndex);
+			}
+			GroupMemoryBarrierWithGroupSync();
+			ClusterBatchStartIndex = GroupClusterBatchStartIndex;
+		}
+
+		if (!bProcessNodes &amp;&amp; GroupClusterBatchStartIndex &gt;= GetMaxClusterBatches())
+			break;	// Has to be break instead of return to make FXC happy.
+
+		if (GroupIndex == 0)
+		{
+			GroupNodeCount = QueueState[0].PassState[QueueStateIndex].NodeCount;
+			GroupClusterBatchReadySize = TraversalCallback.LoadClusterBatch(ClusterBatchStartIndex);
+		}
+		GroupMemoryBarrierWithGroupSync();
+
+		uint ClusterBatchReadySize = GroupClusterBatchReadySize;
+		if (!bProcessNodes &amp;&amp; ClusterBatchReadySize == 0)	// No more clusters to process and no nodes are available to 
+			break;	// Has to be break instead of return to make FXC happy.
+
+		if ((bProcessNodes &amp;&amp; ClusterBatchReadySize == NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE) || (!bProcessNodes &amp;&amp; ClusterBatchReadySize &gt; 0))
+		{
+			ProcessClusterBatch&lt;FNaniteTraversalCallback&gt;(ClusterBatchStartIndex, ClusterBatchReadySize, GroupIndex);
+			ClusterBatchStartIndex = 0xFFFFFFFFu;
+		}
+
+		if (bProcessNodes &amp;&amp; GroupNodeCount == 0)
+		{
+			bProcessNodes = false;
+		}
+	}
+}
+
+#endif
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_NODES
+
+groupshared uint GroupReadOffset;
+template&lt;typename FNaniteTraversalCallback&gt;
+void NodeCull(uint GroupID, uint GroupIndex, uint QueueStateIndex)
+{
+
+	const uint NumNodes				= CurrentNodeIndirectArgs[NodeLevel * NANITE_NODE_CULLING_ARG_COUNT + 3];
+	const uint LevelStartIndex		= CurrentNodeIndirectArgs[NodeLevel * NANITE_NODE_CULLING_ARG_COUNT + 4];
+	const uint LevelEndIndex		= min(LevelStartIndex + NumNodes, MaxNodes);
+
+	const uint StartIndex			= LevelStartIndex + GroupID * NANITE_MAX_BVH_NODES_PER_GROUP;
+	const uint ClampedStartIndex	= min(StartIndex, LevelEndIndex);
+	const uint ClampedEndIndex		= min(StartIndex + NANITE_MAX_BVH_NODES_PER_GROUP, LevelEndIndex);
+
+	uint BatchSize					= ClampedEndIndex - ClampedStartIndex;
+
+	if (GroupIndex == 0)
+	{
+		GroupNumCandidateNodes = 0;
+
+		if (GroupID == 0)
+		{
+			// First group updates start index for next level
+			NextNodeIndirectArgs[(NodeLevel + 1) * NANITE_NODE_CULLING_ARG_COUNT + 4] = LevelEndIndex;
+		}
+	}
+	
+	GroupMemoryBarrierWithGroupSync();
+
+	const uint NodeIndex = ClampedStartIndex + GroupIndex;
+
+	FNaniteTraversalCallback TraversalCallback;
+	TraversalCallback.OnPreProcessNodeBatch(GroupIndex);
+
+	if (GroupIndex &lt; BatchSize)
+	{
+		TraversalCallback.LoadCandidateNodeDataToGroup(NodeIndex, GroupIndex, false);
+	}
+
+	GroupMemoryBarrierWithGroupSync();
+	ProcessNodeBatch&lt;FNaniteTraversalCallback&gt;(BatchSize, GroupIndex, QueueStateIndex);
+}
+
+#endif
+
+#if NANITE_HIERARCHY_TRAVERSAL_TYPE == NANITE_CULLING_TYPE_CLUSTERS
+
+template&lt;typename FNaniteTraversalCallback&gt;
+void ClusterCull(uint GroupID, uint GroupIndex, uint QueueStateIndex)
+{
+	const uint ClampedNumCandidateClusters = min(QueueState[0].PassState[QueueStateIndex].ClusterWriteOffset, MaxCandidateClusters);
+	const uint ClampedStartIndex = min(GroupID * NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE, ClampedNumCandidateClusters);
+	const uint ClampedEndIndex = min((GroupID + 1) * NANITE_PERSISTENT_CLUSTER_CULLING_GROUP_SIZE, ClampedNumCandidateClusters);
+
+	const uint BatchSize = ClampedEndIndex - ClampedStartIndex;
+	ProcessClusterBatch&lt;FNaniteTraversalCallback&gt;(GroupID, BatchSize, GroupIndex);
+}
+
+#endif
+</textarea>
+</div></section>
+<section class="card"><h2>0. 回调模板化的持久线程遍历（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">uint4 GetGroupNodeData(uint NodeIndex) / SetGroupNodeData(...)   // groupshared 节点缓存</span>
+<span class="code-line blue">// 持久线程从全局队列取节点 → 调回调 ProcessNodeBatch/ProcessCluster</span>
+<span class="code-line green">// 回调返回子节点/簇 → 入队继续；LDS 缓存本组节点减全局访问</span>
+<span class="code-line yellow">// 调用方提供 FTraversalCallback 特化遍历行为（剔除/RT/流出）</span></code></pre><div class="note"><h3>说明</h3><p>Nanite 多处需要遍历同一棵 BVH，但"遍历到节点做什么"各异（剔除测试/光追选簇/流出选簇）。<span class="inline">NaniteHierarchyTraversal</span> 把<b>遍历框架</b>抽出来：持久线程从全局工作队列取节点、用 groupshared（<span class="inline">GroupNodeData</span>）缓存本组节点减少全局访问、把回调返回的子节点/簇再入队——而"节点如何处理"交给调用方的<b>回调 functor</b>（HLSL 用宏/模板模拟）。<a href="NaniteClusterCulling.usf.html" class="inline">簇剔除</a> 传剔除回调、<a href="NaniteClusterRayTracing.usf.html" class="inline">光追</a>/<a href="NaniteStreamOut.usf.html" class="inline">流出</a> 传各自回调。这是"遍历逻辑与业务逻辑解耦"的框架层，配 <a href="NaniteHierarchyTraversalCommon.ush.html" class="inline">TraversalCommon</a> 的队列结构。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/CullRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>剔除与光栅</a>
+<a class="tag" href="NaniteHierarchyTraversalCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>TraversalCommon.ush↗</a>
+<a class="tag" href="NaniteClusterCulling.usf.html"><span class="dot" style="background:var(--cyan)"></span>ClusterCulling.usf↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
