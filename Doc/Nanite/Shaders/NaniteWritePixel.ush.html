@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteWritePixel.ush 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.purple{background:rgba(182,156,255,.12);border-left:4px solid var(--purple);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:520px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid var(--line);padding:9px 10px;text-align:left}.table th{background:#101823}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/CullRaster_ConvergenceAnnotated.html">← 回到 #6 集群剔除与两路光栅化</a></div>
+<h1>NaniteWritePixel.ush 汇聚/发散批注版</h1><div class="subtitle">Nanite 光栅器写像素的底层原语：把 <b>(可见簇+三角 id, 深度)</b> 用 <b>64 位原子 max</b> 一次写进 visibility buffer——一条 atomic 同时完成深度测试 + 记录 id，无需独立 Z-buffer。软件光栅、硬件光栅、阴影趟、VSM 物理页写入<b>全部汇聚到这一个原语</b>，按目标（VisBuffer / DepthOnly / VSM array）发散。文件仅 110 行，下方<b>内嵌完整真实源码</b>。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一个原语，四种目标</h2><div class="body flow">
+<div class="node merge"><strong>汇聚</strong><small>FVisBufferPixel.Write()：算 DepthInt=asuint(Depth)</small></div>
+<div class="arrow">▶</div>
+<div class="node branch"><strong>VisBuffer64</strong><small>ImageInterlockedMaxUInt64（深度高位+id低位）</small></div>
+<div class="node branch"><strong>DepthOnly</strong><small>InterlockedMax(OutDepthBuffer)</small></div>
+<div class="node branch"><strong>VSM 物理页</strong><small>InterlockedMax(OutDepthBufferArray)</small></div>
+<div class="node out"><strong>可视化</strong><small>OutDbgBuffer64/32（overdraw 计数）</small></div>
+</div></section>
+
+<section class="card"><h2>完整源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（110 行，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/Nanite/NaniteWritePixel.ush</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "../Common.ush"
+#include "/Engine/Shared/NaniteDefinitions.h"
+#if VIRTUAL_TEXTURE_TARGET
+#include "../VirtualShadowMaps/VirtualShadowMapPageAccessCommon.ush"
+#endif
+
+RWTexture2D<uint>		OutDepthBuffer;
+RWTexture2DArray<uint>	OutDepthBufferArray;
+RWTexture2D<UlongType>	OutVisBuffer64;
+
+#if VISUALIZE
+RWTexture2D<UlongType>	OutDbgBuffer64;
+RWTexture2D<uint>		OutDbgBuffer32;
+#endif
+
+void WritePixel(
+	RWTexture2D<UlongType> OutBuffer,
+	uint PixelValue,
+	uint2 PixelPos,
+	uint DepthInt
+)
+{
+#if DEPTH_ONLY
+	InterlockedMax( OutDepthBuffer[ PixelPos ], DepthInt );
+#elif COMPILER_SUPPORTS_UINT64_IMAGE_ATOMICS
+	const UlongType Pixel = PackUlongType(uint2(PixelValue, DepthInt));
+	ImageInterlockedMaxUInt64(OutBuffer, PixelPos, Pixel);
+#else
+	#error UNKNOWN_ATOMIC_PLATFORM
+#endif
+}
+
+struct FVisBufferPixel
+{
+	uint2	Position;
+	uint	Value;
+	uint2	VisualizeValues;
+	float	Depth;
+
+#if VIRTUAL_TEXTURE_TARGET
+	uint3	PhysicalPosition;
+#endif
+
+	bool EarlyDepthTest()
+	{
+		// When near clipping is disabled we need to move the geometry 
+		Depth = saturate( Depth );
+	
+		const uint DepthInt = asuint( Depth );
+
+#if VIRTUAL_TEXTURE_TARGET
+		return OutDepthBufferArray[ PhysicalPosition ] < DepthInt;
+#elif DEPTH_ONLY
+		return OutDepthBuffer[ Position ] < DepthInt;
+#elif COMPILER_SUPPORTS_UINT64_IMAGE_ATOMICS
+		return UnpackUlongType( OutVisBuffer64[ Position ] ).y < DepthInt;
+#else
+		#error UNKNOWN_ATOMIC_PLATFORM
+		return false;
+#endif
+	}
+
+	void WriteOverdraw()
+	{
+	#if VISUALIZE
+		#if VIRTUAL_TEXTURE_TARGET
+		// For VSM output we store this in an extra array item of the page pool
+		InterlockedAdd(OutDepthBufferArray[uint3(PhysicalPosition.xy, 2)], VisualizeValues.y);
+		#else
+		InterlockedAdd(OutDbgBuffer32[Position], VisualizeValues.y);
+		#endif
+	#endif
+	}
+
+	void Write()
+	{
+		// When near clipping is disabled we need to move the geometry 
+		Depth = saturate( Depth );
+	
+		const uint DepthInt = asuint( Depth );
+
+#if VIRTUAL_TEXTURE_TARGET
+		InterlockedMax( OutDepthBufferArray[ PhysicalPosition ], DepthInt );
+#else
+		WritePixel( OutVisBuffer64, Value, Position, DepthInt );
+
+	#if VISUALIZE
+		WritePixel( OutDbgBuffer64, VisualizeValues.x, Position, DepthInt );
+	#endif
+#endif	// VIRTUAL_TEXTURE_TARGET
+	}
+};
+
+FVisBufferPixel CreateVisBufferPixel(
+	uint2	Position,
+	uint	Value,
+	float	Depth
+)
+{
+	FVisBufferPixel Pixel = (FVisBufferPixel)0;
+	Pixel.Position	= Position;
+	Pixel.Value		= Value;
+	Pixel.Depth		= Depth;
+
+	return Pixel;
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 输出目标（发散的根源）</h2><div class="body grid2"><pre><code><span class="code-line blue">RWTexture2D&lt;uint&gt;       OutDepthBuffer;        // DepthOnly 趟（阴影/预深度）</span>
+<span class="code-line blue">RWTexture2DArray&lt;uint&gt;  OutDepthBufferArray;   // VSM 物理页池（层=静/动/overdraw）</span>
+<span class="code-line blue">RWTexture2D&lt;UlongType&gt;  OutVisBuffer64;        // 主渲染 64 位可见性缓冲</span>
+<span class="code-line blue">RWTexture2D&lt;UlongType&gt;  OutDbgBuffer64/32;     // #if VISUALIZE 调试/overdraw</span></code></pre><div class="note n-blue"><h3>说明</h3><p>同一份光栅代码要服务多种目标：主视图、阴影趟、<a href="../../Shadow/Chapters/Clipmap_ConvergenceAnnotated.html" class="inline">VSM</a> 物理页、可视化。目标不同 → 写入函数不同，这就是本文件所有发散的来源，全靠编译宏 <span class="inline">DEPTH_ONLY</span> / <span class="inline">VIRTUAL_TEXTURE_TARGET</span> / <span class="inline">VISUALIZE</span> 切分。</p></div></div></section>
+
+<section class="card"><h2>1. 汇聚点：64 位原子 max = 深度测试 + 写 id 一步到位</h2><div class="body grid2"><pre><code><span class="code-line yellow">const UlongType Pixel = PackUlongType(uint2(PixelValue, DepthInt));</span>
+<span class="code-line yellow">ImageInterlockedMaxUInt64(OutBuffer, PixelPos, Pixel);</span></code></pre><div class="note n-green"><h3>说明</h3><p><b>深度打在 64 位的高 32 位、payload（可见簇+三角 id）在低 32 位</b>。一条 <span class="inline">ImageInterlockedMaxUInt64</span> 的原子 max：谁深度大（反向 Z 下=更近）谁胜出，且胜出者的 id 被一并写下——<b>深度测试与"记录是谁"合成一次原子操作，不需要独立 Z-buffer + 单独写 id</b>。这是 Nanite 软件光栅能高效并行的关键。不支持 64 位原子的平台直接 <span class="inline">#error UNKNOWN_ATOMIC_PLATFORM</span>（也是硬件光栅回退存在的原因之一）。</p></div></div></section>
+
+<section class="card"><h2>2. 发散：DepthOnly / VSM 用 32 位 InterlockedMax</h2><div class="body grid2"><pre><code><span class="code-line orange">#if VIRTUAL_TEXTURE_TARGET</span>
+<span class="code-line orange">    InterlockedMax( OutDepthBufferArray[ PhysicalPosition ], DepthInt );  // VSM 物理页</span>
+<span class="code-line orange">#elif DEPTH_ONLY</span>
+<span class="code-line orange">    InterlockedMax( OutDepthBuffer[ PixelPos ], DepthInt );               // 只写深度</span>
+<span class="code-line orange">#endif</span></code></pre><div class="note"><h3>说明</h3><p>阴影/预深度趟与 VSM 只需要深度、不需要 id，用普通 <b>32 位 <span class="inline">InterlockedMax</span></b> 即可。VSM 写的是<b>物理页数组</b>（<span class="inline">OutDepthBufferArray[PhysicalPosition]</span>，<span class="inline">PhysicalPosition</span> 由页表解析得到，见 <a href="../../Shadow/Chapters/PageManagement_ConvergenceAnnotated.html" class="inline">Shadow #7</a>）——这正是 Nanite 几何写进 VSM 物理页的落点，与 <a href="NaniteExportGBuffer.usf.html" class="inline">NaniteExportGBuffer.usf</a> 里那条 InterlockedMax 同源。</p></div></div></section>
+
+<section class="card"><h2>3. EarlyDepthTest：光栅前的粗筛</h2><div class="body grid2"><pre><code><span class="code-line green">bool EarlyDepthTest() {</span>
+<span class="code-line green">  Depth = saturate(Depth); const uint DepthInt = asuint(Depth);</span>
+<span class="code-line green">  return OutVisBuffer64[Position].y &lt; DepthInt;  // 当前记录比我远 → 我可能可见</span>
+<span class="code-line green">}</span></code></pre><div class="note n-green"><h3>说明</h3><p>写之前先读一次当前缓冲：若已记录的深度比本像素<b>更近</b>，本像素必被挡，直接跳过后续着色属性计算——这是省算力的早深度剔除。真正的胜出仍由 <span class="inline">Write()</span> 的原子 max 保证（EarlyDepthTest 只是非原子的乐观预筛，不保证正确性、只做加速）。<span class="inline">WriteOverdraw()</span> 则在 VISUALIZE 下累加 overdraw 计数（VSM 存在页池额外数组层 index=2）。</p></div></div></section>
+
+<section class="card"><h2>汇聚/发散总表</h2><div class="body"><table class="table"><tr><th>层级</th><th>类型</th><th>代表符号</th></tr>
+<tr><td>入口</td><td>汇聚</td><td>FVisBufferPixel.Write() / CreateVisBufferPixel</td></tr>
+<tr><td>主渲染</td><td>发散</td><td>ImageInterlockedMaxUInt64（64 位）</td></tr>
+<tr><td>DepthOnly</td><td>发散</td><td>InterlockedMax(OutDepthBuffer)</td></tr>
+<tr><td>VSM</td><td>发散</td><td>InterlockedMax(OutDepthBufferArray[PhysicalPosition])</td></tr>
+<tr><td>可视化</td><td>发散</td><td>OutDbgBuffer64/32 + WriteOverdraw</td></tr>
+<tr><td>早筛</td><td>汇聚</td><td>EarlyDepthTest（非原子乐观预筛）</td></tr></table></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>一个原语 <span class="inline">WritePixel</span> + 一个结构 <span class="inline">FVisBufferPixel</span>，用 64 位原子 max 把"深度测试 + 记录可见簇/三角 id"合成一步。所有光栅路径都汇聚到它。</p></div><div class="note"><h3>阅读建议</h3><p>先记住"深度在高位、id 在低位、一条 atomic max 搞定"。再看 <a href="../Chapters/CullRaster_ConvergenceAnnotated.html" class="inline">#6</a> 软件光栅怎么逐像素调 <span class="inline">Write()</span>。VSM 分支把同一原语接到阴影物理页。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/CullRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#6 集群剔除与两路光栅化（调用本原语）</a>
+<a class="tag" href="NaniteExportGBuffer.usf.html"><span class="dot" style="background:var(--cyan)"></span>NaniteExportGBuffer.usf（消费 VisBuffer64）↗</a>
+<a class="tag" href="../../Shadow/Chapters/PageManagement_ConvergenceAnnotated.html"><span class="dot" style="background:var(--purple)"></span>Shadow #7 物理页与页表（VSM 写入落点）</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
