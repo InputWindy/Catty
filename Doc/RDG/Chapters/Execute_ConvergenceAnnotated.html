@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#6 RDG 执行 · 屏障批处理 / 异步计算 / 并行录制</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:29px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.card h2 .en{color:var(--muted);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-left:8px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:13px 14px;min-height:80px}.node strong{display:block;margin-bottom:6px;font-size:14px}.node small{color:var(--muted);font-size:12.5px}.merge{border-color:var(--green)}.branch{border-color:var(--orange)}.gate{border-color:var(--red)}.func{border-color:var(--cyan)}.out{border-color:var(--yellow)}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 24px rgba(0,0,0,.18)}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.blue{border-left-color:var(--blue)}.note.blue h3{color:#bfe4ff}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.note.red{border-left-color:var(--red)}.note.red h3{color:#ffc2c2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.codebox .f{color:#66e3e0}.codebox .s{color:#74d99f}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;margin:2px 4px 2px 0}.pill.same{background:rgba(116,217,159,.14);border:1px solid rgba(116,217,159,.4);color:#9be6b6}.pill.diff{background:rgba(255,159,90,.14);border:1px solid rgba(255,159,90,.4);color:#ffc39a}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}</style></head><body>
+<header><a class="back" href="../UE_RDG_解析_总目录.html">← 返回《UE RDG》总目录</a><h1>#6 执行 · 屏障批处理 / 异步计算 / 并行录制</h1><div class="sub">全书最硬的一章。<span class="inline">Execute()</span> 的后半段把编译好的图变成真实 GPU 命令：<b>分配瞬态资源</b>、<b>收集并批量创建屏障</b>（<span class="inline">CollectPassBarriers</span> / <span class="inline">CreatePassBarriers</span>）、逐 pass 走<b>序言/尾声</b>提交屏障并 <span class="inline">BeginRenderPass</span>、把 pass 分发到<b>并行任务</b>（<span class="inline">SetupParallelExecute</span>）与<b>异步计算队列</b>。源码取自 <span class="inline">RenderGraphBuilder.cpp</span>（<span class="inline">FRDGBuilder::Execute</span> 起 L1766）。</div></header>
+<main>
+
+<section class="card"><h2>执行流水线 <span class="en">Execute pipeline</span></h2><div class="body">
+<div class="flow">
+<div class="node func"><strong>① 分配资源</strong><small>AllocatePooledTextures/Buffers<br>瞬态分配器给 RHI</small></div>
+<div class="node gate"><strong>② 收集+建屏障</strong><small>CollectPassBarriers<br>CreatePassBarriers（并行）</small></div>
+<div class="node branch"><strong>③ 并行/异步编排</strong><small>SetupParallelExecute<br>async compute 分队列</small></div>
+<div class="node merge"><strong>④ 逐 pass 执行</strong><small>Prologue(提屏障+BeginRP)<br>→ lambda → Epilogue</small></div>
+</div>
+<div class="note" style="margin-top:12px"><h3>Execute 内的任务图</h3><p>UE5.8 的 Execute 高度<b>任务化</b>：分配、收集屏障、建视图都是可并行的 <span class="inline">UE::Tasks::FTask</span>（<span class="inline">CollectPassBarriersTask</span> / <span class="inline">AllocatePooledTexturesTask</span> / <span class="inline">CreateViewsTask</span>），彼此按数据依赖串起来。这本身就是"用 RDG 的依赖思想调度 RDG 自己的执行准备工作"。</p></div></div></section>
+
+<section class="card"><h2>配套附录</h2><div class="body"><p style="margin:0;color:#c6d4e2"><span class="inline">CollectPassBarriers</span>/<span class="inline">CreatePassBarriers</span>/<span class="inline">SetupParallelExecute</span> 的分工、UAV overlap、异步计算 fence 见 <a href="Execute_FunctionAppendix.html" style="color:#9ee8ff">→ 执行算法附录</a>。</p></div></section>
+
+<section class="card"><h2>屏障：先收集，再并行创建，最后提交 <span class="en">Barriers: collect → create → submit</span></h2><div class="body">
+<p>屏障不是逐个即时插的，而是<b>三段式</b>。收集（把每个 pass 需要的 transition 汇总）真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L3872-L3883</span><span class="k">void</span> FRDGBuilder::CollectPassBarriers()
+{
+	SCOPED_NAMED_EVENT_TEXT(<span class="s">"FRDGBuilder::CollectBarriers"</span>, FColor::Magenta);
+	SCOPE_CYCLE_COUNTER(STAT_RDG_CollectBarriersTime);
+	<span class="k">for</span> (...) { CollectPassBarriers(PassHandle); }   <span class="c">// 逐 pass 收集所需 transition</span>
+}</div>
+<p>创建（把收集到的 transition 批量、<b>并行</b>地造出来）真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L3930-L3977</span><span class="k">void</span> FRDGBuilder::CreatePassBarriers()
+{
+	<span class="c">// ...</span>
+	ParallelForWithTaskContext(TEXT(<span class="s">"FRDGBuilder::CreatePassBarriers"</span>), TaskContexts,
+		TransitionCreateQueue.Num(), 1, [&amp;](FTaskContext&amp; TaskContext, int32 Index)
+	{
+		CreateTransition(TaskContext, TransitionCreateQueue[Index]);   <span class="c">// 并行造 RHI transition</span>
+	});
+}</div>
+<div class="note blue"><h3>批注：为什么分三段</h3><p>手写 RHI 是"用一个资源前，就地插一个 <span class="inline">Transition</span>"——分散、无法批处理、还容易在并行录制里出竞态。RDG 改成：<b>①收集</b>（<span class="inline">CollectPassBarriers</span> 把整图所有需要的 transition 汇成一个 <span class="inline">TransitionCreateQueue</span>）→ <b>②并行创建</b>（<span class="inline">CreatePassBarriers</span> 用 <span class="inline">ParallelForWithTaskContext</span> 多线程造 RHI transition 对象）→ <b>③提交</b>（在每个 pass 的序言/尾声 <span class="inline">Submit</span>）。这样屏障既能批量合并（减少 GPU 停顿），创建又能并行（省 CPU 时间）。这是 RDG 相比手写"自动且更优"的屏障管理的核心。</p></div></div></section>
+
+<section class="card"><h2>Pass 序言 / 尾声：屏障提交与 RenderPass <span class="en">Prologue / Epilogue</span></h2><div class="body">
+<p>每个 pass 执行前后各有一段固定动作。序言真实源码：</p>
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L3424-L3455</span><span class="k">void</span> FRDGBuilder::ExecutePassPrologue(FRHIComputeCommandList&amp; RHICmdListPass, FRDGPass* Pass)
+{
+	<span class="k">const</span> ERDGPassFlags PassFlags = Pass->Flags;
+	<span class="k">const</span> ERHIPipeline PassPipeline = Pass->Pipeline;
+
+	<span class="k">if</span> (Pass->PrologueBarriersToBegin)
+		Pass->PrologueBarriersToBegin->Submit(RHICmdListPass, PassPipeline);   <span class="c">// begin transition</span>
+	<span class="k">if</span> (Pass->PrologueBarriersToEnd)
+		Pass->PrologueBarriersToEnd->Submit(RHICmdListPass, PassPipeline);     <span class="c">// end transition</span>
+
+	<span class="k">if</span> (EnumHasAnyFlags(PassFlags, ERDGPassFlags::Raster))
+	{
+		<span class="k">if</span> (!EnumHasAnyFlags(PassFlags, ERDGPassFlags::SkipRenderPass) &amp;&amp; !Pass->SkipRenderPassBegin())
+			static_cast&lt;FRHICommandList&amp;&gt;(RHICmdListPass).BeginRenderPass(Pass->GetParameters().GetRenderPassInfo(), Pass->GetName());
+	}
+
+	BeginUAVOverlap(Pass, RHICmdListPass);   <span class="c">// 允许连续 UAV 写重叠</span>
+}</div>
+<div class="note"><h3>批注</h3><p>序言做三件事：<b>①提交屏障</b>——把编译期算好、创建好的 transition 用 <span class="inline">Submit</span> 真正写进命令列表（分 begin/end 两半，对应 split barrier 优化）；<b>②开 RenderPass</b>——光栅 pass 且没标 <span class="inline">SkipRenderPass</span> 时，用参数结构体里的 <span class="inline">GetRenderPassInfo()</span>（渲染目标绑定）<span class="inline">BeginRenderPass</span>；<b>③开 UAV overlap</b>——告诉 RHI 接下来连续的 UAV 写可以重叠不必互相等。尾声（<span class="inline">ExecutePassEpilogue</span> L3457）对称收尾：<span class="inline">EndUAVOverlap</span> + <span class="inline">EndRenderPass</span>。<b>屏障提交挂在序言/尾声</b>，正是把"图边界哨兵"（#3）之外每个 pass 都变成有明确前后处理点的原因。</p></div></div></section>
+
+<section class="card"><h2>并行录制与异步计算 <span class="en">Parallel & async</span></h2><div class="body">
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L2841-L2846</span><span class="k">void</span> FRDGBuilder::SetupParallelExecute(...)
+{
+	SCOPED_NAMED_EVENT(SetupParallelExecute, FColor::Emerald);
+	FRDGAllocatorScope AllocatorScope(Allocators.Task);
+	<span class="k">const</span> <span class="k">bool</span> bTaskModeAsyncAllowed = ParallelExecute.TaskMode == ERDGPassTaskMode::Async;
+	<span class="c">// ...把可并行的 pass 切成若干批，分发到 worker 线程各自录一段命令列表</span>
+}</div>
+<div class="note green"><h3>批注</h3><p><b>并行录制</b>：符合 #1 并行约定（非 immediate 命令列表 + Parallel builder flag + 非 <span class="inline">NeverParallel</span>）的 pass 被 <span class="inline">SetupParallelExecute</span> 分批丢给 worker 线程，各自录一段 <span class="inline">FRHICommandList</span>，最后按图顺序拼接提交。<b>异步计算</b>：<span class="inline">AsyncCompute</span> pass（#3）走独立的异步计算队列，RDG 在编译期（#5 建的跨管线依赖有序表）算好在图形/异步队列之间该插的 fence，执行期据此下 fence——让计算与光栅真正在 GPU 上并行跑。这两者是 RDG 把"手写时代要人肉排的多线程/多队列同步"自动化的收官。</p></div></div></section>
+
+<section class="card"><h2>本篇小结 <span class="en">Summary</span></h2><div class="body">
+<div class="note green"><h3>记住这几点</h3>
+<p>1. Execute 后半段 = <b>分配资源 → 收集/并行创建屏障 → 并行/异步编排 → 逐 pass 序言(提屏障+BeginRP)→lambda→尾声</b>。</p>
+<p>2. <b>屏障三段式</b>：<span class="inline">CollectPassBarriers</span>（汇总）→ <span class="inline">CreatePassBarriers</span>（<span class="inline">ParallelFor</span> 并行造）→ 序言/尾声 <span class="inline">Submit</span>。批量+并行，优于手写就地插。</p>
+<p>3. 序言 <span class="inline">ExecutePassPrologue</span>：提交 begin/end 屏障 + <span class="inline">BeginRenderPass</span> + <span class="inline">BeginUAVOverlap</span>；尾声对称收尾。</p>
+<p>4. <b>并行录制</b>（SetupParallelExecute 分批到 worker）与<b>异步计算</b>（跨队列 fence，用 #5 的跨管线依赖表）把多线程/多队列同步自动化。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航 <span class="en">Related</span></h2><div class="body">
+<div class="iface-grp"><b>上一章</b> <a class="tag" href="Compile_ConvergenceAnnotated.html"><span class="dot" style="background:var(--cyan)"></span>#5 编译</a></div>
+<div class="iface-grp"><b>下一章</b> <a class="tag" href="UniformBlackboard_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#7 UB + Blackboard</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="RHIAccess_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#14 ERHIAccess/Transition（屏障底层）</a><a class="tag" href="RHITranslate_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#17 转译到 RHICommandList</a></div>
+<div class="iface-grp"><b>参考</b> <a class="tag" href="Execute_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>本篇执行算法附录</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){var t=p.textContent.trim();if(t.indexOf('共同点：')===0){p.innerHTML='<span class="pill same">共同点</span>'+p.innerHTML.replace('共同点：','');}else if(t.indexOf('不同点：')===0){p.innerHTML='<span class="pill diff">不同点</span>'+p.innerHTML.replace('不同点：','');}});
+</script>
+</body></html>

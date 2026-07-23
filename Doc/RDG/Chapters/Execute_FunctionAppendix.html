@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>#6 附录 · RDG 执行算法</title><style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:30px 36px 22px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.back{color:#9ee8ff;text-decoration:none;font-size:14px}.sub{color:var(--muted);max-width:1150px}main{padding:22px 36px 80px;max-width:1280px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 20px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.22)}.card h2{margin:0;padding:13px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:15px 18px;margin:14px 0}.note h3{margin:0 0 9px;font-size:15.5px;color:#ffe08a;font-weight:700}.note p{margin:9px 0;color:#cfe4ff;line-height:1.85}.note.green{border-left-color:var(--green)}.note.green h3{color:#bff0d2}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 5px;font-size:13.5px}table{border-collapse:collapse;width:100%;margin:6px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}th{background:#1c2634;color:#cfe4ff}td code{color:#9ee8ff;font-family:Consolas,monospace}.codebox{background:#0b0f16;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow-x:auto;white-space:pre;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;line-height:1.55;color:#d7e6f5;margin:10px 0}.codebox .c{color:#6f8299}.codebox .k{color:#ff9f5a}.src{display:block;margin:2px 0 8px;color:#7d8ea0;font-family:Consolas,monospace;font-size:12px}.tag{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);margin:0 6px 6px 0;font-size:13px;text-decoration:none}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.iface-grp{margin:0 0 10px}.iface-grp b{display:inline-block;min-width:70px;color:#9be6b6}</style></head><body>
+<header><a class="back" href="Execute_ConvergenceAnnotated.html">← 返回 #6 主文档</a><h1>#6 附录 · RDG 执行算法</h1><div class="sub">本篇给出 <span class="inline">FRDGBuilder::Execute</span> 相关函数的分工表与源码定位（<span class="inline">RenderGraphBuilder.cpp</span>，Execute 从 L1766 起，全文件 5260 行）。</div></header>
+<main>
+
+<section class="card"><h2>执行期关键函数（含源码行号）</h2><div class="body">
+<table><tr><th>函数</th><th>作用</th><th>行号</th></tr>
+<tr><td><code>Execute()</code></td><td>执行总入口：起若干 setup 任务再逐 pass 跑</td><td>L1766</td></tr>
+<tr><td><code>CompilePassBarriers()</code> / <code>CollectPassBarriers()</code></td><td>计算/收集每个 pass 需要的 transition</td><td>L1906 / L3872</td></tr>
+<tr><td><code>CreatePassBarriers()</code></td><td><code>ParallelForWithTaskContext</code> 并行创建 RHI transition</td><td>L3930</td></tr>
+<tr><td><code>SetupParallelExecute()</code></td><td>把可并行 pass 切批分发 worker</td><td>L2841</td></tr>
+<tr><td><code>ExecutePassPrologue()</code></td><td>序言：提交屏障 + BeginRenderPass + BeginUAVOverlap</td><td>L3424</td></tr>
+<tr><td><code>ExecutePassEpilogue()</code></td><td>尾声：EndUAVOverlap + EndRenderPass</td><td>L3457</td></tr>
+<tr><td><code>ExecutePass()</code> / <code>ExecuteSerialPass()</code></td><td>单 pass 执行（并行 / 串行路径）</td><td>L3511 / L3530</td></tr>
+</table></div></section>
+
+<section class="card"><h2>Execute() 内的 setup 任务图（真实源码）</h2><div class="body">
+<div class="codebox"><span class="src">// RenderGraphBuilder.cpp : L1904-L2003（节选）</span>CollectPassBarriersTask = AddSetupTask([<span class="k">this</span>]
+{
+	CompilePassBarriers();
+	CollectPassBarriers();
+}, TaskPriority, bParallelCompileResources);
+
+<span class="c">// ...AllocatePooledBuffersTask / AllocatePooledTexturesTask 分配瞬态资源...</span>
+
+CreateViewsTask = AddCommandListSetupTask([<span class="k">this</span>, InViews = MoveTemp(CollectResourceContext.Views)]
+	(FRHICommandListBase&amp; RHICmdListTask) { <span class="c">/* 建 SRV/UAV RHI 视图 */</span> },
+	MakeArrayView&lt;FTask&gt;({ CollectPassBarriersTask, AllocatePooledBuffersTask, AllocatePooledTexturesTask }),
+	TaskPriority, bParallelCompileResources);</div>
+<div class="note green"><h3>批注</h3><p><span class="inline">CreateViewsTask</span> 显式依赖 <span class="inline">{CollectPassBarriersTask, AllocatePooledBuffersTask, AllocatePooledTexturesTask}</span>——即"建视图"必须等"收集屏障 + 分配资源"完成。这正是用任务图表达"执行准备"的内部依赖，与 <span class="inline">bParallelCompileResources</span> 开关配合决定是否并行跑这些准备工作。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 导航</h2><div class="body">
+<div class="iface-grp"><b>主文档</b> <a class="tag" href="Execute_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#6 执行</a></div>
+<div class="iface-grp"><b>相关</b> <a class="tag" href="RHIAccess_ConvergenceAnnotated.html"><span class="dot" style="background:var(--orange)"></span>#14 ERHIAccess/Transition</a><a class="tag" href="../UE_RDG_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
+</div></section>
+
+</main></body></html>
