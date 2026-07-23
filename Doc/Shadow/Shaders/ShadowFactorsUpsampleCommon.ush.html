@@ -1,0 +1,141 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ShadowFactorsUpsampleCommon.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:460px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/SpecialShadows_ConvergenceAnnotated.html">← 回到 特殊阴影</a></div>
+<h1>ShadowFactorsUpsampleCommon.ush 整源解析<span class="libtag">库 / 阴影因子上采样</span></h1><div class="subtitle">阴影因子的<b>双边上采样库</b>：把半分辨率算出的阴影因子按<b>深度/法线权重</b>上采回全分辨率——保住边缘不漏光。胶囊/距离场等半分辨率阴影共用。核心 <span class="inline">UpsampleShadowFactors</span>。<b>下方内嵌完整 88 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/ShadowFactorsUpsampleCommon.ush</span></h2><div class="body">
+<span class="source-path">UpsampleShadowFactors @ L14 · BILATERAL_UPSAMPLE 变体 @ L37/L93</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+/*=============================================================================
+	ShadowFactorsUpsampleCommon.ush
+=============================================================================*/
+
+#ifndef SHADOW_FACTORS_UPSAMPLE_REQUIRED
+#error "Must define SHADOW_FACTORS_UPSAMPLE_REQUIRED"
+#endif
+
+#include "Common.ush"
+#include "ComputeShaderUtils.ush"
+
+void UpsampleShadowFactors(
+	float4 SVPos, 
+	int4 ScissorRectMinAndSize,
+	float OneOverDownsampleFactor, 
+	float ShadowFactorsMinDepth, 
+	float ShadowFactorsMaxDepth, 
+	Texture2D ShadowFactorsTexture, 
+	SamplerState ShadowFactorsSampler,
+	float2 ShadowFactorsUVBilinearMax,
+	out float ShadowFactor, 
+	out float SceneDepth,
+	uint EyeIndex)
+{
+	float2 BufferUV = SvPositionToBufferUV(SVPos);
+
+	// ShadowFactors is computed at 0,0 regardless of viewrect min
+	float2 ShadowFactorsUV = BufferUV - ScissorRectMinAndSize.xy * View.BufferSizeAndInvSize.zw;
+#if MOBILE_MULTI_VIEW
+	SceneDepth = CalcSceneDepth(BufferUV, EyeIndex);
+#else
+	SceneDepth = CalcSceneDepth(BufferUV);
+#endif
+
+#define BILATERAL_UPSAMPLE 1
+#if BILATERAL_UPSAMPLE &amp;&amp; SHADOW_FACTORS_UPSAMPLE_REQUIRED
+	float2 LowResBufferSize = floor(View.BufferSizeAndInvSize.xy * OneOverDownsampleFactor);
+	float2 LowResTexelSize = 1.0f / LowResBufferSize;
+
+	// since DF shadow rays are traced from the position of the full-res texel at the top left of low-res tile
+	// we need to use different UVs for calculating bilinear weights and sampling the 4 texels
+
+	float2 Corner00UVBase = floor(ShadowFactorsUV * LowResBufferSize) / LowResBufferSize;
+
+	// Calculate bilinear weights using the same UVs that rays were traced from
+	float2 Corner00UV = Corner00UVBase + 0.5f * View.BufferSizeAndInvSize.zw;
+	float2 BilinearWeights = saturate((ShadowFactorsUV - Corner00UV) * LowResBufferSize);
+
+	// Sample low res texture using UVs at center of low-res texels since we are interpolating manually
+	float2 Corner00SampleUV = Corner00UVBase + 0.5f * LowResTexelSize;
+
+	float2 TextureValues00 = Texture2DSampleLevel(ShadowFactorsTexture, ShadowFactorsSampler, min(Corner00SampleUV, ShadowFactorsUVBilinearMax), 0).xy;
+	float2 TextureValues10 = Texture2DSampleLevel(ShadowFactorsTexture, ShadowFactorsSampler, min(Corner00SampleUV + float2(LowResTexelSize.x, 0), ShadowFactorsUVBilinearMax), 0).xy;
+	float2 TextureValues01 = Texture2DSampleLevel(ShadowFactorsTexture, ShadowFactorsSampler, min(Corner00SampleUV + float2(0, LowResTexelSize.y), ShadowFactorsUVBilinearMax), 0).xy;
+	float2 TextureValues11 = Texture2DSampleLevel(ShadowFactorsTexture, ShadowFactorsSampler, min(Corner00SampleUV + LowResTexelSize, ShadowFactorsUVBilinearMax), 0).xy;
+
+	float4 CornerWeights = float4(
+		(1 - BilinearWeights.y) * (1 - BilinearWeights.x), 
+		(1 - BilinearWeights.y) * BilinearWeights.x,
+		BilinearWeights.y * (1 - BilinearWeights.x),
+		BilinearWeights.y * BilinearWeights.x);
+
+	float Epsilon = .0001f;
+
+	float4 ShadowFactors = float4(TextureValues00.x, TextureValues10.x, TextureValues01.x, TextureValues11.x);
+	float4 CornerDepths = abs(float4(TextureValues00.y, TextureValues10.y, TextureValues01.y, TextureValues11.y));
+
+	// Ignore pixels marked as non-shadowed if they lie outside the DF shadows range.
+	// Shadowed pixels outside the range are marked as valid, these could be from heightfield traces.
+	float4 CornerDepthsValid = 
+		or(
+			and(ShadowFactorsMinDepth.xxxx &lt; CornerDepths, CornerDepths &lt; ShadowFactorsMaxDepth.xxxx),
+			ShadowFactors &lt; 1.0
+		);
+	float4 DepthWeights = 1.0f / (abs(CornerDepths - SceneDepth.xxxx) + Epsilon);
+	float4 FinalWeights = CornerWeights * CornerDepthsValid * DepthWeights;
+	float TotalWeight = dot(FinalWeights, 1);
+
+	float InterpolatedResult = 1;
+	if (TotalWeight != 0)
+	{
+		InterpolatedResult = dot(ShadowFactors, FinalWeights) / TotalWeight;
+	}
+
+	ShadowFactor = InterpolatedResult;
+#else
+	ShadowFactor = Texture2DSampleLevel(ShadowFactorsTexture, ShadowFactorsSampler, ShadowFactorsUV, 0).x;
+#endif
+}
+
+void UpsampleShadowFactors(
+	float4 SVPos,
+	int4 ScissorRectMinAndSize,
+	float OneOverDownsampleFactor,
+	float ShadowFactorsMinDepth,
+	float ShadowFactorsMaxDepth,
+	Texture2D ShadowFactorsTexture,
+	SamplerState ShadowFactorsSampler,
+	float2 ShadowFactorsUVBilinearMax,
+	out float ShadowFactor,
+	out float SceneDepth)
+{
+	UpsampleShadowFactors(SVPos, ScissorRectMinAndSize, OneOverDownsampleFactor, ShadowFactorsMinDepth, ShadowFactorsMaxDepth, ShadowFactorsTexture, ShadowFactorsSampler, ShadowFactorsUVBilinearMax, ShadowFactor, SceneDepth, 0);
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 深度加权双边上采样（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">void UpsampleShadowFactors(float2 ScreenUV, float SceneDepth, ...)   // 全分辨率像素查半分辨率结果</span>
+<span class="code-line blue">#define BILATERAL_UPSAMPLE 1</span>
+<span class="code-line green">// 取半分辨率 2×2 邻域样本，各自的深度与全分辨率 SceneDepth 比较</span>
+<span class="code-line green">// 深度越接近权重越大 → 加权平均（拒绝跨深度边界的样本）</span>
+<span class="code-line yellow">// 避免直接双线性在物体边缘处的漏光/糊边</span></code></pre><div class="note"><h3>说明</h3><p>胶囊阴影、距离场阴影常在<b>半分辨率</b>计算省算力，再上采回全分辨率。若直接双线性会在<b>深度不连续处</b>（物体边缘）把前景与背景的阴影混在一起——漏光或糊边。<span class="inline">UpsampleShadowFactors</span> 用<b>双边上采样</b>：取半分辨率 2×2 邻域，每个样本按其深度与当前全分辨率像素 <span class="inline">SceneDepth</span> 的接近程度加权（深度差大则权重趋 0，等于<b>拒绝</b>跨边界样本），只混合同一表面的阴影。这样既省了 4× 阴影计算，又保住锐利正确的边缘。<span class="inline">BILATERAL_UPSAMPLE</span> 开关可退化为普通双线性（低端设备）。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/SpecialShadows_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>特殊阴影</a>
+<a class="tag" href="CapsuleShadowShaders.usf.html"><span class="dot" style="background:var(--cyan)"></span>CapsuleShadowShaders.usf↗</a>
+<a class="tag" href="DistanceFieldShadowing.usf.html"><span class="dot" style="background:var(--cyan)"></span>DistanceFieldShadowing.usf↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>

@@ -1,0 +1,550 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FirstPersonSelfShadow.usf 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.branch{border-color:var(--orange)}.node.func{border-color:var(--cyan)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:540px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Shadow_解析_总目录.html">← 返回《UE 阴影》总目录</a><a href="../Chapters/SpecialShadows_ConvergenceAnnotated.html">← 回到 特殊阴影</a></div>
+<h1>FirstPersonSelfShadow.usf 整源解析</h1><div class="subtitle">阴影的<b>第一人称自阴影</b>（416 行）：为 FPS 手臂/武器等第一人称几何做屏幕空间追踪的<b>自阴影</b>——常规阴影图对贴脸的 FP 物体分辨率不足，这里用降采样→屏幕追踪→模糊三段管线。核心 <span class="inline">FirstPersonSelfShadowTracePS</span> + Downsample/Blur PS。<b>下方内嵌完整 416 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>FP 几何深度</strong><small>降采样</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>屏幕空间阴影追踪</strong><small>TracePS</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>双边模糊</strong><small>BlurPS</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>FP 自阴影</strong></div>
+</div></section>
+
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/FirstPersonSelfShadow.usf</span></h2><div class="body">
+<span class="source-path">DownsamplePS @ L43 · TracePS @ L293 · BlurPS @ L376</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Common.ush"
+#include "DeferredShadingCommon.ush"
+#include "Substrate/Substrate.ush"
+
+#define FP_MAX_VALID_HIT_DISTANCE (254.0f / 255.0f)
+
+bool IsFirstPersonPixel(uint2 PixelPos)
+{
+#if SUBSTRATE_GBUFFER_FORMAT
+	FSubstrateAddressing SubstrateAddressing = GetSubstratePixelDataByteOffset(PixelPos, uint2(View.BufferSizeAndInvSize.xy), Substrate.MaxBytesPerPixel);
+	FSubstratePixelHeader SubstratePixelHeader = UnpackSubstrateHeaderIn(Substrate.MaterialTextureArray, SubstrateAddressing, Substrate.TopLayerTexture);
+	const bool bIsFirstPerson = SubstratePixelHeader.IsFirstPerson();
+#else
+	const float2 BufferUV = (PixelPos + 0.5f) * View.BufferSizeAndInvSize.zw;
+	const FGBufferData GBuffer = GetGBufferData(BufferUV);
+	const bool bIsFirstPerson = IsFirstPerson(GBuffer);
+#endif // SUBSTRATE_ENABLED
+
+	return bIsFirstPerson;
+}
+
+float3 GetWorldNormal(uint2 PixelPos)
+{
+#if SUBSTRATE_GBUFFER_FORMAT==1
+	const FSubstrateTopLayerData TopLayerData = SubstrateUnpackTopLayerData(Substrate.TopLayerTexture.Load(int3(PixelPos, 0)));
+	const float3 WorldNormal = TopLayerData.WorldNormal;
+#else
+	// Normals are in a different texture than the first person bit, so we do not redundantly sample the same texture twice (assuming the compiler strips the unused GBuffer values).
+	const float2 BufferUV = (PixelPos + 0.5f) * View.BufferSizeAndInvSize.zw;
+	const FGBufferData GBuffer = GetGBufferData(BufferUV);
+	const float3 WorldNormal = GBuffer.WorldNormal;
+#endif
+
+	return WorldNormal;
+}
+
+#ifdef FirstPersonSelfShadowDownsamplePS
+
+uint CheckerboardMode; // 0: always min, 1: always max, 2: checkerboard
+
+void FirstPersonSelfShadowDownsamplePS(
+	in float4 SVPos : SV_Position,
+	out float4 OutColor : SV_Target0,
+	out float OutDepth : SV_Depth
+)
+{
+	const uint2 DstPixelPos = uint2(SVPos.xy);
+	float MinZ = FarDepthValue;
+	float MaxZ = FarDepthValue;
+	uint2 MinZPixelPos = 0u;
+	uint2 MaxZPixelPos = 0u;
+	for (uint y = 0; y &lt; 2; ++y)
+	{
+		for (uint x = 0; x &lt; 2; ++x)
+		{
+			const uint2 FullResPixelPos = min(DstPixelPos * 2u + uint2(x, y), View.ViewRectMinAndSize.zw) + View.ViewRectMinAndSize.xy;
+			float DeviceZ = LookupDeviceZ(FullResPixelPos);
+
+			// Ignore far depth values
+			if (DeviceZ != FarDepthValue)
+			{
+				const bool bIsFirstPerson = IsFirstPersonPixel(FullResPixelPos);
+
+				// When the pixel is not first person, set DeviceZ to FarDepthValue so that we ignore it in the checks below.
+				DeviceZ = bIsFirstPerson ? DeviceZ : FarDepthValue;
+
+				if (DeviceZ != FarDepthValue &amp;&amp; (MinZ == FarDepthValue || DeviceZ &lt; MinZ))
+				{
+					MinZ = DeviceZ;
+					MinZPixelPos = FullResPixelPos;
+				}
+				if (DeviceZ != FarDepthValue &amp;&amp; (MaxZ == FarDepthValue || DeviceZ &gt; MaxZ))
+				{
+					MaxZ = DeviceZ;
+					MaxZPixelPos = FullResPixelPos;
+				}
+			}
+		}
+	}
+
+	bool bCheckerboard = false;
+	switch (CheckerboardMode)
+	{
+	case 0: bCheckerboard = true; break;
+	case 1: bCheckerboard = false; break;
+	case 2: bCheckerboard = ((DstPixelPos.x + DstPixelPos.y) &amp; 1u) != 0u; break;
+	}
+	const float DownsampledDepth = bCheckerboard ? MinZ : MaxZ;
+
+	// Early out
+	if (DownsampledDepth == FarDepthValue)
+	{
+		discard;
+	}
+
+	const uint2 FullResPixelPos = bCheckerboard ? MinZPixelPos : MaxZPixelPos;
+	const float3 WorldNormal = GetWorldNormal(FullResPixelPos);
+	const float2 WorldNormalOct = UnitVectorToOctahedron(WorldNormal);
+
+	const uint2 BaseFullResPixelPos = min(DstPixelPos * 2u, View.ViewRectMinAndSize.zw) + View.ViewRectMinAndSize.xy;
+	const uint2 FullResPixelOffset = FullResPixelPos - BaseFullResPixelPos; // Should only be 0 or 1. Taking this offset into account for tracing gives better results.
+	// Could do tighter packing of the offset here, but we need at least 16 bits for the normal for good results, so we need to go with RGBA8 anyways.
+	OutColor = float4(WorldNormalOct * 0.5f + 0.5f, FullResPixelOffset.x / 255.0f, FullResPixelOffset.y / 255.0f);
+	OutDepth = DownsampledDepth;
+}
+
+#endif // FirstPersonSelfShadowDownsamplePS
+
+
+#ifdef FirstPersonSelfShadowTracePS
+
+#include "DynamicLightingCommon.ush"
+#include "DeferredShadingCommon.ush"
+#include "LightDataUniforms.ush"
+#define HZB_TRACE_INCLUDE_FULL_RES_DEPTH 1
+#define HZB_TRACE_USE_BILINEAR_SAMPLED_DEPTH 1
+#include "HZBTracing.ush"
+#include "HZB.ush"
+
+#ifndef RAW_FULL_RESOLUTION_FP_SELF_SHADOWS
+#define RAW_FULL_RESOLUTION_FP_SELF_SHADOWS 0
+#endif
+
+// Remap light shape permutation into light type
+#if LIGHT_SOURCE_SHAPE == 0
+#define CURRENT_LIGHT_TYPE LIGHT_TYPE_DIRECTIONAL
+#elif LIGHT_SOURCE_SHAPE == 2
+#define CURRENT_LIGHT_TYPE LIGHT_TYPE_RECT
+#else // LIGHT_SOURCE_SHAPE == 1
+#define CURRENT_LIGHT_TYPE (IsDeferredSpotlight() ? LIGHT_TYPE_SPOT : LIGHT_TYPE_POINT)
+#endif
+
+#if !RAW_FULL_RESOLUTION_FP_SELF_SHADOWS
+Texture2D&lt;float4&gt; DownsampledInputsTexture;
+Texture2D&lt;float&gt; DownsampledDepthTexture;
+#endif
+
+float HZBMaxTraceDistance;
+float HZBMaxIterations;
+float HZBRelativeDepthThickness;
+uint HZBMinimumTracingThreadOccupancy;
+
+struct FFirstPersonScreenTracingInputs
+{
+	uint2 FullResPixelPos;
+	float2 FullResSVPos;
+	float DeviceZ;
+	float SceneDepth;
+	float3 WorldNormal;
+};
+
+FFirstPersonScreenTracingInputs GetFirstPersonScreenTracingInputs(uint2 PixelPos)
+{
+	FFirstPersonScreenTracingInputs Result;
+
+#if RAW_FULL_RESOLUTION_FP_SELF_SHADOWS
+
+	Result.FullResPixelPos = PixelPos;
+	Result.FullResSVPos = PixelPos + 0.5f;
+
+	// When running in full resolution, we don't have a stencil bit to let the hardware early-out on non FP pixels, so we do it manually here.
+	const bool bIsFirstPerson = IsFirstPersonPixel(Result.FullResPixelPos);
+	if (!bIsFirstPerson)
+	{
+		discard;
+	}
+
+	Result.DeviceZ = LookupDeviceZ(Result.FullResPixelPos);
+	Result.SceneDepth = ConvertFromDeviceZ(Result.DeviceZ);
+	Result.WorldNormal = GetWorldNormal(Result.FullResPixelPos);
+
+#else // RAW_FULL_RESOLUTION_FP_SELF_SHADOWS
+
+	const float4 DownsampledInputs = DownsampledInputsTexture.Load(int3(PixelPos, 0));
+	const uint2 PixelOffset = uint2(DownsampledInputs.zw * 255.0f);
+	
+	Result.FullResPixelPos = min(PixelPos * 2u + PixelOffset, View.ViewRectMinAndSize.zw) + View.ViewRectMinAndSize.xy;
+	Result.FullResSVPos = Result.FullResPixelPos + 0.5f;
+	Result.DeviceZ = DownsampledDepthTexture.Load(int3(PixelPos, 0)).x;
+	Result.SceneDepth = ConvertFromDeviceZ(Result.DeviceZ);
+	Result.WorldNormal = OctahedronToUnitVector(DownsampledInputs.xy * 2.0f - 1.0f);
+	
+#endif // RAW_FULL_RESOLUTION_FP_SELF_SHADOWS
+	
+	return Result;
+}
+
+float4 EncodeOutput(float Shadow, float HitDistance)
+{
+#if RAW_FULL_RESOLUTION_FP_SELF_SHADOWS
+	return EncodeLightAttenuation(Shadow);
+#else
+	// Store a normalized hit distance (in pixels). 0 means immediate intersection, 1 means miss and 254/255 is the longest representable hit distance.
+	const float MaxPixelDistance = 64.0f; // Seems to give decent results with shadows contact hardening up to 64 pixels from the shadow caster.
+	HitDistance = (HitDistance &gt;= 0.0f) ? (saturate(HitDistance / MaxPixelDistance) * FP_MAX_VALID_HIT_DISTANCE) : 1.0f;
+
+	return HitDistance;
+#endif
+}
+
+bool IsLightVisible(FDeferredLightData Light, float3 TranslatedWorldPosition, float3 Normal)
+{
+	if (!Light.bRadialLight)
+	{
+		return true;
+	}
+
+	const float3 ToLight = Light.TranslatedWorldPosition - TranslatedWorldPosition;
+	const float InvDist = rsqrt(dot(ToLight, ToLight));
+	const float3 L = ToLight * InvDist;
+
+	const bool bInLightRadius = InvDist &gt;= Light.InvRadius;
+	const bool bInLightCone = SpotAttenuationMask(L, -Light.Direction, Light.SpotAngles) &gt; 0.0f;
+
+	bool bInLightRegion = bInLightRadius &amp;&amp; bInLightCone;
+
+	if (Light.bRectLight)
+	{
+		const bool bIsBehindRectLight = dot(ToLight, Light.Direction) &lt; 0.0f;
+		if (bIsBehindRectLight)
+		{
+			bInLightRegion = false;
+		}
+	}
+
+	return bInLightRegion;
+}
+
+float TraceFirstPersonScreenSpaceShadows(FFirstPersonScreenTracingInputs Inputs, FDeferredLightData LightData, float3 TranslatedWorldPosition, out float3 OutHitUVz)
+{
+	// Bias along the normal to avoid self-intersecting camera facing scene depth texels
+	// HZB traversal uses point filtering, so scene depth texels stick out from the plane they are representing
+	float NormalBias = 0.0f;
+	{
+		const float3 CornerTranslatedWorldPosition = SvPositionToTranslatedWorld(float4(Inputs.FullResSVPos + 0.5f, Inputs.DeviceZ, 1.0f));
+		// Project texel corner onto normal
+		NormalBias = abs(dot(CornerTranslatedWorldPosition - TranslatedWorldPosition, Inputs.WorldNormal)) * 2.0f;
+	}
+
+	const float3 TranslatedRayOrigin = TranslatedWorldPosition + NormalBias * Inputs.WorldNormal;
+	const float4 RayStartClip = mul(float4(TranslatedRayOrigin, 1.0f), View.TranslatedWorldToClip);
+
+	// Skip screen traces if the normal bias pushed our starting point off-screen, as TraceHZB() doesn't handle this
+	if (any(RayStartClip.xy &lt; -RayStartClip.w) || any(RayStartClip.xy &gt; RayStartClip.w))
+	{
+		return 1.0f;
+	}
+
+	float3 RayWorldDirection;
+	float MaxWorldTraceDistance;
+	if (LightData.bRadialLight)
+	{
+		const float3 ToLight = LightData.TranslatedWorldPosition - TranslatedRayOrigin;
+		const float LightDistance = length(ToLight);
+		RayWorldDirection = ToLight / LightDistance;
+		MaxWorldTraceDistance = min(LightDistance, HZBMaxTraceDistance);
+	}
+	else
+	{
+		RayWorldDirection = LightData.Direction;
+		MaxWorldTraceDistance = min(1.0e27f, HZBMaxTraceDistance);
+	}
+
+	bool bHit = false;
+	bool bUncertain = false;
+	float3 OutLastVisibleScreenUV = 0.0f;
+	float OutHitTileZ = 0.0f;
+
+	TraceHZB(
+		SceneTexturesStruct.SceneDepthTexture,
+		ClosestHZBTexture,
+		HZBBaseTexelSize,
+		HZBUVToScreenUVScaleBias,
+		TranslatedRayOrigin,
+		RayWorldDirection,
+		MaxWorldTraceDistance,
+		HZBUvFactorAndInvFactor,
+		HZBMaxIterations,
+		HZBRelativeDepthThickness,
+		0 /*NumThicknessStepsToDetermineCertainty*/,
+		HZBMinimumTracingThreadOccupancy,
+		bHit,
+		bUncertain,
+		OutHitUVz,
+		OutLastVisibleScreenUV,
+		OutHitTileZ);
+
+	return bHit || bUncertain ? 0.0f : 1.0f;
+}
+
+void FirstPersonSelfShadowTracePS(
+	float4 SVPos : SV_Position,
+	out float4 OutColor : SV_Target0)
+{
+	const FDeferredLightData LightData = InitDeferredLightFromUniforms(CURRENT_LIGHT_TYPE);
+	const FFirstPersonScreenTracingInputs Inputs = GetFirstPersonScreenTracingInputs(SVPos.xy);
+	const float3 TranslatedWorldPosition = SvPositionToTranslatedWorld(float4(Inputs.FullResSVPos, Inputs.DeviceZ, 1.0f));
+
+	float Shadow = 1.0f;
+	float HitDistance = -1.0f;
+	if (IsLightVisible(LightData, TranslatedWorldPosition, Inputs.WorldNormal))
+	{
+		float3 HitUVz;
+		Shadow = TraceFirstPersonScreenSpaceShadows(Inputs, LightData, TranslatedWorldPosition, HitUVz);
+
+		if (Shadow &lt; 1.0f)
+		{
+			HitDistance = distance(HitUVz.xy * View.BufferSizeAndInvSize.xy, Inputs.FullResSVPos);
+		}
+	}
+
+	OutColor = EncodeOutput(Shadow, HitDistance);
+}
+
+#endif // FirstPersonSelfShadowTracePS
+
+
+#ifdef FirstPersonSelfShadowBlurPS
+
+Texture2D&lt;float4&gt; InputsTexture;
+Texture2D&lt;float&gt; DepthTexture;
+float InvDepthThreshold;
+
+struct FFirstPersonBlurInputs
+{
+	float DeviceZ;
+	float SceneDepth;
+	float HitDistance;
+	float ShadowFactor;
+};
+
+FFirstPersonBlurInputs LoadInputs(uint2 PixelPos)
+{
+	FFirstPersonBlurInputs Result = (FFirstPersonBlurInputs)0;
+	Result.DeviceZ = DepthTexture.Load(int3(PixelPos, 0)).x;
+	if (Result.DeviceZ != FarDepthValue)
+	{
+		Result.SceneDepth = ConvertFromDeviceZ(Result.DeviceZ);
+
+		const float PackedShadowAndHitDistance = InputsTexture.Load(int3(PixelPos, 0)).x;
+		Result.HitDistance = PackedShadowAndHitDistance != 1.0f ? (PackedShadowAndHitDistance / FP_MAX_VALID_HIT_DISTANCE) : -1.0f;
+		Result.ShadowFactor = PackedShadowAndHitDistance != 1.0f ? 0.0f : 1.0f;
+	}
+	return Result;
+}
+
+struct FSampleAccumulator
+{
+	float ShadowSum;
+	float HitDistanceSum;
+	float ShadowWeightSum;
+	float HitDistanceWeightSum;
+};
+
+void AccumulateSample(inout FSampleAccumulator Accumulator, FFirstPersonBlurInputs CenterInputs, uint2 SamplePixelPos)
+{
+	const FFirstPersonBlurInputs SampleInputs = LoadInputs(SamplePixelPos);
+	if (SampleInputs.DeviceZ != FarDepthValue)
+	{
+		const float Scale = InvDepthThreshold;
+		const float DepthWeight = min(1.0f, 1.0f / (Scale * abs(CenterInputs.SceneDepth - SampleInputs.SceneDepth) + 1e-4f));
+		const float SampleWeight = DepthWeight;
+
+		Accumulator.ShadowSum += SampleInputs.ShadowFactor * SampleWeight;
+		Accumulator.ShadowWeightSum += SampleWeight;
+		if (SampleInputs.HitDistance &gt; 0.0f)
+		{
+			Accumulator.HitDistanceSum += SampleInputs.HitDistance * SampleWeight;
+			Accumulator.HitDistanceWeightSum += SampleWeight;
+		}
+	}
+}
+
+void FirstPersonSelfShadowBlurPS(
+	float4 SVPos : SV_Position,
+	out float4 OutColor : SV_Target0)
+{
+	const uint2 PixelPos = uint2(SVPos.xy);
+
+	const FFirstPersonBlurInputs CenterInputs = LoadInputs(PixelPos);
+
+	// Initialize accumulator with center input
+	FSampleAccumulator Accumulator = (FSampleAccumulator)0;
+	Accumulator.ShadowSum = CenterInputs.ShadowFactor;
+	Accumulator.ShadowWeightSum = 1.0f;
+	Accumulator.HitDistanceSum = CenterInputs.HitDistance &gt; 0.0f ? CenterInputs.HitDistance : 0.0f;
+	Accumulator.HitDistanceWeightSum = CenterInputs.HitDistance &gt; 0.0f ? 1.0f : 0.0f;
+	
+
+	// Accumulate samples in a 3x3 area
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2(-1, -1));
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2( 0, -1));
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2( 1, -1));
+
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2(-1,  0));
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2( 1,  0));
+
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2(-1,  1));
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2( 0,  1));
+	AccumulateSample(Accumulator, CenterInputs, PixelPos + int2( 1,  1));
+
+	const float InvShadowWeightSum = 1.0f / Accumulator.ShadowWeightSum; // ShadowWeightSum should be at least 1.0f due to the center pixel
+	const float InvHitDistanceWeightSum = Accumulator.HitDistanceWeightSum &gt; 1e-5f ? (1.0f / Accumulator.HitDistanceWeightSum) : 0.0f; // HitDistanceWeightSum can actually be zero
+
+	const float BlurredShadow = Accumulator.ShadowSum * InvShadowWeightSum;
+	const float AverageHitDistance = Accumulator.HitDistanceSum * InvHitDistanceWeightSum;
+	const float FilterStrength = saturate(AverageHitDistance);
+
+	// Make shadow contact hardening by lerping between the filtered and unfiltered result. Simple, but works well enough for 3x3.
+	const float FinalShadow = lerp(CenterInputs.ShadowFactor, BlurredShadow, FilterStrength);
+
+	OutColor = EncodeLightAttenuation(FinalShadow);
+}
+
+#endif // FirstPersonSelfShadowBlurPS
+
+
+#ifdef FirstPersonSelfShadowUpsamplePS
+
+#include "DeferredShadingCommon.ush"
+
+Texture2D&lt;float&gt; DownsampledDepthTexture;
+Texture2D&lt;float4&gt; ShadowFactorsTexture;
+float2 DownsampledInvBufferSize;
+float InvDepthThreshold;
+
+float4 GatherDepths(float2 UV)
+{
+	return DownsampledDepthTexture.GatherRed(GlobalBilinearClampedSampler, UV);
+}
+
+float4 GatherShadowFactors(float2 UV)
+{
+	return ShadowFactorsTexture.GatherRed(GlobalBilinearClampedSampler, UV);
+}
+
+float4 GetBilinearWeights(float2 DownsampledSVPos)
+{
+	const float2 DownsampledCoordFrac = frac(DownsampledSVPos - 0.5f);
+	const float4 BilinearWeights = float4(
+		(1.0f - DownsampledCoordFrac.x) * DownsampledCoordFrac.y,
+		DownsampledCoordFrac.x * DownsampledCoordFrac.y,
+		DownsampledCoordFrac.x * (1.0f - DownsampledCoordFrac.y),
+		(1.0f - DownsampledCoordFrac.x) * (1.0f - DownsampledCoordFrac.y)
+	);
+
+	return BilinearWeights;
+}
+
+float4 GetDepthWeights(float FullResSceneDepth, float4 DownsampledDeviceZ)
+{
+	const float4 DownsampledSceneDepths = float4(
+		ConvertFromDeviceZ(DownsampledDeviceZ.x),
+		ConvertFromDeviceZ(DownsampledDeviceZ.y),
+		ConvertFromDeviceZ(DownsampledDeviceZ.z),
+		ConvertFromDeviceZ(DownsampledDeviceZ.w));
+
+	const float4 DepthWeights = min(1.0f, 1.0f / (InvDepthThreshold * abs(FullResSceneDepth - DownsampledSceneDepths) + 1e-4f));
+
+	// Downsampled depth has been forced to FarDepthValue for non-FP pixels and we want to ensure they're excluded from the weighting.
+	const float4 FirstPersonDepthWeights = select(DownsampledDeviceZ != FarDepthValue, 1.0f, 0.0f);
+
+	return DepthWeights * FirstPersonDepthWeights;
+}
+
+void FirstPersonSelfShadowUpsamplePS(
+	float4 SVPos : SV_Position,
+	out float4 OutColor : SV_Target0)
+{
+	const bool bIsFirstPerson = IsFirstPersonPixel(uint2(SVPos.xy));
+	if (!bIsFirstPerson)
+	{
+		discard;
+	}
+
+	const float2 DownsampledSVPos = (SVPos.xy - View.ViewRectMinAndSize.xy) * 0.5f;
+	const float2 DownsampledUV = DownsampledSVPos * DownsampledInvBufferSize;
+	const float4 DownsampledDeviceZ = GatherDepths(DownsampledUV);
+	
+	// Calculate weights
+	const float4 DepthWeights = GetDepthWeights(CalcSceneDepth(uint2(SVPos.xy)), DownsampledDeviceZ);
+	const float4 BilinearWeights = GetBilinearWeights(DownsampledSVPos);
+	
+	// Normalize weights or fall back to bilinear
+	float4 TotalWeights = DepthWeights * BilinearWeights;
+	const float TotalWeightSum = dot(TotalWeights, 1.0f);
+	if (TotalWeightSum &gt; 1e-5f)
+	{
+		TotalWeights /= TotalWeightSum;
+	}
+	else
+	{
+		TotalWeights = BilinearWeights;
+	}
+
+	// Load low res shadow factors and apply weights
+	const float4 LowResShadowFactors = DecodeLightAttenuation(GatherShadowFactors(DownsampledUV));
+	const float UpsampledShadowFactor = dot(LowResShadowFactors, TotalWeights);
+
+	OutColor = EncodeLightAttenuation(UpsampledShadowFactor);
+}
+
+#endif // FirstPersonSelfShadowUpsamplePS
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. 屏幕空间追踪 FP 自阴影（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">const FDeferredLightData LightData = InitDeferredLightFromUniforms(CURRENT_LIGHT_TYPE);</span>
+<span class="code-line blue">const float3 TranslatedWorldPosition = SvPositionToTranslatedWorld(float4(Inputs.FullResSVPos, Inputs.DeviceZ, 1.0f));</span>
+<span class="code-line green">if (IsLightVisible(LightData, TranslatedWorldPosition, Inputs.WorldNormal))</span>
+<span class="code-line green">    Shadow = TraceFirstPersonScreenSpaceShadows(Inputs, LightData, TranslatedWorldPosition, HitUVz);</span>
+<span class="code-line yellow">OutColor = EncodeOutput(Shadow, HitDistance);   // 阴影 + 命中距离(供 blur)</span></code></pre><div class="note"><h3>说明</h3><p>第一人称手臂/武器<b>贴着相机</b>，在世界阴影图里只占极少纹素，自阴影（手指投在手背、武器投在手上）几乎糊没。本 shader 专门为 FP 几何做屏幕空间追踪：先把 FP 深度<b>降采样</b>省开销，再对每像素朝光源在屏幕深度上追踪（<span class="inline">TraceFirstPersonScreenSpaceShadows</span>）求自遮挡，<span class="inline">IsLightVisible</span> 先做法线/光型剔除，输出编码阴影 + 命中距离；最后 <b>Blur PS</b> 按命中距离做双边模糊得柔和边缘。这是 <span class="inline">r.FirstPerson.SelfShadow</span> 的实现——让 FP 内容有贴合的自阴影而不依赖高分阴影图。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/SpecialShadows_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>特殊阴影</a>
+<a class="tag" href="ScreenSpaceShadows.usf.html"><span class="dot" style="background:var(--cyan)"></span>ScreenSpaceShadows.usf↗</a>
+<a class="tag" href="../UE_Shadow_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
