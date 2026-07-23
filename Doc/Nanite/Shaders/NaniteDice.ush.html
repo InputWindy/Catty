@@ -1,0 +1,387 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NaniteDice.ush 代码解析（整源）</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre-wrap}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:540px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:12.5px/1.5 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}.libtag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(182,156,255,.14);border:1px solid rgba(182,156,255,.3);color:#c9b6ff;font-size:12px;margin-left:8px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_Nanite_解析_总目录.html">← 返回《UE Nanite》总目录</a><a href="../Chapters/ProgRaster_ConvergenceAnnotated.html">← 回到 可编程光栅</a></div>
+<h1>NaniteDice.ush 整源解析<span class="libtag">库 / 细分切分</span></h1><div class="subtitle">Nanite 的<b>细分切分库</b>（356 行）：可编程细分（Tessellation）的递归切分任务——<span class="inline">FDiceTask</span>/<span class="inline">FClusterSplitTask</span> 按 TessFactor 把三角持久线程递归切成微三角并光栅 <span class="inline">RasterizeDicedTri</span>。<b>下方内嵌完整 356 行真实源码</b>，再逐段真实代码批注。</div></header>
+<main>
+<section class="card"><h2>完整源码（逐行真实）<span style="font-size:13px;color:#a9b4c0;font-weight:400"> · Engine/Shaders/Private/Nanite/NaniteDice.ush</span></h2><div class="body">
+<span class="source-path">RasterizeDicedTri @ L12 · FDiceTask @ L52 · FDiceTask::RunChild @ L141 · FClusterSplitTask @ L288</span>
+<textarea class="embedded-source" readonly spellcheck="false">// Copyright Epic Games, Inc. All Rights Reserved.
+
+#pragma once
+
+#include "NaniteRasterizationCommon.ush"
+#include "NaniteTessellation.ush"
+
+#if NANITE_TESSELLATION
+
+#define NANITE_TESSELLATION_DICE_USE_LDS 1
+
+void RasterizeDicedTri(
+	FRasterTri		Tri,
+	FRaster			Raster,
+	FMaterialShader	Shader,
+	uint			PixelValue,
+	uint2			VisualizeValues )
+{
+#if VIRTUAL_TEXTURE_TARGET &amp;&amp; NANITE_LATE_VSM_PAGE_TRANSLATION
+	if (!Raster.bSinglePage)
+	{
+		TNaniteWritePixel&lt; FMaterialShader, FCachedPageTable &gt; NaniteWritePixel = { Raster, Shader, PixelValue, VisualizeValues };
+		RasterizeTri_Rect( Tri, NaniteWritePixel );
+	}
+	else
+#elif VIRTUAL_TEXTURE_TARGET
+	if (!Raster.bSinglePage)
+	{
+		TNaniteWritePixel&lt; FMaterialShader, FFetchPageTable &gt; NaniteWritePixel =
+		{
+			Raster,
+			Shader,
+			PixelValue,
+			VisualizeValues,
+			Shader.NaniteView.TargetMipLevel,
+			CalcPageTableLevelOffset( Shader.NaniteView.TargetLayerIndex, Shader.NaniteView.TargetMipLevel )
+		};
+		
+		RasterizeTri_Rect( Tri, NaniteWritePixel );
+	}
+	else
+#endif
+	{
+		TNaniteWritePixel&lt; FMaterialShader &gt; NaniteWritePixel = { Raster, Shader, PixelValue, VisualizeValues };
+		RasterizeTri_Rect( Tri, NaniteWritePixel );
+	}
+}
+
+groupshared float4 GroupPointPackedClip[ THREADGROUP_SIZE ];	// TODO: Convert to PackedClip ?
+groupshared float4 GroupNormalPackedClip[ THREADGROUP_SIZE ];
+
+struct FDiceTask
+{
+	FRaster			Raster;
+	FMaterialShader	Shader;
+	uint			PixelValue;
+	uint2			VisualizeValues;
+	float4			UVDensities;
+	bool			bReverseWinding;
+
+	FNaniteTransformedVert	Vert;
+	FTessellatedPatch		TessellatedPatch;
+	
+	uint4	Encoded;
+	uint	PatchData;
+
+	// Vertex cache
+	float3 CachedPackedSubpixelPosition;
+
+	void Init( float3 TessFactors, uint3 VertIndexes, uint TriIndex )
+	{
+		TessellatedPatch.Init( TessFactors, VertIndexes, true );
+	
+		PatchData  = VertIndexes.x &lt;&lt; 0;
+		PatchData |= VertIndexes.y &lt;&lt; 8;
+		PatchData |= VertIndexes.z &lt;&lt; 16;
+		PatchData |= TriIndex &lt;&lt; 24;
+
+		CachedPackedSubpixelPosition = 0.0f;
+	}
+
+	FDiceTask CreateChild( uint ParentLaneIndex )
+	{
+		// "this" is broken: https://github.com/microsoft/DirectXShaderCompiler/issues/4914
+		FDiceTask ChildTask;// = this;
+		ChildTask.Raster			= Raster;
+		ChildTask.Shader			= Shader;
+		ChildTask.PixelValue		= PixelValue;
+		ChildTask.VisualizeValues	= VisualizeValues;
+		ChildTask.UVDensities		= UVDensities;
+		ChildTask.bReverseWinding	= bReverseWinding;
+
+		ChildTask.TessellatedPatch	= WaveReadLaneAt( TessellatedPatch, ParentLaneIndex );
+		ChildTask.Encoded			= WaveReadLaneAt( Encoded, ParentLaneIndex );
+		ChildTask.PatchData			= WaveReadLaneAt( PatchData, ParentLaneIndex );
+
+		uint3 PatchVertIndexes;
+		PatchVertIndexes.x = ( ChildTask.PatchData &gt;&gt;  0 ) &amp; 0xff;
+		PatchVertIndexes.y = ( ChildTask.PatchData &gt;&gt;  8 ) &amp; 0xff;
+		PatchVertIndexes.z = ( ChildTask.PatchData &gt;&gt; 16 ) &amp; 0xff;
+
+		FNaniteTransformedVert Verts[3];
+		Verts[0] = WaveReadLaneAt(Vert, PatchVertIndexes.x);
+		Verts[1] = WaveReadLaneAt(Vert, PatchVertIndexes.y);
+		Verts[2] = WaveReadLaneAt(Vert, PatchVertIndexes.z);
+	
+	#if NANITE_TESSELLATION_DICE_USE_LDS
+		// Alleviate DS pressure by using wide LDS loads instead of single component permutes
+		for (uint Corner = 0; Corner &lt; 3; ++Corner)
+		{
+			const uint SourceIndex = PatchVertIndexes[ Corner ];
+			Verts[ Corner ].PointClip	= GroupPointPackedClip[ SourceIndex ];
+			Verts[ Corner ].NormalClip	= GroupNormalPackedClip[ SourceIndex ];
+		}
+	#endif
+
+		ChildTask.Shader.Verts = Verts;	// TODO mutable. This is weird
+
+		return ChildTask;
+	}
+	
+	void CacheToLDS()
+	{
+	#if NANITE_TESSELLATION_DICE_USE_LDS
+		const uint LaneIndex = WaveGetLaneIndex();
+
+		GroupPointPackedClip[LaneIndex] = Vert.PointClip;
+		GroupNormalPackedClip[LaneIndex] = Vert.NormalClip;
+
+		GroupMemoryBarrierWithGroupSync();
+	#endif
+	}
+	
+
+	void RunChild( inout FDiceTask ParentTask, bool bActive, uint LocalItemIndex );
+};
+
+//groupshared float3			VertexCache[ THREADGROUP_SIZE ];
+//#define VertCache(x)		VertexCache[ QueueOffset + ( (x) &amp; ( LaneCount - 1 ) ) ]
+
+void FDiceTask::RunChild( inout FDiceTask ParentTask, bool bActive, uint LocalItemIndex )
+{
+	if( !bActive )
+		LocalItemIndex = 0u;
+
+	uint PatchIndex = PatchData &gt;&gt; 24;
+
+	uint3 VertIndexes = TessellatedPatch.GetIndexes( LocalItemIndex );
+
+	if( bReverseWinding )
+		VertIndexes.yz = VertIndexes.zy;
+	
+	float4 Verts[3];
+
+#if 1
+	const float3 TessFactors = TessellatedPatch.GetTessFactors();
+
+	FBarycentrics Barycentrics;
+	Barycentrics.Value = TessellatedPatch.GetVert( LocalItemIndex );
+	Barycentrics.Value_dx = 0;	// float3( -1, 1, 0 ) / TessFactors.x;
+	Barycentrics.Value_dy = 0;	// float3( 0, -1, 1 ) / TessFactors.y;
+	
+	const bool bOrtho = IsOrthoProjection( Shader.NaniteView.ViewToClip );
+
+	float3 CornerPackedSubpixel0;	// sub-pixel xy, linear z
+
+	// TODO: Unify these paths by having EvaluateDomain operate directly in PackedClip space
+	BRANCH
+	if (bOrtho)
+	{
+		// Optimize out .w work and lane permutes
+		const float3 PointPackedClip = Shader.EvaluateDomain( UVDensities, Barycentrics ).xyz;
+		CornerPackedSubpixel0 = PointPackedClip.xyz;
+	}
+	else
+	{
+		// Optimize out .z work and lane permutes
+		const float3 PointPackedClip = Shader.EvaluateDomain( UVDensities, Barycentrics ).xyw;
+		CornerPackedSubpixel0 = float3( PointPackedClip.xy / PointPackedClip.z, PointPackedClip.z );
+	}
+
+	CornerPackedSubpixel0.xy = CornerPackedSubpixel0.xy * Raster.ViewportScale + Raster.ViewportBias;
+	CornerPackedSubpixel0.xy = floor( CornerPackedSubpixel0.xy );
+
+	const int3 RelativeVertIndexes = WaveGetLaneIndex() - ( LocalItemIndex - VertIndexes );	// Relative to thread 0 in wave
+	const uint3 ReadLaneIndex = uint3( RelativeVertIndexes ) &amp; ( WaveGetLaneCount() - 1u );
+
+	float3 CornerPackedSubpixel1 = WaveReadLaneAt( ParentTask.CachedPackedSubpixelPosition, ReadLaneIndex.y );
+	float3 CornerPackedSubpixel2 = WaveReadLaneAt( ParentTask.CachedPackedSubpixelPosition, ReadLaneIndex.z );
+
+	ParentTask.CachedPackedSubpixelPosition = CornerPackedSubpixel0;
+
+	CornerPackedSubpixel1 = select( RelativeVertIndexes.y &gt;= 0, WaveReadLaneAt( ParentTask.CachedPackedSubpixelPosition, ReadLaneIndex.y ), CornerPackedSubpixel1 );
+	CornerPackedSubpixel2 = select( RelativeVertIndexes.z &gt;= 0, WaveReadLaneAt( ParentTask.CachedPackedSubpixelPosition, ReadLaneIndex.z ), CornerPackedSubpixel2 );
+
+	BRANCH
+	if (bOrtho)
+	{
+		Verts[0] = float4( CornerPackedSubpixel0, 1.0f );
+		Verts[1] = float4( CornerPackedSubpixel1, 1.0f );
+		Verts[2] = float4( CornerPackedSubpixel2, 1.0f );
+	}
+	else
+	{
+		Verts[0] = float4( CornerPackedSubpixel0.xy, float2( ClipZFromLinearZ( Shader.NaniteView, CornerPackedSubpixel0.z ), 1.0f ) / CornerPackedSubpixel0.z );
+		Verts[1] = float4( CornerPackedSubpixel1.xy, float2( ClipZFromLinearZ( Shader.NaniteView, CornerPackedSubpixel1.z ), 1.0f ) / CornerPackedSubpixel1.z );
+		Verts[2] = float4( CornerPackedSubpixel2.xy, float2( ClipZFromLinearZ( Shader.NaniteView, CornerPackedSubpixel2.z ), 1.0f ) / CornerPackedSubpixel2.z );
+	}
+	
+#elif 0
+	// Grab what's there for this triangle before updating cache. Otherwise cache would need to be double size.
+	bool3 VertRead = false;
+
+	UNROLL
+	for( uint k = 0; k &lt; 3; k++ )
+	{
+		if( FirstVert + VertIndexes[k] &lt; NumCached )
+		{
+			Verts[k] = VertCache( FirstVert + VertIndexes[k] );
+			VertRead[k] = true;
+		}
+	}
+
+	GroupMemoryBarrier();
+			
+	bool bNewVertex = PackedIndexes &amp; (1 &lt;&lt; 30);
+	if( bNewVertex )
+	{
+		uint MaxVertIndex = max3( VertIndexes.x, VertIndexes.y, VertIndexes.z );
+
+		float3 UVW = TessellatedPatch.GetVert( MaxVertIndex );
+		UVW = TransformBarycentrics( UVW );
+
+		FBarycentrics Barycentrics;
+		Barycentrics.Value	 	= UVW;
+		Barycentrics.Value_dx	= 0;
+		Barycentrics.Value_dy	= 0;
+
+		VertCache( FirstVert + MaxVertIndex ) = CalculateSubpixelCoordinates( Raster, Shader.EvaluateDomain( PatchIndex, Barycentrics ) );
+	}
+			
+	GroupMemoryBarrier();
+
+	NumCached += WaveActiveCountBits( bNewVertex );		//FIXME this increments LocalTask.NumCached which goes no where. Need persistent scalar. Need references!
+
+	UNROLL
+	for( uint k = 0; k &lt; 3; k++ )
+	{
+		if( !VertRead[k] )
+			Verts[k] = VertCache( FirstVert + VertIndexes[k] );
+	}
+#else
+	float3 TessFactors = TessellatedPatch.GetTessFactors();
+
+	UNROLL
+	for( uint i = 0; i &lt; 3; i++ )
+	{
+		FBarycentrics Barycentrics;
+		Barycentrics.Value		= TessellatedPatch.GetVert( VertIndexes[i] );
+		Barycentrics.Value_dx	= 0;	// float3( -1, 1, 0 ) / TessFactors.x;
+		Barycentrics.Value_dy	= 0;	// float3( 0, -1, 1 ) / TessFactors.y;
+
+		Verts[i] = CalculateSubpixelCoordinates( Raster, Shader.EvaluateDomain( PatchIndex, Barycentrics ) );
+	}
+#endif
+
+	FRasterTri Tri = SetupTriangle&lt; NANITE_SUBPIXEL_SAMPLES, !NANITE_TWO_SIDED &gt;( Raster.ScissorRect, Verts );
+
+	// Immediate dicing doesn't doesn't do near plane culling
+	if( !bActive || min3( Verts[0].w, Verts[1].w, Verts[2].w ) &lt; 0 )
+		Tri.bIsValid = false;
+
+	if( Tri.bIsValid )
+	{
+	#if VISUALIZE
+		VisualizeValues = GetVisualizeValues(1u /*AddValue */, 0u /* SubPatch */, LocalItemIndex);
+	#endif
+
+		RasterizeDicedTri(
+			Tri,
+			Raster,
+			Shader,
+			PixelValue | PatchIndex,
+			VisualizeValues );
+	}
+}
+
+struct FClusterSplitTask
+{
+	FTessellatedPatch	TessellatedPatch;
+
+	uint4	Encoded;
+
+	void				Init( float3 TessFactors, uint VisibleClusterIndex, uint TriIndex );
+
+	FClusterSplitTask	CreateChild( uint ParentLaneIndex );
+	void				RunChild( inout FClusterSplitTask ParentTask, bool bActive, uint LocalItemIndex );
+};
+
+void FClusterSplitTask::Init( float3 TessFactors, uint VisibleClusterIndex, uint TriIndex )
+{
+	Encoded.x = PackClusterIndexAndTriIndex(VisibleClusterIndex, TriIndex);
+	Encoded.y = BarycentricMax;
+	Encoded.z = BarycentricMax &lt;&lt; 16;
+	Encoded.w = 0;
+
+	TessellatedPatch.Init( TessFactors, Encoded.yzw, false );
+}
+
+FClusterSplitTask FClusterSplitTask::CreateChild( uint ParentLaneIndex )
+{
+	FClusterSplitTask ChildTask;
+	ChildTask.TessellatedPatch	= WaveReadLaneAt( TessellatedPatch, ParentLaneIndex );
+	ChildTask.Encoded			= WaveReadLaneAt( Encoded, ParentLaneIndex );
+	return ChildTask;
+}
+
+void FClusterSplitTask::RunChild( inout FClusterSplitTask ParentTask, bool bActive, uint LocalItemIndex )
+{
+	if( !bActive )
+		return;
+#if 0
+	Encoded.yzw = TessellatedPatch.GetTriangleEncoded( LocalItemIndex );
+#else
+	FSplitPatch Patch;
+	Patch.Decode( Encoded );
+		
+	uint3 VertIndexes = TessellatedPatch.GetIndexes( LocalItemIndex );
+
+	for( int i = 0; i &lt; 3; i++ )
+	{
+		float3 Barycentrics = TessellatedPatch.GetVert( VertIndexes[i] );
+
+		Barycentrics = 
+			Patch.Barycentrics[0] * Barycentrics.x +
+			Patch.Barycentrics[1] * Barycentrics.y +
+			Patch.Barycentrics[2] * Barycentrics.z;
+		
+		Encoded[ i + 1 ] = EncodeBarycentrics( Barycentrics );
+	}
+#endif
+
+	uint WriteOffset = SplitWorkQueue.Add();
+	if( WriteOffset &lt; SplitWorkQueue.Size )
+	{
+		checkSlow(
+			Encoded.x != ~0u &amp;&amp;
+			Encoded.y != ~0u &amp;&amp;
+			Encoded.z != ~0u &amp;&amp;
+			Encoded.w != ~0u );
+
+		SplitWorkQueue.DataBuffer_Store4( WriteOffset * 16, Encoded );
+	}
+}
+
+#endif</textarea>
+</div></section>
+<section class="card"><h2>0. 细分递归切分任务（核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">#define NANITE_TESSELLATION_DICE_USE_LDS 1   // 用 LDS 传子任务</span>
+<span class="code-line blue">struct FDiceTask { ... }; void FDiceTask::RunChild(inout Parent, bActive, LocalItemIndex)</span>
+<span class="code-line green">struct FClusterSplitTask::Init(TessFactors, VisibleClusterIndex, TriIndex)</span>
+<span class="code-line yellow">void RasterizeDicedTri(...)   // 切出的微三角送软件光栅</span></code></pre><div class="note"><h3>说明</h3><p><span class="inline">NaniteDice</span> 实现<b>可编程细分</b>（Tessellation/Displacement）的<b>递归切分</b>（356 行）：当材质开启位移，簇三角需按 <span class="inline">TessFactors</span> 细分成大量微三角再位移。它用<b>持久线程任务</b>模型——<span class="inline">FClusterSplitTask</span> 先把簇切成子块，<span class="inline">FDiceTask</span> 通过 <span class="inline">RunChild</span> 递归把三角二分/四分（借 LDS <span class="inline">NANITE_TESSELLATION_DICE_USE_LDS</span> 在 wave 内派发子任务），达到目标密度后 <span class="inline">RasterizeDicedTri</span> 把每个微三角交 <a href="NaniteRasterizationCommon.ush.html" class="inline">RasterizationCommon</a> 软件光栅。这与 <a href="NaniteTessellation.ush.html" class="inline">Tessellation.ush</a>（细分算子）配合，是 Nanite "自适应位移细分"的运行时核心，配合 <a href="NaniteRasterizer.usf.html" class="inline">Rasterizer</a> 主循环工作。</p></div></div></section>
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/ProgRaster_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>可编程光栅</a>
+<a class="tag" href="NaniteTessellation.ush.html"><span class="dot" style="background:var(--cyan)"></span>Tessellation.ush↗</a>
+<a class="tag" href="NaniteRasterizationCommon.ush.html"><span class="dot" style="background:var(--cyan)"></span>RasterizationCommon.ush↗</a>
+<a class="tag" href="NaniteRasterizer.usf.html"><span class="dot" style="background:var(--cyan)"></span>Rasterizer.usf↗</a>
+<a class="tag" href="../UE_Nanite_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+</body>
+</html>
