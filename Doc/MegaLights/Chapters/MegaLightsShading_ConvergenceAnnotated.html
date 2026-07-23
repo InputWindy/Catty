@@ -11,7 +11,7 @@
 </div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
 <table class="table"><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
-<tr><td><code>MegaLightsShading.usf</code></td><td>FShadeLightSamplesCS：按 tile 类型施光 + Resolve 重建两路光照</td><td><span class="usf-todo">规划中</span></td></tr>
+<tr><td><code>MegaLightsShading.usf</code></td><td>FShadeLightSamplesCS：按 tile 类型施光 + Resolve 重建两路光照</td><td><a href="../Shaders/MegaLightsShading.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
 <tr><td><code>MegaLightsVisibleLightHash.usf</code></td><td>回写可见光哈希，闭合历史引导环路</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p>本篇给"tile 为什么这样分 + 数据流"。<span class="inline">ETileType</span> 全枚举、<span class="inline">FShadeLightSamplesCS</span> permutation、<span class="inline">EMaterialMode</span>、Resolve 输出细节整理在附录。</p><a class="tag" href="MegaLightsShading_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 Tile 与着色附录</a><a class="tag" href="MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 追踪</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
@@ -58,7 +58,7 @@ uint32              UseShadingConfidence;         // r.MegaLights.ShadingConfide
 <section class="card"><h2>关联文档 / 接口连接</h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 追踪（可见性源）</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="MegaLightsDenoise_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#5 去噪</a><a class="tag" href="MegaLightsSampling_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#2 采样（下帧读哈希）</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>MegaLightsShading.usf / VisibleLightHash.usf（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/MegaLightsShading.usf.html"><span class="dot" style="background:var(--green)"></span>MegaLightsShading.usf ↗</a><span class="tag"><span class="dot" style="background:#a9b4c0"></span>VisibleLightHash.usf（规划中）</span></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="MegaLightsShading_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>Tile 与着色附录</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 

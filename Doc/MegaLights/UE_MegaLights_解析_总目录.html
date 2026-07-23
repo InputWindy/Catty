@@ -41,6 +41,14 @@
 
 </div></section>
 
+<section class="card"><h2>Shader 源码解析索引</h2><div class="body"><p style="margin:0 0 10px;color:#c6d4e2">MegaLights 自有 GPU shader 较多（MegaLights/ 下 20 个 .usf）；下表为已建核心内核解析，其余在各章接口速览与附录中点名。所有片段取自 UE5.8 本地源码。</p>
+<table style="border-collapse:collapse;width:100%;font-size:13.5px"><tr><th style="border:1px solid var(--line);padding:8px 10px;background:#1c2634;color:#cfe4ff">Shader 文档</th><th style="border:1px solid var(--line);padding:8px 10px;background:#1c2634;color:#cfe4ff">一句话</th><th style="border:1px solid var(--line);padding:8px 10px;background:#1c2634;color:#cfe4ff">章节</th></tr>
+<tr><td style="border:1px solid var(--line);padding:8px 10px"><a href="Shaders/MegaLightsSampling.usf.html" style="color:#9ee8ff">MegaLightsSampling.usf ↗</a></td><td style="border:1px solid var(--line);padding:8px 10px">重要性采样抽光源：FLightTargetPDF + Guide by History + 蓝噪声</td><td style="border:1px solid var(--line);padding:8px 10px">#2</td></tr>
+<tr><td style="border:1px solid var(--line);padding:8px 10px"><a href="Shaders/MegaLightsRayTracing.usf.html" style="color:#9ee8ff">MegaLightsRayTracing.usf ↗</a></td><td style="border:1px solid var(--line);padding:8px 10px">可见性追踪：Compact 压缩 + SWRT/Screen（与 Lumen 同源）</td><td style="border:1px solid var(--line);padding:8px 10px">#3</td></tr>
+<tr><td style="border:1px solid var(--line);padding:8px 10px"><a href="Shaders/MegaLightsShading.usf.html" style="color:#9ee8ff">MegaLightsShading.usf ↗</a></td><td style="border:1px solid var(--line);padding:8px 10px">按 tile 类型施光 + Resolve 重建两路光照 + 回写可见光哈希</td><td style="border:1px solid var(--line);padding:8px 10px">#4</td></tr>
+<tr><td style="border:1px solid var(--line);padding:8px 10px">HardwareRayTracing / VSMTracing / Denoiser* / Volume*（规划中）</td><td style="border:1px solid var(--line);padding:8px 10px">HWRT/VSM 追踪、时空去噪、体积分支（各章接口速览已点名）</td><td style="border:1px solid var(--line);padding:8px 10px">#3·#5·#6</td></tr>
+</table></div></section>
+
 <section class="card"><h2>与本文档集其它篇的关系</h2><div class="body"><div class="note"><h3>MegaLights 与 Lumen 是两本独立的书</h3><p>本书（MegaLights）与 <a href="../Lumen/UE_GI_Lumen_解析_总目录.html" style="color:#9ee8ff">Lumen GI 解析</a> 是<b>并列的两套渲染方案文档</b>，各有独立总目录。两者在源码层有一处交汇：Lumen 的 <b>Surface Cache 随机直接光照</b>（实验路径）借用了 MegaLights 的 <span class="inline">MegaLightsRayTracing.ush</span> 求值内核，把"随机采样 + 时域累积"的思想搬进 Surface Cache 世界空间。读完本书 <b>#3 追踪</b>后，可回看 Lumen 篇的"随机直接光照"一章理解同一套内核的两处落地。</p></div></div></section>
 
 </main></body></html>

@@ -11,7 +11,7 @@
 </div>
 <p style="margin:14px 0 6px;color:#c6d4e2">本章涉及的 GPU shader：</p>
 <table class="table"><tr><th>Shader</th><th>作用</th><th>解析文档</th></tr>
-<tr><td><code>MegaLightsSampling.usf</code></td><td>FGenerateLightSamplesCS：构 PDF + 蓝噪声抽样 + 写 LightSamples</td><td><span class="usf-todo">规划中</span></td></tr>
+<tr><td><code>MegaLightsSampling.usf</code></td><td>FGenerateLightSamplesCS：构 PDF + 蓝噪声抽样 + 写 LightSamples</td><td><a href="../Shaders/MegaLightsSampling.usf.html" style="color:#9ee8ff">打开 ↗</a></td></tr>
 <tr><td><code>MegaLightsLightTargetPDF.ush</code></td><td>GetLocalLightTargetPDF：假设完全可见估亮度 + log2 感知加权</td><td><span class="usf-todo">规划中</span></td></tr></table></div></section>
 
 <section class="card"><h2>配套附录</h2><div class="body"><p>本篇给"为什么这样抽 + 数据流"。<span class="inline">FGenerateLightSamplesCS</span> 的全部 permutation、shader parameter、PDF 公式细节、VisibleLightHash 布局整理在附录。</p><a class="tag" href="MegaLightsSampling_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>打开 采样 CS 附录</a><a class="tag" href="MegaLightsOverview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#1 总览</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div></section>
@@ -59,7 +59,7 @@ LightTargetPDF.Weight = log2(Lum + 1.0f);</div>
 <section class="card"><h2>关联文档 / 接口连接</h2><div class="body">
 <div class="iface-grp"><b>上游</b> <a class="tag" href="MegaLightsOverview_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#1 总览与管线</a></div>
 <div class="iface-grp"><b>下游</b> <a class="tag" href="MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 追踪与阴影</a><a class="tag" href="MegaLightsShading_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#4 着色与解析（回写哈希）</a></div>
-<div class="iface-grp"><b>本章 Shader</b> <span class="tag"><span class="dot" style="background:#a9b4c0"></span>MegaLightsSampling.usf（规划中）</span></div>
+<div class="iface-grp"><b>本章 Shader</b> <a class="tag" href="../Shaders/MegaLightsSampling.usf.html"><span class="dot" style="background:var(--green)"></span>MegaLightsSampling.usf ↗</a></div>
 <div class="iface-grp"><b>参考</b> <a class="tag" href="MegaLightsSampling_FunctionAppendix.html"><span class="dot" style="background:var(--cyan)"></span>采样 CS 附录</a><a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a></div>
 </div></section>
 

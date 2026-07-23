@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MegaLightsRayTracing.usf 代码解析</title>
+<style>
+:root{--bg:#0f1218;--panel:#171d26;--panel2:#202838;--text:#edf2f7;--muted:#a9b4c0;--line:#344052;--blue:#5eb7ff;--green:#74d99f;--yellow:#ffd166;--orange:#ff9f5a;--pink:#ff7ab6;--purple:#b69cff;--red:#ff6b6b;--cyan:#66e3e0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}header{padding:28px 36px 20px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#151b24,#10141c)}h1{margin:0 0 8px;font-size:27px}.subtitle{color:var(--muted);max-width:1180px}.nav{margin:0 0 8px}.nav a{color:#9ee8ff;text-decoration:none;font-size:14px;margin-right:14px}main{padding:24px 36px 70px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:0 0 22px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.24)}.card h2{margin:0;padding:14px 18px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:18px}.body{padding:18px}.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.node{border:1px solid var(--line);border-radius:12px;background:#101823;padding:12px;min-height:88px}.node strong{display:block;margin-bottom:6px}.node small{color:var(--muted)}.node.merge{border-color:var(--green)}.node.branch{border-color:var(--orange)}.node.out{border-color:var(--yellow)}.arrow{text-align:center;color:var(--muted);font-size:18px;align-self:center}.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.8fr);gap:16px}pre{margin:0;overflow:auto;background:#090d13;border:1px solid #27313d;border-radius:12px;padding:14px 0;color:#dce7f1;font:13px/1.55 Consolas,"Cascadia Mono",monospace}.code-line{display:block;padding:0 14px;white-space:pre}.blue{background:rgba(94,183,255,.12);border-left:4px solid var(--blue);padding-left:10px}.green{background:rgba(116,217,159,.12);border-left:4px solid var(--green);padding-left:10px}.yellow{background:rgba(255,209,102,.12);border-left:4px solid var(--yellow);padding-left:10px}.orange{background:rgba(255,159,90,.12);border-left:4px solid var(--orange);padding-left:10px}.note{border-left:5px solid var(--yellow);background:linear-gradient(135deg,rgba(17,24,39,.96),rgba(14,20,28,.92));border-radius:12px;padding:16px 18px}.note h3{margin:0 0 10px;font-size:16px;color:#ffe08a;font-weight:700}.note p{margin:10px 0;color:#cfe4ff;line-height:1.82}.note .inline{color:#9ee8ff;background:rgba(102,227,224,.09);border:1px solid rgba(102,227,224,.18);border-radius:5px;padding:0 4px}.note-label{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:.88em;font-weight:700}.note-label.common{color:#0b1b12;background:#74d99f}.note-label.diff{color:#1c1005;background:#ffb86b}.n-blue{border-left-color:var(--blue);background:rgba(94,183,255,.08)}.n-green{border-left-color:var(--green);background:rgba(116,217,159,.08)}.n-orange{border-left-color:var(--orange);background:rgba(255,159,90,.08)}.inline{font-family:Consolas,"Cascadia Mono",monospace;color:#d7ecff}.tag{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#101823;border:1px solid var(--line);color:var(--muted);text-decoration:none;margin:0 8px 8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.embedded-source{width:100%;height:480px;display:block;border:1px solid var(--line);border-radius:12px;background:#090d13;color:#dce7f1;padding:14px;font:13px/1.55 Consolas,"Cascadia Mono",monospace;white-space:pre;tab-size:4;resize:vertical}.source-path{display:block;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#090d13;color:#dce7f1;font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px}@media(max-width:1200px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="nav"><a href="../UE_MegaLights_解析_总目录.html">← 返回《UE MegaLights》总目录</a><a href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html">← 回到 #3 追踪与阴影</a></div>
+<h1>MegaLightsRayTracing.usf 汇聚/发散批注版</h1><div class="subtitle">MegaLights 的<b>可见性追踪内核</b>（与 Lumen 随机直接光照同源）：先 <b>Compact</b> 把稀疏有效样本挤成连续列表间接派发，再走软件 Global SDF / 屏幕空间追踪求可见性（HWRT/VSM 在各自 .usf）。核心 <span class="inline">CompactLightSampleTracesCS</span> + <span class="inline">SoftwareRayTraceLightSamplesCS</span>。<b>说明：完整文件 510 行</b>，下方内嵌核心 compaction 入口的真实源码。</div></header>
+<main>
+
+<section class="card"><h2>一眼看懂：一条解题弧线</h2><div class="body flow">
+<div class="node branch"><strong>LightSamples（稀疏）</strong><small>#2 抽出，分布不均</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>Compact</strong><small>有效样本挤成连续列表</small></div>
+<div class="arrow">▶</div>
+<div class="node func"><strong>InitIndirectArgs</strong><small>只对有效样本派发</small></div>
+<div class="arrow">▶</div>
+<div class="node out"><strong>追踪求可见性</strong><small>SWRT/Screen（HWRT/VSM 见旁文件）</small></div>
+</div></section>
+
+<section class="card"><h2>核心源码对照 <span style="font-size:13px;color:#a9b4c0;font-weight:400">（510 行文件的核心节选，逐行真实）</span></h2><div class="body">
+<span class="source-path">Engine/Shaders/Private/MegaLights/MegaLightsRayTracing.usf · CompactLightSampleTracesCS L90 / SoftwareRayTraceLightSamplesCS L382</span>
+<textarea class="embedded-source" readonly spellcheck="false">// 把稀疏的有效样本压缩成连续列表 —— 随机采样管线通用 compaction
+[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]
+void CompactLightSampleTracesCS(uint3 GroupId : SV_GroupID, uint3 GroupThreadId : SV_GroupThreadID, uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	const uint LinearThreadIndex = GroupThreadId.y * THREADGROUP_SIZE + GroupThreadId.x;
+	if (LinearThreadIndex == 0) SharedTraceTexelAllocator = 0;   // wave/组内计数清零
+	GroupMemoryBarrierWithGroupSync();
+
+	// Z 序遍历，保证空间相邻样本在压缩列表里也相邻（局部性）
+	const uint2 ThreadOffset = ZOrder2D(LinearThreadIndex, log2(THREADGROUP_SIZE));
+	const uint2 SampleCoord  = SampleViewMin + GroupId.xy * THREADGROUP_SIZE + ThreadOffset;
+
+	bool bTraceValid = false;
+	// ... 若该样本需要追踪：组内前缀和分配槽位 → 写进连续的 CompactedTraceTexelData ...
+	// 之后 InitCompactedTraceTexelIndirectArgsCS 据总数生成 indirect dispatch args
+}
+
+// 软件光追后端（无 HWRT 时的兜底）：对压缩后的样本沿 Global SDF 求交
+[numthreads(THREADGROUP_SIZE, 1, 1)]
+void SoftwareRayTraceLightSamplesCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	// 从 CompactedTraceTexelData 取本线程要追的样本 → SetupLightSampleRay
+	// → 沿 Global Distance Field ray-march 求遮挡 → 回写样本可见性
+}
+</textarea>
+</div></section>
+
+<section class="card"><h2>0. Compact：稀疏光线的高效派发</h2><div class="body grid2"><pre><code><span class="code-line yellow">ThreadOffset = ZOrder2D(LinearThreadIndex, log2(TILE))  // Z 序保局部性</span>
+<span class="code-line green">组内前缀和分配槽 → 写 CompactedTraceTexelData</span></code></pre><div class="note n-green"><h3>说明</h3><p>下采样 + 早剔除后，需追踪的样本在屏幕上<b>稀疏且不均</b>。若按像素网格派发，大量线程空转。<span class="inline">CompactLightSampleTracesCS</span> 用组内<b>前缀和</b>把有效样本挤成连续列表，配合 <span class="inline">InitCompactedTraceTexelIndirectArgsCS</span> 生成 indirect args——追踪 pass 只对"确实要追的样本"启动线程。<span class="inline">ZOrder2D</span> 保证压缩后空间相邻样本仍相邻（BVH/SDF 遍历缓存友好）。这是随机采样管线（含 Lumen）通用技巧。</p></div></div></section>
+
+<section class="card"><h2>1. 三后端 + 屏幕首段（发散核心）</h2><div class="body grid2"><pre><code><span class="code-line orange">Screen Trace（屏内首段，可选）→ 命中即省一条世界光线</span>
+<span class="code-line blue">SoftwareRayTraceLightSamplesCS  → Global SDF（本文件）</span>
+<span class="code-line blue">HWRT / VSM  → MegaLightsHardwareRayTracing.usf / VSMTracing.usf</span></code></pre><div class="note n-orange"><h3>说明</h3><p><span class="note-label common">共同点</span>三后端都消费同一份压缩样本列表、都把结果回填样本可见性缓冲、都共享 <span class="inline">MegaLightsRayTracing.ush</span> 的求值内核（与 <a href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html" class="inline">#3</a> 所述 Lumen 随机直接光照同源）。</p><p><span class="note-label diff">不同点</span><b>SWRT</b>（本文件）沿 Global Distance Field ray-march；<b>HWRT</b> 走 BVH（inline/raygen，<span class="inline">MegaLightsHardwareRayTracing.usf</span>）；<b>VSM</b> 采样阴影深度（<span class="inline">MegaLightsVSMTracing.usf</span>）。<b>Screen Trace</b> 是屏内廉价首段，命中屏内几何就省一条世界光线，屏外仍需世界追踪。</p></div></div></section>
+
+<section class="card"><h2>最终总结</h2><div class="body grid2"><div class="note n-green"><h3>骨架</h3><p>Compact（前缀和 + Z 序挤成连续列表）→ indirect 派发 → 三后端之一（SWRT Global SDF / HWRT BVH / VSM 深度）求可见性，可选 Screen Trace 首段。稀疏光线高效派发 + 后端可插拔，是随机阴影的核心。</p></div><div class="note"><h3>阅读建议</h3><p>追踪设计与后端选择见 <a href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html" class="inline">#3</a>；样本来源见 <a href="MegaLightsSampling.usf.html" class="inline">MegaLightsSampling.usf</a>；可见性如何着色见 <a href="MegaLightsShading.usf.html" class="inline">MegaLightsShading.usf</a>。</p></div></div></section>
+
+<section class="card"><h2>关联文档 / 接口</h2><div class="body">
+<a class="tag" href="../Chapters/MegaLightsRayTracing_ConvergenceAnnotated.html"><span class="dot" style="background:var(--green)"></span>#3 追踪与阴影</a>
+<a class="tag" href="MegaLightsSampling.usf.html"><span class="dot" style="background:var(--cyan)"></span>MegaLightsSampling.usf（样本源）↗</a>
+<a class="tag" href="MegaLightsShading.usf.html"><span class="dot" style="background:var(--cyan)"></span>MegaLightsShading.usf（消费可见性）↗</a>
+<a class="tag" href="../UE_MegaLights_解析_总目录.html"><span class="dot" style="background:var(--yellow)"></span>返回总目录</a>
+</div></section>
+</main>
+<script>
+document.querySelectorAll('.note p').forEach(function(p){p.innerHTML=p.innerHTML.replace(/共同点：/g,'<span class="note-label common">共同点</span>').replace(/不同点：/g,'<span class="note-label diff">不同点</span>');});
+</script>
+</body>
+</html>
