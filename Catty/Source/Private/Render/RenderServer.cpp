@@ -1,8 +1,12 @@
 #include "Catty/Render/RenderServer.h"
 
 #include "Catty/Core/Log.h"
+#include "RHI/VulkanRHI.h"
 
 #include <atomic>
+
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
 
 namespace Catty
 {
@@ -20,6 +24,7 @@ bool FRenderServer::OnInitialize()
 
 void FRenderServer::OnShutdown()
 {
+	bImGuiEnabled = false;
 	if (RHI)
 	{
 		Enqueue([this](FThreadedServer& /*Server*/)
@@ -105,6 +110,16 @@ bool FRenderServer::HasRHI() const
 	return static_cast<bool>(RHI);
 }
 
+FVulkanRHI* FRenderServer::GetVulkanRHI() const
+{
+	return dynamic_cast<FVulkanRHI*>(RHI.get());
+}
+
+void FRenderServer::SetImGuiEnabled(bool bEnabled)
+{
+	bImGuiEnabled = bEnabled;
+}
+
 void FRenderServer::RequestClearPresent(float R, float G, float B, float A)
 {
 	if (!RHI)
@@ -112,15 +127,37 @@ void FRenderServer::RequestClearPresent(float R, float G, float B, float A)
 		return;
 	}
 
-	Enqueue([this, R, G, B, A](FThreadedServer& /*Server*/)
+	const bool bDrawImGui = bImGuiEnabled;
+	Enqueue([this, R, G, B, A, bDrawImGui](FThreadedServer& /*Server*/)
 	{
 		if (!RHI)
 		{
 			return;
 		}
-		RHI->BeginFrame();
-		RHI->Clear(R, G, B, A);
-		RHI->EndFrame();
+
+		FVulkanRHI* VulkanRHI = dynamic_cast<FVulkanRHI*>(RHI.get());
+		if (!VulkanRHI)
+		{
+			RHI->BeginFrame();
+			RHI->Clear(R, G, B, A);
+			RHI->EndFrame();
+			return;
+		}
+
+		VulkanRHI->BeginFrame();
+		VulkanRHI->BeginMainPass(R, G, B, A);
+
+		if (bDrawImGui)
+		{
+			ImDrawData* DrawData = ImGui::GetDrawData();
+			if (DrawData && DrawData->CmdListsCount > 0)
+			{
+				ImGui_ImplVulkan_RenderDrawData(DrawData, VulkanRHI->GetVkCommandBuffer());
+			}
+		}
+
+		VulkanRHI->EndMainPass();
+		VulkanRHI->EndFrame();
 	});
 }
 

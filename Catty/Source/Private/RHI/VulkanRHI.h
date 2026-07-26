@@ -27,6 +27,22 @@ public:
 
 	[[nodiscard]] virtual bool IsInitialized() const override;
 
+	/** Begin command buffer + main swapchain render pass (clear). Leaves the pass open. */
+	void BeginMainPass(float R, float G, float B, float A);
+
+	/** End main render pass + command buffer. */
+	void EndMainPass();
+
+	[[nodiscard]] VkInstance GetVkInstance() const { return Instance; }
+	[[nodiscard]] VkPhysicalDevice GetVkPhysicalDevice() const { return PhysicalDevice; }
+	[[nodiscard]] VkDevice GetVkDevice() const { return Device; }
+	[[nodiscard]] VkQueue GetGraphicsQueue() const { return GraphicsQueue; }
+	[[nodiscard]] std::uint32_t GetGraphicsQueueFamilyIndex() const { return GraphicsQueueFamilyIndex; }
+	[[nodiscard]] VkRenderPass GetVkRenderPass() const { return RenderPass; }
+	[[nodiscard]] VkCommandBuffer GetVkCommandBuffer() const { return CommandBuffer; }
+	[[nodiscard]] std::uint32_t GetSwapchainImageCount() const { return static_cast<std::uint32_t>(SwapchainImages.size()); }
+	[[nodiscard]] std::uint32_t GetMinImageCount() const { return 2; }
+
 private:
 	bool CreateInstance();
 	bool CreateSurface();

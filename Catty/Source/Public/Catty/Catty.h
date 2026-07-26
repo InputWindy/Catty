@@ -17,4 +17,9 @@
 #include "Catty/Server/ThreadedServer.h"
 #include "Catty/Server/ServerTask.h"
 #include "Catty/Server/TaskContext.h"
+#include "Catty/UI/ImGuiSystem.h"
 #include "Catty/World/World.h"
+
+#if defined(CATTY_WITH_IMGUI)
+#	include <imgui.h>
+#endif

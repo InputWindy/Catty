@@ -20,14 +20,28 @@ if(CATTY_SOURCES STREQUAL "")
 	message(FATAL_ERROR "Catty: no sources found under ${CATTY_SOURCE_DIR}")
 endif()
 
+if(NOT CATTY_IMGUI_SOURCE_DIR)
+	message(FATAL_ERROR "Catty: CATTY_IMGUI_SOURCE_DIR is not set (CattyDependencies.cmake)")
+endif()
+
+set(CATTY_IMGUI_SOURCES
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_demo.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_draw.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_tables.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_widgets.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/backends/imgui_impl_glfw.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
+)
+
 if(CATTY_BUILD_SHARED)
-	add_library(Catty SHARED ${CATTY_SOURCES})
+	add_library(Catty SHARED ${CATTY_SOURCES} ${CATTY_IMGUI_SOURCES})
 	target_compile_definitions(Catty
 		PUBLIC  CATTY_BUILD_SHARED=1
 		PRIVATE CATTY_EXPORTS=1
 	)
 else()
-	add_library(Catty STATIC ${CATTY_SOURCES})
+	add_library(Catty STATIC ${CATTY_SOURCES} ${CATTY_IMGUI_SOURCES})
 endif()
 
 add_library(Catty::Engine ALIAS Catty)
@@ -35,12 +49,15 @@ add_library(Catty::Engine ALIAS Catty)
 target_include_directories(Catty
 	PUBLIC
 		"${CATTY_PUBLIC_DIR}"
+		"${CATTY_IMGUI_SOURCE_DIR}"
+		"${CATTY_IMGUI_SOURCE_DIR}/backends"
 	PRIVATE
 		"${CATTY_PRIVATE_DIR}"
 )
 
 # PUBLIC: game code uses CATTY_* macros that expand to spdlog calls.
 # Header-only avoids duplicating a static spdlog into both Catty.dll and the game EXE.
+# ImGui is compiled into Catty.dll; IMGUI_API maps to CATTY_API via ImGuiConfig.h.
 target_link_libraries(Catty
 	PUBLIC
 		spdlog::spdlog_header_only
@@ -53,7 +70,9 @@ target_link_libraries(Catty
 target_compile_definitions(Catty
 	PUBLIC
 		CATTY_WITH_VULKAN=1
+		CATTY_WITH_IMGUI=1
 		CATTY_PLATFORM_${CATTY_PLATFORM_NAME}=1
+		IMGUI_USER_CONFIG="Catty/UI/ImGuiConfig.h"
 )
 
 if(WIN32)

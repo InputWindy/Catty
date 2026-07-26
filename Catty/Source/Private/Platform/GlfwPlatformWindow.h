@@ -25,6 +25,7 @@ public:
 	virtual void SetTitle(const std::string& Title) override;
 	virtual void GetFramebufferSize(int& OutWidth, int& OutHeight) const override;
 	[[nodiscard]] virtual void* GetNativeHandle() const override;
+	[[nodiscard]] virtual void* GetToolkitWindowHandle() const override;
 
 	virtual void PollEvents() override;
 	[[nodiscard]] virtual double GetTimeSeconds() const override;

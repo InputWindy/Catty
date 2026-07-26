@@ -7,6 +7,7 @@
 #include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/ResourceServer.h"
+#include "Catty/UI/ImGuiSystem.h"
 
 #include <cstdint>
 
@@ -17,12 +18,6 @@ namespace Catty
  * Application base class (UE FEngineLoop + Unity PlayerLoop style).
  * Game projects inherit FApp and override lifecycle / frame hooks only.
  * Tick() is the fixed engine frame pipeline — not overridable.
- *
- * Startup:  PreInitialize → Configure → InitializeEngine → PostInitialize
- * Frame:    Tick() =
- *           PollEvents → BeginFrame → ProcessInput → FixedUpdate(s) → Engine.Tick
- *           → Update → LateUpdate → Flush(render) → PreRender → Render → EndFrame
- * Shutdown: PreShutdown → Shutdown
  */
 class CATTY_API FApp
 {
@@ -33,7 +28,6 @@ public:
 	FApp(const FApp&) = delete;
 	FApp& operator=(const FApp&) = delete;
 
-	/** Owned by EntryPoint: startup → frame loop → shutdown. */
 	void Run();
 
 	void RequestExit();
@@ -54,6 +48,9 @@ public:
 	[[nodiscard]] FInput& GetInput() { return Input; }
 	[[nodiscard]] const FInput& GetInput() const { return Input; }
 
+	[[nodiscard]] FImGuiSystem& GetImGui() { return ImGui; }
+	[[nodiscard]] const FImGuiSystem& GetImGui() const { return ImGui; }
+
 	[[nodiscard]] FPlatformWindow* GetPlatformWindow() { return PlatformWindow.get(); }
 	[[nodiscard]] const FPlatformWindow* GetPlatformWindow() const { return PlatformWindow.get(); }
 
@@ -65,20 +62,24 @@ protected:
 	virtual bool PostInitialize();
 	virtual void PreShutdown();
 
-	/** Default: render server → resource server → platform → engine. */
+	/** Default: ImGui → render server → resource server → platform → engine. */
 	virtual void Shutdown();
 
+	/** Default: starts an ImGui frame when ImGui is initialized. */
 	virtual void BeginFrame(float DeltaSeconds);
 
-	/** Default: update FInput; Escape requests exit. */
+	/** Default: update FInput; Escape requests exit (unless ImGui wants keyboard). */
 	virtual void ProcessInput(float DeltaSeconds);
 
 	virtual void FixedUpdate(float FixedDeltaSeconds);
+
+	/** Default: shows ImGui demo window when enabled. */
 	virtual void Update(float DeltaSeconds);
+
 	virtual void LateUpdate(float DeltaSeconds);
 	virtual void PreRender(float DeltaSeconds);
 
-	/** Default: enqueue clear/present on the render server when RHI is alive. */
+	/** Default: finishes ImGui frame and enqueues clear/present (+ ImGui draw). */
 	virtual void Render(float DeltaSeconds);
 
 	virtual void EndFrame(float DeltaSeconds);
@@ -90,6 +91,7 @@ protected:
 	FResourceServer ResourceServer;
 	FTimer Timer;
 	FInput Input;
+	FImGuiSystem ImGui;
 	FPlatformWindowPtr PlatformWindow;
 
 	float FixedDeltaSeconds = 1.0f / 50.0f;

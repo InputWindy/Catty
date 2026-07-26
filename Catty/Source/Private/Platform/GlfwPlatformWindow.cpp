@@ -169,6 +169,11 @@ void* FGlfwPlatformWindow::GetNativeHandle() const
 #endif
 }
 
+void* FGlfwPlatformWindow::GetToolkitWindowHandle() const
+{
+	return Handle;
+}
+
 void FGlfwPlatformWindow::PollEvents()
 {
 	if (GbGlfwRuntimeInitialized)

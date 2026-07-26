@@ -3,6 +3,8 @@
 #include "Catty/Core/Timer.h"
 #include "Catty/Platform/PlatformWindow.h"
 
+#include <imgui.h>
+
 #include <algorithm>
 
 namespace Catty
@@ -46,6 +48,10 @@ FApp::FApp() = default;
 
 FApp::~FApp()
 {
+	if (ImGui.IsInitialized() && RenderServer.IsInitialized())
+	{
+		ImGui.Shutdown(RenderServer);
+	}
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Shutdown();
@@ -118,9 +124,25 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
+	if (PlatformWindow->HasOsWindow())
+	{
+		if (!ImGui.Initialize(*PlatformWindow, RenderServer))
+		{
+			CATTY_CORE_ERROR("FApp::InitializeEngine failed (ImGui)");
+			RenderServer.Shutdown();
+			ShutdownPlatformWindow(PlatformWindow);
+			Engine.Shutdown();
+			return false;
+		}
+	}
+
 	if (!ResourceServer.Initialize())
 	{
 		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ResourceServer)");
+		if (ImGui.IsInitialized())
+		{
+			ImGui.Shutdown(RenderServer);
+		}
 		RenderServer.Shutdown();
 		ShutdownPlatformWindow(PlatformWindow);
 		Engine.Shutdown();
@@ -147,6 +169,11 @@ void FApp::PreShutdown()
 
 void FApp::Shutdown()
 {
+	FlushRenderServer();
+	if (ImGui.IsInitialized())
+	{
+		ImGui.Shutdown(RenderServer);
+	}
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Shutdown();
@@ -164,6 +191,7 @@ void FApp::Shutdown()
 
 void FApp::BeginFrame(float /*DeltaSeconds*/)
 {
+	ImGui.BeginFrame();
 }
 
 void FApp::ProcessInput(float /*DeltaSeconds*/)
@@ -174,7 +202,9 @@ void FApp::ProcessInput(float /*DeltaSeconds*/)
 	}
 
 	Input.Update(*PlatformWindow);
-	if (Input.WasKeyPressed(EKey::Escape))
+
+	const bool bImGuiWantsKeyboard = ImGui.IsInitialized() && ImGui::GetIO().WantCaptureKeyboard;
+	if (!bImGuiWantsKeyboard && Input.WasKeyPressed(EKey::Escape))
 	{
 		RequestExit();
 	}
@@ -186,6 +216,10 @@ void FApp::FixedUpdate(float /*InFixedDeltaSeconds*/)
 
 void FApp::Update(float /*DeltaSeconds*/)
 {
+	if (ImGui.IsInitialized() && ImGui.bShowDemoWindow)
+	{
+		ImGui::ShowDemoWindow(&ImGui.bShowDemoWindow);
+	}
 }
 
 void FApp::LateUpdate(float /*DeltaSeconds*/)
@@ -198,6 +232,8 @@ void FApp::PreRender(float /*DeltaSeconds*/)
 
 void FApp::Render(float /*DeltaSeconds*/)
 {
+	ImGui.EndFrame();
+
 	if (!RenderServer.HasRHI())
 	{
 		return;
@@ -311,10 +347,10 @@ void FApp::Tick(float DeltaSeconds)
 	Update(DeltaSeconds);
 	LateUpdate(DeltaSeconds);
 
-	// Wait for previous frame's render work, then submit this frame.
-	FlushRenderServer();
 	PreRender(DeltaSeconds);
 	Render(DeltaSeconds);
+	// Consume ImGui draw data on the render thread before the next NewFrame.
+	FlushRenderServer();
 	EndFrame(DeltaSeconds);
 
 	if (bAutoExitAfterFrames && Engine.GetFrameIndex() >= AutoExitFrameCount)
@@ -364,7 +400,6 @@ void FApp::Run()
 		Tick(CalculateDeltaSeconds());
 	}
 
-	// Drain the last clear/present before tearing down RHI.
 	FlushRenderServer();
 
 	PreShutdown();

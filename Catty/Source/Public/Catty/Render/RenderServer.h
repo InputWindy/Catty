@@ -7,9 +7,11 @@
 namespace Catty
 {
 
+class FVulkanRHI;
+
 /**
  * Render server: CS worker thread + optional IRHI (Vulkan clear/present today).
- * Game thread enqueues RequestClearPresent; FApp Flushes before PreRender.
+ * Game thread enqueues RequestClearPresent; FApp Flushes after Render when ImGui is used.
  */
 class CATTY_API FRenderServer : public FThreadedServer
 {
@@ -28,7 +30,14 @@ public:
 
 	[[nodiscard]] bool HasRHI() const;
 
-	/** Enqueue BeginFrame → Clear → EndFrame on the render thread. */
+	/** Vulkan RHI pointer when backend is Vulkan; otherwise nullptr. */
+	[[nodiscard]] FVulkanRHI* GetVulkanRHI() const;
+
+	/** When true, RequestClearPresent records ImGui draw data into the main pass. */
+	void SetImGuiEnabled(bool bEnabled);
+	[[nodiscard]] bool IsImGuiEnabled() const { return bImGuiEnabled; }
+
+	/** Enqueue BeginFrame → main pass (clear [+ ImGui]) → EndFrame on the render thread. */
 	void RequestClearPresent(float R, float G, float B, float A = 1.0f);
 
 	/** Enqueue resize when the framebuffer size changes. */
@@ -43,6 +52,7 @@ protected:
 
 private:
 	FRHIPtr RHI;
+	bool bImGuiEnabled = false;
 };
 
 } // namespace Catty

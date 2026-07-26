@@ -263,9 +263,15 @@ void FVulkanRHI::BeginFrame()
 
 void FVulkanRHI::Clear(float R, float G, float B, float A)
 {
+	BeginMainPass(R, G, B, A);
+	EndMainPass();
+}
+
+void FVulkanRHI::BeginMainPass(float R, float G, float B, float A)
+{
 	if (!bInitialized)
 	{
-		CATTY_CORE_ERROR("FVulkanRHI::Clear: not initialized");
+		CATTY_CORE_ERROR("FVulkanRHI::BeginMainPass: not initialized");
 		return;
 	}
 
@@ -301,6 +307,16 @@ void FVulkanRHI::Clear(float R, float G, float B, float A)
 	RenderPassInfo.pClearValues = &ClearValue;
 
 	vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+}
+
+void FVulkanRHI::EndMainPass()
+{
+	if (!bInitialized)
+	{
+		CATTY_CORE_ERROR("FVulkanRHI::EndMainPass: not initialized");
+		return;
+	}
+
 	vkCmdEndRenderPass(CommandBuffer);
 
 	if (!CheckVkResult(vkEndCommandBuffer(CommandBuffer), "vkEndCommandBuffer"))

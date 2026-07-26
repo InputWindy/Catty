@@ -59,6 +59,12 @@ public:
 	 */
 	[[nodiscard]] virtual void* GetNativeHandle() const { return nullptr; }
 
+	/**
+	 * Toolkit window handle for backends (GLFWwindow* when EPlatform::Glfw).
+	 * Returns nullptr when unavailable / headless.
+	 */
+	[[nodiscard]] virtual void* GetToolkitWindowHandle() const { return nullptr; }
+
 	/** Drain OS event queue. */
 	virtual void PollEvents() = 0;
 
