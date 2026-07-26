@@ -1,6 +1,5 @@
 #include "Catty/Core/Engine.h"
-
-#include <iostream>
+#include "Catty/Core/Log.h"
 
 namespace Catty
 {
@@ -26,14 +25,14 @@ bool FEngine::Initialize(const FEngineConfig& InConfig)
 	FrameIndex = 0;
 	bInitialized = true;
 
-	std::cout << "[Catty] Engine initialized\n"
-			  << "  App            : " << Config.ApplicationName << '\n'
-			  << "  EngineShaders  : " << Config.EngineShadersDir << '\n'
-			  << "  ProjectShaders : " << Config.ProjectShadersDir << '\n'
-			  << "  EnginePlugins  : " << Config.EnginePluginsDir << '\n'
-			  << "  ProjectPlugins : " << Config.ProjectPluginsDir << '\n'
-			  << "  Cached         : " << Config.CachedDir << '\n'
-			  << "  Saved          : " << Config.SavedDir << '\n';
+	CATTY_CORE_INFO("Engine initialized");
+	CATTY_CORE_INFO("  App            : {}", Config.ApplicationName);
+	CATTY_CORE_INFO("  EngineShaders  : {}", Config.EngineShadersDir);
+	CATTY_CORE_INFO("  ProjectShaders : {}", Config.ProjectShadersDir);
+	CATTY_CORE_INFO("  EnginePlugins  : {}", Config.EnginePluginsDir);
+	CATTY_CORE_INFO("  ProjectPlugins : {}", Config.ProjectPluginsDir);
+	CATTY_CORE_INFO("  Cached         : {}", Config.CachedDir);
+	CATTY_CORE_INFO("  Saved          : {}", Config.SavedDir);
 
 	return true;
 }
@@ -54,7 +53,7 @@ void FEngine::Shutdown()
 		return;
 	}
 
-	std::cout << "[Catty] Engine shutdown after " << FrameIndex << " frames\n";
+	CATTY_CORE_INFO("Engine shutdown after {} frames", FrameIndex);
 	bInitialized = false;
 }
 

@@ -26,22 +26,35 @@
  */
 
 #include "Catty/Core/App.h"
-
-#include <iostream>
+#include "Catty/Core/Log.h"
 
 int main(int Argc, char** Argv)
 {
 	(void)Argc;
 	(void)Argv;
 
+	// Bootstrap console logger before CreateApplication / Run reconfigure with file sinks.
+	{
+		Catty::FLogConfig BootstrapConfig;
+		BootstrapConfig.bEnableConsole = true;
+		BootstrapConfig.bEnableFile = false;
+		Catty::FLog::Initialize(BootstrapConfig);
+	}
+
 	Catty::FApp* App = Catty::CreateApplication();
 	if (!App)
 	{
-		std::cerr << "[Catty] CreateApplication returned null\n";
+		CATTY_CORE_ERROR("CreateApplication returned null");
+		Catty::FLog::Shutdown();
 		return 1;
 	}
 
 	App->Run();
 	delete App;
+
+	if (Catty::FLog::IsInitialized())
+	{
+		Catty::FLog::Shutdown();
+	}
 	return 0;
 }

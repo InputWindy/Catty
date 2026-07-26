@@ -1,9 +1,24 @@
 #include "Catty/Core/App.h"
-
-#include <iostream>
+#include "Catty/Core/Log.h"
 
 namespace Catty
 {
+
+namespace
+{
+
+void InitializeAppLogging(const FEngineConfig& Config)
+{
+	FLogConfig LogConfig;
+	LogConfig.CoreLoggerName = "Catty";
+	LogConfig.ClientLoggerName = Config.ApplicationName.empty() ? "App" : Config.ApplicationName;
+	LogConfig.LogDirectory = Config.SavedDir + "/Logs";
+	LogConfig.bEnableConsole = true;
+	LogConfig.bEnableFile = true;
+	FLog::Initialize(LogConfig);
+}
+
+} // namespace
 
 FApp::FApp() = default;
 
@@ -28,7 +43,7 @@ bool FApp::InitializeEngine()
 {
 	if (!Engine.Initialize(EngineConfig))
 	{
-		std::cerr << "[Catty] FApp::InitializeEngine failed\n";
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed");
 		return false;
 	}
 	return true;
@@ -119,6 +134,13 @@ void FApp::Tick(float DeltaSeconds)
 	LateUpdate(DeltaSeconds);
 	Render(DeltaSeconds);
 	EndFrame(DeltaSeconds);
+
+	// FApp owns exit policy. Games should not wire RequestExit into Update.
+	if (bAutoExitAfterFrames && Engine.GetFrameIndex() >= AutoExitFrameCount)
+	{
+		CATTY_CORE_INFO("Requesting exit after {} frames (headless auto-exit)", AutoExitFrameCount);
+		RequestExit();
+	}
 }
 
 void FApp::RequestExit()
@@ -130,22 +152,25 @@ void FApp::Run()
 {
 	if (!PreInitialize())
 	{
-		std::cerr << "[Catty] FApp::PreInitialize failed\n";
+		CATTY_CORE_ERROR("FApp::PreInitialize failed");
 		return;
 	}
 
 	Configure(EngineConfig);
+	InitializeAppLogging(EngineConfig);
 
 	if (!InitializeEngine())
 	{
+		FLog::Shutdown();
 		return;
 	}
 
 	if (!PostInitialize())
 	{
-		std::cerr << "[Catty] FApp::PostInitialize failed\n";
+		CATTY_CORE_ERROR("FApp::PostInitialize failed");
 		PreShutdown();
 		Shutdown();
+		FLog::Shutdown();
 		return;
 	}
 
@@ -157,6 +182,7 @@ void FApp::Run()
 
 	PreShutdown();
 	Shutdown();
+	FLog::Shutdown();
 }
 
 } // namespace Catty

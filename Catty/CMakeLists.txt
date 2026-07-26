@@ -7,6 +7,13 @@ set(CATTY_PRIVATE_DIR "${CATTY_SOURCE_DIR}/Private")
 set(CATTY_SHADERS_DIR "${CATTY_ROOT}/Shaders")
 set(CATTY_PLUGINS_DIR "${CATTY_ROOT}/Plugins")
 
+# Resolve Build/CMake helpers when Catty is added from engine workspace or external .cproject.
+if(NOT DEFINED CATTY_ENGINE_BUILD_CMAKE_DIR)
+	get_filename_component(CATTY_ENGINE_BUILD_CMAKE_DIR "${CATTY_ROOT}/../Build/CMake" ABSOLUTE)
+endif()
+list(APPEND CMAKE_MODULE_PATH "${CATTY_ENGINE_BUILD_CMAKE_DIR}")
+include(CattyDependencies)
+
 catty_collect_sources(CATTY_SOURCES "${CATTY_SOURCE_DIR}")
 
 if(CATTY_SOURCES STREQUAL "")
@@ -31,6 +38,10 @@ target_include_directories(Catty
 	PRIVATE
 		"${CATTY_PRIVATE_DIR}"
 )
+
+# PUBLIC: game code uses CATTY_* macros that expand to spdlog calls.
+# Header-only avoids duplicating a static spdlog into both Catty.dll and the game EXE.
+target_link_libraries(Catty PUBLIC spdlog::spdlog_header_only)
 
 target_compile_features(Catty PUBLIC cxx_std_20)
 

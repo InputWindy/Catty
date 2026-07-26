@@ -21,16 +21,6 @@ protected:
 		return true;
 	}
 
-	virtual void Update(float DeltaSeconds) override
-	{
-		(void)DeltaSeconds;
-
-		if (GetEngine().GetFrameIndex() >= 3)
-		{
-			RequestExit();
-		}
-	}
-
 	virtual void PreShutdown() override
 	{
 		// Tear down game-side resources before the base Shutdown tears down the engine.

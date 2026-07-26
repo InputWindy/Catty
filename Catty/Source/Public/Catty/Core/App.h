@@ -104,6 +104,15 @@ protected:
 	/** Cap FixedUpdate steps per frame to avoid spiral-of-death on hitches. */
 	int MaxFixedUpdatesPerFrame = 5;
 
+	/**
+	 * Temporary headless quit policy (owned by FApp, not game code).
+	 * Until a platform window pumps WM_CLOSE / quit, Run() would spin forever;
+	 * after AutoExitFrameCount frames, Tick calls RequestExit().
+	 * Disable once windowing owns the exit path.
+	 */
+	bool bAutoExitAfterFrames = true;
+	std::uint64_t AutoExitFrameCount = 3;
+
 private:
 	/** Non-virtual: only Engine.Initialize, so subclasses cannot skip it. */
 	bool InitializeEngine();
