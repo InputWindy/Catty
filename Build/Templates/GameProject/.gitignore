@@ -1,0 +1,34 @@
+# UE-style generated / local dirs
+/Intermediate/
+/Binaries/
+/Packaged/
+/Cached/
+/Saved/
+
+# Logs
+*.log
+/CMakeFiles/
+
+# Generated project files
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Local CMake / IDE
+/out/
+/cmake-build-*/
+/.vs/
+CMakeUserPresets.json
+compile_commands.json
+__pycache__/
+*.pyc
+
+# Object / binary artifacts
+*.obj
+*.pdb
+*.dll
+*.lib
+*.exe
+*.ilk
+*.exp

@@ -14,3 +14,8 @@
 #else
 #	define CATTY_API
 #endif
+
+// STL members in exported classes (unique_ptr, string, ...) — safe with matching CRT (/MD).
+#if defined(_MSC_VER)
+#	pragma warning(disable : 4251)
+#endif

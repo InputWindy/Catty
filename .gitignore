@@ -5,6 +5,10 @@
 /Cached/
 /Saved/
 
+# Logs (runtime + accidental CMake/configure leftovers)
+*.log
+/CMakeFiles/
+
 # Generated beside .cproject / workspace
 *.sln
 *.vcxproj

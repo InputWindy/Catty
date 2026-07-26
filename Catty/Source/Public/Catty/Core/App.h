@@ -2,6 +2,9 @@
 
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Export.h"
+#include "Catty/Render/RenderServer.h"
+
+#include <cstdint>
 
 namespace Catty
 {
@@ -14,8 +17,12 @@ namespace Catty
  * Startup:  PreInitialize → Configure → InitializeEngine → PostInitialize
  * Frame:    Tick() =
  *           BeginFrame → ProcessInput → FixedUpdate(s) → Engine.Tick
- *           → Update → LateUpdate → Render → EndFrame
+ *           → Update → LateUpdate → [Flush render thread] → PreRender
+ *           → Render → EndFrame
  * Shutdown: PreShutdown → Shutdown
+ *
+ * Render model: game thread enqueues work to FRenderServer; PreRender waits
+ * until the render thread has drained all previously submitted tasks.
  *
  * Update hooks mirror Unity MonoBehaviour:
  *   FixedUpdate — fixed timestep (physics / deterministic sim), 0..N per frame
@@ -40,6 +47,9 @@ public:
 	[[nodiscard]] FEngine& GetEngine() { return Engine; }
 	[[nodiscard]] const FEngine& GetEngine() const { return Engine; }
 
+	[[nodiscard]] FRenderServer& GetRenderServer() { return RenderServer; }
+	[[nodiscard]] const FRenderServer& GetRenderServer() const { return RenderServer; }
+
 	[[nodiscard]] float GetFixedDeltaSeconds() const { return FixedDeltaSeconds; }
 
 protected:
@@ -57,7 +67,7 @@ protected:
 	/** Tear down game-side resources before Shutdown. */
 	virtual void PreShutdown();
 
-	/** Default: Engine.Shutdown. Overrides should call FApp::Shutdown. */
+	/** Default: stop render server + Engine.Shutdown. Overrides should call FApp::Shutdown. */
 	virtual void Shutdown();
 
 	// ----- Per-frame hooks (override as needed; do not override Tick) -----
@@ -86,6 +96,12 @@ protected:
 	 */
 	virtual void LateUpdate(float DeltaSeconds);
 
+	/**
+	 * After render-thread Flush (PreRender sync). Safe to assume prior GPU/render tasks done.
+	 * No-op by default.
+	 */
+	virtual void PreRender(float DeltaSeconds);
+
 	/** Submit rendering (~RedrawViewports); no-op by default. */
 	virtual void Render(float DeltaSeconds);
 
@@ -97,6 +113,7 @@ protected:
 
 	FEngineConfig EngineConfig;
 	FEngine Engine;
+	FRenderServer RenderServer;
 
 	/** Fixed step size for FixedUpdate (Unity default ~0.02s / 50Hz). */
 	float FixedDeltaSeconds = 1.0f / 50.0f;
@@ -114,18 +131,21 @@ protected:
 	std::uint64_t AutoExitFrameCount = 3;
 
 private:
-	/** Non-virtual: only Engine.Initialize, so subclasses cannot skip it. */
+	/** Non-virtual: Engine.Initialize + RenderServer.Initialize. */
 	bool InitializeEngine();
 
 	/**
 	 * Fixed frame pipeline (not overridable).
 	 * BeginFrame → ProcessInput → FixedUpdate(s) → Engine.Tick
-	 * → Update → LateUpdate → Render → EndFrame
+	 * → Update → LateUpdate → Flush(render) → PreRender → Render → EndFrame
 	 */
 	void Tick(float DeltaSeconds);
 
 	/** Drain FixedUpdateAccumulator; may invoke FixedUpdate 0..MaxFixedUpdatesPerFrame times. */
 	void RunFixedUpdates(float DeltaSeconds);
+
+	/** PreRender sync: wait for all tasks previously submitted to the render thread. */
+	void FlushRenderServer();
 
 	bool bRunning = false;
 	float FixedUpdateAccumulator = 0.0f;

@@ -20,3 +20,11 @@ FetchContent_MakeAvailable(spdlog)
 if(TARGET spdlog)
 	set_target_properties(spdlog PROPERTIES FOLDER "ThirdParty")
 endif()
+
+# Vulkan (LunarG SDK via VULKAN_SDK / FindVulkan)
+find_package(Vulkan REQUIRED)
+message(STATUS "Catty: Vulkan found")
+message(STATUS "  Vulkan_INCLUDE_DIRS = ${Vulkan_INCLUDE_DIRS}")
+message(STATUS "  Vulkan_LIBRARIES    = ${Vulkan_LIBRARIES}")
+
+find_package(Threads REQUIRED)

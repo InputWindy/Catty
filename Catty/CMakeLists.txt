@@ -41,7 +41,19 @@ target_include_directories(Catty
 
 # PUBLIC: game code uses CATTY_* macros that expand to spdlog calls.
 # Header-only avoids duplicating a static spdlog into both Catty.dll and the game EXE.
-target_link_libraries(Catty PUBLIC spdlog::spdlog_header_only)
+target_link_libraries(Catty
+	PUBLIC
+		spdlog::spdlog_header_only
+		Vulkan::Vulkan
+	PRIVATE
+		Threads::Threads
+)
+
+target_compile_definitions(Catty
+	PUBLIC
+		CATTY_WITH_VULKAN=1
+		CATTY_PLATFORM_${CATTY_PLATFORM_NAME}=1
+)
 
 target_compile_features(Catty PUBLIC cxx_std_20)
 
@@ -66,11 +78,6 @@ set_target_properties(Catty PROPERTIES
 )
 
 catty_copy_shaders(Catty "${CATTY_SHADERS_DIR}" "Engine/Shaders")
-
-target_compile_definitions(Catty
-	PUBLIC
-		CATTY_PLATFORM_${CATTY_PLATFORM_NAME}=1
-)
 
 set(CATTY_ENGINE_ROOT "${CATTY_ROOT}" CACHE INTERNAL "Catty engine root")
 set(CATTY_ENGINE_SHADERS_DIR "${CATTY_SHADERS_DIR}" CACHE INTERNAL "Catty engine shaders")

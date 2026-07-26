@@ -6,3 +6,4 @@
 #include "Catty/Core/Log.h"
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/App.h"
+#include "Catty/Render/RenderServer.h"

@@ -24,6 +24,10 @@ FApp::FApp() = default;
 
 FApp::~FApp()
 {
+	if (RenderServer.IsInitialized())
+	{
+		RenderServer.Shutdown();
+	}
 	if (Engine.IsInitialized())
 	{
 		Engine.Shutdown();
@@ -46,6 +50,14 @@ bool FApp::InitializeEngine()
 		CATTY_CORE_ERROR("FApp::InitializeEngine failed");
 		return false;
 	}
+
+	if (!RenderServer.Initialize())
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (RenderServer)");
+		Engine.Shutdown();
+		return false;
+	}
+
 	return true;
 }
 
@@ -60,6 +72,10 @@ void FApp::PreShutdown()
 
 void FApp::Shutdown()
 {
+	if (RenderServer.IsInitialized())
+	{
+		RenderServer.Shutdown();
+	}
 	if (Engine.IsInitialized())
 	{
 		Engine.Shutdown();
@@ -83,6 +99,10 @@ void FApp::Update(float /*DeltaSeconds*/)
 }
 
 void FApp::LateUpdate(float /*DeltaSeconds*/)
+{
+}
+
+void FApp::PreRender(float /*DeltaSeconds*/)
 {
 }
 
@@ -124,6 +144,14 @@ void FApp::RunFixedUpdates(float DeltaSeconds)
 	}
 }
 
+void FApp::FlushRenderServer()
+{
+	if (RenderServer.IsInitialized())
+	{
+		RenderServer.Flush();
+	}
+}
+
 void FApp::Tick(float DeltaSeconds)
 {
 	BeginFrame(DeltaSeconds);
@@ -132,6 +160,11 @@ void FApp::Tick(float DeltaSeconds)
 	Engine.Tick(DeltaSeconds);
 	Update(DeltaSeconds);
 	LateUpdate(DeltaSeconds);
+
+	// PreRender sync point: game thread waits for render-server task queue to drain.
+	FlushRenderServer();
+	PreRender(DeltaSeconds);
+
 	Render(DeltaSeconds);
 	EndFrame(DeltaSeconds);
 
