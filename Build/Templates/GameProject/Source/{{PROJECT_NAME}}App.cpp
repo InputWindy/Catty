@@ -17,7 +17,7 @@ protected:
 
 	virtual bool PostInitialize() override
 	{
-		// Engine is ready: create window / register subsystems / load entry map here later.
+		// Engine + main window are ready: register subsystems / load entry map here later.
 		return true;
 	}
 

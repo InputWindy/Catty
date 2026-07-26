@@ -1,6 +1,9 @@
 #include "Catty/Core/App.h"
 #include "Catty/Core/Log.h"
 #include "Catty/Core/Timer.h"
+#include "Catty/Platform/PlatformWindow.h"
+
+#include <algorithm>
 
 namespace Catty
 {
@@ -31,12 +34,19 @@ void ShutdownAppLogging(FApp& App)
 	FLog::Shutdown();
 }
 
+void ShutdownPlatformWindow(FPlatformWindowPtr& Window)
+{
+	Window.reset();
+	FPlatformWindowFactory::Shutdown();
+}
+
 } // namespace
 
 FApp::FApp() = default;
 
 FApp::~FApp()
 {
+	ShutdownPlatformWindow(PlatformWindow);
 	if (ResourceServer.IsInitialized())
 	{
 		ResourceServer.Shutdown();
@@ -83,6 +93,32 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
+	FPlatformWindowDesc PlatformDesc;
+	PlatformDesc.Platform = EngineConfig.Platform;
+	PlatformDesc.Title = EngineConfig.ApplicationName.empty() ? "Catty" : EngineConfig.ApplicationName;
+	PlatformDesc.Width = EngineConfig.WindowWidth;
+	PlatformDesc.Height = EngineConfig.WindowHeight;
+	PlatformDesc.bResizable = EngineConfig.bResizableWindow;
+	PlatformDesc.bHeadless = !EngineConfig.bCreateMainWindow;
+
+	PlatformWindow = FPlatformWindowFactory::Create(PlatformDesc);
+	if (!PlatformWindow)
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (PlatformWindow)");
+		ResourceServer.Shutdown();
+		RenderServer.Shutdown();
+		Engine.Shutdown();
+		FPlatformWindowFactory::Shutdown();
+		return false;
+	}
+
+	if (PlatformDesc.bHeadless)
+	{
+		bAutoExitAfterFrames = true;
+		CATTY_CORE_INFO("Platform window headless; auto-exit after {} frames", AutoExitFrameCount);
+	}
+
+	LastFrameTimeSeconds = PlatformWindow->GetTimeSeconds();
 	return true;
 }
 
@@ -97,6 +133,7 @@ void FApp::PreShutdown()
 
 void FApp::Shutdown()
 {
+	ShutdownPlatformWindow(PlatformWindow);
 	if (ResourceServer.IsInitialized())
 	{
 		ResourceServer.Shutdown();
@@ -145,8 +182,18 @@ void FApp::EndFrame(float /*DeltaSeconds*/)
 
 float FApp::CalculateDeltaSeconds()
 {
-	constexpr float FrameDeltaSeconds = 1.0f / 60.0f;
-	return FrameDeltaSeconds;
+	const double NowSeconds = PlatformWindow ? PlatformWindow->GetTimeSeconds() : 0.0;
+	float DeltaSeconds = static_cast<float>(NowSeconds - LastFrameTimeSeconds);
+	LastFrameTimeSeconds = NowSeconds;
+
+	// First frame / clock hiccup guards.
+	if (DeltaSeconds < 0.0f)
+	{
+		DeltaSeconds = 0.0f;
+	}
+
+	constexpr float MaxDeltaSeconds = 0.25f;
+	return (std::min)(DeltaSeconds, MaxDeltaSeconds);
 }
 
 void FApp::RunFixedUpdates(float DeltaSeconds)
@@ -185,6 +232,16 @@ void FApp::Tick(float DeltaSeconds)
 {
 	CATTY_SCOPED_TIMER("Engine", "FApp::Tick");
 
+	if (PlatformWindow)
+	{
+		PlatformWindow->PollEvents();
+		if (PlatformWindow->ShouldClose())
+		{
+			RequestExit();
+			return;
+		}
+	}
+
 	BeginFrame(DeltaSeconds);
 	ProcessInput(DeltaSeconds);
 	RunFixedUpdates(DeltaSeconds);
@@ -199,7 +256,6 @@ void FApp::Tick(float DeltaSeconds)
 	Render(DeltaSeconds);
 	EndFrame(DeltaSeconds);
 
-	// FApp owns exit policy. Games should not wire RequestExit into Update.
 	if (bAutoExitAfterFrames && Engine.GetFrameIndex() >= AutoExitFrameCount)
 	{
 		CATTY_CORE_INFO("Requesting exit after {} frames (headless auto-exit)", AutoExitFrameCount);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Catty/Core/Export.h"
+#include "Catty/Platform/PlatformWindow.h"
 
 #include <cstdint>
 #include <string>
@@ -19,6 +20,13 @@ struct FEngineConfig
 	std::string CachedDir = "Cached";
 	/** UE-style: logs / config / crashes / screenshots. */
 	std::string SavedDir = "Saved";
+
+	/** Main window. Ignored when bCreateMainWindow is false. */
+	EPlatform Platform = EPlatform::Glfw;
+	int WindowWidth = 1280;
+	int WindowHeight = 720;
+	bool bCreateMainWindow = true;
+	bool bResizableWindow = true;
 };
 
 class CATTY_API FEngine

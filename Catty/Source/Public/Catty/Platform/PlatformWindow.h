@@ -1,0 +1,100 @@
+#pragma once
+
+#include "Catty/Core/Export.h"
+
+#include <cstdint>
+#include <memory>
+#include <string>
+
+namespace Catty
+{
+
+/** Selects which OS/window backend FPlatformWindowFactory creates. */
+enum class EPlatform : std::uint8_t
+{
+	Glfw = 0,
+};
+
+struct FPlatformWindowDesc
+{
+	EPlatform Platform = EPlatform::Glfw;
+
+	std::string Title = "Catty";
+	int Width = 1280;
+	int Height = 720;
+	bool bResizable = true;
+
+	/** If true: init platform runtime only (clock / PollEvents), no OS window. */
+	bool bHeadless = false;
+};
+
+/**
+ * Platform runtime + optional OS window (no third-party types in the public API).
+ * Concrete backends (e.g. GLFW) are created through FPlatformWindowFactory.
+ */
+class CATTY_API FPlatformWindow
+{
+public:
+	virtual ~FPlatformWindow() = default;
+
+	FPlatformWindow(const FPlatformWindow&) = delete;
+	FPlatformWindow& operator=(const FPlatformWindow&) = delete;
+
+	virtual void Destroy() = 0;
+
+	/** True when the backend runtime is alive (headless or with a window). */
+	[[nodiscard]] virtual bool IsValid() const = 0;
+
+	/** True when an OS window exists. */
+	[[nodiscard]] virtual bool HasOsWindow() const = 0;
+	[[nodiscard]] virtual bool ShouldClose() const = 0;
+
+	virtual void SetTitle(const std::string& Title) = 0;
+	virtual void GetFramebufferSize(int& OutWidth, int& OutHeight) const = 0;
+
+	/**
+	 * Platform-native handle for WSI later (HWND on Win32).
+	 * Returns nullptr when unavailable / headless.
+	 */
+	[[nodiscard]] virtual void* GetNativeHandle() const { return nullptr; }
+
+	/** Drain OS event queue. */
+	virtual void PollEvents() = 0;
+
+	/** Seconds since backend runtime init. */
+	[[nodiscard]] virtual double GetTimeSeconds() const = 0;
+
+protected:
+	FPlatformWindow() = default;
+};
+
+/**
+ * Deleter that frees the object inside Catty.dll (safe across EXE/DLL heaps).
+ */
+struct CATTY_API FPlatformWindowDeleter
+{
+	void operator()(FPlatformWindow* Window) const;
+};
+
+using FPlatformWindowPtr = std::unique_ptr<FPlatformWindow, FPlatformWindowDeleter>;
+
+/** Creates the platform-window backend selected by FPlatformWindowDesc::Platform. */
+class CATTY_API FPlatformWindowFactory
+{
+public:
+	FPlatformWindowFactory() = delete;
+
+	/**
+	 * Initializes the backend runtime and optionally creates an OS window.
+	 * Returns empty FPlatformWindowPtr on failure.
+	 */
+	[[nodiscard]] static FPlatformWindowPtr Create(const FPlatformWindowDesc& Desc);
+
+	/**
+	 * Tear down the process-wide backend runtime (e.g. glfwTerminate).
+	 * Call after all FPlatformWindow instances are destroyed.
+	 */
+	static void Shutdown();
+};
+
+} // namespace Catty

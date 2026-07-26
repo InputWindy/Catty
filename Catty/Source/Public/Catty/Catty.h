@@ -7,6 +7,7 @@
 #include "Catty/Core/Timer.h"
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/App.h"
+#include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/ResourceServer.h"
 #include "Catty/Server/ThreadedServer.h"

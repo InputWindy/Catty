@@ -46,6 +46,7 @@ target_link_libraries(Catty
 		spdlog::spdlog_header_only
 		Vulkan::Vulkan
 	PRIVATE
+		glfw
 		Threads::Threads
 )
 
@@ -79,7 +80,10 @@ set_target_properties(Catty PROPERTIES
 
 catty_copy_shaders(Catty "${CATTY_SHADERS_DIR}" "Engine/Shaders")
 
-set(CATTY_ENGINE_ROOT "${CATTY_ROOT}" CACHE INTERNAL "Catty engine root")
+# Preserve -DCATTY_ENGINE_ROOT from game projects (repo root). Never overwrite with Catty/.
+if(NOT CATTY_ENGINE_ROOT)
+	get_filename_component(CATTY_ENGINE_ROOT "${CATTY_ROOT}/.." ABSOLUTE)
+endif()
 set(CATTY_ENGINE_SHADERS_DIR "${CATTY_SHADERS_DIR}" CACHE INTERNAL "Catty engine shaders")
 set(CATTY_ENGINE_PLUGINS_DIR "${CATTY_PLUGINS_DIR}" CACHE INTERNAL "Catty engine plugins")
 

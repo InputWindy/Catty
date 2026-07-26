@@ -3,6 +3,7 @@
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Export.h"
 #include "Catty/Core/Timer.h"
+#include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/ResourceServer.h"
 
@@ -25,6 +26,8 @@ namespace Catty
  *
  * CS servers (FThreadedServer): FRenderServer + FResourceServer.
  * Game/engine Enqueue tasks; PreRender Flushes the render server.
+ *
+ * Platform: FPlatformWindow (runtime + optional OS window) via factory.
  *
  * Update hooks mirror Unity MonoBehaviour:
  *   FixedUpdate — fixed timestep (physics / deterministic sim), 0..N per frame
@@ -58,6 +61,9 @@ public:
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
 	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
+	[[nodiscard]] FPlatformWindow* GetPlatformWindow() { return PlatformWindow.get(); }
+	[[nodiscard]] const FPlatformWindow* GetPlatformWindow() const { return PlatformWindow.get(); }
+
 	[[nodiscard]] float GetFixedDeltaSeconds() const { return FixedDeltaSeconds; }
 
 protected:
@@ -66,21 +72,21 @@ protected:
 	/** Before Engine.Initialize: command line, working directory, logging, etc. */
 	virtual bool PreInitialize();
 
-	/** Fill EngineConfig (paths, ApplicationName, etc.). */
+	/** Fill EngineConfig (paths, ApplicationName, window size, etc.). */
 	virtual void Configure(FEngineConfig& OutConfig);
 
-	/** After engine is ready: window, subsystems, load entry map (~UE StartGameInstance). */
+	/** After engine is ready: subsystems, load entry map (~UE StartGameInstance). */
 	virtual bool PostInitialize();
 
 	/** Tear down game-side resources before Shutdown. */
 	virtual void PreShutdown();
 
-	/** Default: stop CS servers + Engine.Shutdown. Overrides should call FApp::Shutdown. */
+	/** Default: destroy platform window + stop CS servers + Engine. Overrides should call FApp::Shutdown. */
 	virtual void Shutdown();
 
 	// ----- Per-frame hooks (override as needed; do not override Tick) -----
 
-	/** Frame start: pump messages, frame markers; no-op by default. */
+	/** Frame start: frame markers; platform PollEvents runs in Tick before this. */
 	virtual void BeginFrame(float DeltaSeconds);
 
 	/** Input polling (~UE ProcessLocalPlayerInput); no-op by default. */
@@ -116,7 +122,7 @@ protected:
 	/** Frame end: Present / stats; no-op by default. */
 	virtual void EndFrame(float DeltaSeconds);
 
-	/** Compute this frame's delta; fixed 1/60 for now, real clock later. */
+	/** Real delta from FPlatformWindow clock; clamped to avoid spiral-of-death. */
 	virtual float CalculateDeltaSeconds();
 
 	FEngineConfig EngineConfig;
@@ -125,6 +131,7 @@ protected:
 	FResourceServer ResourceServer;
 	/** Single App-owned timer; categories are string keys on Record / SCOPED_TIMER. */
 	FTimer Timer;
+	FPlatformWindowPtr PlatformWindow;
 
 	/** Fixed step size for FixedUpdate (Unity default ~0.02s / 50Hz). */
 	float FixedDeltaSeconds = 1.0f / 50.0f;
@@ -133,21 +140,19 @@ protected:
 	int MaxFixedUpdatesPerFrame = 5;
 
 	/**
-	 * Temporary headless quit policy (owned by FApp, not game code).
-	 * Until a platform window pumps WM_CLOSE / quit, Run() would spin forever;
-	 * after AutoExitFrameCount frames, Tick calls RequestExit().
-	 * Disable once windowing owns the exit path.
+	 * Optional headless quit policy when no OS window is created.
+	 * With an OS window, close-button / ShouldClose drives RequestExit instead.
 	 */
-	bool bAutoExitAfterFrames = true;
+	bool bAutoExitAfterFrames = false;
 	std::uint64_t AutoExitFrameCount = 3;
 
 private:
-	/** Non-virtual: Engine + RenderServer + ResourceServer Initialize. */
+	/** Non-virtual: Engine + servers + platform window Initialize. */
 	bool InitializeEngine();
 
 	/**
 	 * Fixed frame pipeline (not overridable).
-	 * BeginFrame → ProcessInput → FixedUpdate(s) → Engine.Tick
+	 * PollEvents → BeginFrame → ProcessInput → FixedUpdate(s) → Engine.Tick
 	 * → Update → LateUpdate → Flush(render) → PreRender → Render → EndFrame
 	 */
 	void Tick(float DeltaSeconds);
@@ -160,6 +165,7 @@ private:
 
 	bool bRunning = false;
 	float FixedUpdateAccumulator = 0.0f;
+	double LastFrameTimeSeconds = 0.0;
 };
 
 /**
