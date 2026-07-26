@@ -1,43 +1,33 @@
 #pragma once
 
-#include "Catty/Core/Export.h"
-#include "Catty/Render/RenderThread.h"
+#include "Catty/Server/ThreadedServer.h"
 
 namespace Catty
 {
 
 /**
- * Render server facade (Vulkan-backed later).
- * Owns the dedicated render thread; game/engine code submits work through this.
+ * Render server (Vulkan-backed later).
+ * Inherits the CS threaded-server framework; game/engine Enqueue render tasks,
+ * FApp Flushes at the PreRender sync point.
  */
-class CATTY_API FRenderServer
+class CATTY_API FRenderServer : public FThreadedServer
 {
 public:
-	FRenderServer();
-	~FRenderServer();
+	FRenderServer() = default;
+	~FRenderServer() override;
 
 	FRenderServer(const FRenderServer&) = delete;
 	FRenderServer& operator=(const FRenderServer&) = delete;
 
-	/** Start render thread and verify Vulkan loader/headers are available. */
-	bool Initialize();
+protected:
+	[[nodiscard]] virtual const char* GetServerThreadName() const override { return "CattyRenderThread"; }
+	[[nodiscard]] virtual const char* GetServerLogName() const override { return "RenderServer"; }
 
-	/** Flush pending work, then stop the render thread. */
-	void Shutdown();
-
-	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
-
-	[[nodiscard]] FRenderThread& GetRenderThread() { return RenderThread; }
-	[[nodiscard]] const FRenderThread& GetRenderThread() const { return RenderThread; }
-
-	void Enqueue(FRenderTask Task);
-	void Flush();
+	virtual bool OnInitialize() override;
+	virtual void OnShutdown() override;
 
 private:
 	bool ProbeVulkan() const;
-
-	FRenderThread RenderThread;
-	bool bInitialized = false;
 };
 
 } // namespace Catty

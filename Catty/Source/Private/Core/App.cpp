@@ -24,6 +24,10 @@ FApp::FApp() = default;
 
 FApp::~FApp()
 {
+	if (ResourceServer.IsInitialized())
+	{
+		ResourceServer.Shutdown();
+	}
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Shutdown();
@@ -58,6 +62,14 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
+	if (!ResourceServer.Initialize())
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ResourceServer)");
+		RenderServer.Shutdown();
+		Engine.Shutdown();
+		return false;
+	}
+
 	return true;
 }
 
@@ -72,6 +84,10 @@ void FApp::PreShutdown()
 
 void FApp::Shutdown()
 {
+	if (ResourceServer.IsInitialized())
+	{
+		ResourceServer.Shutdown();
+	}
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Shutdown();

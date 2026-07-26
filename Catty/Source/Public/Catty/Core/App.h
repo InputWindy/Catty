@@ -3,6 +3,7 @@
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Export.h"
 #include "Catty/Render/RenderServer.h"
+#include "Catty/Resource/ResourceServer.h"
 
 #include <cstdint>
 
@@ -21,8 +22,8 @@ namespace Catty
  *           → Render → EndFrame
  * Shutdown: PreShutdown → Shutdown
  *
- * Render model: game thread enqueues work to FRenderServer; PreRender waits
- * until the render thread has drained all previously submitted tasks.
+ * CS servers (FThreadedServer): FRenderServer + FResourceServer.
+ * Game/engine Enqueue tasks; PreRender Flushes the render server.
  *
  * Update hooks mirror Unity MonoBehaviour:
  *   FixedUpdate — fixed timestep (physics / deterministic sim), 0..N per frame
@@ -50,6 +51,9 @@ public:
 	[[nodiscard]] FRenderServer& GetRenderServer() { return RenderServer; }
 	[[nodiscard]] const FRenderServer& GetRenderServer() const { return RenderServer; }
 
+	[[nodiscard]] FResourceServer& GetResourceServer() { return ResourceServer; }
+	[[nodiscard]] const FResourceServer& GetResourceServer() const { return ResourceServer; }
+
 	[[nodiscard]] float GetFixedDeltaSeconds() const { return FixedDeltaSeconds; }
 
 protected:
@@ -67,7 +71,7 @@ protected:
 	/** Tear down game-side resources before Shutdown. */
 	virtual void PreShutdown();
 
-	/** Default: stop render server + Engine.Shutdown. Overrides should call FApp::Shutdown. */
+	/** Default: stop CS servers + Engine.Shutdown. Overrides should call FApp::Shutdown. */
 	virtual void Shutdown();
 
 	// ----- Per-frame hooks (override as needed; do not override Tick) -----
@@ -114,6 +118,7 @@ protected:
 	FEngineConfig EngineConfig;
 	FEngine Engine;
 	FRenderServer RenderServer;
+	FResourceServer ResourceServer;
 
 	/** Fixed step size for FixedUpdate (Unity default ~0.02s / 50Hz). */
 	float FixedDeltaSeconds = 1.0f / 50.0f;
@@ -131,7 +136,7 @@ protected:
 	std::uint64_t AutoExitFrameCount = 3;
 
 private:
-	/** Non-virtual: Engine.Initialize + RenderServer.Initialize. */
+	/** Non-virtual: Engine + RenderServer + ResourceServer Initialize. */
 	bool InitializeEngine();
 
 	/**
