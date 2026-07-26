@@ -1,41 +1,67 @@
-# Prerequisites
-*.d
+# UE-style generated / local dirs (keep README + .gitkeep placeholders)
+# Note: cannot re-include files under a fully-ignored directory — use /** + un-ignore dir.
+/Intermediate/**
+!/Intermediate/
+!/Intermediate/README.md
+/Binaries/**
+!/Binaries/
+!/Binaries/README.md
+/Packaged/**
+!/Packaged/
+!/Packaged/README.md
 
-# Compiled Object files
+/Cached/Shaders/**
+/Cached/DerivedData/**
+!/Cached/
+!/Cached/README.md
+!/Cached/**/
+!/Cached/**/.gitkeep
+
+/Saved/Logs/**
+/Saved/Config/**
+/Saved/Crashes/**
+/Saved/Screenshots/**
+!/Saved/
+!/Saved/README.md
+!/Saved/**/
+!/Saved/**/.gitkeep
+
+# Generated beside .cproject / workspace
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Local CMake / IDE
+# Do NOT ignore "build/" — on Windows (case-insensitive) it also hides tracked /Build tooling.
+/out/
+/cmake-build-*/
+/.vs/
+CMakeUserPresets.json
+compile_commands.json
+__pycache__/
+*.pyc
+
+# Object / binary artifacts
+*.d
 *.slo
 *.lo
 *.o
 *.obj
-
-# Precompiled Headers
 *.gch
 *.pch
-
-# Linker files
 *.ilk
-
-# Debugger Files
 *.pdb
-
-# Compiled Dynamic libraries
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
 *.mod
 *.smod
-
-# Compiled Static libraries
 *.lai
 *.la
 *.a
 *.lib
-
-# Executables
 *.exe
 *.out
 *.app
-
-# debug information files
 *.dwo

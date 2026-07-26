@@ -1,0 +1,52 @@
+---
+description: UE-style C++ coding standards for Catty / Test0
+globs: **/*.{h,hpp,c,cc,cpp,cxx,inl,ipp}
+alwaysApply: true
+---
+
+# Catty C++ 编码规范（对齐 Unreal Engine）
+
+写或改本仓库 C++ 时必须遵守，禁止 K&R / Java 式大括号。
+
+## 大括号（Allman）
+
+左 `{` 与右 `}` **单独成行，且同一列对齐**：
+
+```cpp
+namespace Test0
+{
+	class FGameApp
+	{
+	public:
+		bool Initialize();
+	};
+}
+```
+
+禁止：
+
+```cpp
+namespace test0 {
+	class GameApp {
+	};
+}
+```
+
+`if` / `for` / `while` / `switch` / 函数 / 类 / 命名空间 / lambda（多行体）一律 Allman。
+
+## 命名（UE 习惯）
+
+- 类型：`F` 前缀（非 UObject）如 `FEngine`、`FEngineConfig`、`FGameApp`
+- `bool` 成员/局部：`b` 前缀，如 `bInitialized`
+- 成员变量：PascalCase，**不用** `m_` / `_` 前缀
+- 函数：PascalCase（`Initialize`、`Tick`）
+- 命名空间：PascalCase（`Catty`、`Test0`）
+- 宏 / API：`CATTY_API`、`CATTY_EXPORTS` 等全大写 + 下划线
+
+## 缩进与其它
+
+- 缩进用 **Tab**（与 UE 一致）
+- 指针/引用：`Type* Ptr`、`Type& Ref`（`*` `/` `&` 靠类型名）
+- 头文件 include 守卫或 `#pragma once`；对外头放 `Source/Public`
+- 不在头文件里滥用 `using namespace`
+- 游戏入口：`#include <Catty/Catty.h>` + `#include <Catty/EntryPoint.h>`，继承 `Catty::FApp`，实现 `CreateApplication()`

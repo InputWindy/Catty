@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""
+Build Release and install into Packaged/<Platform>/.
+
+Usage:
+  python package.py                         # engine workspace
+  python package.py path\\Game.cproject     # game project
+  python package.py path\\Game.cproject Debug
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "Build" / "python"))
+
+from catty_tools import (  # noqa: E402
+	ENGINE_ROOT,
+	generate_engine_workspace,
+	generate_from_cproject,
+	run_package,
+)
+
+_CONFIGS = {
+	"debug": "Debug",
+	"release": "Release",
+	"relwithdebinfo": "RelWithDebInfo",
+	"minsizerel": "MinSizeRel",
+}
+
+
+def main(argv: list[str]) -> int:
+	config = "Release"
+	cproject: Path | None = None
+
+	for arg in argv[1:]:
+		key = arg.lower()
+		if key in _CONFIGS:
+			config = _CONFIGS[key]
+		else:
+			cproject = Path(arg).expanduser().resolve()
+
+	try:
+		if cproject is not None:
+			if cproject.suffix.lower() != ".cproject":
+				print(f"[ERROR] Expected .cproject, got: {cproject}")
+				return 1
+			generate_from_cproject(cproject)
+			project_dir = cproject.parent
+			label = cproject.stem
+		else:
+			generate_engine_workspace(ENGINE_ROOT)
+			project_dir = ENGINE_ROOT
+			label = "CattyWorkspace"
+
+		run_package(project_dir, config=config)
+		print(f"[Catty] Package finished for {label} ({config})")
+		return 0
+	except Exception as ex:  # noqa: BLE001
+		print(f"[ERROR] {ex}")
+		return 1
+
+
+if __name__ == "__main__":
+	raise SystemExit(main(sys.argv))
