@@ -15,14 +15,25 @@ protected:
 		OutConfig.SavedDir = "Saved";
 	}
 
-	virtual void Tick(float DeltaSeconds) override
+	virtual bool PostInitialize() override
 	{
-		FApp::Tick(DeltaSeconds);
+		// Engine is ready: create window / register subsystems / load entry map here later.
+		return true;
+	}
+
+	virtual void Update(float DeltaSeconds) override
+	{
+		(void)DeltaSeconds;
 
 		if (GetEngine().GetFrameIndex() >= 3)
 		{
 			RequestExit();
 		}
+	}
+
+	virtual void PreShutdown() override
+	{
+		// Tear down game-side resources before the base Shutdown tears down the engine.
 	}
 };
 
