@@ -8,8 +8,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "Build" / "python"))
+TOOLS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS_DIR))
 
 from catty_tools import (  # noqa: E402
 	ENGINE_ROOT,
@@ -37,6 +37,7 @@ class SetupApp(tk.Tk):
 		self.var_open_folder = tk.BooleanVar(value=True)
 
 		self._build()
+		self._auto_associate_cproject()
 
 	def _build(self) -> None:
 		pad = {"padx": 12, "pady": 6}
@@ -72,13 +73,14 @@ class SetupApp(tk.Tk):
 
 		hint = (
 			"Creates Parent/Name/ with Name.cproject (JSON, like .uproject).\n"
-			"Double-click the .cproject to regenerate Name.sln beside it, then open the .sln in VS."
+			"Double-click the .cproject to regenerate Name.sln beside it, then open the .sln in VS.\n"
+			".cproject file association is applied automatically on Windows when this window opens."
 		)
 		ttk.Label(frm, text=hint, foreground="#555").grid(row=7, column=0, columnspan=3, sticky="w", **pad)
 
 		btns = ttk.Frame(frm)
 		btns.grid(row=8, column=0, columnspan=3, sticky="ew", **pad)
-		ttk.Button(btns, text="Associate .cproject (Windows)", command=self._associate).pack(side=tk.LEFT)
+		ttk.Button(btns, text="Re-associate .cproject", command=self._associate).pack(side=tk.LEFT)
 		ttk.Button(btns, text="Create Project", command=self._create).pack(side=tk.RIGHT, padx=(8, 0))
 		ttk.Button(btns, text="Close", command=self.destroy).pack(side=tk.RIGHT)
 
@@ -95,13 +97,23 @@ class SetupApp(tk.Tk):
 		if path:
 			self.var_engine.set(path)
 
+	def _auto_associate_cproject(self) -> None:
+		"""Register .cproject → generateProject.bat once when setup opens (Windows)."""
+		if sys.platform != "win32":
+			return
+		try:
+			install_windows_cproject_association()
+		except Exception as ex:  # noqa: BLE001
+			# Non-fatal: user can still click Re-associate.
+			print(f"[Catty] Auto-associate skipped: {ex}")
+
 	def _associate(self) -> None:
 		try:
 			install_windows_cproject_association()
 			messagebox.showinfo(
 				"Catty",
-				"Associated .cproject with generateProject.py for the current Windows user.\n"
-				"You may need to sign out/in or reboot once for Explorer to refresh icons.",
+				"Associated .cproject with generateProject.bat for the current Windows user.\n"
+				"You may need to sign out/in once for Explorer to refresh icons.",
 			)
 		except Exception as ex:  # noqa: BLE001
 			messagebox.showerror("Catty", str(ex))
@@ -124,6 +136,8 @@ class SetupApp(tk.Tk):
 			return
 
 		try:
+			# Ensure association is present for brand-new machines.
+			self._auto_associate_cproject()
 			cproject = create_project(name, parent, engine, description=desc, author=author)
 			sln_msg = ""
 			if self.var_gen_sln.get():

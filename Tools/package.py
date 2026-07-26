@@ -3,9 +3,9 @@
 Build Release and install into Packaged/<Platform>/.
 
 Usage:
-  python package.py                         # engine workspace
-  python package.py path\\Game.cproject     # game project
-  python package.py path\\Game.cproject Debug
+  package.bat
+  package.bat path\\Game.cproject
+  package.bat path\\Game.cproject Debug
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "Build" / "python"))
+TOOLS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS_DIR))
 
 from catty_tools import (  # noqa: E402
 	ENGINE_ROOT,
@@ -33,12 +33,15 @@ _CONFIGS = {
 
 def main(argv: list[str]) -> int:
 	config = "Release"
+	platform = "Win64"
 	cproject: Path | None = None
 
 	for arg in argv[1:]:
 		key = arg.lower()
 		if key in _CONFIGS:
 			config = _CONFIGS[key]
+		elif key.startswith("win") or key in {"linux", "mac"}:
+			platform = "Win64" if key.startswith("win") else arg
 		else:
 			cproject = Path(arg).expanduser().resolve()
 
@@ -55,8 +58,8 @@ def main(argv: list[str]) -> int:
 			project_dir = ENGINE_ROOT
 			label = "CattyWorkspace"
 
-		run_package(project_dir, config=config)
-		print(f"[Catty] Package finished for {label} ({config})")
+		run_package(project_dir, config=config, platform=platform)
+		print(f"[Catty] Package finished for {label} ({config} / {platform})")
 		return 0
 	except Exception as ex:  # noqa: BLE001
 		print(f"[ERROR] {ex}")

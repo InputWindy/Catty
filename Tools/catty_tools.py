@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any
 
 
-ENGINE_ROOT = Path(__file__).resolve().parents[2]
+# Tools/catty_tools.py → repo root is parent of Tools/
+ENGINE_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = ENGINE_ROOT / "Build" / "Templates" / "GameProject"
 CPROJECT_VERSION = 1
 
@@ -148,6 +149,67 @@ def _rewrite_sln_paths(sln_text: str) -> str:
 	)
 
 
+# VS / CMake noise that should not appear in the sibling .sln tree.
+_SLN_STRIP_PROJECT_NAMES = {
+	"ALL_BUILD",
+	"ZERO_CHECK",
+	"INSTALL",
+	"PACKAGE",
+	"RUN_TESTS",
+	"Nightly",
+	"NightlyMemoryCheck",
+	"Experimental",
+	"Continuous",
+	"CMakePredefinedTargets",
+	"Packaging",
+}
+
+
+def _strip_sln_noise_projects(sln_text: str) -> str:
+	"""Remove CMakePredefinedTargets / Packaging folders and related projects from a .sln."""
+	# Collect GUIDs for projects we want to drop (by display name).
+	drop_guids: set[str] = set()
+	project_re = re.compile(
+		r'Project\("\{[^}]+\}"\)\s*=\s*"([^"]+)",\s*"[^"]*",\s*"(\{[^}]+\})"',
+		re.IGNORECASE,
+	)
+	for match in project_re.finditer(sln_text):
+		name = match.group(1)
+		guid = match.group(2).upper()
+		if name in _SLN_STRIP_PROJECT_NAMES:
+			drop_guids.add(guid)
+
+	if not drop_guids:
+		return sln_text
+
+	# Drop whole Project ... EndProject blocks whose project GUID is in drop_guids.
+	block_re = re.compile(
+		r'Project\("\{[^}]+\}"\)\s*=\s*"[^"]+",\s*"[^"]*",\s*"(\{[^}]+\})"\s*\r?\n'
+		r'.*?EndProject\s*\r?\n?',
+		re.IGNORECASE | re.DOTALL,
+	)
+
+	def keep_block(match: re.Match[str]) -> str:
+		guid = match.group(1).upper()
+		return "" if guid in drop_guids else match.group(0)
+
+	text = block_re.sub(keep_block, sln_text)
+
+	# Drop NestedProjects / ProjectConfigurationPlatforms lines that mention dropped GUIDs.
+	out_lines: list[str] = []
+	for line in text.splitlines(keepends=True):
+		upper = line.upper()
+		if any(g in upper for g in drop_guids):
+			# Keep section headers / EndGlobalSection lines intact.
+			stripped = line.strip()
+			if stripped.startswith("GlobalSection(") or stripped.startswith("EndGlobalSection"):
+				out_lines.append(line)
+			continue
+		out_lines.append(line)
+
+	return "".join(out_lines)
+
+
 def emit_sibling_sln(intermediate_dir: Path, project_dir: Path, project_name: str) -> Path:
 	candidates = sorted(intermediate_dir.glob("*.sln"))
 	if not candidates:
@@ -163,6 +225,7 @@ def emit_sibling_sln(intermediate_dir: Path, project_dir: Path, project_name: st
 
 	text = src.read_text(encoding="utf-8", errors="replace")
 	text = _rewrite_sln_paths(text)
+	text = _strip_sln_noise_projects(text)
 	dst = project_dir / f"{project_name}.sln"
 	dst.write_text(text, encoding="utf-8", newline="\n")
 	return dst
@@ -207,33 +270,57 @@ def generate_from_cproject(cproject_path: Path) -> Path:
 
 def generate_engine_workspace(engine_root: Path | None = None) -> Path:
 	engine_root = (engine_root or ENGINE_ROOT).resolve()
+	source_dir = engine_root / "Build"
+	if not (source_dir / "CMakeLists.txt").is_file():
+		raise FileNotFoundError(f"Engine CMake entry missing: {source_dir / 'CMakeLists.txt'}")
 	intermediate = engine_root / "Intermediate"
-	run_cmake_generate(engine_root, intermediate, engine_root=None)
+	run_cmake_generate(source_dir, intermediate, engine_root=None)
 	sln = emit_sibling_sln(intermediate, engine_root, "CattyWorkspace")
 	print(f"[Catty] Workspace solution: {sln}")
 	return sln
 
 
-def run_package(project_dir: Path, config: str = "Release") -> None:
+def run_package(
+	project_dir: Path,
+	config: str = "Release",
+	platform: str = "Win64",
+) -> None:
 	cmake = find_cmake()
+	project_dir = project_dir.resolve()
 	intermediate = project_dir / "Intermediate"
 	if not (intermediate / "CMakeCache.txt").is_file():
 		raise RuntimeError("Project not generated yet. Run generateProject on the .cproject first.")
+
+	packaged = project_dir / "Packaged" / platform
+	if packaged.exists():
+		shutil.rmtree(packaged, ignore_errors=True)
+	packaged.mkdir(parents=True, exist_ok=True)
+
 	subprocess.check_call([cmake, "--build", str(intermediate), "--config", config])
 	subprocess.check_call(
-		[cmake, "--build", str(intermediate), "--config", config, "--target", "Package"]
+		[
+			cmake,
+			"--install",
+			str(intermediate),
+			"--prefix",
+			str(packaged),
+			"--config",
+			config,
+			"--component",
+			"Runtime",
+		]
 	)
-	print(f"[Catty] Packaged → {project_dir / 'Packaged'}")
+	print(f"[Catty] Packaged → {packaged}")
 
 
 def install_windows_cproject_association() -> None:
 	if sys.platform != "win32":
 		raise RuntimeError("File association is only implemented for Windows.")
 
-	generate_py = ENGINE_ROOT / "generateProject.py"
-	python = Path(sys.executable).resolve()
+	# Prefer root bat so Explorer double-click stays aligned with repo layout.
+	generate_bat = ENGINE_ROOT / "generateProject.bat"
 	prog_id = "Catty.CProject"
-	command = f"\"{python}\" \"{generate_py}\" \"%1\""
+	command = f"\"{generate_bat}\" \"%1\""
 
 	commands = [
 		["reg", "add", rf"HKCU\Software\Classes\.cproject", "/ve", "/d", prog_id, "/f"],
@@ -250,5 +337,107 @@ def install_windows_cproject_association() -> None:
 	]
 	for cmd in commands:
 		subprocess.check_call(cmd)
-	print("[Catty] Associated .cproject → generateProject.py (current user)")
+	print("[Catty] Associated .cproject → generateProject.bat (current user)")
 	print(f"[Catty] Command: {command}")
+
+
+# Entire trees wiped by clean (including any README/.gitkeep inside).
+_WIPE_DIR_NAMES = (
+	"Intermediate",
+	"Binaries",
+	"Packaged",
+	"Cached",
+	"Saved",
+	"out",
+	"cmake-build-debug",
+	"cmake-build-release",
+	".vs",
+)
+
+_DELETE_NAME_GLOBS = (
+	"*.sln",
+	"*.vcxproj",
+	"*.vcxproj.filters",
+	"*.vcxproj.user",
+	"CMakeUserPresets.json",
+	"compile_commands.json",
+)
+
+
+def _rm_tree(path: Path) -> bool:
+	if not path.exists():
+		return False
+	try:
+		if path.is_file() or path.is_symlink():
+			path.unlink(missing_ok=True)
+		else:
+			shutil.rmtree(path, ignore_errors=True)
+			if path.exists():
+				# Windows file locks: best-effort second pass via cmd
+				if sys.platform == "win32":
+					subprocess.call(["cmd", "/c", "rmdir", "/s", "/q", str(path)], shell=False)
+		return not path.exists()
+	except OSError:
+		return False
+
+
+def _iter_pycache(root: Path):
+	if not root.is_dir():
+		return
+	for p in root.rglob("__pycache__"):
+		yield p
+	for p in root.rglob("*.pyc"):
+		yield p
+
+
+def collect_clean_targets(project_dir: Path) -> list[Path]:
+	"""Paths that are safe to delete (generated / local only)."""
+	project_dir = project_dir.resolve()
+	targets: list[Path] = []
+
+	for name in _WIPE_DIR_NAMES:
+		# Never delete tracked Build/ tooling (Windows case-insensitive).
+		if name.lower() == "build":
+			continue
+		p = project_dir / name
+		if p.exists():
+			targets.append(p)
+
+	for pattern in _DELETE_NAME_GLOBS:
+		for p in project_dir.glob(pattern):
+			targets.append(p)
+
+	for p in _iter_pycache(project_dir / "Tools"):
+		targets.append(p)
+
+	# De-dupe while preserving order
+	seen: set[Path] = set()
+	unique: list[Path] = []
+	for t in targets:
+		rp = t.resolve() if t.exists() else t
+		if rp in seen:
+			continue
+		seen.add(rp)
+		unique.append(t)
+	return unique
+
+
+def clean_project_tree(project_dir: Path, *, dry_run: bool = False) -> list[Path]:
+	"""
+	Fully remove generated/temp trees under project_dir (no README placeholders left behind).
+	Does not touch Catty/Test0/Build/Tools/Doc/source.
+	"""
+	project_dir = project_dir.resolve()
+	targets = collect_clean_targets(project_dir)
+	if dry_run:
+		return targets
+
+	removed: list[Path] = []
+	for t in targets:
+		ok = _rm_tree(t)
+		if ok or not t.exists():
+			removed.append(t)
+		else:
+			print(f"[WARN] Still locked (skipped): {t}")
+
+	return removed

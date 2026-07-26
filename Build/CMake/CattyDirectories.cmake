@@ -5,7 +5,12 @@
 # Saved         = logs / config / crashes / screenshots — user & session data
 # Packaged      = clean shipping tree (exe + required resources only)
 
-set(CATTY_WORKSPACE_ROOT "${CMAKE_SOURCE_DIR}")
+# Prefer an explicit workspace root (engine Build/CMakeLists sets this to repo root).
+# Game projects leave it unset so CMAKE_SOURCE_DIR (the .cproject folder) is used.
+if(NOT DEFINED CATTY_WORKSPACE_ROOT OR "${CATTY_WORKSPACE_ROOT}" STREQUAL "")
+	set(CATTY_WORKSPACE_ROOT "${CMAKE_SOURCE_DIR}")
+endif()
+get_filename_component(CATTY_WORKSPACE_ROOT "${CATTY_WORKSPACE_ROOT}" ABSOLUTE)
 
 if(WIN32)
 	set(CATTY_PLATFORM_NAME "Win64")
@@ -49,8 +54,8 @@ function(catty_warn_if_not_intermediate_binary_dir)
 		message(WARNING
 			"CMAKE_BINARY_DIR is:\n  ${_bin}\n"
 			"UE-style layout expects Intermediate as the CMake binary dir:\n"
-			"  python generateProject.py\n"
-			"  (or cmake -S . -B Intermediate ...)"
+			"  generateProject.bat\n"
+			"  (or cmake -S Build -B Intermediate ...)"
 		)
 	endif()
 endfunction()

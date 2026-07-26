@@ -1,30 +1,9 @@
-# UE-style generated / local dirs (keep README + .gitkeep placeholders)
-# Note: cannot re-include files under a fully-ignored directory — use /** + un-ignore dir.
-/Intermediate/**
-!/Intermediate/
-!/Intermediate/README.md
-/Binaries/**
-!/Binaries/
-!/Binaries/README.md
-/Packaged/**
-!/Packaged/
-!/Packaged/README.md
-
-/Cached/Shaders/**
-/Cached/DerivedData/**
-!/Cached/
-!/Cached/README.md
-!/Cached/**/
-!/Cached/**/.gitkeep
-
-/Saved/Logs/**
-/Saved/Config/**
-/Saved/Crashes/**
-/Saved/Screenshots/**
-!/Saved/
-!/Saved/README.md
-!/Saved/**/
-!/Saved/**/.gitkeep
+# UE-style generated / local dirs (fully disposable; recreate on generate/build)
+/Intermediate/
+/Binaries/
+/Packaged/
+/Cached/
+/Saved/
 
 # Generated beside .cproject / workspace
 *.sln

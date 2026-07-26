@@ -1,18 +1,22 @@
 # Build
 
-CMake modules, Python tooling helpers, and new-project templates.
+CMake entry + modules + new-project templates (kept out of the repo root).
 
 ```text
 Build/
-  CMake/           # included by CMakeLists
-  python/          # shared helpers for setup/generate/package
-  Templates/       # GameProject skeleton for setup.py
+  CMakeLists.txt       # engine workspace entry (cmake -S Build)
+  CMakePresets.json
+  CMake/               # CattyDirectories / CattyHelpers
+  Templates/           # GameProject skeleton for Tools/setup.py
 ```
 
-Root entry scripts:
+Root bats → `Tools/*.py`:
 
-| Script | Role |
-|--------|------|
-| `setup.py` | UI: create new game + optional .cproject association |
-| `generateProject.py` | `.cproject` / workspace → sibling `.sln` |
-| `package.py` | Release build → `Packaged/<Platform>/` |
+| Bat | Python |
+|-----|--------|
+| `setup.bat` | `Tools/setup.py` |
+| `generateProject.bat` | `Tools/generateProject.py` |
+| `package.bat` | `Tools/package_ui.py` |
+| `clean.bat` | `Tools/clean.py` |
+
+Docs agent rules: `Doc/AGENTS.md`.

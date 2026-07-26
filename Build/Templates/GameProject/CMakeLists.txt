@@ -95,16 +95,4 @@ catty_install_runtime_target({{PROJECT_NAME}})
 catty_install_directory("${GAME_SHADERS_DIR}" "Project/Shaders")
 catty_install_directory("${GAME_PLUGINS_DIR}" "Project/Plugins")
 
-add_custom_target(Package
-	COMMAND ${CMAKE_COMMAND} -E rm -rf "${CATTY_PACKAGED_DIR}"
-	COMMAND ${CMAKE_COMMAND} -E make_directory "${CATTY_PACKAGED_DIR}"
-	COMMAND ${CMAKE_COMMAND}
-		--install "${CMAKE_BINARY_DIR}"
-		--prefix "${CATTY_PACKAGED_DIR}"
-		--config $<CONFIG>
-		--component Runtime
-	COMMENT "Packaging ${CATTY_PLATFORM_NAME} → Packaged/${CATTY_PLATFORM_NAME}"
-	VERBATIM
-)
-set_target_properties(Package PROPERTIES FOLDER "Packaging")
-add_dependencies(Package {{PROJECT_NAME}} Catty)
+# Packaging is done via project package.bat → Tools/package_ui.py (cmake --install).

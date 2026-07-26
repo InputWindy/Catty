@@ -3,9 +3,9 @@
 Generate Visual Studio solution for a Catty project.
 
 Usage:
-  python generateProject.py                  # engine workspace (Catty + Test0)
-  python generateProject.py path\\Game.cproject
-  (double-click .cproject after association in setup.py)
+  generateProject.bat
+  generateProject.bat path\\Game.cproject
+  (or: python Tools\\generateProject.py ...)
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "Build" / "python"))
+TOOLS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS_DIR))
 
 from catty_tools import (  # noqa: E402
 	ENGINE_ROOT,
