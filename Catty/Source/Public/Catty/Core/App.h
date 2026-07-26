@@ -2,6 +2,7 @@
 
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Export.h"
+#include "Catty/Core/Timer.h"
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/ResourceServer.h"
 
@@ -53,6 +54,9 @@ public:
 
 	[[nodiscard]] FResourceServer& GetResourceServer() { return ResourceServer; }
 	[[nodiscard]] const FResourceServer& GetResourceServer() const { return ResourceServer; }
+
+	[[nodiscard]] FTimer& GetTimer() { return Timer; }
+	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
 	[[nodiscard]] float GetFixedDeltaSeconds() const { return FixedDeltaSeconds; }
 
@@ -119,6 +123,8 @@ protected:
 	FEngine Engine;
 	FRenderServer RenderServer;
 	FResourceServer ResourceServer;
+	/** Single App-owned timer; categories are string keys on Record / SCOPED_TIMER. */
+	FTimer Timer;
 
 	/** Fixed step size for FixedUpdate (Unity default ~0.02s / 50Hz). */
 	float FixedDeltaSeconds = 1.0f / 50.0f;

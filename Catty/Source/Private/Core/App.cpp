@@ -1,5 +1,6 @@
 #include "Catty/Core/App.h"
 #include "Catty/Core/Log.h"
+#include "Catty/Core/Timer.h"
 
 namespace Catty
 {
@@ -16,6 +17,18 @@ void InitializeAppLogging(const FEngineConfig& Config)
 	LogConfig.bEnableConsole = true;
 	LogConfig.bEnableFile = true;
 	FLog::Initialize(LogConfig);
+}
+
+void ShutdownAppLogging(FApp& App)
+{
+	for (const FTimerDataPackage& Report : App.GetTimer().QueryAll())
+	{
+		if (!Report.Samples.empty())
+		{
+			CATTY_CORE_INFO("{}", Report.Serialize());
+		}
+	}
+	FLog::Shutdown();
 }
 
 } // namespace
@@ -170,6 +183,8 @@ void FApp::FlushRenderServer()
 
 void FApp::Tick(float DeltaSeconds)
 {
+	CATTY_SCOPED_TIMER("Engine", "FApp::Tick");
+
 	BeginFrame(DeltaSeconds);
 	ProcessInput(DeltaSeconds);
 	RunFixedUpdates(DeltaSeconds);
@@ -207,10 +222,12 @@ void FApp::Run()
 
 	Configure(EngineConfig);
 	InitializeAppLogging(EngineConfig);
+	Timer.MakeActive();
 
 	if (!InitializeEngine())
 	{
-		FLog::Shutdown();
+		Timer.ClearActive();
+		ShutdownAppLogging(*this);
 		return;
 	}
 
@@ -219,7 +236,8 @@ void FApp::Run()
 		CATTY_CORE_ERROR("FApp::PostInitialize failed");
 		PreShutdown();
 		Shutdown();
-		FLog::Shutdown();
+		Timer.ClearActive();
+		ShutdownAppLogging(*this);
 		return;
 	}
 
@@ -231,7 +249,8 @@ void FApp::Run()
 
 	PreShutdown();
 	Shutdown();
-	FLog::Shutdown();
+	Timer.ClearActive();
+	ShutdownAppLogging(*this);
 }
 
 } // namespace Catty
