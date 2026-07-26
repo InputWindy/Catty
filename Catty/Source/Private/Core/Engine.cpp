@@ -23,6 +23,13 @@ bool FEngine::Initialize(const FEngineConfig& InConfig)
 
 	Config = InConfig;
 	FrameIndex = 0;
+
+	if (!World.Initialize("MainWorld"))
+	{
+		CATTY_CORE_ERROR("FEngine::Initialize: FWorld failed");
+		return false;
+	}
+
 	bInitialized = true;
 
 	CATTY_CORE_INFO("Engine initialized");
@@ -37,12 +44,14 @@ bool FEngine::Initialize(const FEngineConfig& InConfig)
 	return true;
 }
 
-void FEngine::Tick(float /*DeltaSeconds*/)
+void FEngine::Tick(float DeltaSeconds)
 {
 	if (!bInitialized)
 	{
 		return;
 	}
+
+	World.Tick(DeltaSeconds);
 	++FrameIndex;
 }
 
@@ -53,6 +62,7 @@ void FEngine::Shutdown()
 		return;
 	}
 
+	World.Shutdown();
 	CATTY_CORE_INFO("Engine shutdown after {} frames", FrameIndex);
 	bInitialized = false;
 }

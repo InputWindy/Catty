@@ -56,6 +56,10 @@ target_compile_definitions(Catty
 		CATTY_PLATFORM_${CATTY_PLATFORM_NAME}=1
 )
 
+if(WIN32)
+	target_compile_definitions(Catty PRIVATE VK_USE_PLATFORM_WIN32_KHR=1)
+endif()
+
 target_compile_features(Catty PUBLIC cxx_std_20)
 
 if(MSVC)

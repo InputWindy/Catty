@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Catty/Core/Export.h"
+#include "Catty/Input/InputKeys.h"
 
 #include <cstdint>
 #include <memory>
@@ -53,7 +54,7 @@ public:
 	virtual void GetFramebufferSize(int& OutWidth, int& OutHeight) const = 0;
 
 	/**
-	 * Platform-native handle for WSI later (HWND on Win32).
+	 * Platform-native handle for WSI (HWND on Win32).
 	 * Returns nullptr when unavailable / headless.
 	 */
 	[[nodiscard]] virtual void* GetNativeHandle() const { return nullptr; }
@@ -63,6 +64,10 @@ public:
 
 	/** Seconds since backend runtime init. */
 	[[nodiscard]] virtual double GetTimeSeconds() const = 0;
+
+	[[nodiscard]] virtual bool IsKeyDown(EKey Key) const { (void)Key; return false; }
+	[[nodiscard]] virtual bool IsMouseButtonDown(EMouseButton Button) const { (void)Button; return false; }
+	virtual void GetCursorPosition(float& OutX, float& OutY) const { OutX = 0.0f; OutY = 0.0f; }
 
 protected:
 	FPlatformWindow() = default;

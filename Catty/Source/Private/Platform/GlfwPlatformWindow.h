@@ -29,6 +29,10 @@ public:
 	virtual void PollEvents() override;
 	[[nodiscard]] virtual double GetTimeSeconds() const override;
 
+	[[nodiscard]] virtual bool IsKeyDown(EKey Key) const override;
+	[[nodiscard]] virtual bool IsMouseButtonDown(EMouseButton Button) const override;
+	virtual void GetCursorPosition(float& OutX, float& OutY) const override;
+
 	/** Process-wide glfwInit / glfwTerminate helpers used by the factory. */
 	[[nodiscard]] static bool EnsureRuntimeInitialized();
 	static void ShutdownRuntime();

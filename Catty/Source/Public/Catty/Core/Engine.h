@@ -2,6 +2,7 @@
 
 #include "Catty/Core/Export.h"
 #include "Catty/Platform/PlatformWindow.h"
+#include "Catty/World/World.h"
 
 #include <cstdint>
 #include <string>
@@ -27,6 +28,12 @@ struct FEngineConfig
 	int WindowHeight = 720;
 	bool bCreateMainWindow = true;
 	bool bResizableWindow = true;
+
+	/** Clear color used by the default FApp::Render path. */
+	float ClearColorR = 0.08f;
+	float ClearColorG = 0.10f;
+	float ClearColorB = 0.16f;
+	float ClearColorA = 1.0f;
 };
 
 class CATTY_API FEngine
@@ -46,10 +53,14 @@ public:
 	[[nodiscard]] std::uint64_t GetFrameIndex() const { return FrameIndex; }
 	[[nodiscard]] const FEngineConfig& GetConfig() const { return Config; }
 
+	[[nodiscard]] FWorld& GetWorld() { return World; }
+	[[nodiscard]] const FWorld& GetWorld() const { return World; }
+
 private:
 	bool bInitialized = false;
 	std::uint64_t FrameIndex = 0;
 	FEngineConfig Config{};
+	FWorld World;
 };
 
 } // namespace Catty

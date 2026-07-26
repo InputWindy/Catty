@@ -46,15 +46,15 @@ FApp::FApp() = default;
 
 FApp::~FApp()
 {
-	ShutdownPlatformWindow(PlatformWindow);
-	if (ResourceServer.IsInitialized())
-	{
-		ResourceServer.Shutdown();
-	}
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Shutdown();
 	}
+	if (ResourceServer.IsInitialized())
+	{
+		ResourceServer.Shutdown();
+	}
+	ShutdownPlatformWindow(PlatformWindow);
 	if (Engine.IsInitialized())
 	{
 		Engine.Shutdown();
@@ -78,21 +78,6 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
-	if (!RenderServer.Initialize())
-	{
-		CATTY_CORE_ERROR("FApp::InitializeEngine failed (RenderServer)");
-		Engine.Shutdown();
-		return false;
-	}
-
-	if (!ResourceServer.Initialize())
-	{
-		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ResourceServer)");
-		RenderServer.Shutdown();
-		Engine.Shutdown();
-		return false;
-	}
-
 	FPlatformWindowDesc PlatformDesc;
 	PlatformDesc.Platform = EngineConfig.Platform;
 	PlatformDesc.Title = EngineConfig.ApplicationName.empty() ? "Catty" : EngineConfig.ApplicationName;
@@ -105,8 +90,6 @@ bool FApp::InitializeEngine()
 	if (!PlatformWindow)
 	{
 		CATTY_CORE_ERROR("FApp::InitializeEngine failed (PlatformWindow)");
-		ResourceServer.Shutdown();
-		RenderServer.Shutdown();
 		Engine.Shutdown();
 		FPlatformWindowFactory::Shutdown();
 		return false;
@@ -116,6 +99,37 @@ bool FApp::InitializeEngine()
 	{
 		bAutoExitAfterFrames = true;
 		CATTY_CORE_INFO("Platform window headless; auto-exit after {} frames", AutoExitFrameCount);
+	}
+
+	if (!RenderServer.Initialize())
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (RenderServer)");
+		ShutdownPlatformWindow(PlatformWindow);
+		Engine.Shutdown();
+		return false;
+	}
+
+	if (!RenderServer.InitializeRHI(*PlatformWindow))
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (RHI)");
+		RenderServer.Shutdown();
+		ShutdownPlatformWindow(PlatformWindow);
+		Engine.Shutdown();
+		return false;
+	}
+
+	if (!ResourceServer.Initialize())
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ResourceServer)");
+		RenderServer.Shutdown();
+		ShutdownPlatformWindow(PlatformWindow);
+		Engine.Shutdown();
+		return false;
+	}
+
+	if (PlatformWindow->HasOsWindow())
+	{
+		PlatformWindow->GetFramebufferSize(LastFramebufferWidth, LastFramebufferHeight);
 	}
 
 	LastFrameTimeSeconds = PlatformWindow->GetTimeSeconds();
@@ -133,15 +147,15 @@ void FApp::PreShutdown()
 
 void FApp::Shutdown()
 {
-	ShutdownPlatformWindow(PlatformWindow);
-	if (ResourceServer.IsInitialized())
-	{
-		ResourceServer.Shutdown();
-	}
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Shutdown();
 	}
+	if (ResourceServer.IsInitialized())
+	{
+		ResourceServer.Shutdown();
+	}
+	ShutdownPlatformWindow(PlatformWindow);
 	if (Engine.IsInitialized())
 	{
 		Engine.Shutdown();
@@ -154,6 +168,16 @@ void FApp::BeginFrame(float /*DeltaSeconds*/)
 
 void FApp::ProcessInput(float /*DeltaSeconds*/)
 {
+	if (!PlatformWindow)
+	{
+		return;
+	}
+
+	Input.Update(*PlatformWindow);
+	if (Input.WasKeyPressed(EKey::Escape))
+	{
+		RequestExit();
+	}
 }
 
 void FApp::FixedUpdate(float /*InFixedDeltaSeconds*/)
@@ -174,6 +198,17 @@ void FApp::PreRender(float /*DeltaSeconds*/)
 
 void FApp::Render(float /*DeltaSeconds*/)
 {
+	if (!RenderServer.HasRHI())
+	{
+		return;
+	}
+
+	const FEngineConfig& Config = Engine.GetConfig();
+	RenderServer.RequestClearPresent(
+		Config.ClearColorR,
+		Config.ClearColorG,
+		Config.ClearColorB,
+		Config.ClearColorA);
 }
 
 void FApp::EndFrame(float /*DeltaSeconds*/)
@@ -186,7 +221,6 @@ float FApp::CalculateDeltaSeconds()
 	float DeltaSeconds = static_cast<float>(NowSeconds - LastFrameTimeSeconds);
 	LastFrameTimeSeconds = NowSeconds;
 
-	// First frame / clock hiccup guards.
 	if (DeltaSeconds < 0.0f)
 	{
 		DeltaSeconds = 0.0f;
@@ -213,7 +247,6 @@ void FApp::RunFixedUpdates(float DeltaSeconds)
 		++Steps;
 	}
 
-	// Drop leftover time if we hit the step cap (hitch / spiral-of-death guard).
 	if (Steps >= MaxFixedUpdatesPerFrame)
 	{
 		FixedUpdateAccumulator = 0.0f;
@@ -225,6 +258,29 @@ void FApp::FlushRenderServer()
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Flush();
+	}
+}
+
+void FApp::SyncFramebufferSize()
+{
+	if (!PlatformWindow || !PlatformWindow->HasOsWindow() || !RenderServer.HasRHI())
+	{
+		return;
+	}
+
+	int Width = 0;
+	int Height = 0;
+	PlatformWindow->GetFramebufferSize(Width, Height);
+	if (Width <= 0 || Height <= 0)
+	{
+		return;
+	}
+
+	if (Width != LastFramebufferWidth || Height != LastFramebufferHeight)
+	{
+		LastFramebufferWidth = Width;
+		LastFramebufferHeight = Height;
+		RenderServer.RequestResize(Width, Height);
 	}
 }
 
@@ -240,19 +296,24 @@ void FApp::Tick(float DeltaSeconds)
 			RequestExit();
 			return;
 		}
+		SyncFramebufferSize();
 	}
 
 	BeginFrame(DeltaSeconds);
 	ProcessInput(DeltaSeconds);
+	if (!bRunning)
+	{
+		return;
+	}
+
 	RunFixedUpdates(DeltaSeconds);
 	Engine.Tick(DeltaSeconds);
 	Update(DeltaSeconds);
 	LateUpdate(DeltaSeconds);
 
-	// PreRender sync point: game thread waits for render-server task queue to drain.
+	// Wait for previous frame's render work, then submit this frame.
 	FlushRenderServer();
 	PreRender(DeltaSeconds);
-
 	Render(DeltaSeconds);
 	EndFrame(DeltaSeconds);
 
@@ -302,6 +363,9 @@ void FApp::Run()
 	{
 		Tick(CalculateDeltaSeconds());
 	}
+
+	// Drain the last clear/present before tearing down RHI.
+	FlushRenderServer();
 
 	PreShutdown();
 	Shutdown();
