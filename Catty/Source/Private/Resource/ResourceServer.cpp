@@ -17,7 +17,7 @@ bool FResourceServer::OnInitialize()
 
 void FResourceServer::OnShutdown()
 {
-	Flush();
+	FThreadedServer::Flush();
 	std::lock_guard<std::mutex> Lock(RegistryMutex);
 	Registry.clear();
 	NextResourceValue = 1;
@@ -68,13 +68,16 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 
 void FResourceServer::CompleteLoad(FResourceId Id, bool bSuccess)
 {
-	std::lock_guard<std::mutex> Lock(RegistryMutex);
-	const auto It = Registry.find(Id.Value);
-	if (It == Registry.end())
 	{
-		return;
+		std::lock_guard<std::mutex> Lock(RegistryMutex);
+		const auto It = Registry.find(Id.Value);
+		if (It == Registry.end())
+		{
+			return;
+		}
+		It->second.State = bSuccess ? EResourceLoadState::Ready : EResourceLoadState::Failed;
 	}
-	It->second.State = bSuccess ? EResourceLoadState::Ready : EResourceLoadState::Failed;
+	LoadCv.notify_all();
 }
 
 EResourceLoadState FResourceServer::GetLoadState(FResourceId Id) const
@@ -115,6 +118,25 @@ bool FResourceServer::TryGetPath(FResourceId Id, std::string& OutPath) const
 	return true;
 }
 
+void FResourceServer::Flush(FResourceId Id)
+{
+	if (!Id.IsValid())
+	{
+		return;
+	}
+
+	std::unique_lock<std::mutex> Lock(RegistryMutex);
+	LoadCv.wait(Lock, [this, Id]()
+	{
+		const auto It = Registry.find(Id.Value);
+		if (It == Registry.end())
+		{
+			return true;
+		}
+		return It->second.State != EResourceLoadState::Pending;
+	});
+}
+
 void FResourceServer::Release(FResourceId Id)
 {
 	if (!Id.IsValid())
@@ -122,8 +144,11 @@ void FResourceServer::Release(FResourceId Id)
 		return;
 	}
 
-	std::lock_guard<std::mutex> Lock(RegistryMutex);
-	Registry.erase(Id.Value);
+	{
+		std::lock_guard<std::mutex> Lock(RegistryMutex);
+		Registry.erase(Id.Value);
+	}
+	LoadCv.notify_all();
 }
 
 } // namespace Catty

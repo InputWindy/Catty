@@ -76,6 +76,10 @@ FApp::~FApp()
 	{
 		RenderServer.Shutdown();
 	}
+	if (ResourceManager.IsInitialized())
+	{
+		ResourceManager.Shutdown();
+	}
 	if (ResourceServer.IsInitialized())
 	{
 		ResourceServer.Shutdown();
@@ -169,6 +173,20 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
+	if (!ResourceManager.Initialize(ResourceServer))
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ResourceManager)");
+		ResourceServer.Shutdown();
+		if (ImGui.IsInitialized())
+		{
+			ImGui.Shutdown(RenderServer);
+		}
+		RenderServer.Shutdown();
+		ShutdownPlatformWindow(PlatformWindow);
+		Engine.Shutdown();
+		return false;
+	}
+
 	if (PlatformWindow->HasOsWindow())
 	{
 		PlatformWindow->GetFramebufferSize(LastFramebufferWidth, LastFramebufferHeight);
@@ -198,6 +216,11 @@ void FApp::Shutdown()
 	if (RenderServer.IsInitialized())
 	{
 		RenderServer.Shutdown();
+	}
+	if (ResourceManager.IsInitialized())
+	{
+		ResourceManager.CollectGarbage();
+		ResourceManager.Shutdown();
 	}
 	if (ResourceServer.IsInitialized())
 	{
@@ -247,6 +270,7 @@ void FApp::FixedUpdate(float InFixedDeltaSeconds)
 
 void FApp::Update(float DeltaSeconds)
 {
+	ResourceManager.TickGarbageCollection(DeltaSeconds);
 	LayerStack.Update(DeltaSeconds);
 }
 

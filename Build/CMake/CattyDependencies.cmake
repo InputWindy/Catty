@@ -112,9 +112,9 @@ set(CATTY_IMGUI_SOURCES
 	"${CATTY_IMGUI_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
 )
 
-# OBJECT library: sources live under ThirdParty in the .sln; Catty links the objects
-# (all TUs included) without compiling imgui*.cpp into the Catty target source list.
-add_library(imgui OBJECT ${CATTY_IMGUI_SOURCES})
+# STATIC ThirdParty lib (own .vcxproj under ThirdParty/). Avoid OBJECT — VS would
+# nest imgui*.obj under Catty's "Object Libraries" filter.
+add_library(imgui STATIC ${CATTY_IMGUI_SOURCES})
 add_library(Catty::ImGui ALIAS imgui)
 
 target_include_directories(imgui

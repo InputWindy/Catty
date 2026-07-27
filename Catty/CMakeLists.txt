@@ -46,13 +46,12 @@ target_include_directories(Catty
 
 # PUBLIC: game code uses CATTY_* macros that expand to spdlog calls.
 # Header-only avoids duplicating a static spdlog into both Catty.dll and the game EXE.
-# ImGui OBJECT lib: ThirdParty project in the .sln; objects link into Catty.dll (headers only for games).
+# ImGui: separate ThirdParty static lib; Catty.dll consumes headers + links all TUs (WHOLEARCHIVE).
 target_link_libraries(Catty
 	PUBLIC
 		spdlog::spdlog_header_only
 		Vulkan::Vulkan
 	PRIVATE
-		imgui
 		glfw
 		Threads::Threads
 )
@@ -66,6 +65,23 @@ target_compile_definitions(Catty
 	PUBLIC
 		$<TARGET_PROPERTY:imgui,INTERFACE_COMPILE_DEFINITIONS>
 )
+
+# Pull every imgui TU into Catty.dll (demo / widgets otherwise dropped by the linker).
+# Do not also target_link_libraries(imgui) on MSVC shared — that + WHOLEARCHIVE duplicates.
+add_dependencies(Catty imgui)
+if(CATTY_BUILD_SHARED)
+	if(MSVC)
+		target_link_options(Catty PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:imgui>")
+	else()
+		target_link_libraries(Catty PRIVATE
+			"-Wl,--whole-archive"
+			imgui
+			"-Wl,--no-whole-archive"
+		)
+	endif()
+else()
+	target_link_libraries(Catty PRIVATE imgui)
+endif()
 
 target_compile_definitions(Catty
 	PUBLIC

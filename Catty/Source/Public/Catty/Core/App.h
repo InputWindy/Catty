@@ -7,6 +7,7 @@
 #include "Catty/Core/Timer.h"
 #include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
+#include "Catty/Resource/ResourceManager.h"
 #include "Catty/Resource/ResourceServer.h"
 #include "Catty/UI/ImGuiSystem.h"
 
@@ -64,6 +65,9 @@ public:
 	[[nodiscard]] FResourceServer& GetResourceServer() { return ResourceServer; }
 	[[nodiscard]] const FResourceServer& GetResourceServer() const { return ResourceServer; }
 
+	[[nodiscard]] FResourceManager& GetResourceManager() { return ResourceManager; }
+	[[nodiscard]] const FResourceManager& GetResourceManager() const { return ResourceManager; }
+
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
 	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
@@ -87,7 +91,7 @@ protected:
 	virtual bool PostInitialize();
 	virtual void PreShutdown();
 
-	/** Default: clear layers → ImGui → render → resource → platform → engine. */
+	/** Default: clear layers → ImGui → render → resource manager → resource server → platform → engine. */
 	virtual void Shutdown();
 
 	/** Default: ImGui NewFrame, then layer stack. */
@@ -117,6 +121,7 @@ protected:
 	FEngine Engine;
 	FRenderServer RenderServer;
 	FResourceServer ResourceServer;
+	FResourceManager ResourceManager;
 	FTimer Timer;
 	FImGuiSystem ImGui;
 	FLayerStack LayerStack;
