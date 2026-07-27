@@ -95,6 +95,10 @@ FApp::~FApp()
 	{
 		ResourceManager.Shutdown();
 	}
+	if (WorkerPool.IsInitialized())
+	{
+		WorkerPool.Shutdown();
+	}
 	if (GCManager.IsInitialized())
 	{
 		GCManager.Shutdown();
@@ -209,6 +213,21 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
+	if (!WorkerPool.Initialize())
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (WorkerPool)");
+		ResourceManager.Shutdown();
+		GCManager.Shutdown();
+		if (ImGui.IsInitialized())
+		{
+			ImGui.Shutdown(RenderServer);
+		}
+		RenderServer.Shutdown();
+		ShutdownPlatformWindow(PlatformWindow);
+		Engine.Shutdown();
+		return false;
+	}
+
 	if (PlatformWindow->HasOsWindow())
 	{
 		PlatformWindow->GetFramebufferSize(LastFramebufferWidth, LastFramebufferHeight);
@@ -242,6 +261,10 @@ void FApp::Shutdown()
 	if (ResourceManager.IsInitialized())
 	{
 		ResourceManager.Shutdown();
+	}
+	if (WorkerPool.IsInitialized())
+	{
+		WorkerPool.Shutdown();
 	}
 	if (GCManager.IsInitialized())
 	{

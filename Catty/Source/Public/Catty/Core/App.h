@@ -5,6 +5,7 @@
 #include "Catty/Core/Layer.h"
 #include "Catty/Core/LayerStack.h"
 #include "Catty/Core/Timer.h"
+#include "Catty/Core/WorkerPool.h"
 #include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/GCManager.h"
@@ -68,6 +69,9 @@ public:
 	[[nodiscard]] FGCManager& GetGCManager() { return GCManager; }
 	[[nodiscard]] const FGCManager& GetGCManager() const { return GCManager; }
 
+	[[nodiscard]] FWorkerPool& GetWorkerPool() { return WorkerPool; }
+	[[nodiscard]] const FWorkerPool& GetWorkerPool() const { return WorkerPool; }
+
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
 	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
@@ -122,6 +126,7 @@ protected:
 	FRenderServer RenderServer;
 	FGCManager GCManager;
 	FResourceManager ResourceManager;
+	FWorkerPool WorkerPool;
 	FTimer Timer;
 	FImGuiSystem ImGui;
 	FLayerStack LayerStack;
