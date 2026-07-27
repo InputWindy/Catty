@@ -17,7 +17,7 @@ namespace Catty
  *   {
  *   public:
  *       FWorldLayer() : Catty::FLayer("WorldLayer") {}
- *       virtual void OnUpdate(float DeltaSeconds) override { /* tick world */ }
+ *       virtual void OnUpdate(float DeltaSeconds) override { TickWorld(DeltaSeconds); }
  *   };
  *
  *   App.PushLayer(std::make_unique<FWorldLayer>());

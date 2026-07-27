@@ -8,13 +8,14 @@
 //   #include <Catty/Catty.h>
 //   #include <Catty/EntryPoint.h>
 //
-//   class FMyGameApp : public Catty::FApp { /* Configure / PostInitialize */ };
+//   class FMyGameApp : public Catty::FApp; // Configure / PostInitialize
 //   Catty::FApp* Catty::CreateApplication() { return new FMyGameApp(); }
 // ```
 #include "Catty/Core/Export.h"
 #include "Catty/Core/Log.h"
 #include "Catty/Core/Timer.h"
 #include "Catty/Core/ConfigFile.h"
+#include "Catty/Core/Json.h"
 #include "Catty/Core/ConsoleVariable.h"
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Engine.h"

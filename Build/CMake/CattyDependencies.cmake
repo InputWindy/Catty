@@ -58,10 +58,30 @@ message(STATUS "  Vulkan_LIBRARIES    = ${Vulkan_LIBRARIES}")
 
 find_package(Threads REQUIRED)
 
-# Dear ImGui as a dedicated ThirdParty static library.
-# Catty only consumes ImGui headers + links Catty::ImGui; imgui*.cpp stay out of the Catty target.
 get_filename_component(_CATTY_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 get_filename_component(_CATTY_PUBLIC_HEADERS "${_CATTY_REPO_ROOT}/Catty/Source/Public" ABSOLUTE)
+
+# Include as <nlohmann/json.hpp> (vendored single-header under ThirdParty/nlohmann).
+set(_CATTY_VENDORED_NLOHMANN_JSON "${_CATTY_REPO_ROOT}/ThirdParty/nlohmann")
+if(EXISTS "${_CATTY_VENDORED_NLOHMANN_JSON}/json.hpp")
+	set(CATTY_NLOHMANN_JSON_INCLUDE_DIR "${_CATTY_REPO_ROOT}/ThirdParty" CACHE INTERNAL "nlohmann/json include root")
+	message(STATUS "Catty: nlohmann/json (vendored) at ${_CATTY_VENDORED_NLOHMANN_JSON}")
+else()
+	FetchContent_Declare(
+		nlohmann_json
+		GIT_REPOSITORY https://github.com/nlohmann/json.git
+		GIT_TAG v3.11.3
+		GIT_SHALLOW TRUE
+	)
+	FetchContent_MakeAvailable(nlohmann_json)
+	# single_include/nlohmann/json.hpp layout from the repo.
+	set(CATTY_NLOHMANN_JSON_INCLUDE_DIR "${nlohmann_json_SOURCE_DIR}/single_include" CACHE INTERNAL "nlohmann/json include root")
+	message(STATUS "Catty: nlohmann/json (FetchContent) at ${CATTY_NLOHMANN_JSON_INCLUDE_DIR}")
+endif()
+unset(_CATTY_VENDORED_NLOHMANN_JSON)
+
+# Dear ImGui as a dedicated ThirdParty static library.
+# Catty only consumes ImGui headers + links Catty::ImGui; imgui*.cpp stay out of the Catty target.
 set(_CATTY_VENDORED_IMGUI "${_CATTY_REPO_ROOT}/ThirdParty/imgui")
 
 if(EXISTS "${_CATTY_VENDORED_IMGUI}/imgui.cpp")

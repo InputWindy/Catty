@@ -41,6 +41,7 @@ target_include_directories(Catty
 		"${CATTY_PUBLIC_DIR}"
 	PRIVATE
 		"${CATTY_PRIVATE_DIR}"
+		"${CATTY_NLOHMANN_JSON_INCLUDE_DIR}"
 )
 
 # PUBLIC: game code uses CATTY_* macros that expand to spdlog calls.
