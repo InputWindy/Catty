@@ -28,8 +28,6 @@
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/ResourceHandle.h"
 #include "Catty/Resource/Object.h"
-#include "Catty/Resource/PackageRef.h"
-#include "Catty/Resource/ReferenceCollector.h"
 #include "Catty/Resource/Resource.h"
 #include "Catty/Resource/Package.h"
 #include "Catty/Resource/GCManager.h"

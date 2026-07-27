@@ -1,34 +1,23 @@
----
-description: FObject/FPackage must be passed via Ref (pool lifetime)
+﻿---
+description: FObject/FPackage must be passed via FObjectRef
 alwaysApply: true
 ---
 
-# 池化对象传递：FObjectRef / FPackageRef
+# 池化对象传递：FObjectRef / FObjectWeakRef
 
-`FObject`（含 `FResource`）与 `FPackage` 均为 **池化分配**。对外一律用 Ref 传递，靠引用计数间接管生命周期。
+`FObject`（含 `FResource`、`FPackage`）均为池化 FObject。对外一律用 **`FObjectRef`**，禁止裸调 `AddRef` / `ReleaseRef`。
 
-## FObject / FObjectRef
+## 写法
 
-- 对外 API：只用 `FObjectRef`，禁止裸 `FObject*`。
-- `AddRef` / `ReleaseRef`；GC 视 `RefCount > 0` 为存活。
-- 子类：`Ref.Cast<T>()`，不要做按子类拆的 Ref 类型。
+- 只有 `FObjectRef`，不要模板特化 / 不要 `FPackageRef`
+- 子类型：`Ref.Cast<FPackage>()` / `Ref.Cast<FResource>()`
+- `Wrap(ptr)` 仅引擎 / `SetReferencedObjects` 回填用
 
-## FPackage / FPackageRef
+## FPackage
 
-- 对外 API：`CreatePackage` / `FindPackage` / `LoadPackage` / `GetTransientPackage` 返回 `FPackageRef`。
-- `CreateResource` / `SavePackage` / `FindObject` 接受 `FPackageRef`。
-- Packages 名表持有 **1 个 catalog Ref**；`UnloadPackage` 先毁包内 objects 再 `ReleaseRef`；`RefCount == 0` 时才 `Free` 池槽。
-- `FObject::GetOuter()` 返回 `FPackageRef`（临时 AddRef）。
+- Catalog：`unordered_map<string, FObjectRef>`
+- 包内对象：`Outer` 为 `FObjectRef`；`GetOuter()` 返回 `FObjectRef`
 
-## 例外（仅引擎内部）
+## 环引用
 
-- 池 Allocate/Free、Package Objects 表、GC LiveObjects 等可暂存裸指针。
-- Ref 从裸指针构造 / `Get()` 仅 friend（Manager / Package / GC / Object）。
-
-## 示例
-
-```cpp
-FPackageRef Pkg = ResourceManager.CreatePackage("/Game/Demo", EPackageFlags::Persistent);
-FObjectRef Obj = ResourceManager.CreateResource(Pkg, "T_Hero", "Textures/T_Hero.png");
-ResourceManager.SavePackage(Pkg, "Content/Demo.pkg.json");
-```
+互持强引用会泄漏 → 一侧用 `FObjectWeakRef`，需要时 `Pin()`。

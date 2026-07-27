@@ -1,29 +1,75 @@
 #pragma once
 
 #include "Catty/Core/Export.h"
-#include "Catty/Resource/PackageRef.h"
-#include "Catty/Resource/ReferenceCollector.h"
 
 #include <cstdint>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 namespace Catty
 {
 
 class FPackage;
 class FGCManager;
+class FObject;
 
-/** Object GC / lifetime flags (UE RF_* lite). */
+/**
+ * Intrusive refcounted handle for any FObject subclass.
+ * Sole caller of FObject::AddRef / ReleaseRef. Use Cast<T>() for typed access.
+ */
+class FObjectRef
+{
+public:
+	FObjectRef() = default;
+
+	FObjectRef(const FObjectRef& Other);
+	FObjectRef(FObjectRef&& Other) noexcept;
+	~FObjectRef();
+
+	FObjectRef& operator=(const FObjectRef& Other);
+	FObjectRef& operator=(FObjectRef&& Other) noexcept;
+
+	[[nodiscard]] bool IsValid() const { return Object != nullptr; }
+	[[nodiscard]] explicit operator bool() const { return Object != nullptr; }
+	[[nodiscard]] FObject& operator*() const { return *Object; }
+	[[nodiscard]] FObject* operator->() const { return Object; }
+
+	[[nodiscard]] std::uint32_t GetRefCount() const;
+
+	template <typename TObject>
+	[[nodiscard]] TObject* Cast() const
+	{
+		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
+		return dynamic_cast<TObject*>(Object);
+	}
+
+	[[nodiscard]] bool operator==(const FObjectRef& Other) const { return Object == Other.Object; }
+	[[nodiscard]] bool operator!=(const FObjectRef& Other) const { return Object != Other.Object; }
+
+	[[nodiscard]] static FObjectRef Wrap(FObject* InObject);
+
+	void Reset();
+
+private:
+	friend class FPackage;
+	friend class FResourceManager;
+	friend class FGCManager;
+	friend class FObject;
+
+	explicit FObjectRef(FObject* InObject);
+
+	[[nodiscard]] FObject* Get() const { return Object; }
+
+	FObject* Object = nullptr;
+};
+
+/** Object GC / lifetime flags. */
 enum class EObjectFlags : std::uint32_t
 {
 	None = 0,
-	/** Mark bit: reachable from roots / ref seeds this collect. */
-	Reachable = 1u << 0,
-	/** Queued for delayed Free (purge interval). */
-	PendingKill = 1u << 1,
-	/** Queued for Free at end of this GC tick. */
-	ImmediateDestroy = 1u << 2,
+	PendingKill = 1u << 0,
+	ImmediateDestroy = 1u << 1,
 };
 
 [[nodiscard]] constexpr EObjectFlags operator|(EObjectFlags A, EObjectFlags B)
@@ -60,10 +106,8 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
 
 /**
  * Base for package objects (UE UObject-lite).
- * Memory is allocated by owning systems (e.g. FResourceManager pools), then
- * FGCManager::RegisterObject for Mark / Root / PendingKill.
- * RefCount is bumped by FObjectRef — GC treats RefCount > 0 as live.
- * Override AddReferencedObjects to publish outbound edges for the reference graph.
+ * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
+ * Outer is FObjectRef (empty for FPackage itself).
  */
 class CATTY_API FObject
 {
@@ -74,191 +118,79 @@ public:
 	FObject(const FObject&) = delete;
 	FObject& operator=(const FObject&) = delete;
 
-	[[nodiscard]] FPackageRef GetOuter() const;
-	[[nodiscard]] FPackageRef GetPackage() const;
+	[[nodiscard]] FObjectRef GetOuter() const;
+	[[nodiscard]] FObjectRef GetPackage() const;
 	[[nodiscard]] const std::string& GetName() const { return ObjectName; }
-	[[nodiscard]] std::uint32_t GetRefCount() const { return RefCount; }
-	[[nodiscard]] std::uint32_t GetRootCount() const { return RootCount; }
-	[[nodiscard]] EObjectFlags GetFlags() const { return ObjectFlags; }
-
 	[[nodiscard]] std::string GetPathName() const;
+	[[nodiscard]] std::uint32_t GetRefCount() const { return RefCount; }
+	[[nodiscard]] EObjectFlags GetFlags() const { return ObjectFlags; }
+	[[nodiscard]] bool HasAnyFlags(EObjectFlags Test) const;
+	[[nodiscard]] bool IsPendingKill() const;
+	[[nodiscard]] bool IsRooted() const;
+	[[nodiscard]] std::uint32_t GetWeakSerial() const { return WeakSerial; }
 
-	std::uint32_t AddRef();
-	std::uint32_t ReleaseRef();
+	[[nodiscard]] static bool SplitObjectPath(
+		const std::string& PathName,
+		std::string& OutPackageName,
+		std::string& OutObjectName);
 
-	/** Keep alive without FObjectRef (UE AddToRoot). Nested calls use RootCount. */
 	void AddToRoot();
 	void RemoveFromRoot();
-	[[nodiscard]] bool IsRooted() const { return RootCount > 0; }
 
-	void AddFlags(EObjectFlags InFlags) { ObjectFlags |= InFlags; }
-	void ClearFlags(EObjectFlags InFlags) { ObjectFlags &= ~InFlags; }
-	[[nodiscard]] bool HasAnyFlags(EObjectFlags Test) const
-	{
-		return HasAnyObjectFlags(ObjectFlags, Test);
-	}
-
-	[[nodiscard]] bool IsPendingKill() const
-	{
-		return HasAnyFlags(EObjectFlags::PendingKill);
-	}
-	[[nodiscard]] bool IsReachable() const
-	{
-		return HasAnyFlags(EObjectFlags::Reachable);
-	}
-
-	/** Default GC path: delayed Free on purge. */
 	void MarkPendingKill();
-
-	/** Free at end of current FGCManager::Tick (after Mark). */
 	void MarkForImmediateDestroy();
 
-	/**
-	 * Report outbound FObject references for GC Mark.
-	 * Outer/Package is NOT an edge (package residency is handled separately).
-	 */
-	virtual void AddReferencedObjects(FReferenceCollector& Collector);
+	virtual void GetReferencedObjects(std::vector<FObject*>& OutObjects) const;
+	virtual void SetReferencedObjects(const std::vector<FObject*>& InObjects);
 
 protected:
-	FGCManager* GCOwner = nullptr;
-	FPackage* Outer = nullptr;
+	void AddFlags(EObjectFlags InFlags) { ObjectFlags |= InFlags; }
+	void ClearFlags(EObjectFlags InFlags) { ObjectFlags &= ~InFlags; }
+
 	std::string ObjectName;
-	std::uint32_t RefCount = 0;
-	std::uint32_t RootCount = 0;
-	EObjectFlags ObjectFlags = EObjectFlags::None;
-
-	friend class FPackage;
-	friend class FResourceManager;
-	friend class FGCManager;
-};
-
-/**
- * Single intrusive refcounted smart pointer for all FObject subclasses.
- * Copy / assign / destroy call AddRef / ReleaseRef.
- * Public APIs return FObjectRef only — no bare FObject*. Use Cast<T>() for subtypes.
- *
- * Example:
- * ```
- *   FObjectRef Ref = ResourceManager.CreateResource(...);
- *   if (FResource* Res = Ref.Cast<FResource>())
- *   {
- *       ResourceManager.Flush(Ref);
- *   }
- * ```
- */
-class FObjectRef
-{
-public:
-	FObjectRef() = default;
-
-	FObjectRef(const FObjectRef& Other)
-		: Object(Other.Object)
-	{
-		if (Object)
-		{
-			Object->AddRef();
-		}
-	}
-
-	FObjectRef(FObjectRef&& Other) noexcept
-		: Object(Other.Object)
-	{
-		Other.Object = nullptr;
-	}
-
-	~FObjectRef()
-	{
-		Reset();
-	}
-
-	FObjectRef& operator=(const FObjectRef& Other)
-	{
-		if (this == &Other)
-		{
-			return *this;
-		}
-
-		if (Object)
-		{
-			Object->ReleaseRef();
-		}
-
-		Object = Other.Object;
-		if (Object)
-		{
-			Object->AddRef();
-		}
-		return *this;
-	}
-
-	FObjectRef& operator=(FObjectRef&& Other) noexcept
-	{
-		if (this == &Other)
-		{
-			return *this;
-		}
-
-		if (Object)
-		{
-			Object->ReleaseRef();
-		}
-
-		Object = Other.Object;
-		Other.Object = nullptr;
-		return *this;
-	}
-
-	[[nodiscard]] bool IsValid() const { return Object != nullptr; }
-	[[nodiscard]] explicit operator bool() const { return Object != nullptr; }
-	[[nodiscard]] FObject& operator*() const { return *Object; }
-	[[nodiscard]] FObject* operator->() const { return Object; }
-
-	[[nodiscard]] std::uint32_t GetRefCount() const
-	{
-		return Object ? Object->GetRefCount() : 0;
-	}
-
-	/** dynamic_cast the held object to TObject*. Null if type mismatch. */
-	template <typename TObject>
-	[[nodiscard]] TObject* Cast() const
-	{
-		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
-		return dynamic_cast<TObject*>(Object);
-	}
-
-	[[nodiscard]] bool operator==(const FObjectRef& Other) const { return Object == Other.Object; }
-	[[nodiscard]] bool operator!=(const FObjectRef& Other) const { return Object != Other.Object; }
-
-	void Reset()
-	{
-		if (Object)
-		{
-			Object->ReleaseRef();
-			Object = nullptr;
-		}
-	}
 
 private:
+	std::uint32_t AddRef();
+	std::uint32_t ReleaseRef();
+	void ClearOuter();
+
+	FGCManager* GCOwner = nullptr;
+	/** Pins Outer package. Empty for FPackage itself. */
+	FObjectRef Outer;
+	std::uint32_t RefCount = 0;
+	std::uint32_t WeakSerial = 0;
+	EObjectFlags ObjectFlags = EObjectFlags::None;
+
+	friend class FObjectRef;
 	friend class FPackage;
 	friend class FResourceManager;
 	friend class FGCManager;
-
-	/** Engine-only: wrap a pool pointer (AddRef). Games obtain Refs from Manager APIs. */
-	explicit FObjectRef(FObject* InObject)
-		: Object(InObject)
-	{
-		if (Object)
-		{
-			Object->AddRef();
-		}
-	}
-
-	[[nodiscard]] FObject* Get() const { return Object; }
-
-	FObject* Object = nullptr;
 };
 
-/** Free-function form of FObjectRef::Cast. */
+/** Non-owning handle; invalid after target destroy (WeakSerial mismatch). */
+class FObjectWeakRef
+{
+public:
+	FObjectWeakRef() = default;
+
+	explicit FObjectWeakRef(FObject* InObject);
+	explicit FObjectWeakRef(const FObjectRef& Ref);
+
+	[[nodiscard]] bool IsValid() const;
+	[[nodiscard]] explicit operator bool() const { return IsValid(); }
+
+	[[nodiscard]] FObjectRef Pin() const;
+
+	void Reset();
+
+	[[nodiscard]] bool operator==(const FObjectWeakRef& Other) const;
+	[[nodiscard]] bool operator!=(const FObjectWeakRef& Other) const;
+
+private:
+	FObject* Object = nullptr;
+	std::uint32_t Serial = 0;
+};
+
 template <typename TObject>
 [[nodiscard]] TObject* Cast(const FObjectRef& Ref)
 {

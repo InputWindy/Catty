@@ -1,28 +1,11 @@
-#include "Catty/Resource/GCManager.h"
+﻿#include "Catty/Resource/GCManager.h"
 
 #include "Catty/Core/Log.h"
-#include "Catty/Resource/Package.h"
 
 #include <algorithm>
 
 namespace Catty
 {
-
-void FGCManager::FMarkCollector::AddReferencedObject(FObject*& Object)
-{
-	if (!Object)
-	{
-		return;
-	}
-
-	if (Object->HasAnyFlags(EObjectFlags::Reachable))
-	{
-		return;
-	}
-
-	Object->AddFlags(EObjectFlags::Reachable);
-	Queue.push_back(Object);
-}
 
 FGCManager::~FGCManager()
 {
@@ -62,8 +45,7 @@ void FGCManager::Shutdown()
 	}
 
 	LiveObjects.clear();
-	RootSet.clear();
-	MarkSeeds.clear();
+	RootMap.clear();
 	PendingKill.clear();
 	ImmediateDestroy.clear();
 	DestroyHandlers.clear();
@@ -71,12 +53,41 @@ void FGCManager::Shutdown()
 	CATTY_CORE_INFO("GCManager shut down");
 }
 
-void FGCManager::AddObjectDestroyHandler(FObjectDestroyHandler Handler)
+FGCManager::FObjectDestroyHandlerId FGCManager::AddObjectDestroyHandler(FObjectDestroyHandler Handler)
 {
-	if (Handler)
+	if (!Handler)
 	{
-		DestroyHandlers.push_back(std::move(Handler));
+		return InvalidDestroyHandlerId;
 	}
+
+	const FObjectDestroyHandlerId Id = NextDestroyHandlerId++;
+	if (NextDestroyHandlerId == InvalidDestroyHandlerId)
+	{
+		NextDestroyHandlerId = 1;
+	}
+
+	DestroyHandlers.push_back(FDestroyHandlerEntry{Id, std::move(Handler)});
+	return Id;
+}
+
+bool FGCManager::RemoveObjectDestroyHandler(FObjectDestroyHandlerId Id)
+{
+	if (Id == InvalidDestroyHandlerId)
+	{
+		return false;
+	}
+
+	const auto It = std::remove_if(
+		DestroyHandlers.begin(),
+		DestroyHandlers.end(),
+		[Id](const FDestroyHandlerEntry& Entry) { return Entry.Id == Id; });
+	if (It == DestroyHandlers.end())
+	{
+		return false;
+	}
+
+	DestroyHandlers.erase(It, DestroyHandlers.end());
+	return true;
 }
 
 void FGCManager::ClearObjectDestroyHandlers()
@@ -101,15 +112,20 @@ void FGCManager::UnregisterObject(FObject& Object)
 	LiveObjects.erase(
 		std::remove(LiveObjects.begin(), LiveObjects.end(), &Object),
 		LiveObjects.end());
-	RemoveFromRootSet(&Object);
+	RemoveAllRootRefs(&Object);
 	RemoveFromPendingKill(&Object);
 	RemoveFromImmediate(&Object);
 	Object.GCOwner = nullptr;
 }
 
-void FGCManager::RemoveFromRootSet(FObject* Object)
+void FGCManager::RemoveAllRootRefs(FObject* Object)
 {
-	RootSet.erase(std::remove(RootSet.begin(), RootSet.end(), Object), RootSet.end());
+	if (!Object)
+	{
+		return;
+	}
+
+	RootMap.erase(Object);
 }
 
 void FGCManager::RemoveFromPendingKill(FObject* Object)
@@ -124,10 +140,22 @@ void FGCManager::RemoveFromImmediate(FObject* Object)
 		ImmediateDestroy.end());
 }
 
-bool FGCManager::IsInTransientPackage(const FObject& Object)
+bool FGCManager::IsKeptAlive(const FObject& Object)
 {
-	const FPackageRef Package = Object.GetOuter();
-	return Package && Package->IsTransient();
+	return Object.GetRefCount() > 0;
+}
+
+bool FGCManager::IsInRootSet(const FObject& Object) const
+{
+	return RootMap.find(const_cast<FObject*>(&Object)) != RootMap.end();
+}
+
+bool FGCManager::IsGcEligible(const FObject& Object)
+{
+	(void)Object;
+	// Catalog FObjectRef + Outer pins keep packages/objects alive while referenced.
+	// Unreferenced objects are always eligible regardless of Transient/Persistent.
+	return true;
 }
 
 void FGCManager::DestroyObjectImmediate(FObject* Object)
@@ -137,9 +165,9 @@ void FGCManager::DestroyObjectImmediate(FObject* Object)
 		return;
 	}
 
-	for (const FObjectDestroyHandler& Handler : DestroyHandlers)
+	for (const FDestroyHandlerEntry& Entry : DestroyHandlers)
 	{
-		if (Handler && Handler(Object))
+		if (Entry.Handler && Entry.Handler(Object))
 		{
 			return;
 		}
@@ -153,11 +181,17 @@ void FGCManager::DestroyObjectImmediate(FObject* Object)
 
 void FGCManager::AddToRoot(FObject& Object)
 {
-	const bool bWasRooted = Object.IsRooted();
-	++Object.RootCount;
-	if (!bWasRooted)
+	const auto It = RootMap.find(&Object);
+	if (It != RootMap.end())
 	{
-		RootSet.push_back(&Object);
+		++It->second.NestCount;
+	}
+	else
+	{
+		FRootEntry Entry;
+		Entry.Ref = FObjectRef::Wrap(&Object);
+		Entry.NestCount = 1;
+		RootMap.emplace(&Object, std::move(Entry));
 	}
 
 	if (Object.IsPendingKill())
@@ -165,90 +199,66 @@ void FGCManager::AddToRoot(FObject& Object)
 		Object.ClearFlags(EObjectFlags::PendingKill);
 		RemoveFromPendingKill(&Object);
 	}
+	if (Object.HasAnyFlags(EObjectFlags::ImmediateDestroy))
+	{
+		Object.ClearFlags(EObjectFlags::ImmediateDestroy);
+		RemoveFromImmediate(&Object);
+	}
 }
 
 void FGCManager::RemoveFromRoot(FObject& Object)
 {
-	if (Object.RootCount == 0)
+	const auto It = RootMap.find(&Object);
+	if (It == RootMap.end())
 	{
-		CATTY_CORE_WARN("FGCManager::RemoveFromRoot: '{}' already has RootCount==0", Object.GetPathName());
+		CATTY_CORE_WARN("FGCManager::RemoveFromRoot: '{}' is not in the root map", Object.GetPathName());
 		return;
 	}
 
-	--Object.RootCount;
-	if (!Object.IsRooted())
+	if (It->second.NestCount > 1)
 	{
-		RemoveFromRootSet(&Object);
+		--It->second.NestCount;
+		return;
 	}
+
+	RootMap.erase(It);
 }
 
-void FGCManager::AddMarkSeed(FObject* Object)
+void FGCManager::EnqueuePendingKill(FObject& Object)
 {
-	if (Object)
+	Object.ClearFlags(EObjectFlags::ImmediateDestroy);
+	Object.AddFlags(EObjectFlags::PendingKill);
+	RemoveFromImmediate(&Object);
+
+	if (!IsGcEligible(Object))
 	{
-		MarkSeeds.push_back(Object);
+		return;
+	}
+
+	if (std::find(PendingKill.begin(), PendingKill.end(), &Object) == PendingKill.end())
+	{
+		PendingKill.push_back(&Object);
 	}
 }
 
-void FGCManager::ClearReachableFlags()
+void FGCManager::EnqueueImmediateDestroy(FObject& Object)
 {
-	for (FObject* Object : LiveObjects)
+	Object.ClearFlags(EObjectFlags::PendingKill);
+	Object.AddFlags(EObjectFlags::ImmediateDestroy);
+	RemoveFromPendingKill(&Object);
+
+	if (!IsGcEligible(Object))
 	{
-		if (Object)
-		{
-			Object->ClearFlags(EObjectFlags::Reachable);
-		}
+		return;
+	}
+
+	if (std::find(ImmediateDestroy.begin(), ImmediateDestroy.end(), &Object) == ImmediateDestroy.end())
+	{
+		ImmediateDestroy.push_back(&Object);
 	}
 }
 
-void FGCManager::MarkReachable()
-{
-	std::vector<FObject*> Queue;
-	Queue.reserve(LiveObjects.size());
-
-	auto EnqueueSeed = [&Queue](FObject* Object)
-	{
-		if (!Object || Object->HasAnyFlags(EObjectFlags::Reachable))
-		{
-			return;
-		}
-		Object->AddFlags(EObjectFlags::Reachable);
-		Queue.push_back(Object);
-	};
-
-	for (FObject* Object : RootSet)
-	{
-		EnqueueSeed(Object);
-	}
-
-	for (FObject* Object : MarkSeeds)
-	{
-		EnqueueSeed(Object);
-	}
-	MarkSeeds.clear();
-
-	for (FObject* Object : LiveObjects)
-	{
-		if (Object && Object->GetRefCount() > 0)
-		{
-			EnqueueSeed(Object);
-		}
-	}
-
-	FMarkCollector Collector(Queue);
-	std::size_t Index = 0;
-	while (Index < Queue.size())
-	{
-		FObject* Object = Queue[Index++];
-		if (!Object)
-		{
-			continue;
-		}
-		Object->AddReferencedObjects(Collector);
-	}
-}
-
-void FGCManager::QueueUnreachable()
+void FGCManager::QueueUnreferenced()
 {
 	for (FObject* Object : LiveObjects)
 	{
@@ -257,7 +267,7 @@ void FGCManager::QueueUnreachable()
 			continue;
 		}
 
-		if (Object->IsReachable() || Object->IsRooted())
+		if (IsKeptAlive(*Object))
 		{
 			if (Object->IsPendingKill())
 			{
@@ -272,7 +282,7 @@ void FGCManager::QueueUnreachable()
 			continue;
 		}
 
-		if (!IsInTransientPackage(*Object))
+		if (!IsGcEligible(*Object))
 		{
 			continue;
 		}
@@ -288,7 +298,7 @@ void FGCManager::QueueUnreachable()
 
 		if (!Object->IsPendingKill())
 		{
-			Object->MarkPendingKill();
+			Object->AddFlags(EObjectFlags::PendingKill);
 		}
 
 		if (std::find(PendingKill.begin(), PendingKill.end(), Object) == PendingKill.end())
@@ -305,9 +315,8 @@ void FGCManager::CollectGarbage()
 		return;
 	}
 
-	ClearReachableFlags();
-	MarkReachable();
-	QueueUnreachable();
+	QueueUnreferenced();
+	ProcessImmediateDestroy();
 }
 
 void FGCManager::ProcessImmediateDestroy()
@@ -327,7 +336,7 @@ void FGCManager::ProcessImmediateDestroy()
 			continue;
 		}
 
-		if (Object->IsReachable() || Object->IsRooted() || Object->GetRefCount() > 0)
+		if (IsKeptAlive(*Object))
 		{
 			Object->ClearFlags(EObjectFlags::ImmediateDestroy);
 			continue;
@@ -345,9 +354,6 @@ void FGCManager::PurgePendingKill()
 		return;
 	}
 
-	ClearReachableFlags();
-	MarkReachable();
-
 	std::vector<FObject*> ToFree;
 	ToFree.reserve(PendingKill.size());
 
@@ -358,13 +364,7 @@ void FGCManager::PurgePendingKill()
 			continue;
 		}
 
-		if (Object->IsReachable() || Object->IsRooted() || Object->GetRefCount() > 0)
-		{
-			Object->ClearFlags(EObjectFlags::PendingKill);
-			continue;
-		}
-
-		if (!IsInTransientPackage(*Object))
+		if (IsKeptAlive(*Object) || !IsGcEligible(*Object))
 		{
 			Object->ClearFlags(EObjectFlags::PendingKill);
 			continue;
@@ -396,7 +396,6 @@ void FGCManager::Tick(float DeltaSeconds)
 	{
 		CollectAccumulatorSeconds = 0.0f;
 		CollectGarbage();
-		ProcessImmediateDestroy();
 	}
 
 	PurgeAccumulatorSeconds += DeltaSeconds;

@@ -1,14 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include "Catty/Core/Export.h"
 #include "Catty/Core/Json.h"
 #include "Catty/Resource/Object.h"
-#include "Catty/Resource/PackageRef.h"
 
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 namespace Catty
 {
@@ -17,8 +15,9 @@ class FResourceManager;
 
 /**
  * Package residency / save policy (UE PKG_* lite).
- * Transient: runtime-only; SavePackage refuses; GC may drop unused objects.
+ * Transient: runtime-only; SavePackage refuses.
  * Persistent: may be written / loaded as JSON by FResourceManager.
+ * Lifetime is RefCount only (catalog FObjectRef + Outer pins) — flags do not gate GC.
  */
 enum class EPackageFlags : std::uint32_t
 {
@@ -60,77 +59,63 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
 }
 
 /**
- * UE UPackage-lite: pool-allocated, refcounted via FPackageRef.
- * Object table is name → FObject* (non-owning); object memory is in Resource pools.
+ * UE UPackage-lite: FObject subclass, pool-allocated, lifetime via FObjectRef + GC.
+ * Catalog map holds one FObjectRef while loaded; each in-package FObject
+ * holds Outer as FObjectRef so the package stays alive until the last object dies.
+ *
+ * UnloadPackage only drops the catalog Ref — Free happens when RefCount hits 0 (GC).
+ * Objects map stores raw FObject* for name lookup only (non-owning).
  *
  * Example:
  * ```
- *   Catty::FPackageRef Pkg = ResourceManager.CreatePackage(
+ *   Catty::FObjectRef Pkg = ResourceManager.CreatePackage(
  *       "/Game/Maps/Demo", Catty::EPackageFlags::Persistent);
  *   ResourceManager.CreateResource(Pkg, "T_Hero", "Textures/T_Hero.png");
  *   ResourceManager.SavePackage(Pkg, "Content/Maps/Demo.pkg.json");
  * ```
  */
-class CATTY_API FPackage
+class CATTY_API FPackage : public FObject
 {
 public:
 	FPackage(std::string InName, EPackageFlags InFlags = EPackageFlags::Transient);
-	~FPackage();
+	~FPackage() override;
 
 	FPackage(const FPackage&) = delete;
 	FPackage& operator=(const FPackage&) = delete;
 
-	[[nodiscard]] const std::string& GetName() const { return Name; }
+	// --- Queries ---
 	[[nodiscard]] const std::string& GetFilePath() const { return FilePath; }
-	[[nodiscard]] EPackageFlags GetFlags() const { return Flags; }
-	[[nodiscard]] std::uint32_t GetRefCount() const { return RefCount; }
-
-	void SetFlags(EPackageFlags InFlags) { Flags = InFlags; }
-	void AddFlags(EPackageFlags InFlags) { Flags |= InFlags; }
-	void ClearFlags(EPackageFlags InFlags) { Flags &= ~InFlags; }
-
-	[[nodiscard]] bool IsPersistent() const
-	{
-		return HasAnyPackageFlags(Flags, EPackageFlags::Persistent);
-	}
-	[[nodiscard]] bool IsTransient() const
-	{
-		return HasAnyPackageFlags(Flags, EPackageFlags::Transient) && !IsPersistent();
-	}
-
-	[[nodiscard]] FObjectRef FindObject(const std::string& ObjectName) const;
-
+	[[nodiscard]] bool IsPersistent() const;
+	[[nodiscard]] bool IsTransient() const;
 	[[nodiscard]] std::size_t GetObjectCount() const { return Objects.size(); }
 
-	/** Snapshot of package objects as FObjectRef (each AddRef'd). */
-	[[nodiscard]] std::vector<FObjectRef> GetObjects() const;
-
-	[[nodiscard]] bool Serialize(FJsonValue& OutObject) const;
-	[[nodiscard]] bool Deserialize(const FJsonValue& InObject);
-
-	std::uint32_t AddRef();
-	std::uint32_t ReleaseRef();
+	// --- Lookup ---
+	[[nodiscard]] FObjectRef FindObject(const std::string& InObjectName) const;
 
 private:
 	friend class FResourceManager;
-	friend class FPackageRef;
+	friend class FObject;
 
+	// --- Catalog / residency (FResourceManager) ---
 	void SetFilePath(std::string InPath) { FilePath = std::move(InPath); }
-	void SetOwner(FResourceManager* InOwner) { Owner = InOwner; }
+	void AddPackageFlags(EPackageFlags InFlags) { PackageFlags |= InFlags; }
+	void ClearPackageFlags(EPackageFlags InFlags) { PackageFlags &= ~InFlags; }
 
+	// --- Object table ---
 	[[nodiscard]] bool RegisterObject(FObject* Object);
-	[[nodiscard]] FObject* UnregisterObject(const std::string& ObjectName);
+	[[nodiscard]] FObject* UnregisterObject(const std::string& InObjectName);
+	/** Name-table only; does not touch Outer / RefCount. */
+	void DetachObject(FObject* Object);
 	void ClearObjects();
 
-	/** Called when RefCount hits 0 — Free pool slot via Owner. */
-	void OnRefCountZero();
+	// --- Persistence IO (FResourceManager) ---
+	[[nodiscard]] bool Serialize(FJsonValue& OutObject) const;
+	[[nodiscard]] bool Deserialize(const FJsonValue& InObject);
 
-	std::string Name;
 	std::string FilePath;
-	EPackageFlags Flags = EPackageFlags::Transient;
+	EPackageFlags PackageFlags = EPackageFlags::Transient;
+	/** Non-owning name table; lifetime owned by Refs + GC. */
 	std::unordered_map<std::string, FObject*> Objects;
-	std::uint32_t RefCount = 0;
-	FResourceManager* Owner = nullptr;
 };
 
 } // namespace Catty

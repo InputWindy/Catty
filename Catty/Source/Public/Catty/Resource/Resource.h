@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Catty/Core/Export.h"
 #include "Catty/Resource/Object.h"
@@ -33,7 +33,7 @@ enum class EResourceType : std::uint8_t
  *
  * Example:
  * ```
- *   Catty::FPackageRef Pkg = ResourceManager.GetTransientPackage();
+ *   Catty::FObjectRef Pkg = ResourceManager.GetTransientPackage();
  *   Catty::FObjectRef Hero = ResourceManager.CreateResource(
  *       Pkg, "T_Hero", "Textures/T_Hero.png");
  *   if (Catty::FResource* Res = Hero.Cast<Catty::FResource>())

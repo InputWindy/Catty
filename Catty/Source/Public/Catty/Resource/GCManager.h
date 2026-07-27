@@ -2,30 +2,36 @@
 
 #include "Catty/Core/Export.h"
 #include "Catty/Resource/Object.h"
-#include "Catty/Resource/ReferenceCollector.h"
 
+#include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <vector>
 
 namespace Catty
 {
 
 /**
- * Type-agnostic game-thread object GC (UE GC lite).
- * Does NOT allocate concrete FObject subclasses — owners (e.g. FResourceManager)
- * allocate from their own TPoolAllocator, then RegisterObject / provide a destroy handler.
+ * Type-agnostic game-thread GC (refcount scan, no reference-graph walk).
+ * Owners allocate from their own pools, RegisterObject, and provide destroy handlers.
  *
- * GC owns: LiveObjects registry, RootSet, Mark (AddReferencedObjects graph),
- * PendingKill / ImmediateDestroy queues, timed Purge.
+ * An object is live if RefCount > 0 (including one FObjectRef per rooted object in GC).
+ * AddToRoot inserts into a deduped root map (nested calls bump NestCount only).
+ * Collectible when unreferenced AND:
+ *   - FPackage itself, or
+ *   - any in-package FObject (Outer pin / catalog FObjectRef keep packages alive while needed).
+ * Mutual FObjectRef cycles are never collected — break cycles with FObjectWeakRef.
  *
  * Example:
  * ```
  *   GCManager.Initialize();
- *   GCManager.AddObjectDestroyHandler([&](FObject* Obj) { return TryDestroyMyType(Obj); });
+ *   const auto HandlerId = GCManager.AddObjectDestroyHandler(
+ *       [&](FObject* Obj) { return TryDestroyMyType(Obj); });
  *   FMyObject* Obj = MyPool.Allocate(...);
  *   GCManager.RegisterObject(*Obj);
  *   Obj->AddToRoot();
  *   GCManager.Tick(DeltaSeconds);
+ *   GCManager.RemoveObjectDestroyHandler(HandlerId);
  * ```
  */
 class CATTY_API FGCManager
@@ -33,6 +39,9 @@ class CATTY_API FGCManager
 public:
 	/** @return true if this handler destroyed / claimed the object. */
 	using FObjectDestroyHandler = std::function<bool(FObject*)>;
+	using FObjectDestroyHandlerId = std::uint64_t;
+
+	static constexpr FObjectDestroyHandlerId InvalidDestroyHandlerId = 0;
 
 	FGCManager() = default;
 	~FGCManager();
@@ -48,8 +57,10 @@ public:
 	/**
 	 * Register a typed destroyer (ResourceManager, future AudioManager, ...).
 	 * Handlers are tried in order until one returns true.
+	 * @return Id for RemoveObjectDestroyHandler (0 on empty handler).
 	 */
-	void AddObjectDestroyHandler(FObjectDestroyHandler Handler);
+	FObjectDestroyHandlerId AddObjectDestroyHandler(FObjectDestroyHandler Handler);
+	bool RemoveObjectDestroyHandler(FObjectDestroyHandlerId Id);
 	void ClearObjectDestroyHandlers();
 
 	/** Track a newly allocated FObject (sets GCOwner). Does not allocate memory. */
@@ -67,8 +78,17 @@ public:
 	void AddToRoot(FObject& Object);
 	void RemoveFromRoot(FObject& Object);
 
-	void AddMarkSeed(FObject* Object);
+	/**
+	 * Enqueue from MarkPendingKill / MarkForImmediateDestroy.
+	 * If still RefCount>0 the entry stays until Collect sees it dead.
+	 */
+	void EnqueuePendingKill(FObject& Object);
+	void EnqueueImmediateDestroy(FObject& Object);
 
+	/**
+	 * Scan unreferenced eligible objects → PendingKill / Immediate queues,
+	 * then Free anything already in the Immediate queue.
+	 */
 	void CollectGarbage();
 	void PurgePendingKill();
 	void Tick(float DeltaSeconds);
@@ -80,40 +100,42 @@ public:
 	[[nodiscard]] float GetCollectIntervalSeconds() const { return CollectIntervalSeconds; }
 
 	[[nodiscard]] std::size_t GetLiveObjectCount() const { return LiveObjects.size(); }
-	[[nodiscard]] std::size_t GetRootCount() const { return RootSet.size(); }
+	/** Number of uniquely rooted objects. */
+	[[nodiscard]] std::size_t GetRootCount() const { return RootMap.size(); }
 	[[nodiscard]] std::size_t GetPendingKillCount() const { return PendingKill.size(); }
 
+	[[nodiscard]] bool IsInRootSet(const FObject& Object) const;
+
 private:
-	class FMarkCollector final : public FReferenceCollector
+	struct FRootEntry
 	{
-	public:
-		explicit FMarkCollector(std::vector<FObject*>& InQueue)
-			: Queue(InQueue)
-		{
-		}
-
-		void AddReferencedObject(FObject*& Object) override;
-
-	private:
-		std::vector<FObject*>& Queue;
+		FObjectRef Ref;
+		std::uint32_t NestCount = 0;
 	};
 
-	void ClearReachableFlags();
-	void MarkReachable();
-	void QueueUnreachable();
+	[[nodiscard]] static bool IsKeptAlive(const FObject& Object);
+	/** True if unreferenced object may enter PendingKill / Immediate queues. */
+	[[nodiscard]] static bool IsGcEligible(const FObject& Object);
+
+	void QueueUnreferenced();
 	void ProcessImmediateDestroy();
-	void RemoveFromRootSet(FObject* Object);
+	void RemoveAllRootRefs(FObject* Object);
 	void RemoveFromPendingKill(FObject* Object);
 	void RemoveFromImmediate(FObject* Object);
 
-	[[nodiscard]] static bool IsInTransientPackage(const FObject& Object);
+	struct FDestroyHandlerEntry
+	{
+		FObjectDestroyHandlerId Id = InvalidDestroyHandlerId;
+		FObjectDestroyHandler Handler;
+	};
 
 	bool bInitialized = false;
-	std::vector<FObjectDestroyHandler> DestroyHandlers;
+	FObjectDestroyHandlerId NextDestroyHandlerId = 1;
+	std::vector<FDestroyHandlerEntry> DestroyHandlers;
 
 	std::vector<FObject*> LiveObjects;
-	std::vector<FObject*> RootSet;
-	std::vector<FObject*> MarkSeeds;
+	/** One strong Ref per rooted object; NestCount supports nested AddToRoot. */
+	std::unordered_map<FObject*, FRootEntry> RootMap;
 	std::vector<FObject*> PendingKill;
 	std::vector<FObject*> ImmediateDestroy;
 

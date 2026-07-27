@@ -4,6 +4,9 @@
 #include "Catty/Resource/Resource.h"
 #include "Catty/Resource/ResourceManager.h"
 
+#include <unordered_map>
+#include <vector>
+
 namespace Catty
 {
 
@@ -29,13 +32,13 @@ namespace
 } // namespace
 
 FPackage::FPackage(std::string InName, EPackageFlags InFlags)
-	: Name(std::move(InName))
-	, Flags(InFlags)
+	: FObject(nullptr, std::move(InName))
+	, PackageFlags(InFlags)
 {
-	if (!HasAnyPackageFlags(Flags, EPackageFlags::Transient)
-		&& !HasAnyPackageFlags(Flags, EPackageFlags::Persistent))
+	if (!HasAnyPackageFlags(PackageFlags, EPackageFlags::Transient)
+		&& !HasAnyPackageFlags(PackageFlags, EPackageFlags::Persistent))
 	{
-		Flags |= EPackageFlags::Transient;
+		PackageFlags |= EPackageFlags::Transient;
 	}
 }
 
@@ -44,136 +47,31 @@ FPackage::~FPackage()
 	if (!Objects.empty())
 	{
 		CATTY_CORE_ERROR(
-			"FPackage '{}' destroyed with {} objects still registered — Manager must Free to pool first",
-			Name,
+			"FPackage '{}' destroyed with {} objects still registered — release object Refs first",
+			GetName(),
 			Objects.size());
 		ClearObjects();
 	}
 }
 
-std::uint32_t FPackage::AddRef()
+bool FPackage::IsPersistent() const
 {
-	return ++RefCount;
+	return HasAnyPackageFlags(PackageFlags, EPackageFlags::Persistent);
 }
 
-std::uint32_t FPackage::ReleaseRef()
+bool FPackage::IsTransient() const
 {
-	if (RefCount == 0)
-	{
-		return 0;
-	}
-
-	--RefCount;
-	if (RefCount == 0)
-	{
-		OnRefCountZero();
-	}
-	return RefCount;
+	return HasAnyPackageFlags(PackageFlags, EPackageFlags::Transient) && !IsPersistent();
 }
 
-void FPackage::OnRefCountZero()
+FObjectRef FPackage::FindObject(const std::string& InObjectName) const
 {
-	if (!Owner)
-	{
-		CATTY_CORE_ERROR("FPackage::OnRefCountZero: '{}' has no Owner — leaked pool slot", Name);
-		return;
-	}
-
-	Owner->FreePackageMemory(this);
-}
-
-FPackageRef::FPackageRef(FPackage* InPackage)
-	: Package(InPackage)
-{
-	if (Package)
-	{
-		Package->AddRef();
-	}
-}
-
-FPackageRef::FPackageRef(const FPackageRef& Other)
-	: Package(Other.Package)
-{
-	if (Package)
-	{
-		Package->AddRef();
-	}
-}
-
-FPackageRef::FPackageRef(FPackageRef&& Other) noexcept
-	: Package(Other.Package)
-{
-	Other.Package = nullptr;
-}
-
-FPackageRef::~FPackageRef()
-{
-	Reset();
-}
-
-FPackageRef& FPackageRef::operator=(const FPackageRef& Other)
-{
-	if (this == &Other)
-	{
-		return *this;
-	}
-
-	Reset();
-	Package = Other.Package;
-	if (Package)
-	{
-		Package->AddRef();
-	}
-	return *this;
-}
-
-FPackageRef& FPackageRef::operator=(FPackageRef&& Other) noexcept
-{
-	if (this == &Other)
-	{
-		return *this;
-	}
-
-	Reset();
-	Package = Other.Package;
-	Other.Package = nullptr;
-	return *this;
-}
-
-std::uint32_t FPackageRef::GetRefCount() const
-{
-	return Package ? Package->GetRefCount() : 0;
-}
-
-void FPackageRef::Reset()
-{
-	if (Package)
-	{
-		FPackage* Dying = Package;
-		Package = nullptr;
-		Dying->ReleaseRef();
-	}
-}
-
-FObjectRef FPackage::FindObject(const std::string& ObjectName) const
-{
-	const auto It = Objects.find(ObjectName);
+	const auto It = Objects.find(InObjectName);
 	if (It == Objects.end())
 	{
 		return {};
 	}
-	return FObjectRef(It->second);
-}
-
-std::vector<FObjectRef> FPackage::GetObjects() const
-{
-	std::vector<FObjectRef> Result;
-	Result.reserve(Objects.size());
-	for (const auto& Pair : Objects)
-	{
-		Result.push_back(FObjectRef(Pair.second));
-	}
-	return Result;
+	return FObjectRef::Wrap(It->second);
 }
 
 bool FPackage::RegisterObject(FObject* Object)
@@ -194,41 +92,78 @@ bool FPackage::RegisterObject(FObject* Object)
 		CATTY_CORE_ERROR(
 			"FPackage::RegisterObject: '{}' already exists in package '{}'",
 			Object->GetName(),
-			Name);
+			GetName());
 		return false;
 	}
 
-	Object->Outer = this;
+	// Object.Outer is already an FObjectRef from construction — that pin keeps us alive.
+	if (Object->Outer.Get() != static_cast<FObject*>(this))
+	{
+		CATTY_CORE_ERROR(
+			"FPackage::RegisterObject: '{}' Outer mismatch for package '{}'",
+			Object->GetName(),
+			GetName());
+		return false;
+	}
+
 	Objects.emplace(Object->GetName(), Object);
 	return true;
 }
 
-FObject* FPackage::UnregisterObject(const std::string& ObjectName)
+FObject* FPackage::UnregisterObject(const std::string& InObjectName)
 {
-	const auto It = Objects.find(ObjectName);
+	const auto It = Objects.find(InObjectName);
 	if (It == Objects.end())
 	{
 		return nullptr;
 	}
 
 	FObject* Removed = It->second;
-	Objects.erase(It);
 	if (Removed)
 	{
-		Removed->Outer = nullptr;
+		// ClearOuter → DetachObject (name table) + Outer.Reset() (drop pin).
+		Removed->ClearOuter();
+	}
+	else
+	{
+		Objects.erase(It);
 	}
 	return Removed;
 }
 
+void FPackage::DetachObject(FObject* Object)
+{
+	if (!Object)
+	{
+		return;
+	}
+
+	const auto It = Objects.find(Object->GetName());
+	if (It == Objects.end() || It->second != Object)
+	{
+		return;
+	}
+
+	Objects.erase(It);
+}
+
 void FPackage::ClearObjects()
 {
-	for (auto& Pair : Objects)
+	std::vector<FObject*> Snapshot;
+	Snapshot.reserve(Objects.size());
+	for (const auto& Pair : Objects)
 	{
-		if (Pair.second)
+		Snapshot.push_back(Pair.second);
+	}
+
+	for (FObject* Object : Snapshot)
+	{
+		if (Object)
 		{
-			Pair.second->Outer = nullptr;
+			Object->ClearOuter();
 		}
 	}
+
 	Objects.clear();
 }
 
@@ -239,10 +174,12 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 		OutObject = FJsonValue::Object();
 	}
 
-	OutObject.SetField("name", FJsonValue::String(Name));
+	OutObject.SetField("name", FJsonValue::String(GetName()));
 	OutObject.SetField(
 		"flags",
-		FJsonValue::Number(static_cast<std::int64_t>(static_cast<std::uint32_t>(Flags))));
+		FJsonValue::Number(static_cast<std::int64_t>(static_cast<std::uint32_t>(PackageFlags))));
+
+	std::unordered_map<std::string, std::string> DependencyNameToFile;
 
 	FJsonValue ObjectArray = FJsonValue::Array();
 	for (const auto& Pair : Objects)
@@ -267,9 +204,51 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 			Entry.SetField("class", FJsonValue::String("Object"));
 		}
 
+		std::vector<FObject*> Referenced;
+		Object->GetReferencedObjects(Referenced);
+		if (!Referenced.empty())
+		{
+			FJsonValue RefArray = FJsonValue::Array();
+			for (FObject* RefObj : Referenced)
+			{
+				if (!RefObj)
+				{
+					RefArray.AddElement(FJsonValue::String({}));
+					continue;
+				}
+
+				RefArray.AddElement(FJsonValue::String(RefObj->GetPathName()));
+
+				FObjectRef OtherOuter = RefObj->GetOuter();
+				FPackage* OtherPackage = OtherOuter.Cast<FPackage>();
+				if (!OtherPackage || OtherPackage == this)
+				{
+					continue;
+				}
+
+				if (!OtherPackage->IsPersistent())
+				{
+					continue;
+				}
+
+				DependencyNameToFile[OtherPackage->GetName()] = OtherPackage->GetFilePath();
+			}
+			Entry.SetField("refs", RefArray);
+		}
+
 		ObjectArray.AddElement(Entry);
 	}
 	OutObject.SetField("objects", ObjectArray);
+
+	FJsonValue DepArray = FJsonValue::Array();
+	for (const auto& Dep : DependencyNameToFile)
+	{
+		FJsonValue DepEntry = FJsonValue::Object();
+		DepEntry.SetField("name", FJsonValue::String(Dep.first));
+		DepEntry.SetField("file", FJsonValue::String(Dep.second));
+		DepArray.AddElement(DepEntry);
+	}
+	OutObject.SetField("dependencies", DepArray);
 	return true;
 }
 
@@ -286,18 +265,18 @@ bool FPackage::Deserialize(const FJsonValue& InObject)
 		const std::string LoadedName = InObject.GetField("name").AsString();
 		if (!LoadedName.empty())
 		{
-			Name = LoadedName;
+			ObjectName = FResourceManager::NormalizePackageName(LoadedName);
 		}
 	}
 
 	if (InObject.HasField("flags"))
 	{
-		Flags = static_cast<EPackageFlags>(
+		PackageFlags = static_cast<EPackageFlags>(
 			static_cast<std::uint32_t>(InObject.GetField("flags").AsInt64(0)));
-		if (!HasAnyPackageFlags(Flags, EPackageFlags::Transient)
-			&& !HasAnyPackageFlags(Flags, EPackageFlags::Persistent))
+		if (!HasAnyPackageFlags(PackageFlags, EPackageFlags::Transient)
+			&& !HasAnyPackageFlags(PackageFlags, EPackageFlags::Persistent))
 		{
-			Flags |= EPackageFlags::Persistent;
+			PackageFlags |= EPackageFlags::Persistent;
 		}
 	}
 

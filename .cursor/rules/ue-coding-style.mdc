@@ -43,6 +43,13 @@ namespace test0 {
 - 命名空间：PascalCase（`Catty`、`Test0`）
 - 宏 / API：`CATTY_API`、`CATTY_EXPORTS` 等全大写 + 下划线
 
+## 头 / 源文件分工
+
+- **模板**成员/自由函数：实现必须写在头文件（可类内，或头文件底部 inline）
+- **非模板**：实现尽量放 `.cpp`；头文件只留声明
+- 允许头里保留极短的 trivial 访问器（如 `IsValid()` / `Get()` / `operator->` 一行 return）
+- `constexpr` 函数必须留在头文件
+
 ## 缩进与其它
 
 - 缩进用 **Tab**（与 UE 一致）

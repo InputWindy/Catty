@@ -194,28 +194,40 @@ sequenceDiagram
 	<div class="body">
 		<pre class="mermaid">
 flowchart LR
-  Root["AddToRoot RootSet"] --> Mark["Mark 可达"]
-  Ref["FObjectRef RefCount大于0"] --> Mark
-  Graph["AddReferencedObjects 引用图出边"] --> Mark
-  Persist["Persistent Package Object"] -->|"不进 Transient 回收"| Keep["常驻到 UnloadPackage"]
-  Mark -->|"不可达且 Transient"| Pending["PendingKill 约30s Purge"]
+  Root["AddToRoot RootSet"] --> Keep["保活"]
+  Ref["FObjectRef RefCount大于0"] --> Keep
+  Persist["Persistent Package Object"] -->|"不进 Transient 回收"| Keep
+  Scan["扫 LiveObjects"] -->|"Transient 且未保活"| Pending["PendingKill 约30s Purge"]
 		</pre>
 		<ul>
-			<li>Mark 种子：RootSet、RefCount&gt;0、引用图出边（Outer 不算边）。</li>
+			<li>保活：RootSet 或 RefCount&gt;0；无引用图 Mark。<b>互持 FObjectRef 会泄漏</b> — 用 <code>FObjectWeakRef</code> 破环。</li>
+			<li><code>FPackage</code> 继承 <code>FObject</code>；Unload 只摘 catalog；Free 只走 GC。</li>
+			<li><code>MarkPendingKill</code> / <code>MarkForImmediateDestroy</code> 立即入队；<code>CollectGarbage</code> 扫完后处理 Immediate。</li>
 			<li>默认 Tick：Immediate 每帧；Collect 约 1s；Purge Pending 约 30s。</li>
 		</ul>
 	</div>
 </section>
 
 <section class="card">
-	<h2>5. 相关源码</h2>
+	<h2>5. Package 跨包依赖（Serialize）</h2>
+	<div class="body">
+		<ul>
+			<li>对象持有其它包对象：成员用 <code>FObjectRef</code>；Save 时 override <code>GetReferencedObjects</code>，Load 时 <code>SetReferencedObjects</code> + <code>FObjectRef::Wrap</code>。</li>
+			<li>软路径：<code>PackageName.ObjectName</code>；JSON 写在 <code>objects[].refs</code>，包级 <code>dependencies[{name,file}]</code>。</li>
+			<li><code>LoadPackage</code> 先递归加载依赖包再创建本包对象并回填 refs；<code>SavePackage(..., bSaveDependencies=true)</code> 先递归保存依赖包，缺 file / 未加载则失败。</li>
+			<li>GC 不读这套引用图；存活仍只看 Root / RefCount。</li>
+		</ul>
+	</div>
+</section>
+
+<section class="card">
+	<h2>6. 相关源码</h2>
 	<div class="body">
 		<table>
 			<thead><tr><th>内容</th><th>路径</th></tr></thead>
 			<tbody>
 				<tr><td>App</td><td><code>Catty/Source/Public/Catty/Core/App.h</code></td></tr>
 				<tr><td>GC</td><td><code>Catty/Source/Public/Catty/Resource/GCManager.h</code></td></tr>
-				<tr><td>引用收集</td><td><code>Catty/Source/Public/Catty/Resource/ReferenceCollector.h</code></td></tr>
 				<tr><td>Object / Package / Resource</td><td><code>Catty/Source/Public/Catty/Resource/</code></td></tr>
 				<tr><td>通用池</td><td><code>Catty/Source/Public/Catty/Core/PoolAllocator.h</code></td></tr>
 			</tbody>
