@@ -9,7 +9,6 @@ Launched by:
 
 from __future__ import annotations
 
-import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -23,6 +22,7 @@ from catty_tools import (  # noqa: E402
 	ENGINE_ROOT,
 	generate_engine_workspace,
 	generate_from_cproject,
+	open_in_file_manager,
 	read_cproject,
 	resolve_engine_directory,
 	run_package,
@@ -235,12 +235,7 @@ class PackageApp(tk.Tk):
 				self._set_busy(False, f"Done → {out_dir}")
 				messagebox.showinfo("Catty", f"Package finished for {label}\n\n{out_dir}")
 				if open_folder and out_dir.is_dir():
-					if sys.platform == "win32":
-						subprocess.Popen(["explorer", str(out_dir)])
-					elif sys.platform == "darwin":
-						subprocess.Popen(["open", str(out_dir)])
-					else:
-						subprocess.Popen(["xdg-open", str(out_dir)])
+					open_in_file_manager(out_dir)
 
 			self.after(0, done_ok)
 		except Exception as ex:  # noqa: BLE001

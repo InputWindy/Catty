@@ -2,11 +2,22 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-rem Create a new Catty game project (UI). Requires local Python from setup.bat.
-call "%~dp0Tools\catty_python.bat" "%~dp0Tools\create_project.py" %*
+rem Launch GUI via WScript + pythonw (no Python console).
+rem A brief cmd flash from this .bat is normal when double-clicked; the UI should stay open.
+
+set "VBS=%~dp0Tools\launch_create_project.vbs"
+if not exist "%VBS%" (
+	echo [ERROR] Missing %VBS%
+	pause
+	exit /b 1
+)
+
+wscript //nologo "%VBS%"
 set "ERR=%ERRORLEVEL%"
 if not "%ERR%"=="0" (
-	echo [ERROR] create_project.py failed with exit code %ERR%
+	echo [ERROR] Failed to launch create-project UI ^(exit %ERR%^).
+	echo         Run setup.bat first if Tools\python is missing.
+	pause
 	exit /b %ERR%
 )
 exit /b 0

@@ -5,6 +5,7 @@ Engine-local tooling. Root only exposes thin user-facing `.bat` launchers.
 | File | Role |
 |------|------|
 | `catty_python.bat` | Run a script with `Tools/python/python.exe` (not on PATH) |
+| `catty_pythonw.bat` | Same with `pythonw.exe` (no console; for GUI tools) |
 | `create_project.py` | New-project UI (`createProject.bat`) |
 | `generateProject.py` / `generateProject.bat` | `.cproject` / workspace → sibling `.sln` |
 | `package_ui.py` / `package.bat` | Packaging UI |

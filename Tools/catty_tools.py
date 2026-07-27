@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,104 @@ def find_cmake() -> str:
 	exe = shutil.which("cmake")
 	if not exe:
 		raise RuntimeError("cmake not found in PATH. Install CMake and restart the terminal.")
-	return exe
+	# Prefer a real .exe — launching cmake.bat from pythonw can flash a console.
+	path = Path(exe)
+	if path.suffix.lower() in {".bat", ".cmd"}:
+		sibling = path.with_suffix(".exe")
+		if sibling.is_file():
+			return str(sibling)
+	return str(path.resolve()) if path.exists() else exe
+
+
+def _subprocess_no_window_kwargs() -> dict[str, Any]:
+	"""Avoid flashing a console when spawning tools from pythonw / GUI."""
+	if sys.platform != "win32":
+		return {}
+	startupinfo = subprocess.STARTUPINFO()
+	startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+	startupinfo.wShowWindow = subprocess.SW_HIDE
+	return {
+		"creationflags": subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+		"startupinfo": startupinfo,
+	}
+
+
+def open_in_file_manager(path: Path) -> None:
+	"""Open a folder/file in the OS file manager without a console flash."""
+	path = path.resolve()
+	if sys.platform == "win32":
+		# explorer.exe is a GUI subsystem binary; still pass no-window flags for safety.
+		subprocess.Popen(["explorer", str(path)], **_subprocess_no_window_kwargs())
+	elif sys.platform == "darwin":
+		subprocess.Popen(["open", str(path)])
+	else:
+		subprocess.Popen(["xdg-open", str(path)])
+
+
+class OperationCancelled(Exception):
+	"""Raised when a long-running tool command is aborted by the user."""
+
+
+def run_command(
+	cmd: list[str],
+	*,
+	log: Any = print,
+	cancel_event: threading.Event | None = None,
+	proc_holder: list[Any] | None = None,
+) -> None:
+	"""
+	Run a process, stream combined stdout/stderr line-by-line to log/print,
+	and never attach a new console window on Windows.
+
+	If cancel_event is set (or the process is killed from outside), raises OperationCancelled.
+	proc_holder, when provided, receives the live Popen so the UI can kill it on abort.
+	"""
+	if cancel_event is not None and cancel_event.is_set():
+		raise OperationCancelled("Cancelled before start")
+
+	log("[Catty] $ " + " ".join(cmd))
+	proc = subprocess.Popen(
+		cmd,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.STDOUT,
+		text=True,
+		encoding="utf-8",
+		errors="replace",
+		bufsize=1,
+		**_subprocess_no_window_kwargs(),
+	)
+	if proc_holder is not None:
+		proc_holder.clear()
+		proc_holder.append(proc)
+
+	assert proc.stdout is not None
+	try:
+		for line in proc.stdout:
+			if cancel_event is not None and cancel_event.is_set():
+				_kill_process(proc)
+				raise OperationCancelled("Cancelled")
+			text = line.rstrip("\r\n")
+			if text:
+				log(text)
+		rc = proc.wait()
+		if cancel_event is not None and cancel_event.is_set():
+			raise OperationCancelled("Cancelled")
+		if rc != 0:
+			raise RuntimeError(f"Command failed (exit {rc}): {' '.join(cmd)}")
+	finally:
+		if proc_holder is not None and proc_holder and proc_holder[0] is proc:
+			proc_holder.clear()
+
+
+def _kill_process(proc: subprocess.Popen[Any]) -> None:
+	try:
+		proc.kill()
+	except OSError:
+		pass
+	try:
+		proc.wait(timeout=5)
+	except Exception:
+		pass
 
 
 def read_cproject(path: Path) -> dict[str, Any]:
@@ -231,7 +329,15 @@ def emit_sibling_sln(intermediate_dir: Path, project_dir: Path, project_name: st
 	return dst
 
 
-def run_cmake_generate(source_dir: Path, binary_dir: Path, engine_root: Path | None = None) -> None:
+def run_cmake_generate(
+	source_dir: Path,
+	binary_dir: Path,
+	engine_root: Path | None = None,
+	*,
+	log: Any = print,
+	cancel_event: threading.Event | None = None,
+	proc_holder: list[Any] | None = None,
+) -> None:
 	cmake = find_cmake()
 	cmd = [
 		cmake,
@@ -246,11 +352,16 @@ def run_cmake_generate(source_dir: Path, binary_dir: Path, engine_root: Path | N
 	]
 	if engine_root is not None:
 		cmd.append(f"-DCATTY_ENGINE_ROOT={engine_root}")
-	print("[Catty] ", " ".join(cmd))
-	subprocess.check_call(cmd)
+	run_command(cmd, log=log, cancel_event=cancel_event, proc_holder=proc_holder)
 
 
-def generate_from_cproject(cproject_path: Path) -> Path:
+def generate_from_cproject(
+	cproject_path: Path,
+	*,
+	log: Any = print,
+	cancel_event: threading.Event | None = None,
+	proc_holder: list[Any] | None = None,
+) -> Path:
 	cproject_path = cproject_path.resolve()
 	data = read_cproject(cproject_path)
 	project_dir = cproject_path.parent
@@ -258,25 +369,34 @@ def generate_from_cproject(cproject_path: Path) -> Path:
 	engine_root = resolve_engine_directory(cproject_path, data)
 	intermediate = project_dir / "Intermediate"
 
-	print(f"[Catty] Project : {project_name}")
-	print(f"[Catty] Dir     : {project_dir}")
-	print(f"[Catty] Engine  : {engine_root}")
+	log(f"[Catty] Project : {project_name}")
+	log(f"[Catty] Dir     : {project_dir}")
+	log(f"[Catty] Engine  : {engine_root}")
 
-	run_cmake_generate(project_dir, intermediate, engine_root=engine_root)
+	run_cmake_generate(
+		project_dir,
+		intermediate,
+		engine_root=engine_root,
+		log=log,
+		cancel_event=cancel_event,
+		proc_holder=proc_holder,
+	)
+	if cancel_event is not None and cancel_event.is_set():
+		raise OperationCancelled("Cancelled")
 	sln = emit_sibling_sln(intermediate, project_dir, project_name)
-	print(f"[Catty] Solution: {sln}")
+	log(f"[Catty] Solution: {sln}")
 	return sln
 
 
-def generate_engine_workspace(engine_root: Path | None = None) -> Path:
+def generate_engine_workspace(engine_root: Path | None = None, *, log: Any = print) -> Path:
 	engine_root = (engine_root or ENGINE_ROOT).resolve()
 	source_dir = engine_root / "Build"
 	if not (source_dir / "CMakeLists.txt").is_file():
 		raise FileNotFoundError(f"Engine CMake entry missing: {source_dir / 'CMakeLists.txt'}")
 	intermediate = engine_root / "Intermediate"
-	run_cmake_generate(source_dir, intermediate, engine_root=None)
+	run_cmake_generate(source_dir, intermediate, engine_root=None, log=log)
 	sln = emit_sibling_sln(intermediate, engine_root, "CattyWorkspace")
-	print(f"[Catty] Workspace solution: {sln}")
+	log(f"[Catty] Workspace solution: {sln}")
 	return sln
 
 
@@ -296,8 +416,8 @@ def run_package(
 		shutil.rmtree(packaged, ignore_errors=True)
 	packaged.mkdir(parents=True, exist_ok=True)
 
-	subprocess.check_call([cmake, "--build", str(intermediate), "--config", config])
-	subprocess.check_call(
+	run_command([cmake, "--build", str(intermediate), "--config", config])
+	run_command(
 		[
 			cmake,
 			"--install",
@@ -313,32 +433,32 @@ def run_package(
 	print(f"[Catty] Packaged → {packaged}")
 
 
-def install_windows_cproject_association() -> None:
+def install_windows_cproject_association(*, log: Any = print) -> None:
 	if sys.platform != "win32":
 		raise RuntimeError("File association is only implemented for Windows.")
+
+	import winreg
 
 	# Prefer Tools bat so Explorer double-click stays aligned with internal layout.
 	generate_bat = ENGINE_ROOT / "Tools" / "generateProject.bat"
 	prog_id = "Catty.CProject"
 	command = f"\"{generate_bat}\" \"%1\""
 
-	commands = [
-		["reg", "add", rf"HKCU\Software\Classes\.cproject", "/ve", "/d", prog_id, "/f"],
-		["reg", "add", rf"HKCU\Software\Classes\{prog_id}", "/ve", "/d", "Catty Project", "/f"],
-		[
-			"reg",
-			"add",
-			rf"HKCU\Software\Classes\{prog_id}\shell\open\command",
-			"/ve",
-			"/d",
-			command,
-			"/f",
-		],
-	]
-	for cmd in commands:
-		subprocess.check_call(cmd)
-	print("[Catty] Associated .cproject → Tools/generateProject.bat (current user)")
-	print(f"[Catty] Command: {command}")
+	# Use winreg (no reg.exe) so pythonw GUIs do not flash 3 console windows.
+	with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Classes\.cproject") as key:
+		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, prog_id)
+
+	with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{prog_id}") as key:
+		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, "Catty Project")
+
+	with winreg.CreateKeyEx(
+		winreg.HKEY_CURRENT_USER,
+		rf"Software\Classes\{prog_id}\shell\open\command",
+	) as key:
+		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, command)
+
+	log("[Catty] Associated .cproject → Tools/generateProject.bat (current user)")
+	log(f"[Catty] Command: {command}")
 
 
 # Entire trees wiped by clean (including any README/.gitkeep inside).
@@ -375,7 +495,11 @@ def _rm_tree(path: Path) -> bool:
 			if path.exists():
 				# Windows file locks: best-effort second pass via cmd
 				if sys.platform == "win32":
-					subprocess.call(["cmd", "/c", "rmdir", "/s", "/q", str(path)], shell=False)
+					subprocess.call(
+						["cmd", "/c", "rmdir", "/s", "/q", str(path)],
+						shell=False,
+						**_subprocess_no_window_kwargs(),
+					)
 		return not path.exists()
 	except OSError:
 		return False
