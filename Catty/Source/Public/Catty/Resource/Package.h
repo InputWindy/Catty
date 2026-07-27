@@ -78,7 +78,7 @@ class CATTY_API FPackage : public FObject
 {
 public:
 	FPackage(std::string InName, EPackageFlags InFlags = EPackageFlags::Transient);
-	~FPackage() override;
+	virtual ~FPackage() override;
 
 	FPackage(const FPackage&) = delete;
 	FPackage& operator=(const FPackage&) = delete;
@@ -103,10 +103,8 @@ private:
 
 	// --- Object table ---
 	[[nodiscard]] bool RegisterObject(FObject* Object);
-	[[nodiscard]] FObject* UnregisterObject(const std::string& InObjectName);
-	/** Name-table only; does not touch Outer / RefCount. */
+	/** Name-table only; called from FObject::ClearOuter. */
 	void DetachObject(FObject* Object);
-	void ClearObjects();
 
 	// --- Persistence IO (FResourceManager) ---
 	[[nodiscard]] bool Serialize(FJsonValue& OutObject) const;

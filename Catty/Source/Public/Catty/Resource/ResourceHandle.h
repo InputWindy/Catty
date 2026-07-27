@@ -8,15 +8,13 @@
 namespace Catty
 {
 
-/** Opaque resource identity issued by FResourceServer.
+/** Opaque resource identity for async raw loads (issued by FResourceManager).
  *
  * Example:
  * ```
- *   Catty::FResourceId Id = ResourceServer.RequestLoad("Textures/T_Hero.png");
- *   if (Id.IsValid() && ResourceServer.GetLoadState(Id) == Catty::EResourceLoadState::Ready)
- *   {
- *       // use resource
- *   }
+ *   Catty::FObjectRef Hero = ResourceManager.CreateResource(
+ *       Pkg, "T_Hero", "Textures/T_Hero.png");
+ *   ResourceManager.Flush(Hero);
  * ```
  */
 struct FResourceId

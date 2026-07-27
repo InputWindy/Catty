@@ -269,7 +269,7 @@ void FApp::FixedUpdate(float InFixedDeltaSeconds)
 
 void FApp::Update(float DeltaSeconds)
 {
-	ResourceManager.TickGarbageCollection(DeltaSeconds);
+	GCManager.Tick(DeltaSeconds);
 	LayerStack.Update(DeltaSeconds);
 }
 

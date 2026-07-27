@@ -105,14 +105,14 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
 }
 
 /**
- * Base for package objects (UE UObject-lite).
+ * Abstract base for package objects (UE UObject-lite).
+ * Not allocatable by itself — construct only via subclasses (FPackage, FResource, ...).
  * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
- * Outer is FObjectRef (empty for FPackage itself).
+ * Outer is FObjectRef (empty for FPackage itself). Cleanup is fully owned by ~FObject.
  */
 class CATTY_API FObject
 {
 public:
-	FObject(FPackage* InOuter, std::string InObjectName);
 	virtual ~FObject();
 
 	FObject(const FObject&) = delete;
@@ -144,6 +144,8 @@ public:
 	virtual void SetReferencedObjects(const std::vector<FObject*>& InObjects);
 
 protected:
+	FObject(FPackage* InOuter, std::string InObjectName);
+
 	void AddFlags(EObjectFlags InFlags) { ObjectFlags |= InFlags; }
 	void ClearFlags(EObjectFlags InFlags) { ObjectFlags &= ~InFlags; }
 

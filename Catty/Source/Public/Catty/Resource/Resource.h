@@ -28,7 +28,7 @@ enum class EResourceType : std::uint8_t
 /**
  * External-file asset (png / mesh / ...). Always Outer'd to an FPackage.
  * The FResource object is created synchronously with the package object table;
- * raw bytes are filled later by FResourceServer (Pending → Ready/Failed).
+ * raw bytes are filled later by FResourceManager's internal loader (Pending → Ready/Failed).
  * Package JSON stores source path only — not binary content.
  *
  * Example:
@@ -51,7 +51,7 @@ public:
 		FResourceId InId,
 		EResourceType InType,
 		std::string InSourcePath);
-	~FResource() override;
+	virtual ~FResource() override;
 
 	[[nodiscard]] FResourceId GetId() const { return Id; }
 	[[nodiscard]] EResourceType GetType() const { return Type; }

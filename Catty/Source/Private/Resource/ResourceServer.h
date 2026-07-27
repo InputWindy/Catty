@@ -12,26 +12,10 @@ namespace Catty
 {
 
 /**
- * Async raw-payload filler for FResource (same CS framework as FRenderServer).
- * FResource / FPackage objects are created on the game thread; this server only
- * loads raw source bytes into already-created resources (RequestLoad → CompleteLoad).
- * Prefer FResourceManager from game / layer code — this is the worker backend.
- *
- * Example:
- * ```
- *   ResourceServer.Initialize();
- *   const Catty::FResourceId Id = ResourceServer.RequestLoad("Meshes/Cube.mesh");
- *   ResourceServer.Flush(Id);
- *   if (ResourceServer.IsReady(Id))
- *   {
- *       std::string Path;
- *       ResourceServer.TryGetPath(Id, Path);
- *   }
- *   ResourceServer.Release(Id);
- *   ResourceServer.Shutdown();
- * ```
+ * Internal async raw-payload filler for FResource (FThreadedServer worker).
+ * Owned and used only by FResourceManager — not part of the public Catty API.
  */
-class CATTY_API FResourceServer : public FThreadedServer
+class FResourceServer : public FThreadedServer
 {
 public:
 	FResourceServer() = default;

@@ -2,6 +2,7 @@
 
 #include "Catty/Core/Json.h"
 #include "Catty/Core/Log.h"
+#include "Resource/ResourceServer.h"
 
 #include <cctype>
 #include <utility>
@@ -32,9 +33,19 @@ namespace
 
 } // namespace
 
+FResourceManager::FResourceManager()
+	: Server(std::make_unique<FResourceServer>())
+{
+}
+
 FResourceManager::~FResourceManager()
 {
 	Shutdown();
+}
+
+bool FResourceManager::IsInitialized() const
+{
+	return GC != nullptr && Server && Server->IsInitialized();
 }
 
 std::string FResourceManager::NormalizePackageName(std::string Name)
@@ -147,7 +158,7 @@ bool FResourceManager::Initialize(FGCManager& InGC)
 		return false;
 	}
 
-	if (!Server.Initialize())
+	if (!Server->Initialize())
 	{
 		CATTY_CORE_ERROR("FResourceManager::Initialize: FResourceServer failed");
 		return false;
@@ -189,20 +200,12 @@ void FResourceManager::DestroyResource(FResource* Resource)
 		return;
 	}
 
-	if (Server.IsInitialized() && Resource->GetId().IsValid())
+	if (Server->IsInitialized() && Resource->GetId().IsValid())
 	{
-		Server.Release(Resource->GetId());
+		Server->Release(Resource->GetId());
 	}
 
-	if (FPackage* PackagePtr = Resource->Outer.Cast<FPackage>())
-	{
-		FPackage& Package = *PackagePtr;
-		const auto It = Package.Objects.find(Resource->GetName());
-		if (It != Package.Objects.end() && It->second == Resource)
-		{
-			(void)Package.UnregisterObject(Resource->GetName());
-		}
-	}
+	Resource->ClearOuter();
 
 	if (GC)
 	{
@@ -219,16 +222,7 @@ void FResourceManager::DestroyPackage(FPackage* Package)
 		return;
 	}
 
-	const auto It = Packages.find(NormalizePackageName(Package->GetName()));
-	if (It != Packages.end() && It->second.Get() == static_cast<FObject*>(Package))
-	{
-		Packages.erase(It);
-	}
-
-	if (TransientPackage == Package)
-	{
-		TransientPackage = nullptr;
-	}
+	DropPackageFromCatalog(Package);
 
 	if (!Package->Objects.empty())
 	{
@@ -244,7 +238,7 @@ void FResourceManager::DestroyPackage(FPackage* Package)
 		GC->UnregisterObject(*Package);
 	}
 
-	FreePackageMemory(Package);
+	PackagePool.Free(Package);
 }
 
 void FResourceManager::DropPackageFromCatalog(FPackage* Package)
@@ -305,7 +299,10 @@ bool FResourceManager::DestroyPackageObjects(FPackage& Package, bool bForce)
 			continue;
 		}
 
-		(void)Package.UnregisterObject(ObjectName);
+		if (Object)
+		{
+			Object->ClearOuter();
+		}
 		ToDestroy.push_back(Object);
 	}
 
@@ -329,19 +326,9 @@ bool FResourceManager::DestroyPackageObjects(FPackage& Package, bool bForce)
 	return Package.Objects.empty();
 }
 
-void FResourceManager::FreePackageMemory(FPackage* Package)
-{
-	if (!Package)
-	{
-		return;
-	}
-
-	PackagePool.Free(Package);
-}
-
 void FResourceManager::Shutdown()
 {
-	if (!GC && !Server.IsInitialized())
+	if (!GC && !Server->IsInitialized())
 	{
 		return;
 	}
@@ -414,9 +401,9 @@ void FResourceManager::Shutdown()
 
 	GC = nullptr;
 
-	if (Server.IsInitialized())
+	if (Server->IsInitialized())
 	{
-		Server.Shutdown();
+		Server->Shutdown();
 	}
 
 	CATTY_CORE_INFO("ResourceManager shut down");
@@ -553,7 +540,7 @@ FObjectRef FResourceManager::CreateResource(
 		Type = InferTypeFromPath(SourcePath);
 	}
 
-	const FResourceId Id = Server.RequestLoad(SourcePath);
+	const FResourceId Id = Server->RequestLoad(SourcePath);
 	if (!Id.IsValid())
 	{
 		return {};
@@ -1071,30 +1058,25 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	return PackageRef;
 }
 
-void FResourceManager::CollectGarbage()
+EResourceLoadState FResourceManager::GetLoadState(const FObjectRef& Object) const
 {
-	if (GC)
+	if (!IsInitialized())
 	{
-		GC->CollectGarbage();
+		return EResourceLoadState::Invalid;
 	}
-}
 
-void FResourceManager::TickGarbageCollection(float DeltaSeconds)
-{
-	if (GC)
+	const FResource* Resource = Object.Cast<FResource>();
+	if (!Resource)
 	{
-		GC->Tick(DeltaSeconds);
+		return EResourceLoadState::Invalid;
 	}
+
+	return Server->GetLoadState(Resource->GetId());
 }
 
-EResourceLoadState FResourceManager::GetLoadState(FResourceId Id) const
+bool FResourceManager::IsReady(const FObjectRef& Object) const
 {
-	return IsInitialized() ? Server.GetLoadState(Id) : EResourceLoadState::Invalid;
-}
-
-bool FResourceManager::IsReady(FResourceId Id) const
-{
-	return IsInitialized() && Server.IsReady(Id);
+	return GetLoadState(Object) == EResourceLoadState::Ready;
 }
 
 void FResourceManager::Flush(const FObjectRef& Object)
@@ -1106,7 +1088,7 @@ void FResourceManager::Flush(const FObjectRef& Object)
 
 	if (const FResource* Resource = Object.Cast<FResource>())
 	{
-		Server.Flush(Resource->GetId());
+		Server->Flush(Resource->GetId());
 	}
 }
 
@@ -1114,7 +1096,7 @@ void FResourceManager::FlushAll()
 {
 	if (IsInitialized())
 	{
-		Server.FThreadedServer::Flush();
+		Server->FThreadedServer::Flush();
 	}
 }
 

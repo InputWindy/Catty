@@ -90,11 +90,6 @@ bool FGCManager::RemoveObjectDestroyHandler(FObjectDestroyHandlerId Id)
 	return true;
 }
 
-void FGCManager::ClearObjectDestroyHandlers()
-{
-	DestroyHandlers.clear();
-}
-
 void FGCManager::RegisterObject(FObject& Object)
 {
 	if (!bInitialized)
@@ -148,14 +143,6 @@ bool FGCManager::IsKeptAlive(const FObject& Object)
 bool FGCManager::IsInRootSet(const FObject& Object) const
 {
 	return RootMap.find(const_cast<FObject*>(&Object)) != RootMap.end();
-}
-
-bool FGCManager::IsGcEligible(const FObject& Object)
-{
-	(void)Object;
-	// Catalog FObjectRef + Outer pins keep packages/objects alive while referenced.
-	// Unreferenced objects are always eligible regardless of Transient/Persistent.
-	return true;
 }
 
 void FGCManager::DestroyObjectImmediate(FObject* Object)
@@ -230,11 +217,6 @@ void FGCManager::EnqueuePendingKill(FObject& Object)
 	Object.AddFlags(EObjectFlags::PendingKill);
 	RemoveFromImmediate(&Object);
 
-	if (!IsGcEligible(Object))
-	{
-		return;
-	}
-
 	if (std::find(PendingKill.begin(), PendingKill.end(), &Object) == PendingKill.end())
 	{
 		PendingKill.push_back(&Object);
@@ -246,11 +228,6 @@ void FGCManager::EnqueueImmediateDestroy(FObject& Object)
 	Object.ClearFlags(EObjectFlags::PendingKill);
 	Object.AddFlags(EObjectFlags::ImmediateDestroy);
 	RemoveFromPendingKill(&Object);
-
-	if (!IsGcEligible(Object))
-	{
-		return;
-	}
 
 	if (std::find(ImmediateDestroy.begin(), ImmediateDestroy.end(), &Object) == ImmediateDestroy.end())
 	{
@@ -279,11 +256,6 @@ void FGCManager::QueueUnreferenced()
 				Object->ClearFlags(EObjectFlags::ImmediateDestroy);
 				RemoveFromImmediate(Object);
 			}
-			continue;
-		}
-
-		if (!IsGcEligible(*Object))
-		{
 			continue;
 		}
 
@@ -364,7 +336,7 @@ void FGCManager::PurgePendingKill()
 			continue;
 		}
 
-		if (IsKeptAlive(*Object) || !IsGcEligible(*Object))
+		if (IsKeptAlive(*Object))
 		{
 			Object->ClearFlags(EObjectFlags::PendingKill);
 			continue;

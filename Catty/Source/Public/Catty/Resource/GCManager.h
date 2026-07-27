@@ -15,11 +15,8 @@ namespace Catty
  * Type-agnostic game-thread GC (refcount scan, no reference-graph walk).
  * Owners allocate from their own pools, RegisterObject, and provide destroy handlers.
  *
- * An object is live if RefCount > 0 (including one FObjectRef per rooted object in GC).
- * AddToRoot inserts into a deduped root map (nested calls bump NestCount only).
- * Collectible when unreferenced AND:
- *   - FPackage itself, or
- *   - any in-package FObject (Outer pin / catalog FObjectRef keep packages alive while needed).
+ * Live if RefCount > 0 (including one FObjectRef per rooted object in RootMap).
+ * AddToRoot is nested (NestCount); game code uses FObject::AddToRoot / Mark*.
  * Mutual FObjectRef cycles are never collected — break cycles with FObjectWeakRef.
  *
  * Example:
@@ -49,19 +46,18 @@ public:
 	FGCManager(const FGCManager&) = delete;
 	FGCManager& operator=(const FGCManager&) = delete;
 
+	// --- Lifecycle ---
 	[[nodiscard]] bool Initialize();
 	void Shutdown();
-
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 
+	// --- Owner registration (ResourceManager, future AudioManager, ...) ---
 	/**
-	 * Register a typed destroyer (ResourceManager, future AudioManager, ...).
-	 * Handlers are tried in order until one returns true.
+	 * Register a typed destroyer. Handlers are tried in order until one returns true.
 	 * @return Id for RemoveObjectDestroyHandler (0 on empty handler).
 	 */
 	FObjectDestroyHandlerId AddObjectDestroyHandler(FObjectDestroyHandler Handler);
 	bool RemoveObjectDestroyHandler(FObjectDestroyHandlerId Id);
-	void ClearObjectDestroyHandlers();
 
 	/** Track a newly allocated FObject (sets GCOwner). Does not allocate memory. */
 	void RegisterObject(FObject& Object);
@@ -71,51 +67,41 @@ public:
 
 	/**
 	 * Run destroy handlers now (owner Frees pool memory).
-	 * Used by Unload and by Immediate/Pending purge.
+	 * Used by Immediate/Pending purge and owner teardown helpers.
 	 */
 	void DestroyObjectImmediate(FObject* Object);
 
-	void AddToRoot(FObject& Object);
-	void RemoveFromRoot(FObject& Object);
-
+	// --- Collection ---
 	/**
-	 * Enqueue from MarkPendingKill / MarkForImmediateDestroy.
-	 * If still RefCount>0 the entry stays until Collect sees it dead.
-	 */
-	void EnqueuePendingKill(FObject& Object);
-	void EnqueueImmediateDestroy(FObject& Object);
-
-	/**
-	 * Scan unreferenced eligible objects → PendingKill / Immediate queues,
+	 * Scan unreferenced objects → PendingKill / Immediate queues,
 	 * then Free anything already in the Immediate queue.
 	 */
 	void CollectGarbage();
 	void PurgePendingKill();
 	void Tick(float DeltaSeconds);
 
+	// --- Timing ---
 	void SetPurgeIntervalSeconds(float Seconds) { PurgeIntervalSeconds = Seconds; }
-	[[nodiscard]] float GetPurgeIntervalSeconds() const { return PurgeIntervalSeconds; }
-
 	void SetCollectIntervalSeconds(float Seconds) { CollectIntervalSeconds = Seconds; }
-	[[nodiscard]] float GetCollectIntervalSeconds() const { return CollectIntervalSeconds; }
-
-	[[nodiscard]] std::size_t GetLiveObjectCount() const { return LiveObjects.size(); }
-	/** Number of uniquely rooted objects. */
-	[[nodiscard]] std::size_t GetRootCount() const { return RootMap.size(); }
-	[[nodiscard]] std::size_t GetPendingKillCount() const { return PendingKill.size(); }
-
-	[[nodiscard]] bool IsInRootSet(const FObject& Object) const;
 
 private:
+	friend class FObject;
+
 	struct FRootEntry
 	{
 		FObjectRef Ref;
 		std::uint32_t NestCount = 0;
 	};
 
+	// --- FObject-facing (use FObject::AddToRoot / Mark* from game code) ---
+	void AddToRoot(FObject& Object);
+	void RemoveFromRoot(FObject& Object);
+	void EnqueuePendingKill(FObject& Object);
+	void EnqueueImmediateDestroy(FObject& Object);
+	[[nodiscard]] bool IsInRootSet(const FObject& Object) const;
+
+	// --- Internals ---
 	[[nodiscard]] static bool IsKeptAlive(const FObject& Object);
-	/** True if unreferenced object may enter PendingKill / Immediate queues. */
-	[[nodiscard]] static bool IsGcEligible(const FObject& Object);
 
 	void QueueUnreferenced();
 	void ProcessImmediateDestroy();

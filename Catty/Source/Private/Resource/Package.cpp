@@ -2,7 +2,6 @@
 
 #include "Catty/Core/Log.h"
 #include "Catty/Resource/Resource.h"
-#include "Catty/Resource/ResourceManager.h"
 
 #include <unordered_map>
 #include <vector>
@@ -12,6 +11,22 @@ namespace Catty
 
 namespace
 {
+
+[[nodiscard]] std::string NormalizePackageName(std::string Name)
+{
+	for (char& Ch : Name)
+	{
+		if (Ch == '\\')
+		{
+			Ch = '/';
+		}
+	}
+	while (Name.size() >= 2 && Name[0] == '.' && Name[1] == '/')
+	{
+		Name.erase(0, 2);
+	}
+	return Name;
+}
 
 [[nodiscard]] const char* ResourceTypeToString(EResourceType Type)
 {
@@ -44,14 +59,32 @@ FPackage::FPackage(std::string InName, EPackageFlags InFlags)
 
 FPackage::~FPackage()
 {
-	if (!Objects.empty())
+	if (Objects.empty())
 	{
-		CATTY_CORE_ERROR(
-			"FPackage '{}' destroyed with {} objects still registered — release object Refs first",
-			GetName(),
-			Objects.size());
-		ClearObjects();
+		return;
 	}
+
+	CATTY_CORE_ERROR(
+		"FPackage '{}' destroyed with {} objects still registered — release object Refs first",
+		GetName(),
+		Objects.size());
+
+	std::vector<FObject*> Snapshot;
+	Snapshot.reserve(Objects.size());
+	for (const auto& Pair : Objects)
+	{
+		Snapshot.push_back(Pair.second);
+	}
+
+	for (FObject* Object : Snapshot)
+	{
+		if (Object)
+		{
+			Object->ClearOuter();
+		}
+	}
+
+	Objects.clear();
 }
 
 bool FPackage::IsPersistent() const
@@ -110,27 +143,6 @@ bool FPackage::RegisterObject(FObject* Object)
 	return true;
 }
 
-FObject* FPackage::UnregisterObject(const std::string& InObjectName)
-{
-	const auto It = Objects.find(InObjectName);
-	if (It == Objects.end())
-	{
-		return nullptr;
-	}
-
-	FObject* Removed = It->second;
-	if (Removed)
-	{
-		// ClearOuter → DetachObject (name table) + Outer.Reset() (drop pin).
-		Removed->ClearOuter();
-	}
-	else
-	{
-		Objects.erase(It);
-	}
-	return Removed;
-}
-
 void FPackage::DetachObject(FObject* Object)
 {
 	if (!Object)
@@ -145,26 +157,6 @@ void FPackage::DetachObject(FObject* Object)
 	}
 
 	Objects.erase(It);
-}
-
-void FPackage::ClearObjects()
-{
-	std::vector<FObject*> Snapshot;
-	Snapshot.reserve(Objects.size());
-	for (const auto& Pair : Objects)
-	{
-		Snapshot.push_back(Pair.second);
-	}
-
-	for (FObject* Object : Snapshot)
-	{
-		if (Object)
-		{
-			Object->ClearOuter();
-		}
-	}
-
-	Objects.clear();
 }
 
 bool FPackage::Serialize(FJsonValue& OutObject) const
@@ -265,7 +257,7 @@ bool FPackage::Deserialize(const FJsonValue& InObject)
 		const std::string LoadedName = InObject.GetField("name").AsString();
 		if (!LoadedName.empty())
 		{
-			ObjectName = FResourceManager::NormalizePackageName(LoadedName);
+			ObjectName = NormalizePackageName(LoadedName);
 		}
 	}
 

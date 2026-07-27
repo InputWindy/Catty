@@ -1,4 +1,4 @@
-#include "Catty/Resource/ResourceServer.h"
+#include "Resource/ResourceServer.h"
 
 #include "Catty/Core/Log.h"
 
