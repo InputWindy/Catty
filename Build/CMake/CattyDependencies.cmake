@@ -249,6 +249,32 @@ endif()
 unset(_CATTY_VENDORED_LUA)
 unset(_CATTY_VENDORED_SOL2)
 
+# ---------------------------------------------------------------------------
+# refl-cpp (header-only compile-time reflection) — Catty::Reflect / CATTY_REFLECT_*
+# ---------------------------------------------------------------------------
+set(_CATTY_VENDORED_REFL "${_CATTY_REPO_ROOT}/ThirdParty/refl-cpp")
+if(EXISTS "${_CATTY_VENDORED_REFL}/include/refl.hpp")
+	set(CATTY_REFL_INCLUDE_DIR "${_CATTY_VENDORED_REFL}/include" CACHE INTERNAL "refl-cpp include directory")
+	message(STATUS "Catty: refl-cpp (vendored) at ${CATTY_REFL_INCLUDE_DIR}")
+elseif(EXISTS "${_CATTY_VENDORED_REFL}/refl.hpp")
+	set(CATTY_REFL_INCLUDE_DIR "${_CATTY_VENDORED_REFL}" CACHE INTERNAL "refl-cpp include directory")
+	message(STATUS "Catty: refl-cpp (vendored flat) at ${CATTY_REFL_INCLUDE_DIR}")
+else()
+	FetchContent_Declare(
+		refl_cpp
+		GIT_REPOSITORY https://github.com/veselink1/refl-cpp.git
+		GIT_TAG v0.12.4
+		GIT_SHALLOW TRUE
+	)
+	FetchContent_GetProperties(refl_cpp)
+	if(NOT refl_cpp_POPULATED)
+		FetchContent_Populate(refl_cpp)
+	endif()
+	set(CATTY_REFL_INCLUDE_DIR "${refl_cpp_SOURCE_DIR}/include" CACHE INTERNAL "refl-cpp include directory")
+	message(STATUS "Catty: refl-cpp (FetchContent) at ${CATTY_REFL_INCLUDE_DIR}")
+endif()
+unset(_CATTY_VENDORED_REFL)
+
 unset(_CATTY_REPO_ROOT)
 unset(_CATTY_PUBLIC_HEADERS)
 unset(_CATTY_VENDORED_IMGUI)

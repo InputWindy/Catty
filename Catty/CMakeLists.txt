@@ -29,6 +29,9 @@ endif()
 if(NOT CATTY_SOL2_INCLUDE_DIR)
 	message(FATAL_ERROR "Catty: sol2 include dir was not set (CattyDependencies.cmake)")
 endif()
+if(NOT CATTY_REFL_INCLUDE_DIR)
+	message(FATAL_ERROR "Catty: refl-cpp include dir was not set (CattyDependencies.cmake)")
+endif()
 
 if(CATTY_BUILD_SHARED)
 	add_library(Catty SHARED ${CATTY_SOURCES})
@@ -45,6 +48,7 @@ add_library(Catty::Engine ALIAS Catty)
 target_include_directories(Catty
 	PUBLIC
 		"${CATTY_PUBLIC_DIR}"
+		"${CATTY_REFL_INCLUDE_DIR}"
 	PRIVATE
 		"${CATTY_PRIVATE_DIR}"
 		"${CATTY_NLOHMANN_JSON_INCLUDE_DIR}"
@@ -95,6 +99,7 @@ target_compile_definitions(Catty
 	PUBLIC
 		CATTY_WITH_VULKAN=1
 		CATTY_WITH_LUA=1
+		CATTY_WITH_REFLECT=1
 		CATTY_PLATFORM_${CATTY_PLATFORM_NAME}=1
 )
 
