@@ -1,4 +1,4 @@
-# Shared helpers for setup.py / generateProject.py / package.py
+# Shared helpers for create_project.py / generateProject.py / package.py / clean.py
 from __future__ import annotations
 
 import json

@@ -1,0 +1,29 @@
+{
+  "generator": "Tools/reflect_codegen.py",
+  "typeCount": 1,
+  "types": [
+    {
+      "TypeName": "Catty::ReflectPrivate::FReflectSmoke",
+      "Members": [
+        {
+          "Name": "X",
+          "Kind": "property",
+          "Attrs": ""
+        },
+        {
+          "Name": "Y",
+          "Kind": "property",
+          "Attrs": ""
+        },
+        {
+          "Name": "Scale",
+          "Kind": "function",
+          "Attrs": ""
+        }
+      ],
+      "Attrs": "",
+      "SourceRel": "Catty/Source/Private/Core/Reflect.cpp",
+      "SourceLine": 23
+    }
+  ]
+}

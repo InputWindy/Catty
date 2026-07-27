@@ -23,7 +23,14 @@
 CMakeUserPresets.json
 compile_commands.json
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Engine-local Python — installed by setup.bat; users must run setup themselves.
+# Never commit the interpreter, its installer cache, or pip/download leftovers.
+/Tools/python/
+/Tools/_cache/
+/Tools/**/__pycache__/
 
 # Object / binary artifacts
 *.d

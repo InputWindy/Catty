@@ -2,8 +2,8 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-rem Engine root launcher → packaging UI (optional: pass a .cproject path)
-python "%~dp0Tools\package_ui.py" %*
+rem Package UI. Requires local Python from setup.bat.
+call "%~dp0Tools\catty_python.bat" "%~dp0Tools\package_ui.py" %*
 set "ERR=%ERRORLEVEL%"
 if not "%ERR%"=="0" (
 	echo [ERROR] package_ui.py failed with exit code %ERR%

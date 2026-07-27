@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Catty project creator (simple UI)."""
+"""Catty new-project UI (createProject.bat)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from catty_tools import (  # noqa: E402
 )
 
 
-class SetupApp(tk.Tk):
+class CreateProjectApp(tk.Tk):
 	def __init__(self) -> None:
 		super().__init__()
 		self.title("Catty — New Project")
@@ -74,7 +74,8 @@ class SetupApp(tk.Tk):
 		hint = (
 			"Creates Parent/Name/ with Name.cproject (JSON, like .uproject).\n"
 			"Double-click the .cproject to regenerate Name.sln beside it, then open the .sln in VS.\n"
-			".cproject file association is applied automatically on Windows when this window opens."
+			".cproject file association is applied automatically on Windows when this window opens.\n"
+			"Requires engine setup.bat (local Tools/python) beforehand."
 		)
 		ttk.Label(frm, text=hint, foreground="#555").grid(row=7, column=0, columnspan=3, sticky="w", **pad)
 
@@ -98,13 +99,12 @@ class SetupApp(tk.Tk):
 			self.var_engine.set(path)
 
 	def _auto_associate_cproject(self) -> None:
-		"""Register .cproject → generateProject.bat once when setup opens (Windows)."""
+		"""Register .cproject → generateProject.bat once when the UI opens (Windows)."""
 		if sys.platform != "win32":
 			return
 		try:
 			install_windows_cproject_association()
 		except Exception as ex:  # noqa: BLE001
-			# Non-fatal: user can still click Re-associate.
 			print(f"[Catty] Auto-associate skipped: {ex}")
 
 	def _associate(self) -> None:
@@ -134,9 +134,14 @@ class SetupApp(tk.Tk):
 		if not (engine / "Catty").is_dir():
 			messagebox.showerror("Catty", f"Engine root must contain Catty/:\n{engine}")
 			return
+		if not (engine / "Tools" / "python" / "python.exe").is_file():
+			messagebox.showerror(
+				"Catty",
+				f"Engine local Python missing.\nRun setup.bat in:\n{engine}",
+			)
+			return
 
 		try:
-			# Ensure association is present for brand-new machines.
 			self._auto_associate_cproject()
 			cproject = create_project(name, parent, engine, description=desc, author=author)
 			sln_msg = ""
@@ -163,7 +168,7 @@ class SetupApp(tk.Tk):
 
 
 def main() -> int:
-	app = SetupApp()
+	app = CreateProjectApp()
 	app.mainloop()
 	return 0
 

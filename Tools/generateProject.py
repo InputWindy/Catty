@@ -5,7 +5,6 @@ Generate Visual Studio solution for a Catty project.
 Usage:
   generateProject.bat
   generateProject.bat path\\Game.cproject
-  (or: python Tools\\generateProject.py ...)
 """
 
 from __future__ import annotations
