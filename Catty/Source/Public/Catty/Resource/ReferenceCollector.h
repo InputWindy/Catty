@@ -42,7 +42,7 @@ public:
 
 /**
  * Soft object pointer for members that participate in the reference graph.
- * Does not AddRef; owner must report it from AddReferencedObjects.
+ * Does NOT AddRef (unlike FObjectRef). Owner must report it from AddReferencedObjects.
  */
 template <typename TObject>
 class TObjectPtr

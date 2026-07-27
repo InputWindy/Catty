@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Catty 引擎架构设计</title>
+<style>
+:root {
+	--bg: #0f1218;
+	--panel: #171d26;
+	--panel2: #202838;
+	--text: #edf2f7;
+	--muted: #a9b4c0;
+	--line: #344052;
+	--blue: #5eb7ff;
+	--green: #74d99f;
+	--yellow: #ffd166;
+	--cyan: #66e3e0;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font: 15px/1.65 "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+}
+header {
+	padding: 36px 36px 24px;
+	border-bottom: 1px solid var(--line);
+	background: linear-gradient(135deg, #161d2a, #0e131b 60%);
+}
+h1 { margin: 0 0 10px; font-size: 30px; color: #ffd166; }
+.subtitle { color: var(--muted); max-width: 960px; }
+.subtitle a { color: var(--cyan); }
+main { padding: 24px 36px 80px; max-width: 1100px; }
+.card {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	margin: 0 0 22px;
+	overflow: hidden;
+}
+.card h2 {
+	margin: 0;
+	padding: 14px 18px;
+	background: var(--panel2);
+	border-bottom: 1px solid var(--line);
+	font-size: 18px;
+	color: #ffe08a;
+}
+.body { padding: 18px 20px 22px; }
+table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+}
+th, td {
+	border: 1px solid var(--line);
+	padding: 10px 12px;
+	text-align: left;
+	vertical-align: top;
+}
+th { background: #101823; color: #cfe4ff; }
+code, .inline {
+	font-family: Consolas, "Cascadia Mono", monospace;
+	color: #9ee8ff;
+	background: rgba(102, 227, 224, 0.09);
+	border: 1px solid rgba(102, 227, 224, 0.18);
+	border-radius: 5px;
+	padding: 0 5px;
+	font-size: 13px;
+}
+.mermaid {
+	background: #101823;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	padding: 16px;
+	margin: 12px 0 4px;
+	overflow-x: auto;
+}
+ul { color: #cfe4ff; }
+li { margin: 6px 0; }
+.note {
+	border-left: 4px solid var(--yellow);
+	background: #121820;
+	border-radius: 8px;
+	padding: 12px 14px;
+	color: var(--muted);
+	margin: 12px 0 0;
+}
+footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; }
+</style>
+</head>
+<body>
+<header>
+	<h1>Catty 引擎架构设计</h1>
+	<div class="subtitle">
+		FApp / FGCManager / FResourceManager / FPackage / FObject / FResource / FResourceServer。<br />
+		文本版：<a href="引擎架构设计.md">引擎架构设计.md</a>
+		（IDE 预览默认不渲染 Mermaid，请用本页看图）
+	</div>
+</header>
+<main>
+
+<section class="card">
+	<h2>1. 总览</h2>
+	<div class="body">
+		<table>
+			<thead><tr><th>模块</th><th>管什么</th><th>不管什么</th></tr></thead>
+			<tbody>
+				<tr><td><code>FApp</code></td><td>持有并驱动 GC / ResourceManager</td><td>具体资源格式</td></tr>
+				<tr><td><code>FGCManager</code></td><td>登记、Root、Mark、PendingKill / Immediate、Purge</td><td>FResource 池、读 png</td></tr>
+				<tr><td><code>FResourceManager</code></td><td>Package JSON、Objects 表、池、<b>拥有</b> ResourceServer</td><td>通用 Mark 算法</td></tr>
+				<tr><td><code>FPackage</code></td><td>包信息 + Objects 名字表</td><td>对象内存</td></tr>
+				<tr><td><code>FResource / FObject</code></td><td>身份、RefCount、引用出边</td><td>自己 new/delete</td></tr>
+				<tr><td><code>FResourceServer</code></td><td>raw 异步填充（Manager 内部）</td><td>Package / GC</td></tr>
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<section class="card">
+	<h2>2. 模块持有与依赖</h2>
+	<div class="body">
+		<pre class="mermaid">
+flowchart TB
+  subgraph App["FApp"]
+    GC["FGCManager"]
+    RM["FResourceManager"]
+  end
+
+  subgraph RMBox["FResourceManager 内部"]
+    RS["FResourceServer"]
+    PkgPool["TPoolAllocator of FPackage"]
+    ResPool["TPoolAllocator of FResource"]
+  end
+
+  GC -->|"Tick / Collect / Purge"| GC
+  RM -->|"RegisterObject / DestroyHandler"| GC
+  RM --> RS
+  RM --> PkgPool
+  RM --> ResPool
+
+  PkgPool --> Pkg["FPackage"]
+  ResPool --> Res["FResource : FObject"]
+
+  Pkg -->|"Objects 名字表 非拥有"| Res
+  Res -->|"Outer"| Pkg
+
+  GC -->|"LiveObjects / RootSet / Mark / PendingKill"| Obj["FObject"]
+  Res -.->|"继承"| Obj
+		</pre>
+		<ul>
+			<li><b>GC 类型无关</b>：只看见 <code>FObject*</code>；池与 Server Release 由 ResourceManager destroy handler 认领。</li>
+			<li><b>Package 不拥有内存</b>：Objects 表只登记；内存在 ResourceManager 池里。</li>
+			<li><b>FApp 成员顺序</b>：GCManager 先于 ResourceManager 构造、后析构。</li>
+			<li><b>ResourceServer 下沉</b>：由 ResourceManager 拥有并 Init/Shutdown；App 不再直接持有。</li>
+		</ul>
+	</div>
+</section>
+
+<section class="card">
+	<h2>3. 对象生命周期时序</h2>
+	<div class="body">
+		<pre class="mermaid">
+sequenceDiagram
+  participant App as FApp
+  participant RM as ResourceManager
+  participant GC as GCManager
+  participant RS as ResourceServer
+  participant Pool as ResourcePool
+
+  App->>GC: Initialize()
+  App->>RM: Initialize(GC)
+  RM->>RS: Initialize()
+  RM->>GC: AddObjectDestroyHandler(FResource)
+
+  RM->>Pool: Allocate FResource
+  RM->>GC: RegisterObject
+  RM->>RS: RequestLoad(raw) 异步
+  Note over GC: Ref / Root / 引用图 Mark 保活
+  GC-->>RM: DestroyHandler 认领
+  RM->>RS: Release
+  RM->>Pool: Free
+		</pre>
+		<div class="note">
+			Package / CreateResource（建对象）同步；raw 填充异步；<code>Flush(Resource)</code> 只等该资源 raw；GC 与 raw IO 无关。
+		</div>
+	</div>
+</section>
+
+<section class="card">
+	<h2>4. GC 保活与回收</h2>
+	<div class="body">
+		<pre class="mermaid">
+flowchart LR
+  Root["AddToRoot RootSet"] --> Mark["Mark 可达"]
+  Ref["FObjectRef RefCount大于0"] --> Mark
+  Graph["AddReferencedObjects 引用图出边"] --> Mark
+  Persist["Persistent Package Object"] -->|"不进 Transient 回收"| Keep["常驻到 UnloadPackage"]
+  Mark -->|"不可达且 Transient"| Pending["PendingKill 约30s Purge"]
+		</pre>
+		<ul>
+			<li>Mark 种子：RootSet、RefCount&gt;0、引用图出边（Outer 不算边）。</li>
+			<li>默认 Tick：Immediate 每帧；Collect 约 1s；Purge Pending 约 30s。</li>
+		</ul>
+	</div>
+</section>
+
+<section class="card">
+	<h2>5. 相关源码</h2>
+	<div class="body">
+		<table>
+			<thead><tr><th>内容</th><th>路径</th></tr></thead>
+			<tbody>
+				<tr><td>App</td><td><code>Catty/Source/Public/Catty/Core/App.h</code></td></tr>
+				<tr><td>GC</td><td><code>Catty/Source/Public/Catty/Resource/GCManager.h</code></td></tr>
+				<tr><td>引用收集</td><td><code>Catty/Source/Public/Catty/Resource/ReferenceCollector.h</code></td></tr>
+				<tr><td>Object / Package / Resource</td><td><code>Catty/Source/Public/Catty/Resource/</code></td></tr>
+				<tr><td>通用池</td><td><code>Catty/Source/Public/Catty/Core/PoolAllocator.h</code></td></tr>
+			</tbody>
+		</table>
+	</div>
+</section>
+
+</main>
+<footer>Catty Engine · 架构图由 Mermaid 渲染 · 2026-07</footer>
+
+<script type="module">
+	import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+	mermaid.initialize({
+		startOnLoad: true,
+		theme: "dark",
+		securityLevel: "loose",
+		flowchart: { curve: "basis", htmlLabels: true },
+	});
+</script>
+</body>
+</html>

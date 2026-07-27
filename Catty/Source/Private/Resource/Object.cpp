@@ -15,6 +15,16 @@ FObject::FObject(FPackage* InOuter, std::string InObjectName)
 
 FObject::~FObject() = default;
 
+FPackageRef FObject::GetOuter() const
+{
+	return FPackageRef(Outer);
+}
+
+FPackageRef FObject::GetPackage() const
+{
+	return GetOuter();
+}
+
 std::string FObject::GetPathName() const
 {
 	if (!Outer)
@@ -79,81 +89,6 @@ void FObject::MarkForImmediateDestroy()
 void FObject::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	(void)Collector;
-}
-
-FObjectRef::FObjectRef(FObject* InObject)
-	: Object(InObject)
-{
-	if (Object)
-	{
-		Object->AddRef();
-	}
-}
-
-FObjectRef::FObjectRef(const FObjectRef& Other)
-	: Object(Other.Object)
-{
-	if (Object)
-	{
-		Object->AddRef();
-	}
-}
-
-FObjectRef::FObjectRef(FObjectRef&& Other) noexcept
-	: Object(Other.Object)
-{
-	Other.Object = nullptr;
-}
-
-FObjectRef::~FObjectRef()
-{
-	Reset();
-}
-
-FObjectRef& FObjectRef::operator=(const FObjectRef& Other)
-{
-	if (this == &Other)
-	{
-		return *this;
-	}
-
-	if (Object)
-	{
-		Object->ReleaseRef();
-	}
-
-	Object = Other.Object;
-	if (Object)
-	{
-		Object->AddRef();
-	}
-	return *this;
-}
-
-FObjectRef& FObjectRef::operator=(FObjectRef&& Other) noexcept
-{
-	if (this == &Other)
-	{
-		return *this;
-	}
-
-	if (Object)
-	{
-		Object->ReleaseRef();
-	}
-
-	Object = Other.Object;
-	Other.Object = nullptr;
-	return *this;
-}
-
-void FObjectRef::Reset()
-{
-	if (Object)
-	{
-		Object->ReleaseRef();
-		Object = nullptr;
-	}
 }
 
 } // namespace Catty

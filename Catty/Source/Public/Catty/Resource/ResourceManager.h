@@ -7,6 +7,7 @@
 #include "Catty/Resource/Package.h"
 #include "Catty/Resource/Resource.h"
 #include "Catty/Resource/ResourceHandle.h"
+#include "Catty/Resource/ResourceServer.h"
 
 #include <string>
 #include <unordered_map>
@@ -15,11 +16,10 @@
 namespace Catty
 {
 
-class FResourceServer;
-
 /**
- * Package / FResource facade. Owns FPackage & FResource pools and type-specific
- * teardown (ResourceServer::Release). Registers objects with FGCManager for Mark/Root/GC.
+ * Package / FResource facade. Owns FResourceServer, FPackage & FResource pools,
+ * and type-specific teardown (ResourceServer::Release). Registers objects with
+ * FGCManager for Mark/Root/GC.
  *
  * FGCManager does not know FResource — destroy is claimed via AddObjectDestroyHandler.
  */
@@ -34,66 +34,57 @@ public:
 	FResourceManager(const FResourceManager&) = delete;
 	FResourceManager& operator=(const FResourceManager&) = delete;
 
-	[[nodiscard]] bool Initialize(FResourceServer& InServer, FGCManager& InGC);
+	/** Starts owned FResourceServer, then registers destroy handler on InGC. */
+	[[nodiscard]] bool Initialize(FGCManager& InGC);
 	void Shutdown();
 
-	[[nodiscard]] bool IsInitialized() const { return Server != nullptr && GC != nullptr; }
+	[[nodiscard]] bool IsInitialized() const { return GC != nullptr && Server.IsInitialized(); }
 
-	[[nodiscard]] FPackage* CreatePackage(
+	[[nodiscard]] FPackageRef CreatePackage(
 		std::string Name,
 		EPackageFlags Flags = EPackageFlags::Transient);
 
-	[[nodiscard]] FPackage* GetTransientPackage();
-	[[nodiscard]] FPackage* FindPackage(const std::string& Name) const;
+	[[nodiscard]] FPackageRef GetTransientPackage();
+	[[nodiscard]] FPackageRef FindPackage(const std::string& Name) const;
 
 	bool UnloadPackage(const std::string& Name);
 
-	[[nodiscard]] FResourceRef CreateResource(
-		FPackage& Package,
+	[[nodiscard]] FObjectRef CreateResource(
+		const FPackageRef& Package,
 		std::string ObjectName,
 		std::string SourcePath,
 		EResourceType Type = EResourceType::Unknown);
 
-	[[nodiscard]] FResourceRef CreateResource(
+	[[nodiscard]] FObjectRef CreateResource(
 		std::string SourcePath,
 		EResourceType Type = EResourceType::Unknown,
 		std::string ObjectName = {});
 
-	[[nodiscard]] FObject* FindObject(FPackage& Package, const std::string& ObjectName) const;
-	[[nodiscard]] FObject* FindObject(const std::string& PackageName, const std::string& ObjectName) const;
-
-	template <typename TObject>
-	[[nodiscard]] TObject* FindObjectAs(FPackage& Package, const std::string& ObjectName) const
-	{
-		return dynamic_cast<TObject*>(FindObject(Package, ObjectName));
-	}
-
-	template <typename TObject>
-	[[nodiscard]] TObject* FindObjectAs(const std::string& PackageName, const std::string& ObjectName) const
-	{
-		return dynamic_cast<TObject*>(FindObject(PackageName, ObjectName));
-	}
+	[[nodiscard]] FObjectRef FindObject(const FPackageRef& Package, const std::string& ObjectName) const;
+	[[nodiscard]] FObjectRef FindObject(const std::string& PackageName, const std::string& ObjectName) const;
 
 	[[nodiscard]] EResourceLoadState GetLoadState(FResourceId Id) const;
 	[[nodiscard]] bool IsReady(FResourceId Id) const;
 
-	[[nodiscard]] bool SavePackage(FPackage& Package, const std::string& FilePath = {}, bool bPretty = true);
-	[[nodiscard]] FPackage* LoadPackage(const std::string& FilePath);
+	[[nodiscard]] bool SavePackage(const FPackageRef& Package, const std::string& FilePath = {}, bool bPretty = true);
+	[[nodiscard]] FPackageRef LoadPackage(const std::string& FilePath);
 
-	void Flush(const FResource& Resource);
-	void Flush(const FResourceRef& Resource);
+	/** Wait for raw fill if Object casts to FResource. */
+	void Flush(const FObjectRef& Object);
 	void FlushAll();
 
 	void CollectGarbage();
 	void TickGarbageCollection(float DeltaSeconds);
 
-	[[nodiscard]] FResourceServer* GetServer() { return Server; }
-	[[nodiscard]] const FResourceServer* GetServer() const { return Server; }
+	[[nodiscard]] FResourceServer* GetServer() { return IsInitialized() ? &Server : nullptr; }
+	[[nodiscard]] const FResourceServer* GetServer() const { return IsInitialized() ? &Server : nullptr; }
 
 	[[nodiscard]] FGCManager* GetGC() { return GC; }
 	[[nodiscard]] const FGCManager* GetGC() const { return GC; }
 
 private:
+	friend class FPackage;
+
 	[[nodiscard]] static std::string NormalizePackageName(std::string Name);
 	[[nodiscard]] static std::string NormalizeSourcePath(std::string Path);
 	[[nodiscard]] static std::string MakeObjectNameFromSource(const std::string& SourcePath);
@@ -104,10 +95,13 @@ private:
 	[[nodiscard]] bool TryDestroyResourceObject(FObject* Object);
 
 	void DestroyResource(FResource* Resource);
-	void DestroyPackageExports(FPackage& Package);
-	void DestroyPackage(FPackage* Package);
+	void DestroyPackageObjects(FPackage& Package);
+	/** Drop catalog registration and ReleaseRef (may Free when count hits 0). */
+	void UnregisterAndReleasePackage(FPackage* Package);
+	/** Pool Free only — called from FPackage::OnRefCountZero. */
+	void FreePackageMemory(FPackage* Package);
 
-	FResourceServer* Server = nullptr;
+	FResourceServer Server;
 	FGCManager* GC = nullptr;
 	std::unordered_map<std::string, FPackage*> Packages;
 	FPackage* TransientPackage = nullptr;

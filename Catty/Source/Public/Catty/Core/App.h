@@ -9,7 +9,6 @@
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/GCManager.h"
 #include "Catty/Resource/ResourceManager.h"
-#include "Catty/Resource/ResourceServer.h"
 #include "Catty/UI/ImGuiSystem.h"
 
 #include <cstdint>
@@ -63,9 +62,6 @@ public:
 	[[nodiscard]] FRenderServer& GetRenderServer() { return RenderServer; }
 	[[nodiscard]] const FRenderServer& GetRenderServer() const { return RenderServer; }
 
-	[[nodiscard]] FResourceServer& GetResourceServer() { return ResourceServer; }
-	[[nodiscard]] const FResourceServer& GetResourceServer() const { return ResourceServer; }
-
 	[[nodiscard]] FResourceManager& GetResourceManager() { return ResourceManager; }
 	[[nodiscard]] const FResourceManager& GetResourceManager() const { return ResourceManager; }
 
@@ -95,7 +91,7 @@ protected:
 	virtual bool PostInitialize();
 	virtual void PreShutdown();
 
-	/** Default: clear layers → ImGui → render → resource manager → resource server → platform → engine. */
+	/** Default: clear layers → ImGui → render → resource manager → platform → engine. */
 	virtual void Shutdown();
 
 	/** Default: ImGui NewFrame, then layer stack. */
@@ -124,7 +120,6 @@ protected:
 	FEngineConfig EngineConfig;
 	FEngine Engine;
 	FRenderServer RenderServer;
-	FResourceServer ResourceServer;
 	FGCManager GCManager;
 	FResourceManager ResourceManager;
 	FTimer Timer;

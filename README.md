@@ -55,3 +55,10 @@ clean.bat --dry-run
 ## Engine workspace
 
 `generateProject.bat`（无参数）执行：`cmake -S Build -B Intermediate`，并在仓库根写出 `CattyWorkspace.sln`。
+
+## 引擎架构设计
+
+运行时模块关系（App / GC / ResourceManager / Package / FObject）：
+
+- **看图（推荐）：** [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html)
+- 文本稿：[Doc/Engine/引擎架构设计.md](Doc/Engine/引擎架构设计.md)

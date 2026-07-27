@@ -106,7 +106,7 @@ private:
 	void RemoveFromPendingKill(FObject* Object);
 	void RemoveFromImmediate(FObject* Object);
 
-	[[nodiscard]] static bool IsTransientExport(const FObject& Object);
+	[[nodiscard]] static bool IsInTransientPackage(const FObject& Object);
 
 	bool bInitialized = false;
 	std::vector<FObjectDestroyHandler> DestroyHandlers;

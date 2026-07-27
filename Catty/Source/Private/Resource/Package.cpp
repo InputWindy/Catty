@@ -1,7 +1,8 @@
-#include "Catty/Resource/Package.h"
+﻿#include "Catty/Resource/Package.h"
 
 #include "Catty/Core/Log.h"
 #include "Catty/Resource/Resource.h"
+#include "Catty/Resource/ResourceManager.h"
 
 namespace Catty
 {
@@ -40,38 +41,142 @@ FPackage::FPackage(std::string InName, EPackageFlags InFlags)
 
 FPackage::~FPackage()
 {
-	if (!Exports.empty())
+	if (!Objects.empty())
 	{
 		CATTY_CORE_ERROR(
-			"FPackage '{}' destroyed with {} exports still registered — Manager must Free to pool first",
+			"FPackage '{}' destroyed with {} objects still registered — Manager must Free to pool first",
 			Name,
-			Exports.size());
-		ClearExports();
+			Objects.size());
+		ClearObjects();
 	}
 }
 
-FObject* FPackage::FindObject(const std::string& ObjectName) const
+std::uint32_t FPackage::AddRef()
 {
-	const auto It = Exports.find(ObjectName);
-	if (It == Exports.end())
-	{
-		return nullptr;
-	}
-	return It->second;
+	return ++RefCount;
 }
 
-std::vector<FObject*> FPackage::GetExports() const
+std::uint32_t FPackage::ReleaseRef()
 {
-	std::vector<FObject*> Result;
-	Result.reserve(Exports.size());
-	for (const auto& Pair : Exports)
+	if (RefCount == 0)
 	{
-		Result.push_back(Pair.second);
+		return 0;
+	}
+
+	--RefCount;
+	if (RefCount == 0)
+	{
+		OnRefCountZero();
+	}
+	return RefCount;
+}
+
+void FPackage::OnRefCountZero()
+{
+	if (!Owner)
+	{
+		CATTY_CORE_ERROR("FPackage::OnRefCountZero: '{}' has no Owner — leaked pool slot", Name);
+		return;
+	}
+
+	Owner->FreePackageMemory(this);
+}
+
+FPackageRef::FPackageRef(FPackage* InPackage)
+	: Package(InPackage)
+{
+	if (Package)
+	{
+		Package->AddRef();
+	}
+}
+
+FPackageRef::FPackageRef(const FPackageRef& Other)
+	: Package(Other.Package)
+{
+	if (Package)
+	{
+		Package->AddRef();
+	}
+}
+
+FPackageRef::FPackageRef(FPackageRef&& Other) noexcept
+	: Package(Other.Package)
+{
+	Other.Package = nullptr;
+}
+
+FPackageRef::~FPackageRef()
+{
+	Reset();
+}
+
+FPackageRef& FPackageRef::operator=(const FPackageRef& Other)
+{
+	if (this == &Other)
+	{
+		return *this;
+	}
+
+	Reset();
+	Package = Other.Package;
+	if (Package)
+	{
+		Package->AddRef();
+	}
+	return *this;
+}
+
+FPackageRef& FPackageRef::operator=(FPackageRef&& Other) noexcept
+{
+	if (this == &Other)
+	{
+		return *this;
+	}
+
+	Reset();
+	Package = Other.Package;
+	Other.Package = nullptr;
+	return *this;
+}
+
+std::uint32_t FPackageRef::GetRefCount() const
+{
+	return Package ? Package->GetRefCount() : 0;
+}
+
+void FPackageRef::Reset()
+{
+	if (Package)
+	{
+		FPackage* Dying = Package;
+		Package = nullptr;
+		Dying->ReleaseRef();
+	}
+}
+
+FObjectRef FPackage::FindObject(const std::string& ObjectName) const
+{
+	const auto It = Objects.find(ObjectName);
+	if (It == Objects.end())
+	{
+		return {};
+	}
+	return FObjectRef(It->second);
+}
+
+std::vector<FObjectRef> FPackage::GetObjects() const
+{
+	std::vector<FObjectRef> Result;
+	Result.reserve(Objects.size());
+	for (const auto& Pair : Objects)
+	{
+		Result.push_back(FObjectRef(Pair.second));
 	}
 	return Result;
 }
 
-bool FPackage::RegisterExport(FObject* Object)
+bool FPackage::RegisterObject(FObject* Object)
 {
 	if (!Object)
 	{
@@ -80,34 +185,34 @@ bool FPackage::RegisterExport(FObject* Object)
 
 	if (Object->GetName().empty())
 	{
-		CATTY_CORE_ERROR("FPackage::RegisterExport: empty ObjectName");
+		CATTY_CORE_ERROR("FPackage::RegisterObject: empty ObjectName");
 		return false;
 	}
 
-	if (Exports.find(Object->GetName()) != Exports.end())
+	if (Objects.find(Object->GetName()) != Objects.end())
 	{
 		CATTY_CORE_ERROR(
-			"FPackage::RegisterExport: '{}' already exists in package '{}'",
+			"FPackage::RegisterObject: '{}' already exists in package '{}'",
 			Object->GetName(),
 			Name);
 		return false;
 	}
 
 	Object->Outer = this;
-	Exports.emplace(Object->GetName(), Object);
+	Objects.emplace(Object->GetName(), Object);
 	return true;
 }
 
-FObject* FPackage::UnregisterExport(const std::string& ObjectName)
+FObject* FPackage::UnregisterObject(const std::string& ObjectName)
 {
-	const auto It = Exports.find(ObjectName);
-	if (It == Exports.end())
+	const auto It = Objects.find(ObjectName);
+	if (It == Objects.end())
 	{
 		return nullptr;
 	}
 
 	FObject* Removed = It->second;
-	Exports.erase(It);
+	Objects.erase(It);
 	if (Removed)
 	{
 		Removed->Outer = nullptr;
@@ -115,16 +220,16 @@ FObject* FPackage::UnregisterExport(const std::string& ObjectName)
 	return Removed;
 }
 
-void FPackage::ClearExports()
+void FPackage::ClearObjects()
 {
-	for (auto& Pair : Exports)
+	for (auto& Pair : Objects)
 	{
 		if (Pair.second)
 		{
 			Pair.second->Outer = nullptr;
 		}
 	}
-	Exports.clear();
+	Objects.clear();
 }
 
 bool FPackage::Serialize(FJsonValue& OutObject) const
@@ -139,8 +244,8 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 		"flags",
 		FJsonValue::Number(static_cast<std::int64_t>(static_cast<std::uint32_t>(Flags))));
 
-	FJsonValue ExportArray = FJsonValue::Array();
-	for (const auto& Pair : Exports)
+	FJsonValue ObjectArray = FJsonValue::Array();
+	for (const auto& Pair : Objects)
 	{
 		FObject* Object = Pair.second;
 		if (!Object)
@@ -162,9 +267,9 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 			Entry.SetField("class", FJsonValue::String("Object"));
 		}
 
-		ExportArray.AddElement(Entry);
+		ObjectArray.AddElement(Entry);
 	}
-	OutObject.SetField("exports", ExportArray);
+	OutObject.SetField("objects", ObjectArray);
 	return true;
 }
 

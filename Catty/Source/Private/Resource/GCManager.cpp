@@ -124,10 +124,10 @@ void FGCManager::RemoveFromImmediate(FObject* Object)
 		ImmediateDestroy.end());
 }
 
-bool FGCManager::IsTransientExport(const FObject& Object)
+bool FGCManager::IsInTransientPackage(const FObject& Object)
 {
-	const FPackage* Package = Object.GetOuter();
-	return Package != nullptr && Package->IsTransient();
+	const FPackageRef Package = Object.GetOuter();
+	return Package && Package->IsTransient();
 }
 
 void FGCManager::DestroyObjectImmediate(FObject* Object)
@@ -272,7 +272,7 @@ void FGCManager::QueueUnreachable()
 			continue;
 		}
 
-		if (!IsTransientExport(*Object))
+		if (!IsInTransientPackage(*Object))
 		{
 			continue;
 		}
@@ -364,7 +364,7 @@ void FGCManager::PurgePendingKill()
 			continue;
 		}
 
-		if (!IsTransientExport(*Object))
+		if (!IsInTransientPackage(*Object))
 		{
 			Object->ClearFlags(EObjectFlags::PendingKill);
 			continue;

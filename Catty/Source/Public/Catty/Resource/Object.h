@@ -1,10 +1,12 @@
 #pragma once
 
 #include "Catty/Core/Export.h"
+#include "Catty/Resource/PackageRef.h"
 #include "Catty/Resource/ReferenceCollector.h"
 
 #include <cstdint>
 #include <string>
+#include <type_traits>
 
 namespace Catty
 {
@@ -57,9 +59,10 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
 }
 
 /**
- * Base for package exports (UE UObject-lite).
+ * Base for package objects (UE UObject-lite).
  * Memory is allocated by owning systems (e.g. FResourceManager pools), then
- * FGCManager::RegisterObject for Mark / Root / PendingKill. RefCount is for handles.
+ * FGCManager::RegisterObject for Mark / Root / PendingKill.
+ * RefCount is bumped by FObjectRef — GC treats RefCount > 0 as live.
  * Override AddReferencedObjects to publish outbound edges for the reference graph.
  */
 class CATTY_API FObject
@@ -71,8 +74,8 @@ public:
 	FObject(const FObject&) = delete;
 	FObject& operator=(const FObject&) = delete;
 
-	[[nodiscard]] FPackage* GetOuter() const { return Outer; }
-	[[nodiscard]] FPackage* GetPackage() const { return Outer; }
+	[[nodiscard]] FPackageRef GetOuter() const;
+	[[nodiscard]] FPackageRef GetPackage() const;
 	[[nodiscard]] const std::string& GetName() const { return ObjectName; }
 	[[nodiscard]] std::uint32_t GetRefCount() const { return RefCount; }
 	[[nodiscard]] std::uint32_t GetRootCount() const { return RootCount; }
@@ -127,32 +130,139 @@ protected:
 	friend class FPackage;
 	friend class FResourceManager;
 	friend class FGCManager;
-	friend class FObjectRef;
-	friend class FResourceRef;
 };
 
-class CATTY_API FObjectRef
+/**
+ * Single intrusive refcounted smart pointer for all FObject subclasses.
+ * Copy / assign / destroy call AddRef / ReleaseRef.
+ * Public APIs return FObjectRef only — no bare FObject*. Use Cast<T>() for subtypes.
+ *
+ * Example:
+ * ```
+ *   FObjectRef Ref = ResourceManager.CreateResource(...);
+ *   if (FResource* Res = Ref.Cast<FResource>())
+ *   {
+ *       ResourceManager.Flush(Ref);
+ *   }
+ * ```
+ */
+class FObjectRef
 {
 public:
 	FObjectRef() = default;
 
-	explicit FObjectRef(FObject* InObject);
-	FObjectRef(const FObjectRef& Other);
-	FObjectRef(FObjectRef&& Other) noexcept;
-	~FObjectRef();
+	FObjectRef(const FObjectRef& Other)
+		: Object(Other.Object)
+	{
+		if (Object)
+		{
+			Object->AddRef();
+		}
+	}
 
-	FObjectRef& operator=(const FObjectRef& Other);
-	FObjectRef& operator=(FObjectRef&& Other) noexcept;
+	FObjectRef(FObjectRef&& Other) noexcept
+		: Object(Other.Object)
+	{
+		Other.Object = nullptr;
+	}
+
+	~FObjectRef()
+	{
+		Reset();
+	}
+
+	FObjectRef& operator=(const FObjectRef& Other)
+	{
+		if (this == &Other)
+		{
+			return *this;
+		}
+
+		if (Object)
+		{
+			Object->ReleaseRef();
+		}
+
+		Object = Other.Object;
+		if (Object)
+		{
+			Object->AddRef();
+		}
+		return *this;
+	}
+
+	FObjectRef& operator=(FObjectRef&& Other) noexcept
+	{
+		if (this == &Other)
+		{
+			return *this;
+		}
+
+		if (Object)
+		{
+			Object->ReleaseRef();
+		}
+
+		Object = Other.Object;
+		Other.Object = nullptr;
+		return *this;
+	}
 
 	[[nodiscard]] bool IsValid() const { return Object != nullptr; }
-	[[nodiscard]] FObject* Get() const { return Object; }
+	[[nodiscard]] explicit operator bool() const { return Object != nullptr; }
 	[[nodiscard]] FObject& operator*() const { return *Object; }
 	[[nodiscard]] FObject* operator->() const { return Object; }
 
-	void Reset();
+	[[nodiscard]] std::uint32_t GetRefCount() const
+	{
+		return Object ? Object->GetRefCount() : 0;
+	}
+
+	/** dynamic_cast the held object to TObject*. Null if type mismatch. */
+	template <typename TObject>
+	[[nodiscard]] TObject* Cast() const
+	{
+		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
+		return dynamic_cast<TObject*>(Object);
+	}
+
+	[[nodiscard]] bool operator==(const FObjectRef& Other) const { return Object == Other.Object; }
+	[[nodiscard]] bool operator!=(const FObjectRef& Other) const { return Object != Other.Object; }
+
+	void Reset()
+	{
+		if (Object)
+		{
+			Object->ReleaseRef();
+			Object = nullptr;
+		}
+	}
 
 private:
+	friend class FPackage;
+	friend class FResourceManager;
+	friend class FGCManager;
+
+	/** Engine-only: wrap a pool pointer (AddRef). Games obtain Refs from Manager APIs. */
+	explicit FObjectRef(FObject* InObject)
+		: Object(InObject)
+	{
+		if (Object)
+		{
+			Object->AddRef();
+		}
+	}
+
+	[[nodiscard]] FObject* Get() const { return Object; }
+
 	FObject* Object = nullptr;
 };
+
+/** Free-function form of FObjectRef::Cast. */
+template <typename TObject>
+[[nodiscard]] TObject* Cast(const FObjectRef& Ref)
+{
+	return Ref.Cast<TObject>();
+}
 
 } // namespace Catty

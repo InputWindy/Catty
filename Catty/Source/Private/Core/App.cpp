@@ -84,10 +84,6 @@ FApp::~FApp()
 	{
 		GCManager.Shutdown();
 	}
-	if (ResourceServer.IsInitialized())
-	{
-		ResourceServer.Shutdown();
-	}
 	ShutdownPlatformWindow(PlatformWindow);
 	if (Engine.IsInitialized())
 	{
@@ -164,23 +160,9 @@ bool FApp::InitializeEngine()
 		}
 	}
 
-	if (!ResourceServer.Initialize())
-	{
-		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ResourceServer)");
-		if (ImGui.IsInitialized())
-		{
-			ImGui.Shutdown(RenderServer);
-		}
-		RenderServer.Shutdown();
-		ShutdownPlatformWindow(PlatformWindow);
-		Engine.Shutdown();
-		return false;
-	}
-
 	if (!GCManager.Initialize())
 	{
 		CATTY_CORE_ERROR("FApp::InitializeEngine failed (GCManager)");
-		ResourceServer.Shutdown();
 		if (ImGui.IsInitialized())
 		{
 			ImGui.Shutdown(RenderServer);
@@ -191,11 +173,10 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
-	if (!ResourceManager.Initialize(ResourceServer, GCManager))
+	if (!ResourceManager.Initialize(GCManager))
 	{
 		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ResourceManager)");
 		GCManager.Shutdown();
-		ResourceServer.Shutdown();
 		if (ImGui.IsInitialized())
 		{
 			ImGui.Shutdown(RenderServer);
@@ -243,10 +224,6 @@ void FApp::Shutdown()
 	if (GCManager.IsInitialized())
 	{
 		GCManager.Shutdown();
-	}
-	if (ResourceServer.IsInitialized())
-	{
-		ResourceServer.Shutdown();
 	}
 	ShutdownPlatformWindow(PlatformWindow);
 	if (Engine.IsInitialized())
