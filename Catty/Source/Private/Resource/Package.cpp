@@ -40,7 +40,14 @@ FPackage::FPackage(std::string InName, EPackageFlags InFlags)
 
 FPackage::~FPackage()
 {
-	ClearExports();
+	if (!Exports.empty())
+	{
+		CATTY_CORE_ERROR(
+			"FPackage '{}' destroyed with {} exports still registered — Manager must Free to pool first",
+			Name,
+			Exports.size());
+		ClearExports();
+	}
 }
 
 FObject* FPackage::FindObject(const std::string& ObjectName) const
@@ -50,7 +57,7 @@ FObject* FPackage::FindObject(const std::string& ObjectName) const
 	{
 		return nullptr;
 	}
-	return It->second.get();
+	return It->second;
 }
 
 std::vector<FObject*> FPackage::GetExports() const
@@ -59,12 +66,12 @@ std::vector<FObject*> FPackage::GetExports() const
 	Result.reserve(Exports.size());
 	for (const auto& Pair : Exports)
 	{
-		Result.push_back(Pair.second.get());
+		Result.push_back(Pair.second);
 	}
 	return Result;
 }
 
-bool FPackage::RegisterExport(std::unique_ptr<FObject> Object)
+bool FPackage::RegisterExport(FObject* Object)
 {
 	if (!Object)
 	{
@@ -87,20 +94,19 @@ bool FPackage::RegisterExport(std::unique_ptr<FObject> Object)
 	}
 
 	Object->Outer = this;
-	const std::string Key = Object->GetName();
-	Exports.emplace(Key, std::move(Object));
+	Exports.emplace(Object->GetName(), Object);
 	return true;
 }
 
-std::unique_ptr<FObject> FPackage::UnregisterExport(const std::string& ObjectName)
+FObject* FPackage::UnregisterExport(const std::string& ObjectName)
 {
 	const auto It = Exports.find(ObjectName);
 	if (It == Exports.end())
 	{
-		return {};
+		return nullptr;
 	}
 
-	std::unique_ptr<FObject> Removed = std::move(It->second);
+	FObject* Removed = It->second;
 	Exports.erase(It);
 	if (Removed)
 	{
@@ -136,7 +142,7 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 	FJsonValue ExportArray = FJsonValue::Array();
 	for (const auto& Pair : Exports)
 	{
-		FObject* Object = Pair.second.get();
+		FObject* Object = Pair.second;
 		if (!Object)
 		{
 			continue;

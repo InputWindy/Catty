@@ -1,5 +1,7 @@
 #include "Catty/Resource/Object.h"
 
+#include "Catty/Core/Log.h"
+#include "Catty/Resource/GCManager.h"
 #include "Catty/Resource/Package.h"
 
 namespace Catty
@@ -34,6 +36,49 @@ std::uint32_t FObject::ReleaseRef()
 		--RefCount;
 	}
 	return RefCount;
+}
+
+void FObject::AddToRoot()
+{
+	if (GCOwner)
+	{
+		GCOwner->AddToRoot(*this);
+		return;
+	}
+	++RootCount;
+}
+
+void FObject::RemoveFromRoot()
+{
+	if (GCOwner)
+	{
+		GCOwner->RemoveFromRoot(*this);
+		return;
+	}
+
+	if (RootCount == 0)
+	{
+		CATTY_CORE_WARN("FObject::RemoveFromRoot: '{}' already has RootCount==0", GetPathName());
+		return;
+	}
+	--RootCount;
+}
+
+void FObject::MarkPendingKill()
+{
+	ClearFlags(EObjectFlags::ImmediateDestroy);
+	AddFlags(EObjectFlags::PendingKill);
+}
+
+void FObject::MarkForImmediateDestroy()
+{
+	ClearFlags(EObjectFlags::PendingKill);
+	AddFlags(EObjectFlags::ImmediateDestroy);
+}
+
+void FObject::AddReferencedObjects(FReferenceCollector& Collector)
+{
+	(void)Collector;
 }
 
 FObjectRef::FObjectRef(FObject* InObject)

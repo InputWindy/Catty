@@ -7,6 +7,7 @@
 #include "Catty/Core/Timer.h"
 #include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
+#include "Catty/Resource/GCManager.h"
 #include "Catty/Resource/ResourceManager.h"
 #include "Catty/Resource/ResourceServer.h"
 #include "Catty/UI/ImGuiSystem.h"
@@ -68,6 +69,9 @@ public:
 	[[nodiscard]] FResourceManager& GetResourceManager() { return ResourceManager; }
 	[[nodiscard]] const FResourceManager& GetResourceManager() const { return ResourceManager; }
 
+	[[nodiscard]] FGCManager& GetGCManager() { return GCManager; }
+	[[nodiscard]] const FGCManager& GetGCManager() const { return GCManager; }
+
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
 	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
@@ -121,6 +125,7 @@ protected:
 	FEngine Engine;
 	FRenderServer RenderServer;
 	FResourceServer ResourceServer;
+	FGCManager GCManager;
 	FResourceManager ResourceManager;
 	FTimer Timer;
 	FImGuiSystem ImGui;

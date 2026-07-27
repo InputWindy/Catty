@@ -135,63 +135,131 @@ EResourceType FResourceManager::ResourceTypeFromString(const std::string& Name)
 	return EResourceType::Unknown;
 }
 
-bool FResourceManager::Initialize(FResourceServer& InServer)
+bool FResourceManager::Initialize(FResourceServer& InServer, FGCManager& InGC)
 {
 	if (Server)
 	{
 		return true;
 	}
 
+	if (!InGC.IsInitialized())
+	{
+		CATTY_CORE_ERROR("FResourceManager::Initialize: FGCManager must be initialized first");
+		return false;
+	}
+
 	Server = &InServer;
-	GcAccumulatorSeconds = 0.0f;
+	GC = &InGC;
 	TransientPackage = nullptr;
+	PackagePool.Reserve(16);
+	ResourcePool.Reserve(64);
+	GC->AddObjectDestroyHandler([this](FObject* Object) -> bool
+	{
+		return TryDestroyResourceObject(Object);
+	});
 	CATTY_CORE_INFO("ResourceManager initialized");
 	return true;
 }
 
-void FResourceManager::DestroyResourceExport(FResource& Resource)
+bool FResourceManager::TryDestroyResourceObject(FObject* Object)
 {
-	if (Server && Resource.GetId().IsValid())
+	FResource* Resource = dynamic_cast<FResource*>(Object);
+	if (!Resource)
 	{
-		Server->Release(Resource.GetId());
+		return false;
 	}
+
+	DestroyResource(Resource);
+	return true;
+}
+
+void FResourceManager::DestroyResource(FResource* Resource)
+{
+	if (!Resource)
+	{
+		return;
+	}
+
+	if (Server && Resource->GetId().IsValid())
+	{
+		Server->Release(Resource->GetId());
+	}
+
+	if (FPackage* Package = Resource->GetOuter())
+	{
+		if (Package->FindObject(Resource->GetName()) == Resource)
+		{
+			(void)Package->UnregisterExport(Resource->GetName());
+		}
+	}
+
+	if (GC)
+	{
+		GC->UnregisterObject(*Resource);
+	}
+
+	ResourcePool.Free(Resource);
 }
 
 void FResourceManager::DestroyPackageExports(FPackage& Package)
 {
-	for (FObject* Object : Package.GetExports())
+	const std::vector<FObject*> ExportList = Package.GetExports();
+	Package.ClearExports();
+
+	for (FObject* Object : ExportList)
 	{
 		if (FResource* Resource = dynamic_cast<FResource*>(Object))
 		{
-			DestroyResourceExport(*Resource);
+			DestroyResource(Resource);
+		}
+		else if (Object && GC)
+		{
+			// Unknown FObject subclass — let GC dispatch to other handlers.
+			GC->DestroyObjectImmediate(Object);
 		}
 	}
-	Package.ClearExports();
+}
+
+void FResourceManager::DestroyPackage(FPackage* Package)
+{
+	if (!Package)
+	{
+		return;
+	}
+
+	DestroyPackageExports(*Package);
+	PackagePool.Free(Package);
 }
 
 void FResourceManager::Shutdown()
 {
-	if (!Server)
+	if (!Server && !GC)
 	{
 		return;
 	}
 
 	for (auto& Pair : Packages)
 	{
-		if (Pair.second)
-		{
-			DestroyPackageExports(*Pair.second);
-		}
+		DestroyPackage(Pair.second);
 	}
 	Packages.clear();
 	TransientPackage = nullptr;
+
+	if (GC)
+	{
+		GC->ClearObjectDestroyHandlers();
+	}
+
+	ResourcePool.Clear();
+	PackagePool.Clear();
+	GC = nullptr;
 	Server = nullptr;
 	CATTY_CORE_INFO("ResourceManager shut down");
 }
 
 FPackage* FResourceManager::CreatePackage(std::string Name, EPackageFlags Flags)
 {
-	if (!Server)
+	if (!IsInitialized())
 	{
 		CATTY_CORE_ERROR("FResourceManager::CreatePackage: not initialized");
 		return nullptr;
@@ -210,14 +278,13 @@ FPackage* FResourceManager::CreatePackage(std::string Name, EPackageFlags Flags)
 		return nullptr;
 	}
 
-	auto Package = std::make_unique<FPackage>(Name, Flags);
-	FPackage* Raw = Package.get();
+	FPackage* Package = PackagePool.Allocate(Name, Flags);
 	if (Name == TransientPackageName)
 	{
-		TransientPackage = Raw;
+		TransientPackage = Package;
 	}
-	Packages.emplace(std::move(Name), std::move(Package));
-	return Raw;
+	Packages.emplace(std::move(Name), Package);
+	return Package;
 }
 
 FPackage* FResourceManager::GetTransientPackage()
@@ -243,7 +310,7 @@ FPackage* FResourceManager::FindPackage(const std::string& Name) const
 	{
 		return nullptr;
 	}
-	return It->second.get();
+	return It->second;
 }
 
 bool FResourceManager::UnloadPackage(const std::string& Name)
@@ -261,8 +328,9 @@ bool FResourceManager::UnloadPackage(const std::string& Name)
 		return false;
 	}
 
-	DestroyPackageExports(*It->second);
+	FPackage* Package = It->second;
 	Packages.erase(It);
+	DestroyPackage(Package);
 	return true;
 }
 
@@ -272,7 +340,7 @@ FResourceRef FResourceManager::CreateResource(
 	std::string SourcePath,
 	EResourceType Type)
 {
-	if (!Server)
+	if (!IsInitialized())
 	{
 		CATTY_CORE_ERROR("FResourceManager::CreateResource: not initialized");
 		return {};
@@ -310,21 +378,21 @@ FResourceRef FResourceManager::CreateResource(
 		return {};
 	}
 
-	auto Resource = std::make_unique<FResource>(
+	FResource* Resource = ResourcePool.Allocate(
 		&Package,
 		ObjectName,
 		Id,
 		Type,
 		std::move(SourcePath));
-	FResource* Raw = Resource.get();
+	GC->RegisterObject(*Resource);
 
-	if (!Package.RegisterExport(std::move(Resource)))
+	if (!Package.RegisterExport(Resource))
 	{
-		Server->Release(Id);
+		DestroyResource(Resource);
 		return {};
 	}
 
-	return FResourceRef(Raw);
+	return FResourceRef(Resource);
 }
 
 FResourceRef FResourceManager::CreateResource(
@@ -459,23 +527,23 @@ FPackage* FResourceManager::LoadPackage(const std::string& FilePath)
 
 	if (const auto Existing = Packages.find(PackageName); Existing != Packages.end())
 	{
-		DestroyPackageExports(*Existing->second);
+		FPackage* Old = Existing->second;
 		Packages.erase(Existing);
+		DestroyPackage(Old);
 	}
 
-	auto Package = std::make_unique<FPackage>(PackageName, EPackageFlags::Persistent);
-	if (!Package->Deserialize(Root))
+	FPackage* Raw = PackagePool.Allocate(PackageName, EPackageFlags::Persistent);
+	if (!Raw->Deserialize(Root))
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadPackage: Deserialize failed '{}'", FilePath);
+		PackagePool.Free(Raw);
 		return nullptr;
 	}
 
-	Package->AddFlags(EPackageFlags::Persistent);
-	Package->ClearFlags(EPackageFlags::Transient);
-	Package->SetFilePath(FilePath);
-
-	FPackage* Raw = Package.get();
-	Packages.emplace(PackageName, std::move(Package));
+	Raw->AddFlags(EPackageFlags::Persistent);
+	Raw->ClearFlags(EPackageFlags::Transient);
+	Raw->SetFilePath(FilePath);
+	Packages.emplace(PackageName, Raw);
 
 	const FJsonValue ExportField = Root.HasField("exports")
 		? Root.GetField("exports")
@@ -543,62 +611,17 @@ FPackage* FResourceManager::LoadPackage(const std::string& FilePath)
 
 void FResourceManager::CollectGarbage()
 {
-	if (!Server)
+	if (GC)
 	{
-		return;
-	}
-
-	for (auto& Pair : Packages)
-	{
-		FPackage* Package = Pair.second.get();
-		if (!Package || !Package->IsTransient())
-		{
-			continue;
-		}
-
-		std::vector<std::string> PendingRemove;
-		for (FObject* Object : Package->GetExports())
-		{
-			if (Object && Object->GetRefCount() == 0)
-			{
-				PendingRemove.push_back(Object->GetName());
-			}
-		}
-
-		for (const std::string& ObjectName : PendingRemove)
-		{
-			std::unique_ptr<FObject> Removed = Package->UnregisterExport(ObjectName);
-			if (!Removed)
-			{
-				continue;
-			}
-
-			if (FResource* Resource = dynamic_cast<FResource*>(Removed.get()))
-			{
-				CATTY_CORE_INFO(
-					"Resource GC: package='{}' object='{}' source=\"{}\"",
-					Package->GetName(),
-					Resource->GetName(),
-					Resource->GetSourcePath());
-				DestroyResourceExport(*Resource);
-			}
-		}
+		GC->CollectGarbage();
 	}
 }
 
 void FResourceManager::TickGarbageCollection(float DeltaSeconds)
 {
-	if (GcIntervalSeconds <= 0.0f)
+	if (GC)
 	{
-		CollectGarbage();
-		return;
-	}
-
-	GcAccumulatorSeconds += DeltaSeconds;
-	if (GcAccumulatorSeconds >= GcIntervalSeconds)
-	{
-		GcAccumulatorSeconds = 0.0f;
-		CollectGarbage();
+		GC->Tick(DeltaSeconds);
 	}
 }
 

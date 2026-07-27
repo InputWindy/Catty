@@ -5,7 +5,6 @@
 #include "Catty/Resource/Object.h"
 
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -58,9 +57,9 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
 }
 
 /**
- * UE UPackage-lite: owns exports (FObject / FResource / custom types).
- * Package itself is a synchronous JSON info container (export table + paths).
- * Loading/saving a package does not wait on ResourceServer raw IO.
+ * UE UPackage-lite: owns export *registration* (name → FObject*).
+ * Object memory lives in FResourceManager pools; FGCManager only tracks lifetime/GC.
+ * Package JSON load/save is synchronous info only.
  *
  * Example:
  * ```
@@ -125,18 +124,22 @@ private:
 
 	void SetFilePath(std::string InPath) { FilePath = std::move(InPath); }
 
-	/** Takes ownership; ObjectName must be unique. Sets Outer. */
-	[[nodiscard]] bool RegisterExport(std::unique_ptr<FObject> Object);
+	/** Registers a pool-allocated export (non-owning). ObjectName must be unique. Sets Outer. */
+	[[nodiscard]] bool RegisterExport(FObject* Object);
 
-	/** Removes and destroys export by name. @return removed object (ownership) or empty. */
-	[[nodiscard]] std::unique_ptr<FObject> UnregisterExport(const std::string& ObjectName);
+	/**
+	 * Unregisters export; caller (Manager) must return memory to the matching TPoolAllocator.
+	 * @return pointer or nullptr.
+	 */
+	[[nodiscard]] FObject* UnregisterExport(const std::string& ObjectName);
 
+	/** Clears the export map only (does not Free pool memory). Exports must already be empty or Manager will Free. */
 	void ClearExports();
 
 	std::string Name;
 	std::string FilePath;
 	EPackageFlags Flags = EPackageFlags::Transient;
-	std::unordered_map<std::string, std::unique_ptr<FObject>> Exports;
+	std::unordered_map<std::string, FObject*> Exports;
 };
 
 } // namespace Catty
