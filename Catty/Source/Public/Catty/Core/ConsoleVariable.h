@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Catty/Core/Delegate.h"
 #include "Catty/Core/Export.h"
 
 #include <cstdint>
@@ -52,7 +53,13 @@ enum class EConsoleVariableType : std::uint8_t
 	String,
 };
 
-using FConsoleVariableChanged = std::function<void(class IConsoleVariable&)>;
+class IConsoleVariable;
+
+/** Listener signature for AddOnChangedCallback. */
+using FConsoleVariableChanged = std::function<void(IConsoleVariable&)>;
+
+/** Internal multicast type (not exposed on IConsoleVariable). */
+CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnConsoleVariableChanged, IConsoleVariable&);
 
 /**
  * Runtime console variable (UE IConsoleVariable subset).
@@ -62,11 +69,13 @@ using FConsoleVariableChanged = std::function<void(class IConsoleVariable&)>;
  * ```
  *   if (Catty::IConsoleVariable* V = Catty::FConsoleManager::Get().Find("catty.Window.Width"))
  *   {
- *       CATTY_INFO("width={} setBy={}", V->GetInt(), static_cast<uint32_t>(V->GetSetBy()));
- *       V->SetOnChangedCallback([](Catty::IConsoleVariable& CVar)
- *       {
- *           CATTY_INFO("{} changed -> {}", CVar.GetName(), CVar.GetString());
- *       });
+ *       const Catty::FDelegateHandle H = V->AddOnChangedCallback(
+ *           [](Catty::IConsoleVariable& CVar)
+ *           {
+ *               CATTY_INFO("{} changed -> {}", CVar.GetName(), CVar.GetString());
+ *           });
+ *       // ...
+ *       V->RemoveOnChangedCallback(H);
  *   }
  * ```
  */
@@ -100,7 +109,14 @@ public:
 		const std::string& Text,
 		EConsoleVariableSetBy SetBy = EConsoleVariableSetBy::Code) = 0;
 
-	virtual void SetOnChangedCallback(FConsoleVariableChanged Callback) = 0;
+	/**
+	 * Append a change listener (multicast). Broadcasts after a successful Set / SetFromString.
+	 * Keep the returned handle to RemoveOnChangedCallback later.
+	 */
+	[[nodiscard]] virtual FDelegateHandle AddOnChangedCallback(FConsoleVariableChanged Callback) = 0;
+
+	/** Remove a listener previously returned by AddOnChangedCallback. */
+	virtual bool RemoveOnChangedCallback(FDelegateHandle Handle) = 0;
 };
 
 } // namespace Catty

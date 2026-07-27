@@ -57,9 +57,14 @@ public:
 	[[nodiscard]] EConsoleVariableFlags GetFlags() const override { return Flags; }
 	[[nodiscard]] EConsoleVariableSetBy GetSetBy() const override { return SetBy; }
 
-	void SetOnChangedCallback(FConsoleVariableChanged Callback) override
+	[[nodiscard]] FDelegateHandle AddOnChangedCallback(FConsoleVariableChanged Callback) override
 	{
-		OnChanged = std::move(Callback);
+		return OnChangedDelegate.AddLambda(std::move(Callback));
+	}
+
+	bool RemoveOnChangedCallback(FDelegateHandle Handle) override
+	{
+		return OnChangedDelegate.Remove(Handle);
 	}
 
 protected:
@@ -76,19 +81,15 @@ protected:
 	void CommitSetBy(EConsoleVariableSetBy InSetBy)
 	{
 		SetBy = InSetBy;
-		if (OnChanged)
-		{
-			OnChanged(*this);
-		}
+		OnChangedDelegate.Broadcast(*this);
 	}
 
 	std::string Name;
 	std::string Help;
 	EConsoleVariableFlags Flags = EConsoleVariableFlags::Default;
 	EConsoleVariableSetBy SetBy = EConsoleVariableSetBy::Constructor;
-	FConsoleVariableChanged OnChanged;
+	FOnConsoleVariableChanged OnChangedDelegate;
 };
-
 class FConsoleVariableBool final : public FConsoleVariableBase
 {
 public:

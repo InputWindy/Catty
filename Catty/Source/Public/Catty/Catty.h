@@ -19,6 +19,7 @@
 #include "Catty/Core/PoolAllocator.h"
 #include "Catty/Core/ConsoleVariable.h"
 #include "Catty/Core/ConsoleManager.h"
+#include "Catty/Core/Delegate.h"
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Layer.h"
 #include "Catty/Core/LayerStack.h"
