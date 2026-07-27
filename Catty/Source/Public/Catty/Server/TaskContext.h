@@ -10,6 +10,15 @@ namespace Catty
 /**
  * Opaque handle for a context owned by an FThreadedServer.
  * Stale ids (after the owning task finishes) fail lookup via generation check.
+ *
+ * Example:
+ * ```
+ *   Catty::FTaskContextId Id = Server.AllocContext<MyContext>();
+ *   if (Id.IsValid())
+ *   {
+ *       MyContext* Ctx = Server.GetContextAs<MyContext>(Id);
+ *   }
+ * ```
  */
 struct FTaskContextId
 {
@@ -32,6 +41,16 @@ struct FTaskContextId
 /**
  * Base task context. Storage is allocated via FThreadedServer::AllocContext
  * and recycled automatically when the bound task finishes Execute.
+ *
+ * Example:
+ * ```
+ *   struct FBakeContext : Catty::FTaskContext
+ *   {
+ *       int Resolution = 512;
+ *   };
+ *   auto Id = Server.AllocContext<FBakeContext>();
+ *   Server.GetContextAs<FBakeContext>(Id)->Resolution = 1024;
+ * ```
  */
 class CATTY_API FTaskContext
 {

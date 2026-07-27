@@ -13,6 +13,21 @@ namespace Catty
 /**
  * Minimal UE-style .ini reader (sections / key=value).
  * Comments: lines starting with ';' or '#'. Supports UTF-8 BOM.
+ *
+ * Example:
+ * ```
+ *   Catty::FConfigFile Ini;
+ *   if (Ini.Load("Config/DefaultEngine.ini"))
+ *   {
+ *       int Width = 0;
+ *       Ini.TryGetInt("SystemSettings", "WindowWidth", Width);
+ *       for (const std::string& Key : Ini.GetKeys("ConsoleVariables"))
+ *       {
+ *           std::string Value;
+ *           Ini.TryGetString("ConsoleVariables", Key, Value);
+ *       }
+ *   }
+ * ```
  */
 class CATTY_API FConfigFile
 {

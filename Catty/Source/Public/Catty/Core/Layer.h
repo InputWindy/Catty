@@ -10,6 +10,18 @@ namespace Catty
 /**
  * Modular app slice with the same frame hooks as FApp.
  * Push onto FLayerStack from FApp (or game code) to compose update/render logic.
+ *
+ * Example:
+ * ```
+ *   class FWorldLayer : public Catty::FLayer
+ *   {
+ *   public:
+ *       FWorldLayer() : Catty::FLayer("WorldLayer") {}
+ *       virtual void OnUpdate(float DeltaSeconds) override { /* tick world */ }
+ *   };
+ *
+ *   App.PushLayer(std::make_unique<FWorldLayer>());
+ * ```
  */
 class CATTY_API FLayer
 {

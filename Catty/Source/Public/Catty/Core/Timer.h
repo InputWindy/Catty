@@ -45,6 +45,19 @@ struct CATTY_API FTimerDataPackage
  * App-owned multi-category timer.
  * Categories are string keys (e.g. "Engine" / "Render" / "Game");
  * macros record into the active instance set by FApp::Run.
+ *
+ * Example:
+ * ```
+ *   {
+ *       CATTY_SCOPED_TIMER("Game", "Simulate");
+ *       Simulate();
+ *   }
+ *   Catty::FTimerDataPackage Package;
+ *   if (App.GetTimer().TryQuery("Game", Package))
+ *   {
+ *       CATTY_INFO("{}", Package.Serialize());
+ *   }
+ * ```
  */
 class CATTY_API FTimer
 {

@@ -40,6 +40,19 @@ struct FEngineConfig
 /**
  * Core engine bookkeeping (config + frame index).
  * Gameplay worlds live in project layers, not here.
+ *
+ * Example:
+ * ```
+ *   Catty::FEngineConfig Config;
+ *   Config.ApplicationName = "MyGame";
+ *   Config.ProjectConfigDir = "Config";
+ *
+ *   Catty::FEngine Engine;
+ *   Engine.Initialize(Config);
+ *   Engine.Tick(DeltaSeconds);
+ *   const std::uint64_t Frame = Engine.GetFrameIndex();
+ *   Engine.Shutdown();
+ * ```
  */
 class CATTY_API FEngine
 {

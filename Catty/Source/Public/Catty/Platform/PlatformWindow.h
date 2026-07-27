@@ -32,6 +32,24 @@ struct FPlatformWindowDesc
  * Platform runtime + optional OS window (no third-party types in the public API).
  * Concrete backends (e.g. GLFW) are created through FPlatformWindowFactory.
  * Keyboard / mouse polling is handled by Dear ImGui (ImGuiIO / ImGui::IsKey*).
+ *
+ * Example:
+ * ```
+ *   Catty::FPlatformWindowDesc Desc;
+ *   Desc.Title = "MyGame";
+ *   Desc.Width = 1280;
+ *   Desc.Height = 720;
+ *   Desc.Platform = Catty::EPlatform::Glfw;
+ *
+ *   Catty::FPlatformWindowPtr Window = Catty::FPlatformWindowFactory::Create(Desc);
+ *   while (Window && !Window->ShouldClose())
+ *   {
+ *       Window->PollEvents();
+ *       // ...
+ *   }
+ *   Window.reset();
+ *   Catty::FPlatformWindowFactory::Shutdown();
+ * ```
  */
 class CATTY_API FPlatformWindow
 {

@@ -19,6 +19,21 @@ namespace Catty
  *   AllocContext → (optional fill on game thread) → Enqueue(task with id)
  *   → Execute → server recycles the context automatically
  * Task only carries FTaskContextId; it never holds the context allocation.
+ *
+ * Example:
+ * ```
+ *   struct FLoadContext : Catty::FTaskContext { std::string Path; };
+ *
+ *   const Catty::FTaskContextId Id = Server.AllocContext<FLoadContext>();
+ *   Server.GetContextAs<FLoadContext>(Id)->Path = "A.png";
+ *   Server.Enqueue(std::make_unique<Catty::FLambdaServerTask>(Id,
+ *       [Id](Catty::FThreadedServer& S)
+ *       {
+ *           auto* Ctx = S.GetContextAs<FLoadContext>(Id);
+ *           // load Ctx->Path on the worker thread
+ *       }));
+ *   Server.Flush();
+ * ```
  */
 class CATTY_API FThreadedServer
 {

@@ -2,27 +2,33 @@
 
 /**
  * Platform entry point for Catty game executables.
- *
  * Include this header in exactly one .cpp of the game project.
  *
  * Example:
+ * ```
  *   #include <Catty/Catty.h>
  *   #include <Catty/EntryPoint.h>
  *
  *   class FMyGameApp : public Catty::FApp
  *   {
  *   protected:
- *       virtual void Configure(Catty::FEngineConfig& OutConfig) override { ... }
- *       virtual bool PostInitialize() override { return true; }
- *       virtual void FixedUpdate(float FixedDeltaSeconds) override { ... }
- *       virtual void Update(float DeltaSeconds) override { ... }
- *       virtual void LateUpdate(float DeltaSeconds) override { ... }
+ *       virtual void Configure(Catty::FEngineConfig& OutConfig) override
+ *       {
+ *           OutConfig.ApplicationName = "MyGame";
+ *           OutConfig.ProjectConfigDir = "Config";
+ *       }
+ *       virtual bool PostInitialize() override
+ *       {
+ *           PushLayer(std::make_unique<FWorldLayer>());
+ *           return true;
+ *       }
  *   };
  *
  *   Catty::FApp* Catty::CreateApplication()
  *   {
  *       return new FMyGameApp();
  *   }
+ * ```
  */
 
 #include "Catty/Core/App.h"

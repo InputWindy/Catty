@@ -12,6 +12,14 @@ namespace Catty
 /**
  * Ordered stack of layers + overlays.
  * Layers sit below overlays; overlays are typically UI / editor tooling.
+ *
+ * Example:
+ * ```
+ *   Stack.PushLayer(std::make_unique<FWorldLayer>());
+ *   Stack.PushOverlay(std::make_unique<FEditorLayer>());
+ *   Stack.Update(DeltaSeconds); // world then editor
+ *   Stack.ProcessInput(DeltaSeconds); // overlays first
+ * ```
  */
 class CATTY_API FLayerStack
 {

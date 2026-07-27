@@ -44,6 +44,7 @@ void ShutdownPlatformWindow(FPlatformWindowPtr& Window)
 	FPlatformWindowFactory::Shutdown();
 }
 
+/** Load Config/DefaultEngine.ini [ConsoleVariables] into the CVar registry, then mirror catty.* into FEngineConfig. */
 void LoadProjectEngineIni(FEngineConfig& Config)
 {
 	const std::string IniPath = Config.ProjectConfigDir + "/DefaultEngine.ini";
@@ -54,7 +55,7 @@ void LoadProjectEngineIni(FEngineConfig& Config)
 	}
 	else
 	{
-		CATTY_CORE_INFO("Loaded {} CVar(s) from '{}'", Applied, IniPath);
+		CATTY_CORE_INFO("Loaded/queued {} CVar override(s) from '{}'", Applied, IniPath);
 	}
 
 	ApplyEngineCVarsToConfig(Config);

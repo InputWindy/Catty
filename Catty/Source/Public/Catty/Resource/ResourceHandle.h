@@ -8,7 +8,17 @@
 namespace Catty
 {
 
-/** Opaque resource identity issued by FResourceServer. */
+/** Opaque resource identity issued by FResourceServer.
+ *
+ * Example:
+ * ```
+ *   Catty::FResourceId Id = ResourceServer.RequestLoad("Textures/T_Hero.png");
+ *   if (Id.IsValid() && ResourceServer.GetLoadState(Id) == Catty::EResourceLoadState::Ready)
+ *   {
+ *       // use resource
+ *   }
+ * ```
+ */
 struct FResourceId
 {
 	std::uint64_t Value = 0;

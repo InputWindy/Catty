@@ -27,6 +27,21 @@ struct FRHIInitDesc
 /**
  * Minimal render-hardware interface (Vulkan-backed implementation today).
  * Created through FRHIFactory; no third-party types in the public API.
+ *
+ * Example:
+ * ```
+ *   Catty::FRHIInitDesc Desc;
+ *   Desc.Backend = Catty::ERHIBackend::Vulkan;
+ *   Desc.NativeWindowHandle = Window->GetNativeHandle();
+ *   Window->GetFramebufferSize(Desc.FramebufferWidth, Desc.FramebufferHeight);
+ *
+ *   Catty::FRHIPtr RHI = Catty::FRHIFactory::Create(Desc.Backend);
+ *   RHI->Initialize(Desc);
+ *   RHI->BeginFrame();
+ *   RHI->Clear(0.1f, 0.1f, 0.15f, 1.0f);
+ *   RHI->EndFrame();
+ *   RHI->Shutdown();
+ * ```
  */
 class CATTY_API IRHI
 {

@@ -42,82 +42,143 @@ bool ParseBoolToken(const std::string& Text, bool& OutValue)
 	return false;
 }
 
-class FConsoleVariableBool final : public IConsoleVariable
+class FConsoleVariableBase : public IConsoleVariable
 {
 public:
-	FConsoleVariableBool(std::string InName, bool InValue, std::string InHelp, EConsoleVariableFlags InFlags)
+	FConsoleVariableBase(std::string InName, std::string InHelp, EConsoleVariableFlags InFlags)
 		: Name(std::move(InName))
 		, Help(std::move(InHelp))
 		, Flags(InFlags)
-		, Value(InValue)
 	{
 	}
 
 	[[nodiscard]] const std::string& GetName() const override { return Name; }
 	[[nodiscard]] const std::string& GetHelp() const override { return Help; }
 	[[nodiscard]] EConsoleVariableFlags GetFlags() const override { return Flags; }
-	[[nodiscard]] EConsoleVariableType GetType() const override { return EConsoleVariableType::Bool; }
+	[[nodiscard]] EConsoleVariableSetBy GetSetBy() const override { return SetBy; }
 
+	void SetOnChangedCallback(FConsoleVariableChanged Callback) override
+	{
+		OnChanged = std::move(Callback);
+	}
+
+protected:
+	[[nodiscard]] bool CanSet(EConsoleVariableSetBy InSetBy) const
+	{
+		if ((Flags & EConsoleVariableFlags::ReadOnly) != EConsoleVariableFlags::Default
+			&& InSetBy == EConsoleVariableSetBy::Console)
+		{
+			return false;
+		}
+		return static_cast<std::uint32_t>(InSetBy) >= static_cast<std::uint32_t>(SetBy);
+	}
+
+	void CommitSetBy(EConsoleVariableSetBy InSetBy)
+	{
+		SetBy = InSetBy;
+		if (OnChanged)
+		{
+			OnChanged(*this);
+		}
+	}
+
+	std::string Name;
+	std::string Help;
+	EConsoleVariableFlags Flags = EConsoleVariableFlags::Default;
+	EConsoleVariableSetBy SetBy = EConsoleVariableSetBy::Constructor;
+	FConsoleVariableChanged OnChanged;
+};
+
+class FConsoleVariableBool final : public FConsoleVariableBase
+{
+public:
+	FConsoleVariableBool(std::string InName, bool InValue, std::string InHelp, EConsoleVariableFlags InFlags)
+		: FConsoleVariableBase(std::move(InName), std::move(InHelp), InFlags)
+		, Value(InValue)
+	{
+	}
+
+	[[nodiscard]] EConsoleVariableType GetType() const override { return EConsoleVariableType::Bool; }
 	[[nodiscard]] bool GetBool() const override { return Value; }
 	[[nodiscard]] int GetInt() const override { return Value ? 1 : 0; }
 	[[nodiscard]] float GetFloat() const override { return Value ? 1.0f : 0.0f; }
 	[[nodiscard]] std::string GetString() const override { return Value ? "1" : "0"; }
 
-	void Set(bool InValue) override { Value = InValue; }
-	void Set(int InValue) override { Value = InValue != 0; }
-	void Set(float InValue) override { Value = InValue != 0.0f; }
-	void Set(const std::string& InValue) override { (void)SetFromString(InValue); }
+	bool Set(bool InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		if (!CanSet(InSetBy))
+		{
+			return false;
+		}
+		Value = InValue;
+		CommitSetBy(InSetBy);
+		return true;
+	}
 
-	[[nodiscard]] bool SetFromString(const std::string& Text) override
+	bool Set(int InValue, EConsoleVariableSetBy InSetBy) override { return Set(InValue != 0, InSetBy); }
+	bool Set(float InValue, EConsoleVariableSetBy InSetBy) override { return Set(InValue != 0.0f, InSetBy); }
+	bool Set(const std::string& InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return SetFromString(InValue, InSetBy);
+	}
+
+	[[nodiscard]] bool SetFromString(const std::string& Text, EConsoleVariableSetBy InSetBy) override
 	{
 		bool Parsed = false;
 		if (!ParseBoolToken(Text, Parsed))
 		{
 			return false;
 		}
-		Value = Parsed;
-		return true;
+		return Set(Parsed, InSetBy);
 	}
 
 private:
-	std::string Name;
-	std::string Help;
-	EConsoleVariableFlags Flags = EConsoleVariableFlags::Default;
 	bool Value = false;
 };
 
-class FConsoleVariableInt final : public IConsoleVariable
+class FConsoleVariableInt final : public FConsoleVariableBase
 {
 public:
 	FConsoleVariableInt(std::string InName, int InValue, std::string InHelp, EConsoleVariableFlags InFlags)
-		: Name(std::move(InName))
-		, Help(std::move(InHelp))
-		, Flags(InFlags)
+		: FConsoleVariableBase(std::move(InName), std::move(InHelp), InFlags)
 		, Value(InValue)
 	{
 	}
 
-	[[nodiscard]] const std::string& GetName() const override { return Name; }
-	[[nodiscard]] const std::string& GetHelp() const override { return Help; }
-	[[nodiscard]] EConsoleVariableFlags GetFlags() const override { return Flags; }
 	[[nodiscard]] EConsoleVariableType GetType() const override { return EConsoleVariableType::Int; }
-
 	[[nodiscard]] bool GetBool() const override { return Value != 0; }
 	[[nodiscard]] int GetInt() const override { return Value; }
 	[[nodiscard]] float GetFloat() const override { return static_cast<float>(Value); }
 	[[nodiscard]] std::string GetString() const override { return std::to_string(Value); }
 
-	void Set(bool InValue) override { Value = InValue ? 1 : 0; }
-	void Set(int InValue) override { Value = InValue; }
-	void Set(float InValue) override { Value = static_cast<int>(InValue); }
-	void Set(const std::string& InValue) override { (void)SetFromString(InValue); }
+	bool Set(bool InValue, EConsoleVariableSetBy InSetBy) override { return Set(InValue ? 1 : 0, InSetBy); }
 
-	[[nodiscard]] bool SetFromString(const std::string& Text) override
+	bool Set(int InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		if (!CanSet(InSetBy))
+		{
+			return false;
+		}
+		Value = InValue;
+		CommitSetBy(InSetBy);
+		return true;
+	}
+
+	bool Set(float InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return Set(static_cast<int>(InValue), InSetBy);
+	}
+
+	bool Set(const std::string& InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return SetFromString(InValue, InSetBy);
+	}
+
+	[[nodiscard]] bool SetFromString(const std::string& Text, EConsoleVariableSetBy InSetBy) override
 	{
 		try
 		{
-			Value = std::stoi(Text);
-			return true;
+			return Set(std::stoi(Text), InSetBy);
 		}
 		catch (...)
 		{
@@ -126,44 +187,55 @@ public:
 	}
 
 private:
-	std::string Name;
-	std::string Help;
-	EConsoleVariableFlags Flags = EConsoleVariableFlags::Default;
 	int Value = 0;
 };
 
-class FConsoleVariableFloat final : public IConsoleVariable
+class FConsoleVariableFloat final : public FConsoleVariableBase
 {
 public:
 	FConsoleVariableFloat(std::string InName, float InValue, std::string InHelp, EConsoleVariableFlags InFlags)
-		: Name(std::move(InName))
-		, Help(std::move(InHelp))
-		, Flags(InFlags)
+		: FConsoleVariableBase(std::move(InName), std::move(InHelp), InFlags)
 		, Value(InValue)
 	{
 	}
 
-	[[nodiscard]] const std::string& GetName() const override { return Name; }
-	[[nodiscard]] const std::string& GetHelp() const override { return Help; }
-	[[nodiscard]] EConsoleVariableFlags GetFlags() const override { return Flags; }
 	[[nodiscard]] EConsoleVariableType GetType() const override { return EConsoleVariableType::Float; }
-
 	[[nodiscard]] bool GetBool() const override { return Value != 0.0f; }
 	[[nodiscard]] int GetInt() const override { return static_cast<int>(Value); }
 	[[nodiscard]] float GetFloat() const override { return Value; }
 	[[nodiscard]] std::string GetString() const override { return std::to_string(Value); }
 
-	void Set(bool InValue) override { Value = InValue ? 1.0f : 0.0f; }
-	void Set(int InValue) override { Value = static_cast<float>(InValue); }
-	void Set(float InValue) override { Value = InValue; }
-	void Set(const std::string& InValue) override { (void)SetFromString(InValue); }
+	bool Set(bool InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return Set(InValue ? 1.0f : 0.0f, InSetBy);
+	}
 
-	[[nodiscard]] bool SetFromString(const std::string& Text) override
+	bool Set(int InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return Set(static_cast<float>(InValue), InSetBy);
+	}
+
+	bool Set(float InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		if (!CanSet(InSetBy))
+		{
+			return false;
+		}
+		Value = InValue;
+		CommitSetBy(InSetBy);
+		return true;
+	}
+
+	bool Set(const std::string& InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return SetFromString(InValue, InSetBy);
+	}
+
+	[[nodiscard]] bool SetFromString(const std::string& Text, EConsoleVariableSetBy InSetBy) override
 	{
 		try
 		{
-			Value = std::stof(Text);
-			return true;
+			return Set(std::stof(Text), InSetBy);
 		}
 		catch (...)
 		{
@@ -172,26 +244,18 @@ public:
 	}
 
 private:
-	std::string Name;
-	std::string Help;
-	EConsoleVariableFlags Flags = EConsoleVariableFlags::Default;
 	float Value = 0.0f;
 };
 
-class FConsoleVariableString final : public IConsoleVariable
+class FConsoleVariableString final : public FConsoleVariableBase
 {
 public:
 	FConsoleVariableString(std::string InName, std::string InValue, std::string InHelp, EConsoleVariableFlags InFlags)
-		: Name(std::move(InName))
-		, Help(std::move(InHelp))
-		, Flags(InFlags)
+		: FConsoleVariableBase(std::move(InName), std::move(InHelp), InFlags)
 		, Value(std::move(InValue))
 	{
 	}
 
-	[[nodiscard]] const std::string& GetName() const override { return Name; }
-	[[nodiscard]] const std::string& GetHelp() const override { return Help; }
-	[[nodiscard]] EConsoleVariableFlags GetFlags() const override { return Flags; }
 	[[nodiscard]] EConsoleVariableType GetType() const override { return EConsoleVariableType::String; }
 
 	[[nodiscard]] bool GetBool() const override
@@ -226,28 +290,52 @@ public:
 
 	[[nodiscard]] std::string GetString() const override { return Value; }
 
-	void Set(bool InValue) override { Value = InValue ? "1" : "0"; }
-	void Set(int InValue) override { Value = std::to_string(InValue); }
-	void Set(float InValue) override { Value = std::to_string(InValue); }
-	void Set(const std::string& InValue) override { Value = InValue; }
-
-	[[nodiscard]] bool SetFromString(const std::string& Text) override
+	bool Set(bool InValue, EConsoleVariableSetBy InSetBy) override
 	{
-		Value = Text;
+		return Set(std::string(InValue ? "1" : "0"), InSetBy);
+	}
+
+	bool Set(int InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return Set(std::to_string(InValue), InSetBy);
+	}
+
+	bool Set(float InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		return Set(std::to_string(InValue), InSetBy);
+	}
+
+	bool Set(const std::string& InValue, EConsoleVariableSetBy InSetBy) override
+	{
+		if (!CanSet(InSetBy))
+		{
+			return false;
+		}
+		Value = InValue;
+		CommitSetBy(InSetBy);
 		return true;
 	}
 
+	[[nodiscard]] bool SetFromString(const std::string& Text, EConsoleVariableSetBy InSetBy) override
+	{
+		return Set(Text, InSetBy);
+	}
+
 private:
-	std::string Name;
-	std::string Help;
-	EConsoleVariableFlags Flags = EConsoleVariableFlags::Default;
 	std::string Value;
+};
+
+struct FEarlyConsoleVariableSet
+{
+	std::string Value;
+	EConsoleVariableSetBy SetBy = EConsoleVariableSetBy::ConsoleVariablesIni;
 };
 
 struct FConsoleManagerStorage
 {
 	mutable std::mutex Mutex;
 	std::unordered_map<std::string, std::unique_ptr<IConsoleVariable>> Variables;
+	std::unordered_map<std::string, FEarlyConsoleVariableSet> EarlySets;
 	std::vector<std::string> RegistrationOrder;
 };
 
@@ -255,6 +343,57 @@ FConsoleManagerStorage& GetConsoleManagerStorage()
 {
 	static FConsoleManagerStorage Storage;
 	return Storage;
+}
+
+void QueueEarlySet_NoLock(
+	FConsoleManagerStorage& Storage,
+	const std::string& Key,
+	const std::string& Value,
+	EConsoleVariableSetBy SetBy)
+{
+	const auto Existing = Storage.EarlySets.find(Key);
+	if (Existing != Storage.EarlySets.end()
+		&& static_cast<std::uint32_t>(SetBy) < static_cast<std::uint32_t>(Existing->second.SetBy))
+	{
+		return;
+	}
+	Storage.EarlySets[Key] = FEarlyConsoleVariableSet{Value, SetBy};
+}
+
+void ApplyEarlySetIfAny(IConsoleVariable* Variable)
+{
+	if (!Variable)
+	{
+		return;
+	}
+
+	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+	const std::string Key = ToLowerAscii(Variable->GetName());
+
+	FEarlyConsoleVariableSet Early;
+	{
+		std::lock_guard<std::mutex> Lock(Storage.Mutex);
+		const auto It = Storage.EarlySets.find(Key);
+		if (It == Storage.EarlySets.end())
+		{
+			return;
+		}
+		Early = It->second;
+		Storage.EarlySets.erase(It);
+	}
+
+	if (Variable->SetFromString(Early.Value, Early.SetBy))
+	{
+		CATTY_CORE_INFO("CVar {} = {} (early set)", Variable->GetName(), Variable->GetString());
+	}
+	else
+	{
+		CATTY_CORE_WARN(
+			"CVar early set failed: {}='{}' (SetBy={})",
+			Variable->GetName(),
+			Early.Value,
+			static_cast<std::uint32_t>(Early.SetBy));
+	}
 }
 
 template <typename TVariable, typename TValue>
@@ -270,26 +409,60 @@ IConsoleVariable* RegisterTyped(
 		return nullptr;
 	}
 
-	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
-	const std::string Key = ToLowerAscii(Name);
-	std::lock_guard<std::mutex> Lock(Storage.Mutex);
-
-	const auto Existing = Storage.Variables.find(Key);
-	if (Existing != Storage.Variables.end())
+	IConsoleVariable* Raw = nullptr;
 	{
-		CATTY_CORE_WARN("FConsoleManager: CVar '{}' already registered — returning existing", Name);
-		return Existing->second.get();
+		FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+		const std::string Key = ToLowerAscii(Name);
+		std::lock_guard<std::mutex> Lock(Storage.Mutex);
+
+		const auto Existing = Storage.Variables.find(Key);
+		if (Existing != Storage.Variables.end())
+		{
+			CATTY_CORE_WARN("FConsoleManager: CVar '{}' already registered — returning existing", Name);
+			return Existing->second.get();
+		}
+
+		auto Variable = std::make_unique<TVariable>(
+			Name,
+			DefaultValue,
+			Help ? Help : "",
+			Flags);
+		Raw = Variable.get();
+		Storage.Variables.emplace(Key, std::move(Variable));
+		Storage.RegistrationOrder.push_back(Name);
 	}
 
-	auto Variable = std::make_unique<TVariable>(
-		Name,
-		DefaultValue,
-		Help ? Help : "",
-		Flags);
-	IConsoleVariable* Raw = Variable.get();
-	Storage.Variables.emplace(Key, std::move(Variable));
-	Storage.RegistrationOrder.push_back(Name);
+	ApplyEarlySetIfAny(Raw);
 	return Raw;
+}
+
+bool SetByNameFromString(const char* Name, const char* Value, EConsoleVariableSetBy SetBy)
+{
+	if (!Name || !Value)
+	{
+		return false;
+	}
+
+	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+	const std::string Key = ToLowerAscii(Name);
+
+	IConsoleVariable* Variable = nullptr;
+	{
+		std::lock_guard<std::mutex> Lock(Storage.Mutex);
+		const auto It = Storage.Variables.find(Key);
+		if (It != Storage.Variables.end())
+		{
+			Variable = It->second.get();
+		}
+		else
+		{
+			QueueEarlySet_NoLock(Storage, Key, Value, SetBy);
+			CATTY_CORE_INFO("CVar early queue {} = {} (not registered yet)", Name, Value);
+			return true;
+		}
+	}
+
+	return Variable->SetFromString(Value, SetBy);
 }
 
 } // namespace
@@ -354,7 +527,106 @@ IConsoleVariable* FConsoleManager::Find(const char* Name) const
 	return It != Storage.Variables.end() ? It->second.get() : nullptr;
 }
 
-int FConsoleManager::ApplyConsoleVariablesSection(const FConfigFile& Config, const char* SectionName)
+bool FConsoleManager::TryGetBool(const char* Name, bool& OutValue) const
+{
+	if (const IConsoleVariable* Variable = Find(Name))
+	{
+		OutValue = Variable->GetBool();
+		return true;
+	}
+	return false;
+}
+
+bool FConsoleManager::TryGetInt(const char* Name, int& OutValue) const
+{
+	if (const IConsoleVariable* Variable = Find(Name))
+	{
+		OutValue = Variable->GetInt();
+		return true;
+	}
+	return false;
+}
+
+bool FConsoleManager::TryGetFloat(const char* Name, float& OutValue) const
+{
+	if (const IConsoleVariable* Variable = Find(Name))
+	{
+		OutValue = Variable->GetFloat();
+		return true;
+	}
+	return false;
+}
+
+bool FConsoleManager::TryGetString(const char* Name, std::string& OutValue) const
+{
+	if (const IConsoleVariable* Variable = Find(Name))
+	{
+		OutValue = Variable->GetString();
+		return true;
+	}
+	return false;
+}
+
+bool FConsoleManager::GetBool(const char* Name, bool DefaultValue) const
+{
+	bool Value = DefaultValue;
+	(void)TryGetBool(Name, Value);
+	return Value;
+}
+
+int FConsoleManager::GetInt(const char* Name, int DefaultValue) const
+{
+	int Value = DefaultValue;
+	(void)TryGetInt(Name, Value);
+	return Value;
+}
+
+float FConsoleManager::GetFloat(const char* Name, float DefaultValue) const
+{
+	float Value = DefaultValue;
+	(void)TryGetFloat(Name, Value);
+	return Value;
+}
+
+std::string FConsoleManager::GetString(const char* Name, const char* DefaultValue) const
+{
+	std::string Value;
+	if (TryGetString(Name, Value))
+	{
+		return Value;
+	}
+	return DefaultValue ? DefaultValue : "";
+}
+
+bool FConsoleManager::SetBool(const char* Name, bool Value, EConsoleVariableSetBy SetBy)
+{
+	return SetFromString(Name, Value ? "1" : "0", SetBy);
+}
+
+bool FConsoleManager::SetInt(const char* Name, int Value, EConsoleVariableSetBy SetBy)
+{
+	return SetFromString(Name, std::to_string(Value).c_str(), SetBy);
+}
+
+bool FConsoleManager::SetFloat(const char* Name, float Value, EConsoleVariableSetBy SetBy)
+{
+	return SetFromString(Name, std::to_string(Value).c_str(), SetBy);
+}
+
+bool FConsoleManager::SetString(const char* Name, const char* Value, EConsoleVariableSetBy SetBy)
+{
+	return SetFromString(Name, Value ? Value : "", SetBy);
+}
+
+bool FConsoleManager::SetFromString(const char* Name, const char* Value, EConsoleVariableSetBy SetBy)
+{
+	return SetByNameFromString(Name, Value, SetBy);
+}
+
+int FConsoleManager::ApplyConsoleVariablesSection(
+	const FConfigFile& Config,
+	const char* SectionName,
+	EConsoleVariableSetBy SetBy)
 {
 	if (!SectionName)
 	{
@@ -370,27 +642,18 @@ int FConsoleManager::ApplyConsoleVariablesSection(const FConfigFile& Config, con
 			continue;
 		}
 
-		IConsoleVariable* Variable = Find(Key.c_str());
-		if (!Variable)
+		if (SetFromString(Key.c_str(), Value.c_str(), SetBy))
 		{
-			CATTY_CORE_WARN("ConsoleVariables: unknown CVar '{}' (value='{}')", Key, Value);
-			continue;
+			++Applied;
+			if (const IConsoleVariable* Variable = Find(Key.c_str()))
+			{
+				CATTY_CORE_INFO("CVar {} = {}", Key, Variable->GetString());
+			}
 		}
-
-		if ((Variable->GetFlags() & EConsoleVariableFlags::ReadOnly) != EConsoleVariableFlags::Default)
+		else
 		{
-			CATTY_CORE_WARN("ConsoleVariables: CVar '{}' is ReadOnly — ignored", Key);
-			continue;
+			CATTY_CORE_ERROR("ConsoleVariables: failed to apply '{}'='{}'", Key, Value);
 		}
-
-		if (!Variable->SetFromString(Value))
-		{
-			CATTY_CORE_ERROR("ConsoleVariables: failed to parse '{}'='{}'", Key, Value);
-			continue;
-		}
-
-		++Applied;
-		CATTY_CORE_INFO("CVar {} = {}", Key, Variable->GetString());
 	}
 
 	return Applied;
@@ -409,7 +672,7 @@ int FConsoleManager::LoadConsoleVariablesFromIni(const std::string& IniFilePath)
 		return 0;
 	}
 
-	return ApplyConsoleVariablesSection(Config, "ConsoleVariables");
+	return ApplyConsoleVariablesSection(Config, "ConsoleVariables", EConsoleVariableSetBy::ConsoleVariablesIni);
 }
 
 std::vector<std::string> FConsoleManager::GetNames() const
@@ -417,6 +680,21 @@ std::vector<std::string> FConsoleManager::GetNames() const
 	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
 	std::lock_guard<std::mutex> Lock(Storage.Mutex);
 	return Storage.RegistrationOrder;
+}
+
+void FConsoleManager::Dump() const
+{
+	for (const std::string& Name : GetNames())
+	{
+		if (const IConsoleVariable* Variable = Find(Name.c_str()))
+		{
+			CATTY_CORE_INFO(
+				"  {} = {} ({})",
+				Variable->GetName(),
+				Variable->GetString(),
+				Variable->GetHelp());
+		}
+	}
 }
 
 TAutoConsoleVariableBool::TAutoConsoleVariableBool(
@@ -475,7 +753,6 @@ std::string TAutoConsoleVariableString::GetValue() const
 	return Variable ? Variable->GetString() : std::string{};
 }
 
-// Built-in engine CVars (defaults match FEngineConfig).
 static TAutoConsoleVariableInt GCVarWindowWidth(
 	"catty.Window.Width",
 	1280,
@@ -518,14 +795,15 @@ static TAutoConsoleVariableFloat GCVarClearColorA(
 
 void ApplyEngineCVarsToConfig(FEngineConfig& OutConfig)
 {
-	OutConfig.WindowWidth = GCVarWindowWidth.GetValue();
-	OutConfig.WindowHeight = GCVarWindowHeight.GetValue();
-	OutConfig.bResizableWindow = GCVarWindowResizable.GetValue();
-	OutConfig.bCreateMainWindow = GCVarCreateMainWindow.GetValue();
-	OutConfig.ClearColorR = GCVarClearColorR.GetValue();
-	OutConfig.ClearColorG = GCVarClearColorG.GetValue();
-	OutConfig.ClearColorB = GCVarClearColorB.GetValue();
-	OutConfig.ClearColorA = GCVarClearColorA.GetValue();
+	// Prefer string-name lookup so any module can sync the same way.
+	OutConfig.WindowWidth = FConsoleManager::Get().GetInt("catty.Window.Width", OutConfig.WindowWidth);
+	OutConfig.WindowHeight = FConsoleManager::Get().GetInt("catty.Window.Height", OutConfig.WindowHeight);
+	OutConfig.bResizableWindow = FConsoleManager::Get().GetBool("catty.Window.Resizable", OutConfig.bResizableWindow);
+	OutConfig.bCreateMainWindow = FConsoleManager::Get().GetBool("catty.Window.Create", OutConfig.bCreateMainWindow);
+	OutConfig.ClearColorR = FConsoleManager::Get().GetFloat("catty.ClearColor.R", OutConfig.ClearColorR);
+	OutConfig.ClearColorG = FConsoleManager::Get().GetFloat("catty.ClearColor.G", OutConfig.ClearColorG);
+	OutConfig.ClearColorB = FConsoleManager::Get().GetFloat("catty.ClearColor.B", OutConfig.ClearColorB);
+	OutConfig.ClearColorA = FConsoleManager::Get().GetFloat("catty.ClearColor.A", OutConfig.ClearColorA);
 }
 
 } // namespace Catty

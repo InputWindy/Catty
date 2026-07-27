@@ -21,6 +21,25 @@ namespace Catty
  * Game projects inherit FApp and override lifecycle / frame hooks only.
  * Tick() is the fixed engine frame pipeline — not overridable.
  * Per-frame work is also composable via FLayerStack (PushLayer / PushOverlay).
+ *
+ * Example:
+ * ```
+ *   class FMyGameApp : public Catty::FApp
+ *   {
+ *   protected:
+ *       virtual void Configure(Catty::FEngineConfig& OutConfig) override
+ *       {
+ *           OutConfig.ApplicationName = "MyGame";
+ *           OutConfig.ProjectConfigDir = "Config";
+ *       }
+ *       virtual bool PostInitialize() override
+ *       {
+ *           PushLayer(std::make_unique<FWorldLayer>());
+ *           return true;
+ *       }
+ *   };
+ *   // + Catty::CreateApplication() returning new FMyGameApp (see EntryPoint.h)
+ * ```
  */
 class CATTY_API FApp
 {

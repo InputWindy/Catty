@@ -13,6 +13,20 @@ namespace Catty
 /**
  * Async resource-load server (same CS framework as FRenderServer).
  * RequestLoad returns a handle immediately; completion runs on the resource thread.
+ *
+ * Example:
+ * ```
+ *   ResourceServer.Initialize();
+ *   const Catty::FResourceId Id = ResourceServer.RequestLoad("Meshes/Cube.mesh");
+ *   ResourceServer.Flush();
+ *   if (ResourceServer.IsReady(Id))
+ *   {
+ *       std::string Path;
+ *       ResourceServer.TryGetPath(Id, Path);
+ *   }
+ *   ResourceServer.Release(Id);
+ *   ResourceServer.Shutdown();
+ * ```
  */
 class CATTY_API FResourceServer : public FThreadedServer
 {

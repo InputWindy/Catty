@@ -11,6 +11,18 @@ class FRenderServer;
 /**
  * Dear ImGui lifecycle helper (GLFW + Vulkan backends).
  * Call BeginFrame after PollEvents; build UI; EndFrame before render submit.
+ *
+ * Example:
+ * ```
+ *   ImGui.Initialize(*PlatformWindow, RenderServer);
+ *   // each frame after PollEvents:
+ *   ImGui.BeginFrame();
+ *   ImGui::Text("Hello");
+ *   ImGui.EndFrame();
+ *   RenderServer.RequestClearPresent(R, G, B, A);
+ *   RenderServer.Flush();
+ *   ImGui.Shutdown(RenderServer);
+ * ```
  */
 class CATTY_API FImGuiSystem
 {

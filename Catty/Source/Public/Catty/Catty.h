@@ -2,6 +2,15 @@
 
 // Umbrella header for game projects linking Catty.
 // Entry point: also #include <Catty/EntryPoint.h> in exactly one game .cpp.
+//
+// Example:
+// ```
+//   #include <Catty/Catty.h>
+//   #include <Catty/EntryPoint.h>
+//
+//   class FMyGameApp : public Catty::FApp { /* Configure / PostInitialize */ };
+//   Catty::FApp* Catty::CreateApplication() { return new FMyGameApp(); }
+// ```
 #include "Catty/Core/Export.h"
 #include "Catty/Core/Log.h"
 #include "Catty/Core/Timer.h"

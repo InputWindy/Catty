@@ -12,6 +12,15 @@ class FVulkanRHI;
 /**
  * Render server: CS worker thread + optional IRHI (Vulkan clear/present today).
  * Game thread enqueues RequestClearPresent; FApp Flushes after Render when ImGui is used.
+ *
+ * Example:
+ * ```
+ *   RenderServer.Initialize();
+ *   RenderServer.InitializeRHI(*PlatformWindow);
+ *   RenderServer.RequestClearPresent(0.08f, 0.10f, 0.16f, 1.0f);
+ *   RenderServer.Flush(); // wait for GPU submit on the render thread
+ *   RenderServer.Shutdown();
+ * ```
  */
 class CATTY_API FRenderServer : public FThreadedServer
 {

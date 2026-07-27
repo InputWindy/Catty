@@ -35,6 +35,18 @@ struct FLogConfig
 /**
  * spdlog facade for Catty.
  * Use CATTY_CORE_* for engine code and CATTY_* for game code.
+ *
+ * Example:
+ * ```
+ *   Catty::FLogConfig Config;
+ *   Config.ClientLoggerName = "MyGame";
+ *   Config.LogDirectory = "Saved/Logs";
+ *   Catty::FLog::Initialize(Config);
+ *
+ *   CATTY_CORE_INFO("engine ready");
+ *   CATTY_INFO("hello from game, frame={}", FrameIndex);
+ *   Catty::FLog::Shutdown();
+ * ```
  */
 class CATTY_API FLog
 {
