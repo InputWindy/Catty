@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# Run via Tools/catty_python.bat / package.bat — engine Tools/python only.
 """
 Build Release and install into Packaged/<Platform>/.
 

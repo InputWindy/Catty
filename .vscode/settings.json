@@ -1,0 +1,7 @@
+{
+	"python.defaultInterpreterPath": "${workspaceFolder}/Tools/python/python.exe",
+	"python.terminal.activateEnvironment": false,
+	"python.analysis.extraPaths": [
+		"${workspaceFolder}/Tools"
+	]
+}

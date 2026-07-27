@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# Run via Tools/generateProject.bat / catty_python.bat — engine Tools/python only.
 """
 Generate Visual Studio solution for a Catty project.
 

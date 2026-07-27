@@ -16,6 +16,54 @@ from typing import Any
 ENGINE_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_DIR = ENGINE_ROOT / "Build" / "Templates" / "GameProject"
 CPROJECT_VERSION = 1
+ENGINE_PYTHON_DIR = (ENGINE_ROOT / "Tools" / "python").resolve()
+
+
+def ensure_engine_python() -> None:
+	"""
+	Require the engine-local interpreter under Tools/python (from setup.bat).
+	Refuse system / PATH Python so tool scripts stay reproducible.
+	Set CATTY_ALLOW_SYSTEM_PYTHON=1 only for emergency debugging.
+	"""
+	if os.environ.get("CATTY_ALLOW_SYSTEM_PYTHON") == "1":
+		return
+
+	exe = Path(sys.executable).resolve()
+	try:
+		exe.relative_to(ENGINE_PYTHON_DIR)
+		return
+	except ValueError:
+		pass
+
+	msg = (
+		"This Catty tool must run with the engine-local Python, not a system install.\n\n"
+		f"Expected under:\n  {ENGINE_PYTHON_DIR}\n\n"
+		f"Current interpreter:\n  {exe}\n\n"
+		"Fix:\n"
+		"  1) Run setup.bat in the Catty engine root\n"
+		"  2) Launch via *.bat / Tools\\catty_python.bat / Tools\\catty_pythonw.bat\n"
+	)
+	try:
+		sys.stderr.write("[ERROR] " + msg.replace("\n", "\n[ERROR] ") + "\n")
+		sys.stderr.flush()
+	except Exception:
+		pass
+
+	# pythonw has no console — show a dialog so the failure is visible.
+	if sys.platform == "win32":
+		try:
+			import ctypes
+
+			ctypes.windll.user32.MessageBoxW(0, msg, "Catty — wrong Python", 0x10)
+		except Exception:
+			pass
+
+	raise SystemExit(1)
+
+
+# Enforce on every import of catty_tools (all tool entry scripts go through here,
+# except reflect_codegen which imports this module for the same check).
+ensure_engine_python()
 
 
 def is_valid_project_name(name: str) -> bool:
@@ -388,13 +436,28 @@ def generate_from_cproject(
 	return sln
 
 
-def generate_engine_workspace(engine_root: Path | None = None, *, log: Any = print) -> Path:
+def generate_engine_workspace(
+	engine_root: Path | None = None,
+	*,
+	log: Any = print,
+	cancel_event: threading.Event | None = None,
+	proc_holder: list[Any] | None = None,
+) -> Path:
 	engine_root = (engine_root or ENGINE_ROOT).resolve()
 	source_dir = engine_root / "Build"
 	if not (source_dir / "CMakeLists.txt").is_file():
 		raise FileNotFoundError(f"Engine CMake entry missing: {source_dir / 'CMakeLists.txt'}")
 	intermediate = engine_root / "Intermediate"
-	run_cmake_generate(source_dir, intermediate, engine_root=None, log=log)
+	run_cmake_generate(
+		source_dir,
+		intermediate,
+		engine_root=None,
+		log=log,
+		cancel_event=cancel_event,
+		proc_holder=proc_holder,
+	)
+	if cancel_event is not None and cancel_event.is_set():
+		raise OperationCancelled("Cancelled")
 	sln = emit_sibling_sln(intermediate, engine_root, "CattyWorkspace")
 	log(f"[Catty] Workspace solution: {sln}")
 	return sln
@@ -404,6 +467,10 @@ def run_package(
 	project_dir: Path,
 	config: str = "Release",
 	platform: str = "Win64",
+	*,
+	log: Any = print,
+	cancel_event: threading.Event | None = None,
+	proc_holder: list[Any] | None = None,
 ) -> None:
 	cmake = find_cmake()
 	project_dir = project_dir.resolve()
@@ -411,12 +478,22 @@ def run_package(
 	if not (intermediate / "CMakeCache.txt").is_file():
 		raise RuntimeError("Project not generated yet. Run generateProject on the .cproject first.")
 
+	if cancel_event is not None and cancel_event.is_set():
+		raise OperationCancelled("Cancelled")
+
 	packaged = project_dir / "Packaged" / platform
 	if packaged.exists():
 		shutil.rmtree(packaged, ignore_errors=True)
 	packaged.mkdir(parents=True, exist_ok=True)
 
-	run_command([cmake, "--build", str(intermediate), "--config", config])
+	run_command(
+		[cmake, "--build", str(intermediate), "--config", config],
+		log=log,
+		cancel_event=cancel_event,
+		proc_holder=proc_holder,
+	)
+	if cancel_event is not None and cancel_event.is_set():
+		raise OperationCancelled("Cancelled")
 	run_command(
 		[
 			cmake,
@@ -428,9 +505,14 @@ def run_package(
 			config,
 			"--component",
 			"Runtime",
-		]
+		],
+		log=log,
+		cancel_event=cancel_event,
+		proc_holder=proc_holder,
 	)
-	print(f"[Catty] Packaged → {packaged}")
+	if cancel_event is not None and cancel_event.is_set():
+		raise OperationCancelled("Cancelled")
+	log(f"[Catty] Packaged → {packaged}")
 
 
 def install_windows_cproject_association(*, log: Any = print) -> None:

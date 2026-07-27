@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# Run via Tools/catty_python.bat (or Tools/*.bat) — engine Tools/python only.
 """Catty new-project UI (createProject.bat). Logs go to the UI, not a console window."""
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# Run via Tools/reflect_codegen.bat / catty_python.bat — engine Tools/python only.
 """
 Catty reflect codegen — scan CATTY_REFLECT_* annotations and emit catalogs.
 
@@ -22,6 +22,10 @@ from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
 ENGINE_ROOT = TOOLS_DIR.parent
+sys.path.insert(0, str(TOOLS_DIR))
+
+# Enforces Tools/python via ensure_engine_python() on import.
+import catty_tools  # noqa: E402,F401
 
 _DEFAULT_ROOTS = [ENGINE_ROOT / "Catty" / "Source"]
 _DEFAULT_OUT_H = ENGINE_ROOT / "Catty" / "Source" / "Public" / "Catty" / "Core" / "ReflectCatalog.gen.h"

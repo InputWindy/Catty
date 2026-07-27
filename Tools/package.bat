@@ -2,12 +2,21 @@
 setlocal EnableExtensions
 cd /d "%~dp0.."
 
-rem Internal: packaging UI for engine workspace / arbitrary .cproject.
-rem Game projects use their own root package.bat → invoke_engine.ps1 instead.
-call "%~dp0catty_python.bat" "%~dp0package_ui.py" %*
+rem Launch packaging GUI via WScript + pythonw (no Python console).
+rem Optional args (e.g. path to .cproject) are forwarded to package_ui.py.
+
+set "VBS=%~dp0launch_package.vbs"
+if not exist "%VBS%" (
+	echo [ERROR] Missing %VBS%
+	pause
+	exit /b 1
+)
+
+wscript //nologo "%VBS%" %*
 set "ERR=%ERRORLEVEL%"
 if not "%ERR%"=="0" (
-	echo [ERROR] package_ui.py failed with exit code %ERR%
+	echo [ERROR] Failed to launch package UI ^(exit %ERR%^).
+	echo         Run setup.bat first if Tools\python is missing.
 	pause
 	exit /b %ERR%
 )

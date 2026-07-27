@@ -17,7 +17,7 @@ if not defined CPROJECT (
 	exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Tools\invoke_engine.ps1" -Action package -CProject "%CPROJECT%"
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0Tools\invoke_engine.ps1" -Action package -CProject "%CPROJECT%"
 set "ERR=%ERRORLEVEL%"
 if not "%ERR%"=="0" (
 	echo [ERROR] Package failed with exit code %ERR%

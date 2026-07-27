@@ -8,7 +8,7 @@ UE-style engine (**Catty** DLL) + tools to spawn game projects (`.cproject`, lik
 setup.bat
 ```
 
-Installs a **private** Python under `Tools/python/`（不写系统 PATH，不进 git）。之后工具通过 `Tools/catty_python.bat` 调用它。
+Installs a **private** Python under `Tools/python/`（不写系统 PATH，不进 git）。之后工具**只**通过 `Tools/catty_python.bat` / `catty_pythonw.bat` / `launch_*.vbs` 调用它；直接用系统 `python` 跑 `Tools/*.py` 会被拒绝。
 
 ```bat
 setup.bat --force   # 损坏时强制重装

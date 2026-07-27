@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+# Run via Tools/catty_pythonw.bat / launch_package.vbs — engine Tools/python only.
 """
 Catty package UI — pick platform / config and ship to Packaged/<Platform>/.
 
-Launched by:
-  - Engine: Tools/package.bat
-  - Game project: package.bat (resolves EngineDirectory from .cproject)
+Logs go to the UI (no console). Launched by:
+  - Engine: Tools/package.bat → launch_package.vbs → pythonw
+  - Game project: package.bat → invoke_engine.ps1 → same VBS
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 
 from catty_tools import (  # noqa: E402
 	ENGINE_ROOT,
+	OperationCancelled,
 	generate_engine_workspace,
 	generate_from_cproject,
 	open_in_file_manager,
@@ -58,8 +59,8 @@ class PackageApp(tk.Tk):
 	def __init__(self, initial_cproject: Path | None = None) -> None:
 		super().__init__()
 		self.title("Catty — Package")
-		self.geometry("640x460")
-		self.minsize(560, 400)
+		self.geometry("720x640")
+		self.minsize(600, 520)
 
 		self.var_cproject = tk.StringVar(value=str(initial_cproject) if initial_cproject else "")
 		self.var_platform = tk.StringVar(value="Win64")
@@ -67,9 +68,15 @@ class PackageApp(tk.Tk):
 		self.var_regen = tk.BooleanVar(value=False)
 		self.var_open = tk.BooleanVar(value=True)
 		self._busy = False
+		self._close_after_abort = False
+		self._cancel_event = threading.Event()
+		self._proc_holder: list = []
+		self._busy_widgets: list[tk.Misc] = []
 
 		self._build()
+		self.protocol("WM_DELETE_WINDOW", self._on_close_request)
 		self._refresh_summary()
+		self.log_line("[Catty] UI ready.")
 
 	def _build(self) -> None:
 		pad = {"padx": 12, "pady": 6}
@@ -81,8 +88,10 @@ class PackageApp(tk.Tk):
 		)
 
 		ttk.Label(frm, text=".cproject").grid(row=1, column=0, sticky="w", **pad)
-		ttk.Entry(frm, textvariable=self.var_cproject).grid(row=1, column=1, sticky="ew", **pad)
-		ttk.Button(frm, text="Browse…", command=self._browse_cproject).grid(row=1, column=2, sticky="e", **pad)
+		ent_cproject = ttk.Entry(frm, textvariable=self.var_cproject)
+		ent_cproject.grid(row=1, column=1, sticky="ew", **pad)
+		btn_browse = ttk.Button(frm, text="Browse…", command=self._browse_cproject)
+		btn_browse.grid(row=1, column=2, sticky="e", **pad)
 
 		ttk.Label(frm, text="(Leave empty to package the engine workspace)", foreground="#666").grid(
 			row=2, column=1, columnspan=2, sticky="w", padx=12
@@ -106,30 +115,66 @@ class PackageApp(tk.Tk):
 
 		opts = ttk.Frame(frm)
 		opts.grid(row=5, column=0, columnspan=3, sticky="w", **pad)
-		ttk.Checkbutton(opts, text="Regenerate project files before package", variable=self.var_regen).pack(
-			side=tk.LEFT, padx=(0, 16)
-		)
-		ttk.Checkbutton(opts, text="Open Packaged folder when done", variable=self.var_open).pack(side=tk.LEFT)
+		chk_regen = ttk.Checkbutton(opts, text="Regenerate project files before package", variable=self.var_regen)
+		chk_regen.pack(side=tk.LEFT, padx=(0, 16))
+		chk_open = ttk.Checkbutton(opts, text="Open Packaged folder when done", variable=self.var_open)
+		chk_open.pack(side=tk.LEFT)
 
 		ttk.Label(frm, text="Summary").grid(row=6, column=0, sticky="nw", **pad)
-		self.txt = tk.Text(frm, height=8, wrap=tk.WORD, state=tk.DISABLED)
-		self.txt.grid(row=6, column=1, columnspan=2, sticky="nsew", **pad)
+		self.txt_summary = tk.Text(frm, height=6, wrap=tk.WORD, state=tk.DISABLED)
+		self.txt_summary.grid(row=6, column=1, columnspan=2, sticky="nsew", **pad)
+
+		ttk.Label(frm, text="Log").grid(row=7, column=0, sticky="nw", **pad)
+		log_frame = ttk.Frame(frm)
+		log_frame.grid(row=7, column=1, columnspan=2, sticky="nsew", **pad)
+		self.txt_log = tk.Text(
+			log_frame,
+			height=10,
+			wrap=tk.WORD,
+			state=tk.DISABLED,
+			font=("Consolas", 9),
+			bg="#1e1e1e",
+			fg="#d4d4d4",
+			insertbackground="#d4d4d4",
+		)
+		scroll = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.txt_log.yview)
+		self.txt_log.configure(yscrollcommand=scroll.set)
+		self.txt_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+		scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
 		self.status = ttk.Label(frm, text="Ready", foreground="#336633")
-		self.status.grid(row=7, column=0, columnspan=3, sticky="w", **pad)
+		self.status.grid(row=8, column=0, columnspan=3, sticky="w", **pad)
 
 		btns = ttk.Frame(frm)
-		btns.grid(row=8, column=0, columnspan=3, sticky="ew", **pad)
+		btns.grid(row=9, column=0, columnspan=3, sticky="ew", **pad)
+		self.btn_clear_log = ttk.Button(btns, text="Clear Log", command=self._clear_log)
+		self.btn_clear_log.pack(side=tk.LEFT)
 		self.btn_run = ttk.Button(btns, text="Package", command=self._start_package)
 		self.btn_run.pack(side=tk.RIGHT, padx=(8, 0))
-		ttk.Button(btns, text="Close", command=self.destroy).pack(side=tk.RIGHT)
+		# Close stays enabled during package so the user can abort.
+		ttk.Button(btns, text="Close", command=self._on_close_request).pack(side=tk.RIGHT)
+
+		self._busy_widgets = [
+			ent_cproject,
+			btn_browse,
+			plat_box,
+			cfg,
+			chk_regen,
+			chk_open,
+			self.btn_clear_log,
+			self.btn_run,
+		]
 
 		frm.columnconfigure(1, weight=1)
 		frm.rowconfigure(6, weight=1)
+		frm.rowconfigure(7, weight=2)
 
 		self.var_cproject.trace_add("write", lambda *_: self._refresh_summary())
+		self.var_regen.trace_add("write", lambda *_: self._refresh_summary())
 
 	def _browse_cproject(self) -> None:
+		if self._busy:
+			return
 		path = filedialog.askopenfilename(
 			title="Select .cproject",
 			filetypes=[("Catty Project", "*.cproject"), ("All", "*.*")],
@@ -138,11 +183,33 @@ class PackageApp(tk.Tk):
 		if path:
 			self.var_cproject.set(path)
 
-	def _set_text(self, content: str) -> None:
-		self.txt.configure(state=tk.NORMAL)
-		self.txt.delete("1.0", tk.END)
-		self.txt.insert("1.0", content)
-		self.txt.configure(state=tk.DISABLED)
+	def _set_summary(self, content: str) -> None:
+		self.txt_summary.configure(state=tk.NORMAL)
+		self.txt_summary.delete("1.0", tk.END)
+		self.txt_summary.insert("1.0", content)
+		self.txt_summary.configure(state=tk.DISABLED)
+
+	def append_log(self, text: str) -> None:
+		def _do() -> None:
+			self.txt_log.configure(state=tk.NORMAL)
+			self.txt_log.insert(tk.END, text)
+			self.txt_log.see(tk.END)
+			self.txt_log.configure(state=tk.DISABLED)
+
+		if threading.current_thread() is threading.main_thread():
+			_do()
+		else:
+			self.after(0, _do)
+
+	def log_line(self, message: str) -> None:
+		self.append_log(message if message.endswith("\n") else message + "\n")
+
+	def _clear_log(self) -> None:
+		if self._busy:
+			return
+		self.txt_log.configure(state=tk.NORMAL)
+		self.txt_log.delete("1.0", tk.END)
+		self.txt_log.configure(state=tk.DISABLED)
 
 	def _refresh_summary(self) -> None:
 		cproject_str = self.var_cproject.get().strip()
@@ -153,7 +220,7 @@ class PackageApp(tk.Tk):
 		lines: list[str] = []
 		if cproject_str:
 			cp = Path(cproject_str)
-			lines.append(f"Mode      : Game project")
+			lines.append("Mode      : Game project")
 			lines.append(f".cproject  : {cp}")
 			try:
 				data = read_cproject(cp)
@@ -165,19 +232,63 @@ class PackageApp(tk.Tk):
 			except Exception as ex:  # noqa: BLE001
 				lines.append(f"Error     : {ex}")
 		else:
-			lines.append(f"Mode      : Engine workspace")
+			lines.append("Mode      : Engine workspace")
 			lines.append(f"Engine    : {ENGINE_ROOT}")
 			lines.append(f"Output    : {ENGINE_ROOT / 'Packaged' / platform}")
 
 		lines.append(f"Platform  : {platform}" + ("" if enabled else "  (not implemented yet)"))
 		lines.append(f"Config    : {config}")
 		lines.append(f"Regenerate: {'yes' if self.var_regen.get() else 'no'}")
-		self._set_text("\n".join(lines))
+		self._set_summary("\n".join(lines))
 
 	def _set_busy(self, busy: bool, msg: str = "") -> None:
 		self._busy = busy
-		self.btn_run.configure(state=tk.DISABLED if busy else tk.NORMAL)
+		state = tk.DISABLED if busy else tk.NORMAL
+		for w in self._busy_widgets:
+			try:
+				# Combobox uses "readonly" when idle so users cannot type free text.
+				if isinstance(w, ttk.Combobox):
+					w.configure(state="disabled" if busy else "readonly")
+				else:
+					w.configure(state=state)
+			except tk.TclError:
+				pass
 		self.status.configure(text=msg or ("Working…" if busy else "Ready"))
+
+	def _kill_active_proc(self) -> None:
+		if self._proc_holder:
+			proc = self._proc_holder[0]
+			try:
+				proc.kill()
+			except OSError:
+				pass
+
+	def _on_close_request(self) -> None:
+		if not self._busy:
+			self.destroy()
+			return
+
+		ok = messagebox.askyesno(
+			"Catty",
+			"Packaging is still running.\n\n"
+			"Cancel the package operation?",
+			icon=messagebox.WARNING,
+		)
+		if not ok:
+			return
+
+		self._close_after_abort = True
+		self._cancel_event.set()
+		self._kill_active_proc()
+		self.log_line("[Catty] Abort requested — stopping package…")
+		self.status.configure(text="Cancelling…")
+
+	def _finish_package_ui(self, *, aborted: bool, status: str = "Ready") -> None:
+		if aborted and self._close_after_abort:
+			self.destroy()
+			return
+		self._set_busy(False, status)
+		self._close_after_abort = False
 
 	def _start_package(self) -> None:
 		if self._busy:
@@ -200,7 +311,12 @@ class PackageApp(tk.Tk):
 		regen = self.var_regen.get()
 		open_folder = self.var_open.get()
 
+		self._cancel_event.clear()
+		self._close_after_abort = False
+		self._proc_holder.clear()
 		self._set_busy(True, "Packaging…")
+		self.log_line("[Catty] Packaging started…")
+
 		threading.Thread(
 			target=self._run_package_worker,
 			args=(cproject, platform, config, regen, open_folder),
@@ -216,34 +332,64 @@ class PackageApp(tk.Tk):
 		open_folder: bool,
 	) -> None:
 		try:
+			if self._cancel_event.is_set():
+				raise OperationCancelled("Cancelled")
+
 			if cproject is not None:
 				if regen or not (cproject.parent / "Intermediate" / "CMakeCache.txt").is_file():
-					generate_from_cproject(cproject)
+					self.log_line("[Catty] Generating project files…")
+					generate_from_cproject(
+						cproject,
+						log=self.log_line,
+						cancel_event=self._cancel_event,
+						proc_holder=self._proc_holder,
+					)
 				project_dir = cproject.parent
 				label = read_cproject(cproject).get("ProjectName", cproject.stem)
 			else:
 				if regen or not (ENGINE_ROOT / "Intermediate" / "CMakeCache.txt").is_file():
-					generate_engine_workspace(ENGINE_ROOT)
+					self.log_line("[Catty] Generating engine workspace…")
+					generate_engine_workspace(
+						ENGINE_ROOT,
+						log=self.log_line,
+						cancel_event=self._cancel_event,
+						proc_holder=self._proc_holder,
+					)
 				project_dir = ENGINE_ROOT
 				label = "CattyWorkspace"
 
+			if self._cancel_event.is_set():
+				raise OperationCancelled("Cancelled")
+
 			# Platform folder name must match CattyDirectories (Win64 today).
-			run_package(project_dir, config=config, platform=platform)
+			run_package(
+				project_dir,
+				config=config,
+				platform=platform,
+				log=self.log_line,
+				cancel_event=self._cancel_event,
+				proc_holder=self._proc_holder,
+			)
 			out_dir = project_dir / "Packaged" / platform
+			self.log_line(f"[Catty] Package finished for {label}.")
 
 			def done_ok() -> None:
-				self._set_busy(False, f"Done → {out_dir}")
+				self._finish_package_ui(aborted=False, status=f"Done → {out_dir}")
 				messagebox.showinfo("Catty", f"Package finished for {label}\n\n{out_dir}")
 				if open_folder and out_dir.is_dir():
 					open_in_file_manager(out_dir)
 
 			self.after(0, done_ok)
+		except OperationCancelled:
+			self.log_line("[Catty] Packaging aborted by user.")
+			self.after(0, lambda: self._finish_package_ui(aborted=True, status="Cancelled"))
 		except Exception as ex:  # noqa: BLE001
 			err = str(ex)
+			self.log_line(f"[ERROR] {err}")
 
-			def done_err() -> None:
-				self._set_busy(False, "Failed")
-				messagebox.showerror("Catty", err)
+			def done_err(e: str = err) -> None:
+				self._finish_package_ui(aborted=False, status="Failed")
+				messagebox.showerror("Catty", e)
 
 			self.after(0, done_err)
 

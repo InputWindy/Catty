@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# Run via clean.bat / Tools/catty_python.bat — engine Tools/python only.
 """
 One-click clean: remove generated/temp files, keep project essentials.
 
