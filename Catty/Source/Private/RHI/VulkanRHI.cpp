@@ -1,5 +1,6 @@
 #include "RHI/VulkanRHI.h"
 
+#include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
 
 #if defined(_WIN32)
@@ -15,6 +16,21 @@ namespace Catty
 
 namespace
 {
+
+static TAutoConsoleVariable GCVarVSync(
+	"r.VSync",
+	1,
+	"0=prefer Mailbox/Immediate, 1=FIFO (vsync)");
+
+static TAutoConsoleVariable GCVarSwapchainExtraImages(
+	"r.Swapchain.ExtraImages",
+	1,
+	"Extra swapchain images beyond minImageCount (clamped by device max)");
+
+static TAutoConsoleVariable GCVarMinSwapchainImages(
+	"r.MinSwapchainImages",
+	2,
+	"Reported minimum swapchain image count (ImGui / present contract)");
 
 constexpr const char* GInstanceExtensions[] =
 {
@@ -394,6 +410,11 @@ bool FVulkanRHI::IsInitialized() const
 	return bInitialized;
 }
 
+std::uint32_t FVulkanRHI::GetMinImageCount() const
+{
+	return static_cast<std::uint32_t>((std::max)(1, GCVarMinSwapchainImages.GetValue()));
+}
+
 bool FVulkanRHI::CreateInstance()
 {
 	VkApplicationInfo AppInfo{};
@@ -725,12 +746,38 @@ bool FVulkanRHI::CreateSwapchain()
 	vkGetPhysicalDeviceSurfacePresentModesKHR(PhysicalDevice, Surface, &PresentModeCount, PresentModes.data());
 
 	VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
-	for (VkPresentModeKHR Mode : PresentModes)
+	const int VSync = GCVarVSync.GetValue();
+	if (VSync == 0)
 	{
-		if (Mode == VK_PRESENT_MODE_FIFO_KHR)
+		for (VkPresentModeKHR Mode : PresentModes)
 		{
-			PresentMode = Mode;
-			break;
+			if (Mode == VK_PRESENT_MODE_MAILBOX_KHR)
+			{
+				PresentMode = Mode;
+				break;
+			}
+		}
+		if (PresentMode == VK_PRESENT_MODE_FIFO_KHR)
+		{
+			for (VkPresentModeKHR Mode : PresentModes)
+			{
+				if (Mode == VK_PRESENT_MODE_IMMEDIATE_KHR)
+				{
+					PresentMode = Mode;
+					break;
+				}
+			}
+		}
+	}
+	else
+	{
+		for (VkPresentModeKHR Mode : PresentModes)
+		{
+			if (Mode == VK_PRESENT_MODE_FIFO_KHR)
+			{
+				PresentMode = Mode;
+				break;
+			}
 		}
 	}
 
@@ -752,7 +799,8 @@ bool FVulkanRHI::CreateSwapchain()
 			Capabilities.maxImageExtent.height);
 	}
 
-	std::uint32_t ImageCount = Capabilities.minImageCount + 1;
+	const int ExtraImages = (std::max)(0, GCVarSwapchainExtraImages.GetValue());
+	std::uint32_t ImageCount = Capabilities.minImageCount + static_cast<std::uint32_t>(ExtraImages);
 	if (Capabilities.maxImageCount > 0 && ImageCount > Capabilities.maxImageCount)
 	{
 		ImageCount = Capabilities.maxImageCount;

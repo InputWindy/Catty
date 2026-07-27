@@ -697,105 +697,59 @@ void FConsoleManager::Dump() const
 	}
 }
 
-TAutoConsoleVariableBool::TAutoConsoleVariableBool(
-	const char* Name,
-	bool DefaultValue,
-	const char* Help,
-	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterBool(Name, DefaultValue, Help, Flags))
-{
-}
+static TAutoConsoleVariable GCVarAppName(
+	"app.Name",
+	"CattyApp",
+	"Application display name (window title / client log name)");
 
-bool TAutoConsoleVariableBool::GetValue() const
-{
-	return Variable ? Variable->GetBool() : false;
-}
-
-TAutoConsoleVariableInt::TAutoConsoleVariableInt(
-	const char* Name,
-	int DefaultValue,
-	const char* Help,
-	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterInt(Name, DefaultValue, Help, Flags))
-{
-}
-
-int TAutoConsoleVariableInt::GetValue() const
-{
-	return Variable ? Variable->GetInt() : 0;
-}
-
-TAutoConsoleVariableFloat::TAutoConsoleVariableFloat(
-	const char* Name,
-	float DefaultValue,
-	const char* Help,
-	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterFloat(Name, DefaultValue, Help, Flags))
-{
-}
-
-float TAutoConsoleVariableFloat::GetValue() const
-{
-	return Variable ? Variable->GetFloat() : 0.0f;
-}
-
-TAutoConsoleVariableString::TAutoConsoleVariableString(
-	const char* Name,
-	const char* DefaultValue,
-	const char* Help,
-	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterString(Name, DefaultValue, Help, Flags))
-{
-}
-
-std::string TAutoConsoleVariableString::GetValue() const
-{
-	return Variable ? Variable->GetString() : std::string{};
-}
-
-static TAutoConsoleVariableInt GCVarWindowWidth(
+static TAutoConsoleVariable GCVarWindowWidth(
 	"catty.Window.Width",
 	1280,
 	"Main window width in pixels");
 
-static TAutoConsoleVariableInt GCVarWindowHeight(
+static TAutoConsoleVariable GCVarWindowHeight(
 	"catty.Window.Height",
 	720,
 	"Main window height in pixels");
 
-static TAutoConsoleVariableBool GCVarWindowResizable(
+static TAutoConsoleVariable GCVarWindowResizable(
 	"catty.Window.Resizable",
 	true,
 	"Whether the main window is user-resizable");
 
-static TAutoConsoleVariableBool GCVarCreateMainWindow(
+static TAutoConsoleVariable GCVarCreateMainWindow(
 	"catty.Window.Create",
 	true,
 	"Create an OS window (false = headless)");
 
-static TAutoConsoleVariableFloat GCVarClearColorR(
+static TAutoConsoleVariable GCVarClearColorR(
 	"catty.ClearColor.R",
 	0.08f,
 	"Default clear color R");
 
-static TAutoConsoleVariableFloat GCVarClearColorG(
+static TAutoConsoleVariable GCVarClearColorG(
 	"catty.ClearColor.G",
 	0.10f,
 	"Default clear color G");
 
-static TAutoConsoleVariableFloat GCVarClearColorB(
+static TAutoConsoleVariable GCVarClearColorB(
 	"catty.ClearColor.B",
 	0.16f,
 	"Default clear color B");
 
-static TAutoConsoleVariableFloat GCVarClearColorA(
+static TAutoConsoleVariable GCVarClearColorA(
 	"catty.ClearColor.A",
 	1.0f,
 	"Default clear color A");
 
 void ApplyEngineCVarsToConfig(FEngineConfig& OutConfig)
 {
-	// Prefer string-name lookup so any module can sync the same way.
+	const std::string AppName = FConsoleManager::Get().GetString("app.Name", OutConfig.ApplicationName.c_str());
+	if (!AppName.empty())
+	{
+		OutConfig.ApplicationName = AppName;
+	}
+
 	OutConfig.WindowWidth = FConsoleManager::Get().GetInt("catty.Window.Width", OutConfig.WindowWidth);
 	OutConfig.WindowHeight = FConsoleManager::Get().GetInt("catty.Window.Height", OutConfig.WindowHeight);
 	OutConfig.bResizableWindow = FConsoleManager::Get().GetBool("catty.Window.Resizable", OutConfig.bResizableWindow);

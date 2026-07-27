@@ -22,7 +22,7 @@ namespace Catty
  * Example:
  * ```
  *   // Register once in a .cpp (defining module):
- *   static Catty::TAutoConsoleVariableInt CVarQuality("mygame.Quality", 2, "0=low 2=high");
+ *   static Catty::TAutoConsoleVariable CVarQuality("mygame.Quality", 2, "0=low 2=high");
  *
  *   // Read / write from any module by name only:
  *   const int Q = Catty::FConsoleManager::Get().GetInt("mygame.Quality", 2);
@@ -110,86 +110,114 @@ private:
 
 /**
  * Static registration helper (define in a .cpp — one instance per CVar name).
+ * Type is deduced from the default value (bool / int / float / const char*).
  * Other modules should read via FConsoleManager::Get().GetInt("name"), not this object.
  *
  * Example:
  * ```
- *   // MyModuleCVars.cpp
- *   static Catty::TAutoConsoleVariableInt CVarSamples(
+ *   static Catty::TAutoConsoleVariable CVarSamples(
  *       "r.MyPass.Samples", 4, "Sample count for MyPass");
  *
  *   void FMyPass::Execute()
  *   {
  *       const int Samples = CVarSamples.GetValue();
- *       // or: FConsoleManager::Get().GetInt("r.MyPass.Samples");
  *   }
  * ```
  */
-class CATTY_API TAutoConsoleVariableBool
+template <typename T>
+class TAutoConsoleVariable
 {
 public:
-	TAutoConsoleVariableBool(
+	TAutoConsoleVariable(
 		const char* Name,
-		bool DefaultValue,
+		T DefaultValue,
 		const char* Help,
 		EConsoleVariableFlags Flags = EConsoleVariableFlags::Default);
 
-	[[nodiscard]] bool GetValue() const;
+	[[nodiscard]] T GetValue() const;
 	[[nodiscard]] IConsoleVariable& AsVariable() const { return *Variable; }
 
 private:
 	IConsoleVariable* Variable = nullptr;
 };
 
-class CATTY_API TAutoConsoleVariableInt
+template <>
+inline TAutoConsoleVariable<bool>::TAutoConsoleVariable(
+	const char* Name,
+	bool DefaultValue,
+	const char* Help,
+	EConsoleVariableFlags Flags)
+	: Variable(FConsoleManager::Get().RegisterBool(Name, DefaultValue, Help, Flags))
 {
-public:
-	TAutoConsoleVariableInt(
-		const char* Name,
-		int DefaultValue,
-		const char* Help,
-		EConsoleVariableFlags Flags = EConsoleVariableFlags::Default);
+}
 
-	[[nodiscard]] int GetValue() const;
-	[[nodiscard]] IConsoleVariable& AsVariable() const { return *Variable; }
-
-private:
-	IConsoleVariable* Variable = nullptr;
-};
-
-class CATTY_API TAutoConsoleVariableFloat
+template <>
+inline bool TAutoConsoleVariable<bool>::GetValue() const
 {
-public:
-	TAutoConsoleVariableFloat(
-		const char* Name,
-		float DefaultValue,
-		const char* Help,
-		EConsoleVariableFlags Flags = EConsoleVariableFlags::Default);
+	return Variable ? Variable->GetBool() : false;
+}
 
-	[[nodiscard]] float GetValue() const;
-	[[nodiscard]] IConsoleVariable& AsVariable() const { return *Variable; }
-
-private:
-	IConsoleVariable* Variable = nullptr;
-};
-
-class CATTY_API TAutoConsoleVariableString
+template <>
+inline TAutoConsoleVariable<int>::TAutoConsoleVariable(
+	const char* Name,
+	int DefaultValue,
+	const char* Help,
+	EConsoleVariableFlags Flags)
+	: Variable(FConsoleManager::Get().RegisterInt(Name, DefaultValue, Help, Flags))
 {
-public:
-	TAutoConsoleVariableString(
-		const char* Name,
-		const char* DefaultValue,
-		const char* Help,
-		EConsoleVariableFlags Flags = EConsoleVariableFlags::Default);
+}
 
-	[[nodiscard]] std::string GetValue() const;
-	[[nodiscard]] IConsoleVariable& AsVariable() const { return *Variable; }
+template <>
+inline int TAutoConsoleVariable<int>::GetValue() const
+{
+	return Variable ? Variable->GetInt() : 0;
+}
 
-private:
-	IConsoleVariable* Variable = nullptr;
-};
+template <>
+inline TAutoConsoleVariable<float>::TAutoConsoleVariable(
+	const char* Name,
+	float DefaultValue,
+	const char* Help,
+	EConsoleVariableFlags Flags)
+	: Variable(FConsoleManager::Get().RegisterFloat(Name, DefaultValue, Help, Flags))
+{
+}
 
-/** Sync built-in catty.* CVars into FEngineConfig (call after loading ini). */
+template <>
+inline float TAutoConsoleVariable<float>::GetValue() const
+{
+	return Variable ? Variable->GetFloat() : 0.0f;
+}
+
+template <>
+inline TAutoConsoleVariable<std::string>::TAutoConsoleVariable(
+	const char* Name,
+	std::string DefaultValue,
+	const char* Help,
+	EConsoleVariableFlags Flags)
+	: Variable(FConsoleManager::Get().RegisterString(Name, DefaultValue.c_str(), Help, Flags))
+{
+}
+
+template <>
+inline std::string TAutoConsoleVariable<std::string>::GetValue() const
+{
+	return Variable ? Variable->GetString() : std::string{};
+}
+
+// CTAD: write TAutoConsoleVariable("name", 1.0f, "help") without <float>.
+TAutoConsoleVariable(const char*, bool, const char*, EConsoleVariableFlags = EConsoleVariableFlags::Default)
+	-> TAutoConsoleVariable<bool>;
+TAutoConsoleVariable(const char*, int, const char*, EConsoleVariableFlags = EConsoleVariableFlags::Default)
+	-> TAutoConsoleVariable<int>;
+TAutoConsoleVariable(const char*, float, const char*, EConsoleVariableFlags = EConsoleVariableFlags::Default)
+	-> TAutoConsoleVariable<float>;
+TAutoConsoleVariable(const char*, double, const char*, EConsoleVariableFlags = EConsoleVariableFlags::Default)
+	-> TAutoConsoleVariable<float>;
+TAutoConsoleVariable(const char*, const char*, const char*, EConsoleVariableFlags = EConsoleVariableFlags::Default)
+	-> TAutoConsoleVariable<std::string>;
+
+/** Sync built-in catty.* / app.Name CVars into FEngineConfig (call after loading ini). */
 CATTY_API void ApplyEngineCVarsToConfig(struct FEngineConfig& OutConfig);
 
 } // namespace Catty

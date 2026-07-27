@@ -1,9 +1,11 @@
 ﻿#include "Catty/Resource/ResourceManager.h"
 
+#include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Json.h"
 #include "Catty/Core/Log.h"
 #include "Resource/ResourceServer.h"
 
+#include <algorithm>
 #include <cctype>
 #include <utility>
 
@@ -12,6 +14,16 @@ namespace Catty
 
 namespace
 {
+
+static TAutoConsoleVariable GCVarPackagePoolInitial(
+	"res.Pool.PackageInitial",
+	16,
+	"Initial FPackage pool slot count");
+
+static TAutoConsoleVariable GCVarResourcePoolInitial(
+	"res.Pool.ResourceInitial",
+	64,
+	"Initial FResource pool slot count");
 
 [[nodiscard]] std::string GetExtensionLower(const std::string& Path)
 {
@@ -166,8 +178,10 @@ bool FResourceManager::Initialize(FGCManager& InGC)
 
 	GC = &InGC;
 	TransientPackage = nullptr;
-	PackagePool.Reserve(16);
-	ResourcePool.Reserve(64);
+	const int PackageSlots = (std::max)(1, GCVarPackagePoolInitial.GetValue());
+	const int ResourceSlots = (std::max)(1, GCVarResourcePoolInitial.GetValue());
+	PackagePool.Reserve(static_cast<std::size_t>(PackageSlots));
+	ResourcePool.Reserve(static_cast<std::size_t>(ResourceSlots));
 	DestroyHandlerId = GC->AddObjectDestroyHandler([this](FObject* Object) -> bool
 	{
 		return TryDestroyManagedObject(Object);

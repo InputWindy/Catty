@@ -1,11 +1,27 @@
 ﻿#include "Catty/Resource/GCManager.h"
 
+#include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
 
 #include <algorithm>
 
 namespace Catty
 {
+
+namespace
+{
+
+static TAutoConsoleVariable GCVarCollectInterval(
+	"gc.CollectInterval",
+	1.0f,
+	"Seconds between CollectGarbage scans (0 = every Tick)");
+
+static TAutoConsoleVariable GCVarPurgeInterval(
+	"gc.PurgeInterval",
+	30.0f,
+	"Seconds between PurgePendingKill (0 = every Tick)");
+
+} // namespace
 
 FGCManager::~FGCManager()
 {
@@ -19,6 +35,8 @@ bool FGCManager::Initialize()
 		return true;
 	}
 
+	CollectIntervalSeconds = GCVarCollectInterval.GetValue();
+	PurgeIntervalSeconds = GCVarPurgeInterval.GetValue();
 	bInitialized = true;
 	CATTY_CORE_INFO("GCManager initialized");
 	return true;
@@ -360,6 +378,10 @@ void FGCManager::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+
+	// Allow runtime ini/console changes to take effect.
+	CollectIntervalSeconds = GCVarCollectInterval.GetValue();
+	PurgeIntervalSeconds = GCVarPurgeInterval.GetValue();
 
 	ProcessImmediateDestroy();
 

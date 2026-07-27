@@ -15,6 +15,26 @@ namespace Catty
 namespace
 {
 
+static TAutoConsoleVariable GCVarFixedDeltaSeconds(
+	"t.FixedDeltaSeconds",
+	1.0f / 50.0f,
+	"Fixed simulation step in seconds (0 disables fixed updates)");
+
+static TAutoConsoleVariable GCVarMaxFixedUpdatesPerFrame(
+	"t.MaxFixedUpdatesPerFrame",
+	5,
+	"Max fixed updates per frame (spiral-of-death clamp)");
+
+static TAutoConsoleVariable GCVarMaxDeltaSeconds(
+	"t.MaxDeltaSeconds",
+	0.25f,
+	"Clamp frame delta seconds after hitch / debugger pause");
+
+static TAutoConsoleVariable GCVarHeadlessAutoExitFrames(
+	"app.Headless.AutoExitFrames",
+	3,
+	"Headless auto-exit after N frames (when Window.Create=0)");
+
 void InitializeAppLogging(const FEngineConfig& Config)
 {
 	FLogConfig LogConfig;
@@ -44,21 +64,16 @@ void ShutdownPlatformWindow(FPlatformWindowPtr& Window)
 	FPlatformWindowFactory::Shutdown();
 }
 
-/** Load Config/DefaultEngine.ini [ConsoleVariables] into the CVar registry, then mirror catty.* into FEngineConfig. */
-void LoadProjectEngineIni(FEngineConfig& Config)
+/** Load Config/DefaultEngine.ini [ConsoleVariables] into the CVar registry, then mirror engine CVars into FEngineConfig.
+ *  Safe to call before FLog::Initialize (does not log).
+ *  @return Number of overrides applied/queued, or -1 if file missing.
+ */
+int LoadProjectEngineIni(FEngineConfig& Config)
 {
 	const std::string IniPath = Config.ProjectConfigDir + "/DefaultEngine.ini";
 	const int Applied = FConsoleManager::Get().LoadConsoleVariablesFromIni(IniPath);
-	if (Applied < 0)
-	{
-		CATTY_CORE_WARN("DefaultEngine.ini not found (looked for '{}') — using CVar defaults", IniPath);
-	}
-	else
-	{
-		CATTY_CORE_INFO("Loaded/queued {} CVar override(s) from '{}'", Applied, IniPath);
-	}
-
 	ApplyEngineCVarsToConfig(Config);
+	return Applied;
 }
 
 } // namespace
@@ -89,6 +104,11 @@ FApp::~FApp()
 	{
 		Engine.Shutdown();
 	}
+}
+
+float FApp::GetFixedDeltaSeconds() const
+{
+	return GCVarFixedDeltaSeconds.GetValue();
 }
 
 bool FApp::PreInitialize()
@@ -128,6 +148,8 @@ bool FApp::InitializeEngine()
 	if (PlatformDesc.bHeadless)
 	{
 		bAutoExitAfterFrames = true;
+		AutoExitFrameCount = static_cast<std::uint64_t>(
+			(std::max)(1, GCVarHeadlessAutoExitFrames.GetValue()));
 		CATTY_CORE_INFO("Platform window headless; auto-exit after {} frames", AutoExitFrameCount);
 	}
 
@@ -317,12 +339,18 @@ float FApp::CalculateDeltaSeconds()
 		DeltaSeconds = 0.0f;
 	}
 
-	constexpr float MaxDeltaSeconds = 0.25f;
+	const float MaxDeltaSeconds = (std::max)(0.0f, GCVarMaxDeltaSeconds.GetValue());
+	if (MaxDeltaSeconds <= 0.0f)
+	{
+		return DeltaSeconds;
+	}
 	return (std::min)(DeltaSeconds, MaxDeltaSeconds);
 }
 
 void FApp::RunFixedUpdates(float DeltaSeconds)
 {
+	const float FixedDeltaSeconds = GCVarFixedDeltaSeconds.GetValue();
+	const int MaxFixedUpdatesPerFrame = GCVarMaxFixedUpdatesPerFrame.GetValue();
 	if (FixedDeltaSeconds <= 0.0f || MaxFixedUpdatesPerFrame <= 0)
 	{
 		return;
@@ -429,8 +457,22 @@ void FApp::Run()
 	}
 
 	Configure(EngineConfig);
+	// Apply ini before logging so log.* / app.Name CVars take effect on first init.
+	const int IniApplied = LoadProjectEngineIni(EngineConfig);
 	InitializeAppLogging(EngineConfig);
-	LoadProjectEngineIni(EngineConfig);
+	if (IniApplied < 0)
+	{
+		CATTY_CORE_WARN(
+			"DefaultEngine.ini not found (looked for '{}/DefaultEngine.ini') — using CVar defaults",
+			EngineConfig.ProjectConfigDir);
+	}
+	else
+	{
+		CATTY_CORE_INFO(
+			"Loaded/queued {} CVar override(s) from '{}/DefaultEngine.ini'",
+			IniApplied,
+			EngineConfig.ProjectConfigDir);
+	}
 	Timer.MakeActive();
 
 	if (!InitializeEngine())

@@ -1,5 +1,8 @@
 #include "Catty/Core/Log.h"
 
+#include "Catty/Core/ConsoleManager.h"
+
+#include <algorithm>
 #include <filesystem>
 #include <vector>
 
@@ -16,8 +19,16 @@ std::shared_ptr<spdlog::logger> GClientLogger;
 bool GbLogInitialized = false;
 
 constexpr const char* GLogPattern = "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%l%$] %v";
-constexpr std::size_t GMaxFileBytes = 5 * 1024 * 1024;
-constexpr std::size_t GMaxFileCount = 3;
+
+static TAutoConsoleVariable GCVarLogMaxFileBytes(
+	"log.MaxFileBytes",
+	5 * 1024 * 1024,
+	"Rotating log file max size in bytes");
+
+static TAutoConsoleVariable GCVarLogMaxFileCount(
+	"log.MaxFileCount",
+	3,
+	"Rotating log file count");
 
 std::shared_ptr<spdlog::logger> CreateLogger(
 	const std::string& Name,
@@ -55,11 +66,16 @@ void FLog::Initialize(const FLogConfig& Config)
 		std::error_code ErrorCode;
 		fs::create_directories(Config.LogDirectory, ErrorCode);
 
+		const std::size_t MaxFileBytes = static_cast<std::size_t>(
+			(std::max)(1024, GCVarLogMaxFileBytes.GetValue()));
+		const std::size_t MaxFileCount = static_cast<std::size_t>(
+			(std::max)(1, GCVarLogMaxFileCount.GetValue()));
+
 		const fs::path LogFilePath = fs::path(Config.LogDirectory) / (Config.CoreLoggerName + ".log");
 		auto FileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
 			LogFilePath.string(),
-			GMaxFileBytes,
-			GMaxFileCount);
+			MaxFileBytes,
+			MaxFileCount);
 		FileSink->set_level(spdlog::level::trace);
 		Sinks.push_back(FileSink);
 	}

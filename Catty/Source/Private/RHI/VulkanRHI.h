@@ -41,7 +41,7 @@ public:
 	[[nodiscard]] VkRenderPass GetVkRenderPass() const { return RenderPass; }
 	[[nodiscard]] VkCommandBuffer GetVkCommandBuffer() const { return CommandBuffer; }
 	[[nodiscard]] std::uint32_t GetSwapchainImageCount() const { return static_cast<std::uint32_t>(SwapchainImages.size()); }
-	[[nodiscard]] std::uint32_t GetMinImageCount() const { return 2; }
+	[[nodiscard]] std::uint32_t GetMinImageCount() const;
 
 private:
 	bool CreateInstance();

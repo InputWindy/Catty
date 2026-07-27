@@ -80,7 +80,7 @@ public:
 	[[nodiscard]] FPlatformWindow* GetPlatformWindow() { return PlatformWindow.get(); }
 	[[nodiscard]] const FPlatformWindow* GetPlatformWindow() const { return PlatformWindow.get(); }
 
-	[[nodiscard]] float GetFixedDeltaSeconds() const { return FixedDeltaSeconds; }
+	[[nodiscard]] float GetFixedDeltaSeconds() const;
 
 	void PushLayer(std::unique_ptr<FLayer> Layer);
 	void PushOverlay(std::unique_ptr<FLayer> Overlay);
@@ -126,9 +126,6 @@ protected:
 	FImGuiSystem ImGui;
 	FLayerStack LayerStack;
 	FPlatformWindowPtr PlatformWindow;
-
-	float FixedDeltaSeconds = 1.0f / 50.0f;
-	int MaxFixedUpdatesPerFrame = 5;
 
 	bool bAutoExitAfterFrames = false;
 	std::uint64_t AutoExitFrameCount = 3;

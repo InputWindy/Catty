@@ -1,5 +1,6 @@
 #include "Catty/UI/ImGuiSystem.h"
 
+#include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
 #include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
@@ -12,6 +13,7 @@
 #include <GLFW/glfw3.h>
 
 #include <atomic>
+#include <algorithm>
 #include <cstdint>
 #include <vulkan/vulkan.h>
 
@@ -20,6 +22,11 @@ namespace Catty
 
 namespace
 {
+
+static TAutoConsoleVariable GCVarImGuiDescriptorPoolSize(
+	"r.ImGui.DescriptorPoolSize",
+	16,
+	"ImGui Vulkan descriptor pool size");
 
 void CheckImGuiVkResult(VkResult Result)
 {
@@ -90,7 +97,8 @@ bool FImGuiSystem::Initialize(FPlatformWindow& Window, FRenderServer& RenderServ
 		InitInfo.QueueFamily = VulkanRHI->GetGraphicsQueueFamilyIndex();
 		InitInfo.Queue = VulkanRHI->GetGraphicsQueue();
 		InitInfo.DescriptorPool = VK_NULL_HANDLE;
-		InitInfo.DescriptorPoolSize = 16;
+		InitInfo.DescriptorPoolSize = static_cast<std::uint32_t>(
+			(std::max)(1, GCVarImGuiDescriptorPoolSize.GetValue()));
 		InitInfo.RenderPass = VulkanRHI->GetVkRenderPass();
 		InitInfo.MinImageCount = VulkanRHI->GetMinImageCount();
 		InitInfo.ImageCount = VulkanRHI->GetSwapchainImageCount();
