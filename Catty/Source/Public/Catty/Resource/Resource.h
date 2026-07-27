@@ -42,6 +42,7 @@ enum class EResourceType : std::uint8_t
  *   }
  * ```
  */
+CATTY_REFLECT_CLASS()
 class CATTY_API FResource : public FObject
 {
 public:

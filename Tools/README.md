@@ -12,7 +12,7 @@ Engine-local tooling. Root only exposes thin user-facing `.bat` launchers.
 | `package_ui.py` / `package.bat` | Packaging UI (logs in window; abort via Close) |
 | `package.py` | Headless CLI package |
 | `clean.py` | Wipe generated/temp files (`clean.bat` at engine root) |
-| `reflect_codegen.py` / `reflect_codegen.bat` | Scan `CATTY_REFLECT_*` → catalog |
+| `reflect_codegen.py` / `reflect_codegen.bat` | Scan `CATTY_REFLECT_*` → catalog + LuaBindings.gen.* |
 | `catty_tools.py` | Shared helpers |
 
 ## Local Python

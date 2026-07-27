@@ -55,3 +55,11 @@ __pycache__/
 *.out
 *.app
 *.dwo
+
+# Reflect / Lua codegen outputs (Tools/reflect_codegen.py).
+# Regenerated at CMake configure / build — do not commit.
+*.gen.h
+*.gen.cpp
+*.gen.json
+/Catty/Source/Generated/
+/Doc/Engine/ReflectCatalog.md

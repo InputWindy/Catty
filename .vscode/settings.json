@@ -3,5 +3,8 @@
 	"python.terminal.activateEnvironment": false,
 	"python.analysis.extraPaths": [
 		"${workspaceFolder}/Tools"
-	]
+	],
+	"livePreview.autoRefreshPreview": "OnAllChanges",
+	"livePreview.openPreviewTarget": "Beside",
+	"livePreview.notifyOnOpenLooseFile": false
 }

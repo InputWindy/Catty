@@ -1,49 +1,34 @@
 #pragma once
 
 /**
- * Compile-time reflection (refl-cpp) — core metadata for types / fields / methods.
+ * Compile-time reflection (refl-cpp) + Lua usertype codegen.
  *
- * Annotate after the class definition (header or .cpp). Metadata is constexpr;
- * no runtime registry. Later consumers (Lua export, serializers) walk descriptors.
- *
- * Procedural form (recommended):
+ * Recommended (UE-style): one marker on the line above the type. Codegen exports
+ * every public field and public member function to ReflectCatalog, refl-cpp metadata,
+ * and sol2 Lua bindings:
  * ```
+ *   #include <Catty/Core/Reflect.h>
+ *
  *   namespace Catty
  *   {
- *       struct FPoint
- *       {
- *           float X = 0.f;
- *           float Y = 0.f;
- *           float Length() const { return X; }
- *       };
+ *   CATTY_REFLECT_CLASS()
+ *   struct FPoint
+ *   {
+ *   	float X = 0.f;
+ *   	float Y = 0.f;
+ *   	float Length() const { return X; }
+ *   };
  *   }
+ * ```
  *
+ * Run Tools/reflect_codegen.bat (also invoked by CMake). Opt out of Lua only:
+ *   CATTY_REFLECT_CLASS(CATTY_LUA_SKIP)
+ *
+ * Manual listing (optional, after the type) is still supported for selective export:
  *   CATTY_REFLECT_BEGIN(Catty::FPoint)
  *   	CATTY_REFLECT_PROPERTY(X)
- *   	CATTY_REFLECT_PROPERTY(Y)
  *   	CATTY_REFLECT_FUNCTION(Length)
  *   CATTY_REFLECT_END
- *
- *   static_assert(Catty::TIsReflectable_v<Catty::FPoint>);
- *   constexpr auto Type = Catty::ReflectType<Catty::FPoint>();
- * ```
- *
- * Auto form (one macro, REFL_AUTO style):
- * ```
- *   CATTY_REFLECT_AUTO(
- *   	CATTY_REFLECT_TYPE(Catty::FPoint),
- *   	CATTY_REFLECT_FIELD(X),
- *   	CATTY_REFLECT_FIELD(Y),
- *   	CATTY_REFLECT_FUNC(Length)
- *   )
- * ```
- *
- * Optional attributes (passthrough to refl-cpp), e.g. bases:
- * ```
- *   CATTY_REFLECT_BEGIN(Catty::FDerived, bases<Catty::FBase>)
- *   ...
- *   CATTY_REFLECT_END
- * ```
  *
  * Underlying library: refl.hpp (veselink1/refl-cpp v0.12.4).
  */
@@ -56,7 +41,18 @@
 #include <utility>
 
 // -----------------------------------------------------------------------------
-// Annotation macros (thin wrappers over REFL_*)
+// Primary annotation (UE-style): line above class / struct
+// -----------------------------------------------------------------------------
+
+/**
+ * Place immediately above `class` / `struct`. Expands to nothing.
+ * Tools/reflect_codegen.py parses the type body and exports all **public**
+ * data members and member functions (reflect meta + Lua usertype by default).
+ */
+#define CATTY_REFLECT_CLASS(...)
+
+// -----------------------------------------------------------------------------
+// Manual annotation macros (thin wrappers over REFL_*) — selective export
 // -----------------------------------------------------------------------------
 
 /** Begin type metadata block. Place after the class/struct definition. */
@@ -82,10 +78,40 @@
 #define CATTY_REFLECT_FIELD field
 #define CATTY_REFLECT_FUNC func
 
+/**
+ * Optional attrs for CATTY_REFLECT_CLASS(...) or manual CATTY_REFLECT_* lists.
+ * Example: CATTY_REFLECT_CLASS(CATTY_LUA_SKIP) — reflect meta only, no Lua usertype.
+ * CATTY_LUA_NAME is mainly for manual member lists / class-level rename.
+ */
+#define CATTY_LUA_SKIP ::Catty::ReflectAttr::FLuaSkip{}
+#define CATTY_LUA_NAME(Name) ::Catty::ReflectAttr::FLuaName{Name}
+
 namespace Catty
 {
 
-/** True if T was annotated with CATTY_REFLECT_* / REFL_*. */
+/** Optional attrs for CATTY_REFLECT_* (compile-time + Python Lua codegen). */
+namespace ReflectAttr
+{
+
+/** Skip this type or member from generated Lua bindings (still reflected). */
+struct FLuaSkip : refl::attr::usage::any
+{
+};
+
+/** Override the Lua binding name (default: C++ short type / member name). */
+struct FLuaName : refl::attr::usage::any
+{
+	const char* Value;
+
+	constexpr explicit FLuaName(const char* InValue) noexcept
+		: Value(InValue)
+	{
+	}
+};
+
+} // namespace ReflectAttr
+
+/** True if T was annotated with CATTY_REFLECT_* / REFL_* (including generated meta). */
 template <typename T>
 inline constexpr bool TIsReflectable_v = refl::trait::is_reflectable_v<T>;
 

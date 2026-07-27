@@ -25,6 +25,9 @@ namespace Catty
  *   catty.log / log_warn / log_error(msg)
  *   catty.get_cvar_int / float / bool / string(name [, default])
  *   catty.set_cvar_int / float / bool / string(name, value)
+ *
+ * Generated usertypes (same `CATTY_REFLECT_*` macros → Tools/reflect_codegen.py):
+ *   catty.<TypeName> with reflected properties / functions (opt-out: CATTY_LUA_SKIP)
  */
 class CATTY_API FScriptSystem
 {

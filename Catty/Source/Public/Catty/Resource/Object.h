@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Catty/Core/Export.h"
+#include "Catty/Core/Reflect.h"
 
 #include <cstdint>
 #include <string>
@@ -110,6 +111,7 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
  * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
  * Outer is FObjectRef (empty for FPackage itself). Cleanup is fully owned by ~FObject.
  */
+CATTY_REFLECT_CLASS()
 class CATTY_API FObject
 {
 public:

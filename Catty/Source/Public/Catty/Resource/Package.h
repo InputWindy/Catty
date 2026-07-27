@@ -74,6 +74,7 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
  *   ResourceManager.SavePackage(Pkg, "Content/Maps/Demo.pkg.json");
  * ```
  */
+CATTY_REFLECT_CLASS()
 class CATTY_API FPackage : public FObject
 {
 public:

@@ -25,6 +25,22 @@
 - `set_cvar_int/float/bool/string(name, value)`  
 - 帧回调：全局 `OnUpdate(dt)` / `OnFixedUpdate(fixedDt)`（可选）  
 
+### 反射生成的 usertype
+
+与 C++ 共用 `CATTY_REFLECT_CLASS()`（写在类型上一行）；`Tools/reflect_codegen.bat` 生成绑定。
+
+对象由 C++ 创建（`sol::no_constructor`）；Lua 侧主要调用已有实例上的方法。返回 `FObjectRef` 等复杂类型的接口暂不进 Lua（仍进 Reflect 元数据）。
+
+示例：
+
+```lua
+-- obj 来自引擎侧推入的 FObject / FResource 等
+print(obj:GetName())
+print(obj:GetRefCount())
+```
+
+目录：[ReflectCatalog.md](./ReflectCatalog.md)。
+
 
 ## 工程布局
 

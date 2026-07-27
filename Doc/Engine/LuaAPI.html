@@ -150,6 +150,7 @@ main { padding: 24px 36px 80px; min-width: 0; }
 .tag-api { color: var(--green); border-color: rgba(116, 217, 159, 0.35); background: rgba(116, 217, 159, 0.08); }
 .tag-hook { color: var(--orange); border-color: rgba(255, 159, 90, 0.4); background: rgba(255, 159, 90, 0.08); }
 .tag-global { color: var(--purple); border-color: rgba(182, 156, 255, 0.4); background: rgba(182, 156, 255, 0.08); }
+.tag-reflect { color: var(--blue); border-color: rgba(94, 183, 255, 0.4); background: rgba(94, 183, 255, 0.08); }
 .fn-body { padding: 14px 16px 16px; }
 .sig {
 	display: block;
@@ -227,10 +228,12 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 <header>
 	<h1>Catty Lua API Reference</h1>
 	<div class="subtitle">
-		引擎向 Lua 暴露的 <b>绑定函数</b> 与帧回调约定。实现见
-		<code class="inline">Catty/Source/Private/Script/ScriptSystem.cpp</code>
-		（<code class="inline">RegisterCoreBindings</code>）。<br />
+		引擎向 Lua 暴露的 <b>绑定函数</b> 与帧回调约定。手工 API 见
+		<code class="inline">RegisterCoreBindings</code>；反射 usertype 由
+		<code class="inline">Tools/reflect_codegen.py</code> 生成
+		（<code class="inline">LuaBindings.gen.cpp</code> / <code class="inline">CATTY_REFLECT_*</code>）。<br />
 		接入说明：<a href="Lua脚本接入.md">Lua脚本接入.md</a>
+		· 反射目录：<a href="ReflectCatalog.md">ReflectCatalog.md</a>
 		· 架构：<a href="引擎架构设计.html">引擎架构设计</a>
 	</div>
 </header>
@@ -268,6 +271,12 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 		<li><a href="#OnUpdate">OnUpdate</a></li>
 		<li><a href="#OnFixedUpdate">OnFixedUpdate</a></li>
 	</ul>
+<!-- @@CATTY_LUA_REFLECT_TOC_BEGIN@@ -->
+	<div class="sec">catty · Reflect Usertypes</div>
+	<ul>
+		<li><a href="#catty.FReflectSmoke">FReflectSmoke</a></li>
+	</ul>
+<!-- @@CATTY_LUA_REFLECT_TOC_END@@ -->
 </nav>
 
 <main>
@@ -289,6 +298,9 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 			<span class="pill">sol2 bindings</span>
 			<span class="pill">namespace: <b>catty</b></span>
 			<span class="pill">11 API · 2 hooks</span>
+<!-- @@CATTY_LUA_REFLECT_PILL_BEGIN@@ -->
+			<span class="pill">1 usertype (codegen)</span>
+<!-- @@CATTY_LUA_REFLECT_PILL_END@@ -->
 		</div>
 		<div class="note">
 			<strong>约定：</strong>本文「Returns」栏的类型按 Lua 侧语义描述
@@ -711,6 +723,64 @@ end</pre></div>
 	</div>
 </section>
 
+<!-- @@CATTY_LUA_REFLECT_BODY_BEGIN@@ -->
+<section class="card" id="reflect-usertypes">
+	<h2>catty — Reflect Usertypes</h2>
+	<div class="body">
+		<p class="intro">
+			由同一套 <code>CATTY_REFLECT_*</code> 标注经
+			<code>Tools/reflect_codegen.bat</code> 生成 sol2 usertype，
+			并在 <code>FScriptSystem::Initialize</code> 注册到 <code>catty</code> 表。
+			跳过：<code>CATTY_LUA_SKIP</code>；改名：<code>CATTY_LUA_NAME(&quot;...&quot;)</code>。
+			类型定义须在可 <code>#include</code> 的头文件中。
+		</p>
+		<article class="fn" id="catty.FReflectSmoke">
+			<div class="fn-head">
+				<h3 class="fn-name">catty.FReflectSmoke</h3>
+				<span class="tag tag-reflect">Usertype</span>
+				<span class="tag tag-api">codegen</span>
+			</div>
+			<div class="fn-body">
+				<code class="sig">local obj = catty.FReflectSmoke.new()</code>
+				<p>
+					C++ 类型 <code>Catty::ReflectPrivate::FReflectSmoke</code>
+					（<code>Catty/Source/Private/Core/ReflectSmoke.h:29</code>）。
+					默认构造；字段用点号读写，成员函数用冒号调用。
+				</p>
+				<h4>Properties</h4>
+				<table>
+					<thead><tr><th>Lua</th><th>C++</th><th>Kind</th></tr></thead>
+					<tbody>
+						<tr><td><code>X</code></td><td><code>X</code></td><td>property</td></tr>
+						<tr><td><code>Y</code></td><td><code>Y</code></td><td>property</td></tr>
+					</tbody>
+				</table>
+				<h4>Functions</h4>
+				<table>
+					<thead><tr><th>Lua</th><th>C++</th><th>Kind</th></tr></thead>
+					<tbody>
+						<tr><td><code>Scale</code></td><td><code>Scale</code></td><td>function</td></tr>
+					</tbody>
+				</table>
+				<h4>Members (summary)</h4>
+				<p>Properties: <code>.X · .Y</code></p>
+				<p>Functions: <code>:Scale(...)</code></p>
+				<h4>Example</h4>
+				<div class="example"><pre>local obj = catty.FReflectSmoke.new()
+obj.X = ...  -- set property
+local r = obj:Scale(...)</pre></div>
+			</div>
+		</article>
+
+		<div class="note">
+			<strong>同步：</strong>本区块由 codegen 写入；改 <code>CATTY_REFLECT_*</code> 后请重跑
+			<code>Tools/reflect_codegen.bat</code>。完整类型表见
+			<a href="ReflectCatalog.md">ReflectCatalog.md</a>。
+		</div>
+	</div>
+</section>
+<!-- @@CATTY_LUA_REFLECT_BODY_END@@ -->
+
 <section class="card">
 	<h2>速查表</h2>
 	<div class="body">
@@ -732,6 +802,9 @@ end</pre></div>
 				<tr><td><a href="#catty.set_cvar_string"><code>catty.set_cvar_string</code></a></td><td><code>set_cvar_string(name, value) → boolean</code></td><td>API</td></tr>
 				<tr><td><a href="#OnUpdate"><code>OnUpdate</code></a></td><td><code>OnUpdate(dt)</code></td><td>Hook</td></tr>
 				<tr><td><a href="#OnFixedUpdate"><code>OnFixedUpdate</code></a></td><td><code>OnFixedUpdate(fixedDt)</code></td><td>Hook</td></tr>
+<!-- @@CATTY_LUA_REFLECT_QUICKREF_BEGIN@@ -->
+				<tr><td><a href="#catty.FReflectSmoke"><code>catty.FReflectSmoke</code></a></td><td><code>.new() · .X · .Y · :Scale(...)</code></td><td>Usertype</td></tr>
+<!-- @@CATTY_LUA_REFLECT_QUICKREF_END@@ -->
 			</tbody>
 		</table>
 	</div>
@@ -741,7 +814,8 @@ end</pre></div>
 </div>
 
 <footer>
-	符号与签名对照 <code>RegisterCoreBindings</code> / <code>FApp</code> 帧循环；新增绑定时请同步更新本页。
+	手工 API 对照 <code>RegisterCoreBindings</code> / <code>FApp</code> 帧循环；
+	Reflect usertype 由 <code>Tools/reflect_codegen.bat</code> 同步写入本页标记区。
 </footer>
 </body>
 </html>

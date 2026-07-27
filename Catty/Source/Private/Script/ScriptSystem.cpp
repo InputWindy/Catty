@@ -2,6 +2,7 @@
 
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
+#include "Script/LuaBindings.gen.h"
 
 #define SOL_ALL_SAFETIES_ON 1
 #include <sol/sol.hpp>
@@ -122,6 +123,7 @@ bool FScriptSystem::Initialize(const std::string& InScriptsDirectory)
 	Impl->Lua["package"]["path"] = PackagePath;
 
 	RegisterCoreBindings(Impl->Lua);
+	RegisterGeneratedLuaBindings(Impl->Lua);
 
 	bInitialized = true;
 	CATTY_CORE_INFO("FScriptSystem initialized (Scripts='{}')", ScriptsDirectory);
