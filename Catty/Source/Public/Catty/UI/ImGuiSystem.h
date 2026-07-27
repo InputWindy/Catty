@@ -2,6 +2,8 @@
 
 #include "Catty/Core/Export.h"
 
+#include <string>
+
 namespace Catty
 {
 
@@ -14,7 +16,7 @@ class FRenderServer;
  *
  * Example:
  * ```
- *   ImGui.Initialize(*PlatformWindow, RenderServer);
+ *   ImGui.Initialize(*PlatformWindow, RenderServer, "Config");
  *   // each frame after PollEvents:
  *   ImGui.BeginFrame();
  *   ImGui::Text("Hello");
@@ -36,8 +38,12 @@ public:
 	/**
 	 * Requires an OS window + initialized Vulkan RHI on the render server.
 	 * Safe to call when headless (returns false without error spam).
+	 * @param ConfigDirectory Project Config/ path; imgui.ini is stored as ConfigDirectory/imgui.ini.
 	 */
-	[[nodiscard]] bool Initialize(FPlatformWindow& Window, FRenderServer& RenderServer);
+	[[nodiscard]] bool Initialize(
+		FPlatformWindow& Window,
+		FRenderServer& RenderServer,
+		const std::string& ConfigDirectory = "Config");
 
 	/** Flushes the render server and tears down GLFW/Vulkan backends. */
 	void Shutdown(FRenderServer& RenderServer);
@@ -52,6 +58,8 @@ public:
 
 private:
 	bool bInitialized = false;
+	/** Owns storage for ImGuiIO::IniFilename (ImGui keeps a raw const char*). */
+	std::string IniFilePath;
 };
 
 } // namespace Catty

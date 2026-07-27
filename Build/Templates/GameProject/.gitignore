@@ -5,6 +5,9 @@
 /Cached/
 /Saved/
 
+# Local ImGui layout (project Config/)
+/Config/imgui.ini
+
 # Logs
 *.log
 /CMakeFiles/

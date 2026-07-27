@@ -176,7 +176,7 @@ bool FApp::InitializeEngine()
 
 	if (PlatformWindow->HasOsWindow())
 	{
-		if (!ImGui.Initialize(*PlatformWindow, RenderServer))
+		if (!ImGui.Initialize(*PlatformWindow, RenderServer, EngineConfig.ProjectConfigDir))
 		{
 			CATTY_CORE_ERROR("FApp::InitializeEngine failed (ImGui)");
 			RenderServer.Shutdown();

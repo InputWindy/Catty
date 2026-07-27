@@ -15,6 +15,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <vulkan/vulkan.h>
 
 namespace Catty
@@ -44,7 +45,10 @@ FImGuiSystem::~FImGuiSystem()
 	// Prefer Shutdown(RenderServer) from FApp so Vulkan backends die before the device.
 }
 
-bool FImGuiSystem::Initialize(FPlatformWindow& Window, FRenderServer& RenderServer)
+bool FImGuiSystem::Initialize(
+	FPlatformWindow& Window,
+	FRenderServer& RenderServer,
+	const std::string& ConfigDirectory)
 {
 	if (bInitialized)
 	{
@@ -75,6 +79,16 @@ bool FImGuiSystem::Initialize(FPlatformWindow& Window, FRenderServer& RenderServ
 	ImGui::CreateContext();
 	ImGuiIO& IO = ImGui::GetIO();
 	IO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+	{
+		namespace fs = std::filesystem;
+		std::error_code ErrorCode;
+		const fs::path ConfigDir = ConfigDirectory.empty() ? fs::path("Config") : fs::path(ConfigDirectory);
+		fs::create_directories(ConfigDir, ErrorCode);
+		IniFilePath = (ConfigDir / "imgui.ini").string();
+		IO.IniFilename = IniFilePath.c_str();
+		CATTY_CORE_INFO("FImGuiSystem: ini path '{}'", IniFilePath);
+	}
 
 	ImGui::StyleColorsDark();
 
@@ -143,6 +157,7 @@ void FImGuiSystem::Shutdown(FRenderServer& RenderServer)
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 
+	IniFilePath.clear();
 	bInitialized = false;
 	CATTY_CORE_INFO("FImGuiSystem shut down");
 }

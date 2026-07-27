@@ -10,10 +10,10 @@ from pathlib import Path
 
 
 def main() -> int:
-	here = Path(__file__).resolve().parent
-	cprojects = sorted(here.glob("*.cproject"))
+	project_root = Path(__file__).resolve().parent.parent
+	cprojects = sorted(project_root.glob("*.cproject"))
 	if not cprojects:
-		print(f"[ERROR] No .cproject in {here}")
+		print(f"[ERROR] No .cproject in {project_root}")
 		return 1
 
 	cproject = cprojects[0]
