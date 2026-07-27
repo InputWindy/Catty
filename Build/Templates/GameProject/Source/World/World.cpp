@@ -1,9 +1,6 @@
-#include "Catty/World/World.h"
+#include "World/World.h"
 
-#include "Catty/Core/Log.h"
-
-namespace Catty
-{
+#include <Catty/Core/Log.h>
 
 bool FWorld::Initialize(std::string InName)
 {
@@ -15,7 +12,7 @@ bool FWorld::Initialize(std::string InName)
 	Name = InName.empty() ? "MainWorld" : std::move(InName);
 	TickCount = 0;
 	bInitialized = true;
-	CATTY_CORE_INFO("FWorld initialized (\"{}\")", Name);
+	CATTY_INFO("FWorld initialized (\"{}\")", Name);
 	return true;
 }
 
@@ -35,10 +32,8 @@ void FWorld::Shutdown()
 		return;
 	}
 
-	CATTY_CORE_INFO("FWorld shut down (\"{}\", ticks={})", Name, TickCount);
+	CATTY_INFO("FWorld shut down (\"{}\", ticks={})", Name, TickCount);
 	Name.clear();
 	TickCount = 0;
 	bInitialized = false;
 }
-
-} // namespace Catty

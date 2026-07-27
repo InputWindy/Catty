@@ -23,13 +23,6 @@ bool FEngine::Initialize(const FEngineConfig& InConfig)
 
 	Config = InConfig;
 	FrameIndex = 0;
-
-	if (!World.Initialize("MainWorld"))
-	{
-		CATTY_CORE_ERROR("FEngine::Initialize: FWorld failed");
-		return false;
-	}
-
 	bInitialized = true;
 
 	CATTY_CORE_INFO("Engine initialized");
@@ -40,18 +33,18 @@ bool FEngine::Initialize(const FEngineConfig& InConfig)
 	CATTY_CORE_INFO("  ProjectPlugins : {}", Config.ProjectPluginsDir);
 	CATTY_CORE_INFO("  Cached         : {}", Config.CachedDir);
 	CATTY_CORE_INFO("  Saved          : {}", Config.SavedDir);
+	CATTY_CORE_INFO("  ProjectConfig  : {}", Config.ProjectConfigDir);
 
 	return true;
 }
 
-void FEngine::Tick(float DeltaSeconds)
+void FEngine::Tick(float /*DeltaSeconds*/)
 {
 	if (!bInitialized)
 	{
 		return;
 	}
 
-	World.Tick(DeltaSeconds);
 	++FrameIndex;
 }
 
@@ -62,7 +55,6 @@ void FEngine::Shutdown()
 		return;
 	}
 
-	World.Shutdown();
 	CATTY_CORE_INFO("Engine shutdown after {} frames", FrameIndex);
 	bInitialized = false;
 }

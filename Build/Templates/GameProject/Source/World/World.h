@@ -1,18 +1,13 @@
 #pragma once
 
-#include "Catty/Core/Export.h"
-
 #include <cstdint>
 #include <string>
 
-namespace Catty
-{
-
 /**
- * Gameplay world container (entities / levels later).
- * Owned by FEngine; created empty at engine init.
+ * Project gameplay world (entities / levels later).
+ * Owned by FWorldLayer — not part of the Catty engine.
  */
-class CATTY_API FWorld
+class FWorld
 {
 public:
 	FWorld() = default;
@@ -33,5 +28,3 @@ private:
 	std::string Name;
 	std::uint64_t TickCount = 0;
 };
-
-} // namespace Catty

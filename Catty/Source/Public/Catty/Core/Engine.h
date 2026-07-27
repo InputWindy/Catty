@@ -2,7 +2,6 @@
 
 #include "Catty/Core/Export.h"
 #include "Catty/Platform/PlatformWindow.h"
-#include "Catty/World/World.h"
 
 #include <cstdint>
 #include <string>
@@ -21,6 +20,8 @@ struct FEngineConfig
 	std::string CachedDir = "Cached";
 	/** UE-style: logs / config / crashes / screenshots. */
 	std::string SavedDir = "Saved";
+	/** Project Config/ directory (DefaultEngine.ini, etc.). */
+	std::string ProjectConfigDir = "Config";
 
 	/** Main window. Ignored when bCreateMainWindow is false. */
 	EPlatform Platform = EPlatform::Glfw;
@@ -36,6 +37,10 @@ struct FEngineConfig
 	float ClearColorA = 1.0f;
 };
 
+/**
+ * Core engine bookkeeping (config + frame index).
+ * Gameplay worlds live in project layers, not here.
+ */
 class CATTY_API FEngine
 {
 public:
@@ -53,14 +58,10 @@ public:
 	[[nodiscard]] std::uint64_t GetFrameIndex() const { return FrameIndex; }
 	[[nodiscard]] const FEngineConfig& GetConfig() const { return Config; }
 
-	[[nodiscard]] FWorld& GetWorld() { return World; }
-	[[nodiscard]] const FWorld& GetWorld() const { return World; }
-
 private:
 	bool bInitialized = false;
 	std::uint64_t FrameIndex = 0;
 	FEngineConfig Config{};
-	FWorld World;
 };
 
 } // namespace Catty

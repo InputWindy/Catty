@@ -1,4 +1,5 @@
 #include "Catty/Core/App.h"
+#include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
 #include "Catty/Core/Timer.h"
 #include "Catty/Platform/PlatformWindow.h"
@@ -6,6 +7,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace Catty
 {
@@ -42,12 +44,29 @@ void ShutdownPlatformWindow(FPlatformWindowPtr& Window)
 	FPlatformWindowFactory::Shutdown();
 }
 
+void LoadProjectEngineIni(FEngineConfig& Config)
+{
+	const std::string IniPath = Config.ProjectConfigDir + "/DefaultEngine.ini";
+	const int Applied = FConsoleManager::Get().LoadConsoleVariablesFromIni(IniPath);
+	if (Applied < 0)
+	{
+		CATTY_CORE_WARN("DefaultEngine.ini not found (looked for '{}') — using CVar defaults", IniPath);
+	}
+	else
+	{
+		CATTY_CORE_INFO("Loaded {} CVar(s) from '{}'", Applied, IniPath);
+	}
+
+	ApplyEngineCVarsToConfig(Config);
+}
+
 } // namespace
 
 FApp::FApp() = default;
 
 FApp::~FApp()
 {
+	LayerStack.Clear();
 	if (ImGui.IsInitialized() && RenderServer.IsInitialized())
 	{
 		ImGui.Shutdown(RenderServer);
@@ -170,6 +189,7 @@ void FApp::PreShutdown()
 void FApp::Shutdown()
 {
 	FlushRenderServer();
+	LayerStack.Clear();
 	if (ImGui.IsInitialized())
 	{
 		ImGui.Shutdown(RenderServer);
@@ -189,49 +209,59 @@ void FApp::Shutdown()
 	}
 }
 
-void FApp::BeginFrame(float /*DeltaSeconds*/)
+void FApp::PushLayer(std::unique_ptr<FLayer> Layer)
+{
+	LayerStack.PushLayer(std::move(Layer));
+}
+
+void FApp::PushOverlay(std::unique_ptr<FLayer> Overlay)
+{
+	LayerStack.PushOverlay(std::move(Overlay));
+}
+
+void FApp::BeginFrame(float DeltaSeconds)
 {
 	ImGui.BeginFrame();
+	LayerStack.BeginFrame(DeltaSeconds);
 }
 
-void FApp::ProcessInput(float /*DeltaSeconds*/)
+void FApp::ProcessInput(float DeltaSeconds)
 {
-	if (!PlatformWindow)
+	if (ImGui.IsInitialized())
 	{
-		return;
+		const ImGuiIO& IO = ImGui::GetIO();
+		if (!IO.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Escape))
+		{
+			RequestExit();
+		}
 	}
 
-	Input.Update(*PlatformWindow);
-
-	const bool bImGuiWantsKeyboard = ImGui.IsInitialized() && ImGui::GetIO().WantCaptureKeyboard;
-	if (!bImGuiWantsKeyboard && Input.WasKeyPressed(EKey::Escape))
-	{
-		RequestExit();
-	}
+	LayerStack.ProcessInput(DeltaSeconds);
 }
 
-void FApp::FixedUpdate(float /*InFixedDeltaSeconds*/)
+void FApp::FixedUpdate(float InFixedDeltaSeconds)
 {
+	LayerStack.FixedUpdate(InFixedDeltaSeconds);
 }
 
-void FApp::Update(float /*DeltaSeconds*/)
+void FApp::Update(float DeltaSeconds)
 {
-	if (ImGui.IsInitialized() && ImGui.bShowDemoWindow)
-	{
-		ImGui::ShowDemoWindow(&ImGui.bShowDemoWindow);
-	}
+	LayerStack.Update(DeltaSeconds);
 }
 
-void FApp::LateUpdate(float /*DeltaSeconds*/)
+void FApp::LateUpdate(float DeltaSeconds)
 {
+	LayerStack.LateUpdate(DeltaSeconds);
 }
 
-void FApp::PreRender(float /*DeltaSeconds*/)
+void FApp::PreRender(float DeltaSeconds)
 {
+	LayerStack.PreRender(DeltaSeconds);
 }
 
-void FApp::Render(float /*DeltaSeconds*/)
+void FApp::Render(float DeltaSeconds)
 {
+	LayerStack.Render(DeltaSeconds);
 	ImGui.EndFrame();
 
 	if (!RenderServer.HasRHI())
@@ -247,8 +277,9 @@ void FApp::Render(float /*DeltaSeconds*/)
 		Config.ClearColorA);
 }
 
-void FApp::EndFrame(float /*DeltaSeconds*/)
+void FApp::EndFrame(float DeltaSeconds)
 {
+	LayerStack.EndFrame(DeltaSeconds);
 }
 
 float FApp::CalculateDeltaSeconds()
@@ -375,6 +406,7 @@ void FApp::Run()
 
 	Configure(EngineConfig);
 	InitializeAppLogging(EngineConfig);
+	LoadProjectEngineIni(EngineConfig);
 	Timer.MakeActive();
 
 	if (!InitializeEngine())

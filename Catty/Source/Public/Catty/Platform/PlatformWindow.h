@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Catty/Core/Export.h"
-#include "Catty/Input/InputKeys.h"
 
 #include <cstdint>
 #include <memory>
@@ -32,6 +31,7 @@ struct FPlatformWindowDesc
 /**
  * Platform runtime + optional OS window (no third-party types in the public API).
  * Concrete backends (e.g. GLFW) are created through FPlatformWindowFactory.
+ * Keyboard / mouse polling is handled by Dear ImGui (ImGuiIO / ImGui::IsKey*).
  */
 class CATTY_API FPlatformWindow
 {
@@ -70,10 +70,6 @@ public:
 
 	/** Seconds since backend runtime init. */
 	[[nodiscard]] virtual double GetTimeSeconds() const = 0;
-
-	[[nodiscard]] virtual bool IsKeyDown(EKey Key) const { (void)Key; return false; }
-	[[nodiscard]] virtual bool IsMouseButtonDown(EMouseButton Button) const { (void)Button; return false; }
-	virtual void GetCursorPosition(float& OutX, float& OutY) const { OutX = 0.0f; OutY = 0.0f; }
 
 protected:
 	FPlatformWindow() = default;

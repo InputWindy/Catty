@@ -2,14 +2,16 @@
 
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Export.h"
+#include "Catty/Core/Layer.h"
+#include "Catty/Core/LayerStack.h"
 #include "Catty/Core/Timer.h"
-#include "Catty/Input/Input.h"
 #include "Catty/Platform/PlatformWindow.h"
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/ResourceServer.h"
 #include "Catty/UI/ImGuiSystem.h"
 
 #include <cstdint>
+#include <memory>
 
 namespace Catty
 {
@@ -18,6 +20,7 @@ namespace Catty
  * Application base class (UE FEngineLoop + Unity PlayerLoop style).
  * Game projects inherit FApp and override lifecycle / frame hooks only.
  * Tick() is the fixed engine frame pipeline — not overridable.
+ * Per-frame work is also composable via FLayerStack (PushLayer / PushOverlay).
  */
 class CATTY_API FApp
 {
@@ -45,16 +48,19 @@ public:
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
 	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
-	[[nodiscard]] FInput& GetInput() { return Input; }
-	[[nodiscard]] const FInput& GetInput() const { return Input; }
-
 	[[nodiscard]] FImGuiSystem& GetImGui() { return ImGui; }
 	[[nodiscard]] const FImGuiSystem& GetImGui() const { return ImGui; }
+
+	[[nodiscard]] FLayerStack& GetLayerStack() { return LayerStack; }
+	[[nodiscard]] const FLayerStack& GetLayerStack() const { return LayerStack; }
 
 	[[nodiscard]] FPlatformWindow* GetPlatformWindow() { return PlatformWindow.get(); }
 	[[nodiscard]] const FPlatformWindow* GetPlatformWindow() const { return PlatformWindow.get(); }
 
 	[[nodiscard]] float GetFixedDeltaSeconds() const { return FixedDeltaSeconds; }
+
+	void PushLayer(std::unique_ptr<FLayer> Layer);
+	void PushOverlay(std::unique_ptr<FLayer> Overlay);
 
 protected:
 	virtual bool PreInitialize();
@@ -62,24 +68,27 @@ protected:
 	virtual bool PostInitialize();
 	virtual void PreShutdown();
 
-	/** Default: ImGui → render server → resource server → platform → engine. */
+	/** Default: clear layers → ImGui → render → resource → platform → engine. */
 	virtual void Shutdown();
 
-	/** Default: starts an ImGui frame when ImGui is initialized. */
+	/** Default: ImGui NewFrame, then layer stack. */
 	virtual void BeginFrame(float DeltaSeconds);
 
-	/** Default: update FInput; Escape requests exit (unless ImGui wants keyboard). */
+	/**
+	 * Default: Escape via ImGui IO requests exit (unless WantCaptureKeyboard),
+	 * then layer stack (overlays first).
+	 */
 	virtual void ProcessInput(float DeltaSeconds);
 
 	virtual void FixedUpdate(float FixedDeltaSeconds);
 
-	/** Default: shows ImGui demo window when enabled. */
+	/** Default: dispatches to the layer stack. */
 	virtual void Update(float DeltaSeconds);
 
 	virtual void LateUpdate(float DeltaSeconds);
 	virtual void PreRender(float DeltaSeconds);
 
-	/** Default: finishes ImGui frame and enqueues clear/present (+ ImGui draw). */
+	/** Default: layer stack, then ImGui EndFrame + clear/present enqueue. */
 	virtual void Render(float DeltaSeconds);
 
 	virtual void EndFrame(float DeltaSeconds);
@@ -90,8 +99,8 @@ protected:
 	FRenderServer RenderServer;
 	FResourceServer ResourceServer;
 	FTimer Timer;
-	FInput Input;
 	FImGuiSystem ImGui;
+	FLayerStack LayerStack;
 	FPlatformWindowPtr PlatformWindow;
 
 	float FixedDeltaSeconds = 1.0f / 50.0f;

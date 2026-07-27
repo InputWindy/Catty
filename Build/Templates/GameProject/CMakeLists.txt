@@ -33,6 +33,8 @@ catty_ensure_workspace_dirs()
 catty_warn_if_not_intermediate_binary_dir()
 
 option(CATTY_BUILD_SHARED "Build Catty engine as a shared library (DLL)" ON)
+# Project-owned: push FEditorLayer from the game App. Engine does not know about editors.
+option(GAME_WITH_EDITOR "Enable project EditorLayer (disable for shipping)" ON)
 
 add_subdirectory("${CATTY_ENGINE_ROOT}/Catty" "${CMAKE_BINARY_DIR}/CattyBuild")
 
@@ -40,16 +42,24 @@ set(GAME_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GAME_SOURCE_DIR "${GAME_ROOT}/Source")
 set(GAME_SHADERS_DIR "${GAME_ROOT}/Shaders")
 set(GAME_PLUGINS_DIR "${GAME_ROOT}/Plugins")
+set(GAME_CONFIG_DIR "${GAME_ROOT}/Config")
 
 catty_collect_sources(GAME_SOURCES "${GAME_SOURCE_DIR}")
 if(GAME_SOURCES STREQUAL "")
 	message(FATAL_ERROR "{{PROJECT_NAME}}: no sources under Source/")
 endif()
 
+if(NOT GAME_WITH_EDITOR)
+	list(FILTER GAME_SOURCES EXCLUDE REGEX "[\\\\/]Editor[\\\\/]")
+endif()
+
 add_executable({{PROJECT_NAME}} ${GAME_SOURCES})
 target_include_directories({{PROJECT_NAME}} PRIVATE "${GAME_SOURCE_DIR}")
 target_link_libraries({{PROJECT_NAME}} PRIVATE Catty::Engine)
 target_compile_features({{PROJECT_NAME}} PRIVATE cxx_std_20)
+target_compile_definitions({{PROJECT_NAME}} PRIVATE
+	$<$<BOOL:${GAME_WITH_EDITOR}>:GAME_WITH_EDITOR=1>
+)
 
 if(MSVC)
 	target_compile_options({{PROJECT_NAME}} PRIVATE /W4 /permissive- /Zc:preprocessor /utf-8)
@@ -66,6 +76,16 @@ set_target_properties({{PROJECT_NAME}} PROPERTIES
 add_dependencies({{PROJECT_NAME}} Catty)
 
 catty_copy_shaders({{PROJECT_NAME}} "${GAME_SHADERS_DIR}" "Project/Shaders")
+if(IS_DIRECTORY "${GAME_CONFIG_DIR}")
+	add_custom_command(TARGET {{PROJECT_NAME}} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:{{PROJECT_NAME}}>/Config"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${GAME_CONFIG_DIR}"
+			"$<TARGET_FILE_DIR:{{PROJECT_NAME}}>/Config"
+		COMMENT "Copy project Config (DefaultEngine.ini)"
+		VERBATIM
+	)
+endif()
 add_custom_command(TARGET {{PROJECT_NAME}} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:{{PROJECT_NAME}}>/Project/Plugins"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:{{PROJECT_NAME}}>/Engine/Plugins"
@@ -94,5 +114,6 @@ endif()
 catty_install_runtime_target({{PROJECT_NAME}})
 catty_install_directory("${GAME_SHADERS_DIR}" "Project/Shaders")
 catty_install_directory("${GAME_PLUGINS_DIR}" "Project/Plugins")
+catty_install_directory("${GAME_CONFIG_DIR}" "Config")
 
 # Packaging is done via project package.bat → Tools/package_ui.py (cmake --install).

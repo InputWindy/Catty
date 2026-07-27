@@ -38,9 +38,6 @@ public:
 	/** ImGui::Render — draw data must be consumed before the next BeginFrame. */
 	void EndFrame();
 
-	/** When true, FApp::Update shows ImGui::ShowDemoWindow(). */
-	bool bShowDemoWindow = true;
-
 private:
 	bool bInitialized = false;
 };

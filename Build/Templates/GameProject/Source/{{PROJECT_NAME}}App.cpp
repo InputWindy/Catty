@@ -1,6 +1,11 @@
 #include <Catty/Catty.h>
 #include <Catty/EntryPoint.h>
 
+#include "Editor/EditorLayer.h"
+#include "World/WorldLayer.h"
+
+#include <memory>
+
 class {{APP_CLASS}} : public Catty::FApp
 {
 protected:
@@ -13,11 +18,16 @@ protected:
 		OutConfig.ProjectPluginsDir = "Project/Plugins";
 		OutConfig.CachedDir = "Cached";
 		OutConfig.SavedDir = "Saved";
+		OutConfig.ProjectConfigDir = "Config";
 	}
 
 	virtual bool PostInitialize() override
 	{
-		// Engine + main window are ready: register subsystems / load entry map here later.
+		PushLayer(std::make_unique<FWorldLayer>("MainWorld"));
+
+#if defined(GAME_WITH_EDITOR)
+		PushOverlay(std::make_unique<FEditorLayer>());
+#endif
 		return true;
 	}
 

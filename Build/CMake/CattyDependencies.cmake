@@ -50,10 +50,20 @@ if(TARGET update_mappings)
 	set_target_properties(update_mappings PROPERTIES FOLDER "ThirdParty")
 endif()
 
-# Dear ImGui (sources compiled into Catty; see Catty/CMakeLists.txt)
-# Prefer vendored tree (offline-friendly). Fallback to FetchContent when missing.
-get_filename_component(_CATTY_DEPS_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
-set(_CATTY_VENDORED_IMGUI "${_CATTY_DEPS_DIR}/ThirdParty/imgui")
+# Vulkan (LunarG SDK via VULKAN_SDK / FindVulkan)
+find_package(Vulkan REQUIRED)
+message(STATUS "Catty: Vulkan found")
+message(STATUS "  Vulkan_INCLUDE_DIRS = ${Vulkan_INCLUDE_DIRS}")
+message(STATUS "  Vulkan_LIBRARIES    = ${Vulkan_LIBRARIES}")
+
+find_package(Threads REQUIRED)
+
+# Dear ImGui as a dedicated ThirdParty static library.
+# Catty only consumes ImGui headers + links Catty::ImGui; imgui*.cpp stay out of the Catty target.
+get_filename_component(_CATTY_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+get_filename_component(_CATTY_PUBLIC_HEADERS "${_CATTY_REPO_ROOT}/Catty/Source/Public" ABSOLUTE)
+set(_CATTY_VENDORED_IMGUI "${_CATTY_REPO_ROOT}/ThirdParty/imgui")
+
 if(EXISTS "${_CATTY_VENDORED_IMGUI}/imgui.cpp")
 	set(CATTY_IMGUI_SOURCE_DIR "${_CATTY_VENDORED_IMGUI}" CACHE INTERNAL "Dear ImGui source directory")
 	message(STATUS "Catty: ImGui (vendored) at ${CATTY_IMGUI_SOURCE_DIR}")
@@ -71,13 +81,59 @@ else()
 	set(CATTY_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}" CACHE INTERNAL "Dear ImGui source directory")
 	message(STATUS "Catty: ImGui (FetchContent) at ${CATTY_IMGUI_SOURCE_DIR}")
 endif()
-unset(_CATTY_DEPS_DIR)
+
+set(CATTY_IMGUI_SOURCES
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_demo.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_draw.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_tables.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/imgui_widgets.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/backends/imgui_impl_glfw.cpp"
+	"${CATTY_IMGUI_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
+)
+
+# OBJECT library: sources live under ThirdParty in the .sln; Catty links the objects
+# (all TUs included) without compiling imgui*.cpp into the Catty target source list.
+add_library(imgui OBJECT ${CATTY_IMGUI_SOURCES})
+add_library(Catty::ImGui ALIAS imgui)
+
+target_include_directories(imgui
+	PUBLIC
+		"${CATTY_IMGUI_SOURCE_DIR}"
+		"${CATTY_IMGUI_SOURCE_DIR}/backends"
+		# IMGUI_USER_CONFIG resolves to Catty/UI/ImGuiConfig.h under this include root.
+		"${_CATTY_PUBLIC_HEADERS}"
+)
+
+target_compile_definitions(imgui
+	PUBLIC
+		IMGUI_USER_CONFIG="Catty/UI/ImGuiConfig.h"
+		CATTY_WITH_IMGUI=1
+	PRIVATE
+		$<$<BOOL:${CATTY_BUILD_SHARED}>:CATTY_BUILD_SHARED=1>
+		$<$<BOOL:${CATTY_BUILD_SHARED}>:CATTY_EXPORTS=1>
+)
+
+target_link_libraries(imgui
+	PUBLIC
+		Vulkan::Vulkan
+	PRIVATE
+		glfw
+)
+
+target_compile_features(imgui PUBLIC cxx_std_20)
+
+if(MSVC)
+	target_compile_options(imgui PRIVATE /W4 /permissive- /Zc:preprocessor /utf-8)
+endif()
+
+set_target_properties(imgui PROPERTIES
+	FOLDER "ThirdParty"
+	POSITION_INDEPENDENT_CODE ON
+)
+
+source_group(TREE "${CATTY_IMGUI_SOURCE_DIR}" PREFIX "imgui" FILES ${CATTY_IMGUI_SOURCES})
+
+unset(_CATTY_REPO_ROOT)
+unset(_CATTY_PUBLIC_HEADERS)
 unset(_CATTY_VENDORED_IMGUI)
-
-# Vulkan (LunarG SDK via VULKAN_SDK / FindVulkan)
-find_package(Vulkan REQUIRED)
-message(STATUS "Catty: Vulkan found")
-message(STATUS "  Vulkan_INCLUDE_DIRS = ${Vulkan_INCLUDE_DIRS}")
-message(STATUS "  Vulkan_LIBRARIES    = ${Vulkan_LIBRARIES}")
-
-find_package(Threads REQUIRED)
