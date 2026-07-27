@@ -10,17 +10,16 @@ Build/
   Templates/           # GameProject skeleton for Tools/create_project.py
 ```
 
-Root bats → local Python via `Tools/catty_python.bat`:
+Root bats（用户入口）→ `Tools/catty_python.bat`：
 
-| Bat | Python |
-|-----|--------|
-| `setup.bat` | installs `Tools/python`（no py script） |
+| Bat | Role |
+|-----|------|
+| `setup.bat` | installs `Tools/python` |
 | `createProject.bat` | `Tools/create_project.py` |
-| `generateProject.bat` | `Tools/generateProject.py` |
-| `package.bat` | `Tools/package_ui.py` |
+| `clean.bat` | `Tools/clean.py` |
 
-Internal（`Tools/`）：`clean.bat` → `clean.py`，`reflect_codegen.bat` 等。
+Internal（`Tools/`）：`generateProject.bat` / `package.bat` / `reflect_codegen.bat` 等。
 
-Game project template ships `package.bat` / `clean.bat` + `Tools/invoke_engine.ps1`（读 `.cproject` → 引擎 `catty_python.bat`）。
+Game project template ships root `package.bat` / `clean.bat` + `Tools/invoke_engine.ps1`（读 `.cproject` → 引擎局部 Python）。
 
 Docs agent rules: `Doc/AGENTS.md`.

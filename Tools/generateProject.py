@@ -3,8 +3,8 @@
 Generate Visual Studio solution for a Catty project.
 
 Usage:
-  generateProject.bat
-  generateProject.bat path\\Game.cproject
+  Tools\\generateProject.bat
+  Tools\\generateProject.bat path\\Game.cproject
 """
 
 from __future__ import annotations

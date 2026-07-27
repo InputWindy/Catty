@@ -6,10 +6,10 @@ Engine-local tooling. Root only exposes thin user-facing `.bat` launchers.
 |------|------|
 | `catty_python.bat` | Run a script with `Tools/python/python.exe` (not on PATH) |
 | `create_project.py` | New-project UI (`createProject.bat`) |
-| `generateProject.py` | `.cproject` / workspace → sibling `.sln` |
-| `package_ui.py` | Packaging UI |
+| `generateProject.py` / `generateProject.bat` | `.cproject` / workspace → sibling `.sln` |
+| `package_ui.py` / `package.bat` | Packaging UI |
 | `package.py` | Headless CLI package |
-| `clean.py` / `clean.bat` | Wipe generated/temp files (internal) |
+| `clean.py` | Wipe generated/temp files (`clean.bat` at engine root) |
 | `reflect_codegen.py` / `reflect_codegen.bat` | Scan `CATTY_REFLECT_*` → catalog |
 | `catty_tools.py` | Shared helpers |
 

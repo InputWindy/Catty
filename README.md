@@ -20,17 +20,21 @@ setup.bat --force   # 损坏时强制重装
 |--------|------|
 | `setup.bat` | 安装引擎局部 Python（`Tools/python`） |
 | `createProject.bat` | UI：新建游戏项目 / 注册 `.cproject` 双击 |
-| `generateProject.bat` | 根据 `.cproject`（或引擎工作区）生成同级 `.sln` |
-| `package.bat` | 打开打包 UI → `Packaged/<Platform>/` |
+| `clean.bat` | 清理 Intermediate / Binaries / Packaged / Cached / Saved 等 |
 
-内部（不必看根目录）：`Tools/clean.bat`、`Tools/reflect_codegen.bat`、`Tools/catty_python.bat` 等。
+日常生成 `.sln`、打包、codegen 在 `Tools/`，不必在根目录感知：
+
+| Internal | Role |
+|----------|------|
+| `Tools/generateProject.bat` | `.cproject` / 工作区 → `.sln`（也是双击 `.cproject` 的目标） |
+| `Tools/package.bat` | 引擎侧打包 UI |
+| `Tools/reflect_codegen.bat` | 反射目录 codegen |
+| `Tools/catty_python.bat` | 指定局部解释器 |
 
 ```bat
 setup.bat
 createProject.bat
-generateProject.bat
-package.bat
-package.bat D:\Games\MyGame\MyGame.cproject
+clean.bat
 ```
 
 游戏项目根目录另有 `package.bat` / `clean.bat`（模板）：读 `.cproject` 的 `EngineDirectory`，用引擎局部 Python 唤起引擎 Tools。
@@ -40,7 +44,7 @@ package.bat D:\Games\MyGame\MyGame.cproject
 1. `setup.bat`（首次）  
 2. `createProject.bat` → 填项目名、父目录、引擎路径 → Create  
 3. 得到 `Parent/Name/Name.cproject`  
-4. 双击 `.cproject`（或 `generateProject.bat`）→ 同级 `.sln` → VS 打开  
+4. 双击 `.cproject` → 同级 `.sln` → VS 打开  
 
 ## Layout
 
@@ -51,25 +55,23 @@ Build/
 Tools/
   python/              # 局部 Python（gitignore，setup.bat 安装）
   _cache/              # 安装包缓存（gitignore）
-  catty_python.bat
-  clean.bat            # 引擎清理（内部）
-  *.py
-setup.bat  createProject.bat  generateProject.bat  package.bat
+  generateProject.bat / package.bat / clean.bat / …
+setup.bat  createProject.bat  clean.bat
 ```
 
-## Clean（内部）
+## Clean
 
 ```bat
-Tools\clean.bat
-Tools\clean.bat --ask
-Tools\clean.bat --dry-run
+clean.bat
+clean.bat --ask
+clean.bat --dry-run
 ```
 
 会整夹删除 `Intermediate` / `Binaries` / `Packaged` / `Cached` / `Saved` 等；**不删** `Tools/python`。
 
 ## Engine workspace
 
-`generateProject.bat`（无参数）：`cmake -S Build -B Intermediate`，并在仓库根写出 `CattyWorkspace.sln`。
+`Tools\generateProject.bat`（无参数）：`cmake -S Build -B Intermediate`，并在仓库根写出 `CattyWorkspace.sln`。
 
 ## 引擎架构设计
 

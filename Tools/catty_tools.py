@@ -317,8 +317,8 @@ def install_windows_cproject_association() -> None:
 	if sys.platform != "win32":
 		raise RuntimeError("File association is only implemented for Windows.")
 
-	# Prefer root bat so Explorer double-click stays aligned with repo layout.
-	generate_bat = ENGINE_ROOT / "generateProject.bat"
+	# Prefer Tools bat so Explorer double-click stays aligned with internal layout.
+	generate_bat = ENGINE_ROOT / "Tools" / "generateProject.bat"
 	prog_id = "Catty.CProject"
 	command = f"\"{generate_bat}\" \"%1\""
 
@@ -337,7 +337,7 @@ def install_windows_cproject_association() -> None:
 	]
 	for cmd in commands:
 		subprocess.check_call(cmd)
-	print("[Catty] Associated .cproject → generateProject.bat (current user)")
+	print("[Catty] Associated .cproject → Tools/generateProject.bat (current user)")
 	print(f"[Catty] Command: {command}")
 
 

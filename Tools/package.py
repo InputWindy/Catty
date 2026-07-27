@@ -3,9 +3,9 @@
 Build Release and install into Packaged/<Platform>/.
 
 Usage:
-  package.bat
-  package.bat path\\Game.cproject
-  package.bat path\\Game.cproject Debug
+  Tools\\package.bat
+  Tools\\package.bat path\\Game.cproject
+  Tools\\package.bat path\\Game.cproject Debug
 """
 
 from __future__ import annotations

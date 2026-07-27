@@ -7,11 +7,11 @@ Wipes Intermediate/Binaries/Packaged/Cached/Saved entirely (no leftover README).
 Does NOT remove Tools/python (engine-local interpreter from setup.bat).
 
 Usage:
-  Tools\\clean.bat
-  Tools\\clean.bat --ask
-  Tools\\clean.bat --dry-run
-  Tools\\clean.bat path\\Game.cproject
-  Tools\\clean.bat path\\GameFolder --ask
+  clean.bat
+  clean.bat --ask
+  clean.bat --dry-run
+  clean.bat path\\Game.cproject
+  clean.bat path\\GameFolder --ask
 """
 
 from __future__ import annotations

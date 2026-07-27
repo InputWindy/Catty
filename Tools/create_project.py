@@ -99,7 +99,7 @@ class CreateProjectApp(tk.Tk):
 			self.var_engine.set(path)
 
 	def _auto_associate_cproject(self) -> None:
-		"""Register .cproject → generateProject.bat once when the UI opens (Windows)."""
+		"""Register .cproject → Tools/generateProject.bat when the UI opens (Windows)."""
 		if sys.platform != "win32":
 			return
 		try:
@@ -112,7 +112,7 @@ class CreateProjectApp(tk.Tk):
 			install_windows_cproject_association()
 			messagebox.showinfo(
 				"Catty",
-				"Associated .cproject with generateProject.bat for the current Windows user.\n"
+				"Associated .cproject with Tools/generateProject.bat for the current Windows user.\n"
 				"You may need to sign out/in once for Explorer to refresh icons.",
 			)
 		except Exception as ex:  # noqa: BLE001

@@ -3,7 +3,7 @@
 Catty package UI — pick platform / config and ship to Packaged/<Platform>/.
 
 Launched by:
-  - Engine root: package.bat
+  - Engine: Tools/package.bat
   - Game project: package.bat (resolves EngineDirectory from .cproject)
 """
 

@@ -71,5 +71,5 @@ if errorlevel 1 (
 )
 
 echo [Catty] Setup complete.
-echo [Catty] Next: createProject.bat  ^|  generateProject.bat  ^|  package.bat
+echo [Catty] Next: createProject.bat
 exit /b 0
