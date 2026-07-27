@@ -154,6 +154,101 @@ set_target_properties(imgui PROPERTIES
 
 source_group(TREE "${CATTY_IMGUI_SOURCE_DIR}" PREFIX "imgui" FILES ${CATTY_IMGUI_SOURCES})
 
+# ---------------------------------------------------------------------------
+# Lua 5.4 (static) + sol2 (header-only bindings)
+# ---------------------------------------------------------------------------
+set(_CATTY_VENDORED_LUA "${_CATTY_REPO_ROOT}/ThirdParty/lua")
+if(EXISTS "${_CATTY_VENDORED_LUA}/lua.h")
+	set(CATTY_LUA_SOURCE_DIR "${_CATTY_VENDORED_LUA}" CACHE INTERNAL "Lua source directory")
+	message(STATUS "Catty: Lua (vendored) at ${CATTY_LUA_SOURCE_DIR}")
+elseif(EXISTS "${_CATTY_VENDORED_LUA}/src/lua.h")
+	set(CATTY_LUA_SOURCE_DIR "${_CATTY_VENDORED_LUA}/src" CACHE INTERNAL "Lua source directory")
+	message(STATUS "Catty: Lua (vendored src/) at ${CATTY_LUA_SOURCE_DIR}")
+else()
+	FetchContent_Declare(
+		lua_src
+		GIT_REPOSITORY https://github.com/lua/lua.git
+		GIT_TAG v5.4.7
+		GIT_SHALLOW TRUE
+	)
+	FetchContent_GetProperties(lua_src)
+	if(NOT lua_src_POPULATED)
+		FetchContent_Populate(lua_src)
+	endif()
+	# Upstream lua.git keeps sources in the repo root (not src/).
+	set(CATTY_LUA_SOURCE_DIR "${lua_src_SOURCE_DIR}" CACHE INTERNAL "Lua source directory")
+	message(STATUS "Catty: Lua (FetchContent) at ${CATTY_LUA_SOURCE_DIR}")
+endif()
+
+set(CATTY_LUA_SOURCES
+	"${CATTY_LUA_SOURCE_DIR}/lapi.c"
+	"${CATTY_LUA_SOURCE_DIR}/lauxlib.c"
+	"${CATTY_LUA_SOURCE_DIR}/lbaselib.c"
+	"${CATTY_LUA_SOURCE_DIR}/lcode.c"
+	"${CATTY_LUA_SOURCE_DIR}/lcorolib.c"
+	"${CATTY_LUA_SOURCE_DIR}/lctype.c"
+	"${CATTY_LUA_SOURCE_DIR}/ldblib.c"
+	"${CATTY_LUA_SOURCE_DIR}/ldebug.c"
+	"${CATTY_LUA_SOURCE_DIR}/ldo.c"
+	"${CATTY_LUA_SOURCE_DIR}/ldump.c"
+	"${CATTY_LUA_SOURCE_DIR}/lfunc.c"
+	"${CATTY_LUA_SOURCE_DIR}/lgc.c"
+	"${CATTY_LUA_SOURCE_DIR}/linit.c"
+	"${CATTY_LUA_SOURCE_DIR}/liolib.c"
+	"${CATTY_LUA_SOURCE_DIR}/llex.c"
+	"${CATTY_LUA_SOURCE_DIR}/lmathlib.c"
+	"${CATTY_LUA_SOURCE_DIR}/lmem.c"
+	"${CATTY_LUA_SOURCE_DIR}/loadlib.c"
+	"${CATTY_LUA_SOURCE_DIR}/lobject.c"
+	"${CATTY_LUA_SOURCE_DIR}/lopcodes.c"
+	"${CATTY_LUA_SOURCE_DIR}/loslib.c"
+	"${CATTY_LUA_SOURCE_DIR}/lparser.c"
+	"${CATTY_LUA_SOURCE_DIR}/lstate.c"
+	"${CATTY_LUA_SOURCE_DIR}/lstring.c"
+	"${CATTY_LUA_SOURCE_DIR}/lstrlib.c"
+	"${CATTY_LUA_SOURCE_DIR}/ltable.c"
+	"${CATTY_LUA_SOURCE_DIR}/ltablib.c"
+	"${CATTY_LUA_SOURCE_DIR}/ltm.c"
+	"${CATTY_LUA_SOURCE_DIR}/lundump.c"
+	"${CATTY_LUA_SOURCE_DIR}/lutf8lib.c"
+	"${CATTY_LUA_SOURCE_DIR}/lvm.c"
+	"${CATTY_LUA_SOURCE_DIR}/lzio.c"
+)
+
+add_library(lua STATIC ${CATTY_LUA_SOURCES})
+add_library(Catty::Lua ALIAS lua)
+target_include_directories(lua PUBLIC "${CATTY_LUA_SOURCE_DIR}")
+set_target_properties(lua PROPERTIES
+	FOLDER "ThirdParty"
+	POSITION_INDEPENDENT_CODE ON
+	C_STANDARD 99
+)
+if(MSVC)
+	target_compile_definitions(lua PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+set(_CATTY_VENDORED_SOL2 "${_CATTY_REPO_ROOT}/ThirdParty/sol2")
+if(EXISTS "${_CATTY_VENDORED_SOL2}/include/sol/sol.hpp")
+	set(CATTY_SOL2_INCLUDE_DIR "${_CATTY_VENDORED_SOL2}/include" CACHE INTERNAL "sol2 include directory")
+	message(STATUS "Catty: sol2 (vendored) at ${CATTY_SOL2_INCLUDE_DIR}")
+else()
+	FetchContent_Declare(
+		sol2
+		GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+		GIT_TAG v3.3.1
+		GIT_SHALLOW TRUE
+	)
+	FetchContent_GetProperties(sol2)
+	if(NOT sol2_POPULATED)
+		FetchContent_Populate(sol2)
+	endif()
+	set(CATTY_SOL2_INCLUDE_DIR "${sol2_SOURCE_DIR}/include" CACHE INTERNAL "sol2 include directory")
+	message(STATUS "Catty: sol2 (FetchContent) at ${CATTY_SOL2_INCLUDE_DIR}")
+endif()
+
+unset(_CATTY_VENDORED_LUA)
+unset(_CATTY_VENDORED_SOL2)
+
 unset(_CATTY_REPO_ROOT)
 unset(_CATTY_PUBLIC_HEADERS)
 unset(_CATTY_VENDORED_IMGUI)

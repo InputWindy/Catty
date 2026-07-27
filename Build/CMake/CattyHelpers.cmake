@@ -34,6 +34,35 @@ function(catty_source_group_mirrors ROOT_DIR)
 	endforeach()
 endfunction()
 
+# Attach .lua files to a target for IDE browsing (not compiled).
+function(catty_add_lua_scripts TARGET_NAME SCRIPTS_DIR)
+	if(NOT IS_DIRECTORY "${SCRIPTS_DIR}")
+		return()
+	endif()
+
+	file(GLOB_RECURSE _scripts CONFIGURE_DEPENDS "${SCRIPTS_DIR}/*.lua")
+	if(_scripts STREQUAL "")
+		return()
+	endif()
+
+	target_sources(${TARGET_NAME} PRIVATE ${_scripts})
+	set_source_files_properties(${_scripts} PROPERTIES
+		HEADER_FILE_ONLY TRUE
+		VS_TOOL_OVERRIDE "None"
+	)
+
+	foreach(_file IN LISTS _scripts)
+		file(RELATIVE_PATH _rel "${SCRIPTS_DIR}" "${_file}")
+		get_filename_component(_dir "${_rel}" DIRECTORY)
+		if(_dir STREQUAL "")
+			set(_group "Scripts")
+		else()
+			string(REPLACE "/" "\\" _group "Scripts/${_dir}")
+		endif()
+		source_group("${_group}" FILES "${_file}")
+	endforeach()
+endfunction()
+
 function(catty_set_output_dirs TARGET_NAME)
 	set_target_properties(${TARGET_NAME} PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${CATTY_BIN_DIR}"

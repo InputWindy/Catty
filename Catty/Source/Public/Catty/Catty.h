@@ -35,6 +35,7 @@
 #include "Catty/Resource/Package.h"
 #include "Catty/Resource/GCManager.h"
 #include "Catty/Resource/ResourceManager.h"
+#include "Catty/Script/ScriptSystem.h"
 #include "Catty/Server/ThreadedServer.h"
 #include "Catty/Server/ServerTask.h"
 #include "Catty/Server/TaskContext.h"

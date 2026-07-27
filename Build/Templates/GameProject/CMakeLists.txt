@@ -43,6 +43,7 @@ set(GAME_SOURCE_DIR "${GAME_ROOT}/Source")
 set(GAME_SHADERS_DIR "${GAME_ROOT}/Shaders")
 set(GAME_PLUGINS_DIR "${GAME_ROOT}/Plugins")
 set(GAME_CONFIG_DIR "${GAME_ROOT}/Config")
+set(GAME_SCRIPTS_DIR "${GAME_ROOT}/Scripts")
 
 catty_collect_sources(GAME_SOURCES "${GAME_SOURCE_DIR}")
 if(GAME_SOURCES STREQUAL "")
@@ -69,6 +70,7 @@ endif()
 
 catty_set_output_dirs({{PROJECT_NAME}})
 catty_source_group_mirrors("${GAME_SOURCE_DIR}" ${GAME_SOURCES})
+catty_add_lua_scripts({{PROJECT_NAME}} "${GAME_SCRIPTS_DIR}")
 set_target_properties({{PROJECT_NAME}} PROPERTIES
 	FOLDER "Games"
 	VS_DEBUGGER_WORKING_DIRECTORY "${GAME_ROOT}"
@@ -83,6 +85,16 @@ if(IS_DIRECTORY "${GAME_CONFIG_DIR}")
 			"${GAME_CONFIG_DIR}"
 			"$<TARGET_FILE_DIR:{{PROJECT_NAME}}>/Config"
 		COMMENT "Copy project Config (DefaultEngine.ini)"
+		VERBATIM
+	)
+endif()
+if(IS_DIRECTORY "${GAME_SCRIPTS_DIR}")
+	add_custom_command(TARGET {{PROJECT_NAME}} POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:{{PROJECT_NAME}}>/Scripts"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${GAME_SCRIPTS_DIR}"
+			"$<TARGET_FILE_DIR:{{PROJECT_NAME}}>/Scripts"
+		COMMENT "Copy project Scripts (Lua)"
 		VERBATIM
 	)
 endif()
@@ -115,5 +127,6 @@ catty_install_runtime_target({{PROJECT_NAME}})
 catty_install_directory("${GAME_SHADERS_DIR}" "Project/Shaders")
 catty_install_directory("${GAME_PLUGINS_DIR}" "Project/Plugins")
 catty_install_directory("${GAME_CONFIG_DIR}" "Config")
+catty_install_directory("${GAME_SCRIPTS_DIR}" "Scripts")
 
 # Packaging is done via project package.bat → Tools/package_ui.py (cmake --install).

@@ -10,6 +10,7 @@
 #include "Catty/Render/RenderServer.h"
 #include "Catty/Resource/GCManager.h"
 #include "Catty/Resource/ResourceManager.h"
+#include "Catty/Script/ScriptSystem.h"
 #include "Catty/UI/ImGuiSystem.h"
 
 #include <cstdint>
@@ -72,6 +73,9 @@ public:
 	[[nodiscard]] FWorkerPool& GetWorkerPool() { return WorkerPool; }
 	[[nodiscard]] const FWorkerPool& GetWorkerPool() const { return WorkerPool; }
 
+	[[nodiscard]] FScriptSystem& GetScriptSystem() { return ScriptSystem; }
+	[[nodiscard]] const FScriptSystem& GetScriptSystem() const { return ScriptSystem; }
+
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
 	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
@@ -127,6 +131,7 @@ protected:
 	FGCManager GCManager;
 	FResourceManager ResourceManager;
 	FWorkerPool WorkerPool;
+	FScriptSystem ScriptSystem;
 	FTimer Timer;
 	FImGuiSystem ImGui;
 	FLayerStack LayerStack;

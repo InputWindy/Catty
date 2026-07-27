@@ -23,6 +23,12 @@ endif()
 if(NOT TARGET imgui)
 	message(FATAL_ERROR "Catty: imgui ThirdParty target was not created (CattyDependencies.cmake)")
 endif()
+if(NOT TARGET lua)
+	message(FATAL_ERROR "Catty: lua ThirdParty target was not created (CattyDependencies.cmake)")
+endif()
+if(NOT CATTY_SOL2_INCLUDE_DIR)
+	message(FATAL_ERROR "Catty: sol2 include dir was not set (CattyDependencies.cmake)")
+endif()
 
 if(CATTY_BUILD_SHARED)
 	add_library(Catty SHARED ${CATTY_SOURCES})
@@ -42,6 +48,7 @@ target_include_directories(Catty
 	PRIVATE
 		"${CATTY_PRIVATE_DIR}"
 		"${CATTY_NLOHMANN_JSON_INCLUDE_DIR}"
+		"${CATTY_SOL2_INCLUDE_DIR}"
 )
 
 # PUBLIC: game code uses CATTY_* macros that expand to spdlog calls.
@@ -54,6 +61,7 @@ target_link_libraries(Catty
 	PRIVATE
 		glfw
 		Threads::Threads
+		lua
 )
 
 # Re-export ImGui include paths / defs so game TUs can #include <imgui.h> against Catty.dll.
@@ -86,6 +94,7 @@ endif()
 target_compile_definitions(Catty
 	PUBLIC
 		CATTY_WITH_VULKAN=1
+		CATTY_WITH_LUA=1
 		CATTY_PLATFORM_${CATTY_PLATFORM_NAME}=1
 )
 

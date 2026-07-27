@@ -22,6 +22,8 @@ struct FEngineConfig
 	std::string SavedDir = "Saved";
 	/** Project Config/ directory (DefaultEngine.ini, etc.). */
 	std::string ProjectConfigDir = "Config";
+	/** Project Scripts/ directory (Lua game logic). */
+	std::string ProjectScriptsDir = "Scripts";
 
 	/** Main window. Ignored when bCreateMainWindow is false. */
 	EPlatform Platform = EPlatform::Glfw;

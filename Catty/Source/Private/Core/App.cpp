@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <utility>
 
 namespace Catty
@@ -98,6 +99,10 @@ FApp::~FApp()
 	if (WorkerPool.IsInitialized())
 	{
 		WorkerPool.Shutdown();
+	}
+	if (ScriptSystem.IsInitialized())
+	{
+		ScriptSystem.Shutdown();
 	}
 	if (GCManager.IsInitialized())
 	{
@@ -228,6 +233,36 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
+	if (!ScriptSystem.Initialize(EngineConfig.ProjectScriptsDir))
+	{
+		CATTY_CORE_ERROR("FApp::InitializeEngine failed (ScriptSystem)");
+		WorkerPool.Shutdown();
+		ResourceManager.Shutdown();
+		GCManager.Shutdown();
+		if (ImGui.IsInitialized())
+		{
+			ImGui.Shutdown(RenderServer);
+		}
+		RenderServer.Shutdown();
+		ShutdownPlatformWindow(PlatformWindow);
+		Engine.Shutdown();
+		return false;
+	}
+
+	// Optional entry script; missing file is OK (games may load later).
+	{
+		namespace fs = std::filesystem;
+		const fs::path MainScript = fs::path(EngineConfig.ProjectScriptsDir) / "main.lua";
+		if (fs::is_regular_file(MainScript))
+		{
+			(void)ScriptSystem.DoFile("main.lua");
+		}
+		else
+		{
+			CATTY_CORE_INFO("FScriptSystem: no '{}' (skip)", MainScript.string());
+		}
+	}
+
 	if (PlatformWindow->HasOsWindow())
 	{
 		PlatformWindow->GetFramebufferSize(LastFramebufferWidth, LastFramebufferHeight);
@@ -265,6 +300,10 @@ void FApp::Shutdown()
 	if (WorkerPool.IsInitialized())
 	{
 		WorkerPool.Shutdown();
+	}
+	if (ScriptSystem.IsInitialized())
+	{
+		ScriptSystem.Shutdown();
 	}
 	if (GCManager.IsInitialized())
 	{
@@ -310,12 +349,20 @@ void FApp::ProcessInput(float DeltaSeconds)
 void FApp::FixedUpdate(float InFixedDeltaSeconds)
 {
 	LayerStack.FixedUpdate(InFixedDeltaSeconds);
+	if (ScriptSystem.IsInitialized())
+	{
+		(void)ScriptSystem.Call("OnFixedUpdate", InFixedDeltaSeconds);
+	}
 }
 
 void FApp::Update(float DeltaSeconds)
 {
 	GCManager.Tick(DeltaSeconds);
 	LayerStack.Update(DeltaSeconds);
+	if (ScriptSystem.IsInitialized())
+	{
+		(void)ScriptSystem.Call("OnUpdate", DeltaSeconds);
+	}
 }
 
 void FApp::LateUpdate(float DeltaSeconds)

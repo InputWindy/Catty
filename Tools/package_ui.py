@@ -64,7 +64,7 @@ class PackageApp(tk.Tk):
 		self.var_cproject = tk.StringVar(value=str(initial_cproject) if initial_cproject else "")
 		self.var_platform = tk.StringVar(value="Win64")
 		self.var_config = tk.StringVar(value="Release")
-		self.var_regen = tk.BooleanVar(value=True)
+		self.var_regen = tk.BooleanVar(value=False)
 		self.var_open = tk.BooleanVar(value=True)
 		self._busy = False
 

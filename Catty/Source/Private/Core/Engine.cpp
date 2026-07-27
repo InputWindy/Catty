@@ -34,6 +34,7 @@ bool FEngine::Initialize(const FEngineConfig& InConfig)
 	CATTY_CORE_INFO("  Cached         : {}", Config.CachedDir);
 	CATTY_CORE_INFO("  Saved          : {}", Config.SavedDir);
 	CATTY_CORE_INFO("  ProjectConfig  : {}", Config.ProjectConfigDir);
+	CATTY_CORE_INFO("  ProjectScripts : {}", Config.ProjectScriptsDir);
 
 	return true;
 }
