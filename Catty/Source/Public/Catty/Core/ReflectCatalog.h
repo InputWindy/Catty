@@ -2,6 +2,6 @@
 
 /**
  * Stable include for the reflect codegen catalog.
- * ReflectCatalog.gen.h is gitignored — produced by CMake / Tools/reflect_codegen.bat.
+ * ReflectCatalog.gen.h lives under Source/Generated/ (gitignored; CMake / reflect_codegen).
  */
-#include "Catty/Core/ReflectCatalog.gen.h"
+#include "ReflectCatalog.gen.h"

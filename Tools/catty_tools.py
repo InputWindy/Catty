@@ -556,6 +556,12 @@ _WIPE_DIR_NAMES = (
 	".vs",
 )
 
+# Extra wipe paths relative to the clean root (engine tree).
+_WIPE_RELATIVE_PATHS = (
+	Path("Catty") / "Source" / "Generated",
+	Path("Doc") / "Engine" / "ReflectCatalog.md",
+)
+
 _DELETE_NAME_GLOBS = (
 	"*.sln",
 	"*.vcxproj",
@@ -606,6 +612,11 @@ def collect_clean_targets(project_dir: Path) -> list[Path]:
 		if name.lower() == "build":
 			continue
 		p = project_dir / name
+		if p.exists():
+			targets.append(p)
+
+	for rel in _WIPE_RELATIVE_PATHS:
+		p = project_dir / rel
 		if p.exists():
 			targets.append(p)
 

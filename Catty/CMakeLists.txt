@@ -14,16 +14,18 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CATTY_ENGINE_BUILD_CMAKE_DIR}")
 include(CattyDependencies)
 
+set(CATTY_GENERATED_DIR "${CATTY_SOURCE_DIR}/Generated")
+
 # Engine repo root (Tools/python + reflect_codegen.py).
 get_filename_component(_CATTY_ENGINE_ROOT_FOR_CODEGEN "${CATTY_ROOT}/.." ABSOLUTE)
 set(_CATTY_REFLECT_CODEGEN_PY "${_CATTY_ENGINE_ROOT_FOR_CODEGEN}/Tools/reflect_codegen.py")
 set(_CATTY_LOCAL_PYTHON "${_CATTY_ENGINE_ROOT_FOR_CODEGEN}/Tools/python/python.exe")
-set(_CATTY_GEN_CATALOG_H "${CATTY_PUBLIC_DIR}/Catty/Core/ReflectCatalog.gen.h")
-set(_CATTY_GEN_LUA_H "${CATTY_PRIVATE_DIR}/Script/LuaBindings.gen.h")
-set(_CATTY_GEN_LUA_CPP "${CATTY_PRIVATE_DIR}/Script/LuaBindings.gen.cpp")
-set(_CATTY_GEN_META_CPP "${CATTY_PRIVATE_DIR}/Core/ReflectMeta.gen.cpp")
+set(_CATTY_GEN_CATALOG_H "${CATTY_GENERATED_DIR}/ReflectCatalog.gen.h")
+set(_CATTY_GEN_LUA_H "${CATTY_GENERATED_DIR}/LuaBindings.gen.h")
+set(_CATTY_GEN_LUA_CPP "${CATTY_GENERATED_DIR}/LuaBindings.gen.cpp")
+set(_CATTY_GEN_META_H "${CATTY_GENERATED_DIR}/ReflectMeta.gen.h")
 
-# Build-time codegen (catalog + LuaBindings). Docs (LuaAPI.html) stay on manual bat.
+# Build-time codegen (catalog + LuaBindings + LuaAPI.html Reflect regions).
 if(NOT EXISTS "${_CATTY_LOCAL_PYTHON}")
 	message(FATAL_ERROR
 		"Catty: engine-local Python missing:\n  ${_CATTY_LOCAL_PYTHON}\n"
@@ -34,7 +36,7 @@ if(NOT EXISTS "${_CATTY_REFLECT_CODEGEN_PY}")
 endif()
 
 execute_process(
-	COMMAND "${_CATTY_LOCAL_PYTHON}" "${_CATTY_REFLECT_CODEGEN_PY}" --no-lua-api
+	COMMAND "${_CATTY_LOCAL_PYTHON}" "${_CATTY_REFLECT_CODEGEN_PY}"
 	WORKING_DIRECTORY "${_CATTY_ENGINE_ROOT_FOR_CODEGEN}"
 	RESULT_VARIABLE _CATTY_CODEGEN_RC
 	OUTPUT_VARIABLE _CATTY_CODEGEN_OUT
@@ -49,12 +51,23 @@ message(STATUS "Catty: reflect/Lua codegen OK")
 
 catty_collect_sources(CATTY_SOURCES "${CATTY_SOURCE_DIR}")
 
+# Drop anything under Source/Generated from the glob — added explicitly below.
+set(_CATTY_SOURCES_FILTERED "")
+foreach(_src IN LISTS CATTY_SOURCES)
+	string(FIND "${_src}" "/Generated/" _catty_gen_pos)
+	string(FIND "${_src}" "\\Generated\\" _catty_gen_pos_win)
+	if(_catty_gen_pos EQUAL -1 AND _catty_gen_pos_win EQUAL -1)
+		list(APPEND _CATTY_SOURCES_FILTERED "${_src}")
+	endif()
+endforeach()
+set(CATTY_SOURCES "${_CATTY_SOURCES_FILTERED}")
+
 # Ensure generated Lua binding TU is always part of the target (glob may race).
 list(APPEND CATTY_SOURCES
 	"${_CATTY_GEN_LUA_CPP}"
 	"${_CATTY_GEN_LUA_H}"
 	"${_CATTY_GEN_CATALOG_H}"
-	"${_CATTY_GEN_META_CPP}"
+	"${_CATTY_GEN_META_H}"
 )
 list(REMOVE_DUPLICATES CATTY_SOURCES)
 
@@ -89,15 +102,16 @@ add_library(Catty::Engine ALIAS Catty)
 
 # Regenerate on every Catty build (no separate VS/CMake project in the solution).
 add_custom_command(TARGET Catty PRE_BUILD
-	COMMAND "${_CATTY_LOCAL_PYTHON}" "${_CATTY_REFLECT_CODEGEN_PY}" --no-lua-api
+	COMMAND "${_CATTY_LOCAL_PYTHON}" "${_CATTY_REFLECT_CODEGEN_PY}"
 	WORKING_DIRECTORY "${_CATTY_ENGINE_ROOT_FOR_CODEGEN}"
-	COMMENT "Catty: regenerate ReflectCatalog / LuaBindings"
+	COMMENT "Catty: regenerate ReflectCatalog / LuaBindings / LuaAPI.html"
 	VERBATIM
 )
 
 target_include_directories(Catty
 	PUBLIC
 		"${CATTY_PUBLIC_DIR}"
+		"${CATTY_GENERATED_DIR}"
 		"${CATTY_REFL_INCLUDE_DIR}"
 	PRIVATE
 		"${CATTY_PRIVATE_DIR}"

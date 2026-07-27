@@ -2,7 +2,7 @@
 
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
-#include "Script/LuaBindings.gen.h"
+#include "LuaBindings.gen.h"
 
 #define SOL_ALL_SAFETIES_ON 1
 #include <sol/sol.hpp>

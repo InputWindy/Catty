@@ -21,8 +21,10 @@
  *   }
  * ```
  *
- * Run Tools/reflect_codegen.bat (also invoked by CMake). Opt out of Lua only:
+ * Run Tools/reflect_codegen.bat (also invoked by CMake). Lua names are snake_case
+ * by default (FObject → catty.object, GetName → get_name). Opt out of Lua only:
  *   CATTY_REFLECT_CLASS(CATTY_LUA_SKIP)
+ * Override a name: CATTY_LUA_NAME("custom_name") on the class attrs / member list.
  *
  * Manual listing (optional, after the type) is still supported for selective export:
  *   CATTY_REFLECT_BEGIN(Catty::FPoint)

@@ -15,10 +15,6 @@
 	--blue: #5eb7ff;
 	--green: #74d99f;
 	--yellow: #ffd166;
-	--orange: #ff9f5a;
-	--pink: #ff7ab6;
-	--purple: #b69cff;
-	--red: #ff6b6b;
 	--cyan: #66e3e0;
 }
 * { box-sizing: border-box; }
@@ -32,18 +28,17 @@ body {
 a { color: var(--cyan); text-decoration: none; }
 a:hover { text-decoration: underline; }
 header {
-	padding: 36px 36px 24px;
+	padding: 28px 36px 20px;
 	border-bottom: 1px solid var(--line);
 	background: linear-gradient(135deg, #161d2a, #0e131b 60%);
 }
-h1 { margin: 0 0 10px; font-size: 30px; color: #ffd166; }
-.subtitle { color: var(--muted); max-width: 960px; line-height: 1.8; }
-.subtitle b { color: #dbe8f6; }
+h1 { margin: 0 0 8px; font-size: 28px; color: #ffd166; }
+.subtitle { color: var(--muted); max-width: 880px; line-height: 1.7; }
 .layout {
 	display: grid;
-	grid-template-columns: 240px minmax(0, 1fr);
+	grid-template-columns: 220px minmax(0, 1fr);
 	gap: 0;
-	max-width: 1280px;
+	max-width: 1200px;
 }
 @media (max-width: 900px) {
 	.layout { grid-template-columns: 1fr; }
@@ -82,7 +77,6 @@ nav.toc .sec {
 	padding: 0 8px;
 	font-size: 12px;
 	color: var(--yellow);
-	font-family: inherit;
 	font-weight: 700;
 }
 main { padding: 24px 36px 80px; min-width: 0; }
@@ -102,16 +96,6 @@ main { padding: 24px 36px 80px; min-width: 0; }
 	color: #ffe08a;
 }
 .body { padding: 18px 20px 22px; }
-.intro { color: #cfe4ff; }
-.pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
-.pill {
-	padding: 5px 11px;
-	border-radius: 999px;
-	background: #0c141d;
-	border: 1px solid var(--line);
-	color: #cfe4ff;
-	font-size: 12.5px;
-}
 .fn {
 	border: 1px solid var(--line);
 	border-radius: 12px;
@@ -148,8 +132,6 @@ main { padding: 24px 36px 80px; min-width: 0; }
 	border: 1px solid var(--line);
 }
 .tag-api { color: var(--green); border-color: rgba(116, 217, 159, 0.35); background: rgba(116, 217, 159, 0.08); }
-.tag-hook { color: var(--orange); border-color: rgba(255, 159, 90, 0.4); background: rgba(255, 159, 90, 0.08); }
-.tag-global { color: var(--purple); border-color: rgba(182, 156, 255, 0.4); background: rgba(182, 156, 255, 0.08); }
 .tag-reflect { color: var(--blue); border-color: rgba(94, 183, 255, 0.4); background: rgba(94, 183, 255, 0.08); }
 .fn-body { padding: 14px 16px 16px; }
 .sig {
@@ -163,7 +145,6 @@ main { padding: 24px 36px 80px; min-width: 0; }
 	font-size: 13.5px;
 	color: #ffe08a;
 	white-space: pre-wrap;
-	overflow-x: auto;
 }
 .fn-body p { margin: 0 0 12px; color: #cfe4ff; }
 .fn-body h4 {
@@ -195,23 +176,6 @@ td code, .inline, p code {
 	padding: 0 5px;
 	font-size: 12.5px;
 }
-.type { color: var(--pink); font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
-.example {
-	margin: 8px 0 0;
-	padding: 12px 14px;
-	border-radius: 8px;
-	background: #0a0e14;
-	border: 1px solid var(--line);
-	overflow-x: auto;
-}
-.example pre {
-	margin: 0;
-	font-family: Consolas, "Cascadia Mono", monospace;
-	font-size: 13px;
-	line-height: 1.55;
-	color: #d7e6f5;
-	white-space: pre;
-}
 .note {
 	border-left: 4px solid var(--yellow);
 	background: #121820;
@@ -220,602 +184,112 @@ td code, .inline, p code {
 	color: var(--muted);
 	margin: 12px 0 0;
 }
-.note strong { color: #ffe08a; }
-footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 1280px; }
+footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 1200px; }
 </style>
 </head>
 <body>
 <header>
-	<h1>Catty Lua API Reference</h1>
+	<h1>Catty Lua API</h1>
 	<div class="subtitle">
-		引擎向 Lua 暴露的 <b>绑定函数</b> 与帧回调约定。手工 API 见
-		<code class="inline">RegisterCoreBindings</code>；反射 usertype 由
-		<code class="inline">Tools/reflect_codegen.py</code> 生成
-		（<code class="inline">LuaBindings.gen.cpp</code> / <code class="inline">CATTY_REFLECT_*</code>）。<br />
-		接入说明：<a href="Lua脚本接入.md">Lua脚本接入.md</a>
-		· 反射目录：<a href="ReflectCatalog.md">ReflectCatalog.md</a>
-		· 架构：<a href="引擎架构设计.html">引擎架构设计</a>
+		仅列出 <code class="inline">CATTY_REFLECT_*</code> 导出的 usertype。
+		log / cvar / 帧回调见 <a href="Lua脚本接入.md">Lua脚本接入.md</a>。
 	</div>
 </header>
 
 <div class="layout">
 <nav class="toc" aria-label="API directory">
 	<h2>Directory</h2>
-	<div class="sec">Overview</div>
-	<ul>
-		<li><a href="#overview">概述</a></li>
-		<li><a href="#stdlib">标准库</a></li>
-	</ul>
-	<div class="sec">catty · Logging</div>
-	<ul>
-		<li><a href="#catty.log">catty.log</a></li>
-		<li><a href="#catty.log_warn">catty.log_warn</a></li>
-		<li><a href="#catty.log_error">catty.log_error</a></li>
-	</ul>
-	<div class="sec">catty · CVar Get</div>
-	<ul>
-		<li><a href="#catty.get_cvar_int">get_cvar_int</a></li>
-		<li><a href="#catty.get_cvar_float">get_cvar_float</a></li>
-		<li><a href="#catty.get_cvar_bool">get_cvar_bool</a></li>
-		<li><a href="#catty.get_cvar_string">get_cvar_string</a></li>
-	</ul>
-	<div class="sec">catty · CVar Set</div>
-	<ul>
-		<li><a href="#catty.set_cvar_int">set_cvar_int</a></li>
-		<li><a href="#catty.set_cvar_float">set_cvar_float</a></li>
-		<li><a href="#catty.set_cvar_bool">set_cvar_bool</a></li>
-		<li><a href="#catty.set_cvar_string">set_cvar_string</a></li>
-	</ul>
-	<div class="sec">Engine Hooks</div>
-	<ul>
-		<li><a href="#OnUpdate">OnUpdate</a></li>
-		<li><a href="#OnFixedUpdate">OnFixedUpdate</a></li>
-	</ul>
 <!-- @@CATTY_LUA_REFLECT_TOC_BEGIN@@ -->
-	<div class="sec">catty · Reflect Usertypes</div>
+	<div class="sec">Usertypes</div>
 	<ul>
-		<li><a href="#catty.FReflectSmoke">FReflectSmoke</a></li>
+		<li><a href="#catty.object">object</a></li>
+		<li><a href="#catty.package">package</a></li>
+		<li><a href="#catty.resource">resource</a></li>
 	</ul>
 <!-- @@CATTY_LUA_REFLECT_TOC_END@@ -->
 </nav>
 
 <main>
-
-<section class="card" id="overview">
-	<h2>概述</h2>
-	<div class="body intro">
-		<p>
-			Catty 在 <code>FScriptSystem::Initialize</code> 时创建全局表 <code>catty</code>，
-			并登记下列函数。脚本跑在<strong>游戏线程</strong>；不要从 Worker / Render 线程调用引擎回调。
-		</p>
-		<p>
-			入口文件：工程 <code>Scripts/main.lua</code>（相对
-			<code>FEngineConfig::ProjectScriptsDir</code>）。
-			<code>package.path</code> 指向该目录下的 <code>?.lua</code> 与 <code>?/init.lua</code>。
-		</p>
-		<div class="pill-row">
-			<span class="pill">Lua 5.4</span>
-			<span class="pill">sol2 bindings</span>
-			<span class="pill">namespace: <b>catty</b></span>
-			<span class="pill">11 API · 2 hooks</span>
-<!-- @@CATTY_LUA_REFLECT_PILL_BEGIN@@ -->
-			<span class="pill">1 usertype (codegen)</span>
-<!-- @@CATTY_LUA_REFLECT_PILL_END@@ -->
-		</div>
-		<div class="note">
-			<strong>约定：</strong>本文「Returns」栏的类型按 Lua 侧语义描述
-			（number / boolean / string）。CVar 名与 C++ <code>FConsoleManager</code> 登记名一致（区分大小写）。
-		</div>
-	</div>
-</section>
-
-<section class="card" id="stdlib">
-	<h2>已打开的 Lua 标准库</h2>
-	<div class="body intro">
-		<p>VM 通过 <code>sol::open_libraries</code> 打开：</p>
-		<p>
-			<code>base</code> · <code>package</code> · <code>coroutine</code> ·
-			<code>string</code> · <code>table</code> · <code>math</code> · <code>utf8</code>
-		</p>
-		<p>未打开：<code>io</code> · <code>os</code> · <code>debug</code>（刻意收紧磁盘 / 进程面）。</p>
-	</div>
-</section>
-
-<section class="card">
-	<h2>catty — Logging</h2>
-	<div class="body">
-
-		<article class="fn" id="catty.log">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.log</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">catty.log(message)</code>
-				<p>写一条 Info 级别日志，前缀 <code>[Lua]</code>。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>message</code></td><td class="type">string</td><td>日志正文。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<p>无返回值。</p>
-				<h4>Example</h4>
-				<div class="example"><pre>catty.log("hello from Scripts/main.lua")</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.log_warn">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.log_warn</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">catty.log_warn(message)</code>
-				<p>写一条 Warning 级别日志，前缀 <code>[Lua]</code>。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>message</code></td><td class="type">string</td><td>日志正文。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<p>无返回值。</p>
-				<h4>Example</h4>
-				<div class="example"><pre>catty.log_warn("CVar missing, using default")</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.log_error">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.log_error</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">catty.log_error(message)</code>
-				<p>写一条 Error 级别日志，前缀 <code>[Lua]</code>。仅记录，不会抛 Lua error。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>message</code></td><td class="type">string</td><td>日志正文。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<p>无返回值。</p>
-				<h4>Example</h4>
-				<div class="example"><pre>catty.log_error("failed to apply gameplay setting")</pre></div>
-			</div>
-		</article>
-
-	</div>
-</section>
-
-<section class="card">
-	<h2>catty — Console Variables (Get)</h2>
-	<div class="body">
-		<p class="intro" style="margin:0 0 16px">
-			读取 <code>FConsoleManager</code> 已登记的 CVar。名不存在时返回 <code>default</code>
-			（省略则按类型零值 / 空串）。
-		</p>
-
-		<article class="fn" id="catty.get_cvar_int">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.get_cvar_int</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">value = catty.get_cvar_int(name [, default])</code>
-				<p>读取整数 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>default</code></td><td class="type">number?</td><td>可选；缺省为 <code>0</code>。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">number</td><td>当前整数值（Lua number）。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>local threads = catty.get_cvar_int("worker.NumThreads", 4)</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.get_cvar_float">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.get_cvar_float</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">value = catty.get_cvar_float(name [, default])</code>
-				<p>读取浮点 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>default</code></td><td class="type">number?</td><td>可选；缺省为 <code>0.0</code>。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">number</td><td>当前浮点值。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>local scale = catty.get_cvar_float("r.SomeScale", 1.0)</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.get_cvar_bool">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.get_cvar_bool</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">value = catty.get_cvar_bool(name [, default])</code>
-				<p>读取布尔 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>default</code></td><td class="type">boolean?</td><td>可选；缺省为 <code>false</code>。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">boolean</td><td>当前布尔值。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>if catty.get_cvar_bool("game.DebugDraw", false) then
-  catty.log("debug draw on")
-end</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.get_cvar_string">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.get_cvar_string</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">value = catty.get_cvar_string(name [, default])</code>
-				<p>读取字符串 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>default</code></td><td class="type">string?</td><td>可选；缺省为 <code>""</code>。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">string</td><td>当前字符串值。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>local map = catty.get_cvar_string("game.StartMap", "Default")</pre></div>
-			</div>
-		</article>
-
-	</div>
-</section>
-
-<section class="card">
-	<h2>catty — Console Variables (Set)</h2>
-	<div class="body">
-		<p class="intro" style="margin:0 0 16px">
-			写入已存在的 CVar。成功返回 <code>true</code>；名不存在或类型不匹配时返回 <code>false</code>
-			（不抛异常）。成功写入会触发该 CVar 的 OnChanged 回调（C++ 侧）。
-		</p>
-
-		<article class="fn" id="catty.set_cvar_int">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.set_cvar_int</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">ok = catty.set_cvar_int(name, value)</code>
-				<p>设置整数 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>value</code></td><td class="type">number</td><td>新整数值。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">boolean</td><td><code>true</code> 表示写入成功。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>if not catty.set_cvar_int("worker.NumThreads", 8) then
-  catty.log_warn("worker.NumThreads not found")
-end</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.set_cvar_float">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.set_cvar_float</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">ok = catty.set_cvar_float(name, value)</code>
-				<p>设置浮点 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>value</code></td><td class="type">number</td><td>新浮点值。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">boolean</td><td><code>true</code> 表示写入成功。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>catty.set_cvar_float("r.SomeScale", 1.25)</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.set_cvar_bool">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.set_cvar_bool</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">ok = catty.set_cvar_bool(name, value)</code>
-				<p>设置布尔 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>value</code></td><td class="type">boolean</td><td>新布尔值。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">boolean</td><td><code>true</code> 表示写入成功。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>catty.set_cvar_bool("game.DebugDraw", true)</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.set_cvar_string">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.set_cvar_string</h3>
-				<span class="tag tag-api">API</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">ok = catty.set_cvar_string(name, value)</code>
-				<p>设置字符串 CVar。</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>name</code></td><td class="type">string</td><td>CVar 名。</td></tr>
-						<tr><td><code>value</code></td><td class="type">string</td><td>新字符串。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<table>
-					<thead><tr><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td class="type">boolean</td><td><code>true</code> 表示写入成功。</td></tr>
-					</tbody>
-				</table>
-				<h4>Example</h4>
-				<div class="example"><pre>catty.set_cvar_string("game.StartMap", "Arena01")</pre></div>
-			</div>
-		</article>
-
-	</div>
-</section>
-
-<section class="card">
-	<h2>Engine Hooks（全局回调）</h2>
-	<div class="body">
-		<p class="intro" style="margin:0 0 16px">
-			以下<strong>不是</strong> <code>catty</code> 表成员，而是可选的<strong>全局函数</strong>。
-			由 <code>FApp</code> 在帧循环里通过 <code>FScriptSystem::Call</code> 调用；
-			未定义时静默跳过（不报错）。
-		</p>
-
-		<article class="fn" id="OnUpdate">
-			<div class="fn-head">
-				<h3 class="fn-name">OnUpdate</h3>
-				<span class="tag tag-hook">Hook</span>
-				<span class="tag tag-global">global</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">function OnUpdate(dt) end</code>
-				<p>
-					可变帧更新。对应 C++ <code>FApp</code> 每帧 <code>Update</code>，
-					传入真实帧间隔秒数。
-				</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr><td><code>dt</code></td><td class="type">number</td><td>本帧 DeltaSeconds（秒）。</td></tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<p>无返回值（引擎忽略返回值）。</p>
-				<h4>Example</h4>
-				<div class="example"><pre>local Accumulated = 0.0
-
-function OnUpdate(dt)
-  Accumulated = Accumulated + dt
-end</pre></div>
-			</div>
-		</article>
-
-		<article class="fn" id="OnFixedUpdate">
-			<div class="fn-head">
-				<h3 class="fn-name">OnFixedUpdate</h3>
-				<span class="tag tag-hook">Hook</span>
-				<span class="tag tag-global">global</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">function OnFixedUpdate(fixedDt) end</code>
-				<p>
-					固定步长更新。对应 C++ <code>FApp</code> 的 <code>FixedUpdate</code>，
-					适合物理 / 确定性逻辑。
-				</p>
-				<h4>Parameters</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
-					<tbody>
-						<tr>
-							<td><code>fixedDt</code></td>
-							<td class="type">number</td>
-							<td>固定步长秒数（与引擎 FixedDelta 配置一致）。</td>
-						</tr>
-					</tbody>
-				</table>
-				<h4>Returns</h4>
-				<p>无返回值（引擎忽略返回值）。</p>
-				<h4>Example</h4>
-				<div class="example"><pre>function OnFixedUpdate(fixedDt)
-  -- physics / fixed-step gameplay
-end</pre></div>
-			</div>
-		</article>
-
-		<div class="note">
-			<strong>加载时机：</strong>若存在 <code>Scripts/main.lua</code>，在
-			<code>InitializeEngine</code> 末尾 <code>DoFile</code>。
-			请在该文件（或其 <code>require</code> 的模块）里定义上述全局函数。
-		</div>
-	</div>
-</section>
-
 <!-- @@CATTY_LUA_REFLECT_BODY_BEGIN@@ -->
-<section class="card" id="reflect-usertypes">
-	<h2>catty — Reflect Usertypes</h2>
+<section class="card" id="usertypes">
+	<h2>Usertypes</h2>
 	<div class="body">
-		<p class="intro">
-			由同一套 <code>CATTY_REFLECT_*</code> 标注经
-			<code>Tools/reflect_codegen.bat</code> 生成 sol2 usertype，
-			并在 <code>FScriptSystem::Initialize</code> 注册到 <code>catty</code> 表。
-			跳过：<code>CATTY_LUA_SKIP</code>；改名：<code>CATTY_LUA_NAME(&quot;...&quot;)</code>。
-			类型定义须在可 <code>#include</code> 的头文件中。
-		</p>
-		<article class="fn" id="catty.FReflectSmoke">
+		<article class="fn" id="catty.object">
 			<div class="fn-head">
-				<h3 class="fn-name">catty.FReflectSmoke</h3>
-				<span class="tag tag-reflect">Usertype</span>
-				<span class="tag tag-api">codegen</span>
+				<h3 class="fn-name">catty.object</h3>
+				<span class="tag tag-reflect">usertype</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">local obj = catty.FReflectSmoke.new()</code>
-				<p>
-					C++ 类型 <code>Catty::ReflectPrivate::FReflectSmoke</code>
-					（<code>Catty/Source/Private/Core/ReflectSmoke.h:29</code>）。
-					默认构造；字段用点号读写，成员函数用冒号调用。
-				</p>
-				<h4>Properties</h4>
-				<table>
-					<thead><tr><th>Lua</th><th>C++</th><th>Kind</th></tr></thead>
-					<tbody>
-						<tr><td><code>X</code></td><td><code>X</code></td><td>property</td></tr>
-						<tr><td><code>Y</code></td><td><code>Y</code></td><td>property</td></tr>
-					</tbody>
-				</table>
+				<code class="sig">Catty::FObject · no_constructor</code>
 				<h4>Functions</h4>
 				<table>
-					<thead><tr><th>Lua</th><th>C++</th><th>Kind</th></tr></thead>
+					<thead><tr><th>Lua</th><th>C++</th></tr></thead>
 					<tbody>
-						<tr><td><code>Scale</code></td><td><code>Scale</code></td><td>function</td></tr>
+						<tr><td><code>get_name</code></td><td><code>GetName</code></td></tr>
+						<tr><td><code>get_path_name</code></td><td><code>GetPathName</code></td></tr>
+						<tr><td><code>get_ref_count</code></td><td><code>GetRefCount</code></td></tr>
+						<tr><td><code>get_flags</code></td><td><code>GetFlags</code></td></tr>
+						<tr><td><code>has_any_flags</code></td><td><code>HasAnyFlags</code></td></tr>
+						<tr><td><code>is_pending_kill</code></td><td><code>IsPendingKill</code></td></tr>
+						<tr><td><code>is_rooted</code></td><td><code>IsRooted</code></td></tr>
+						<tr><td><code>get_weak_serial</code></td><td><code>GetWeakSerial</code></td></tr>
+						<tr><td><code>add_to_root</code></td><td><code>AddToRoot</code></td></tr>
+						<tr><td><code>remove_from_root</code></td><td><code>RemoveFromRoot</code></td></tr>
+						<tr><td><code>mark_pending_kill</code></td><td><code>MarkPendingKill</code></td></tr>
+						<tr><td><code>mark_for_immediate_destroy</code></td><td><code>MarkForImmediateDestroy</code></td></tr>
 					</tbody>
 				</table>
-				<h4>Members (summary)</h4>
-				<p>Properties: <code>.X · .Y</code></p>
-				<p>Functions: <code>:Scale(...)</code></p>
-				<h4>Example</h4>
-				<div class="example"><pre>local obj = catty.FReflectSmoke.new()
-obj.X = ...  -- set property
-local r = obj:Scale(...)</pre></div>
 			</div>
 		</article>
 
-		<div class="note">
-			<strong>同步：</strong>本区块由 codegen 写入；改 <code>CATTY_REFLECT_*</code> 后请重跑
-			<code>Tools/reflect_codegen.bat</code>。完整类型表见
-			<a href="ReflectCatalog.md">ReflectCatalog.md</a>。
-		</div>
+		<article class="fn" id="catty.package">
+			<div class="fn-head">
+				<h3 class="fn-name">catty.package</h3>
+				<span class="tag tag-reflect">usertype</span>
+			</div>
+			<div class="fn-body">
+				<code class="sig">Catty::FPackage · no_constructor</code>
+				<h4>Functions</h4>
+				<table>
+					<thead><tr><th>Lua</th><th>C++</th></tr></thead>
+					<tbody>
+						<tr><td><code>get_file_path</code></td><td><code>GetFilePath</code></td></tr>
+						<tr><td><code>is_persistent</code></td><td><code>IsPersistent</code></td></tr>
+						<tr><td><code>is_transient</code></td><td><code>IsTransient</code></td></tr>
+						<tr><td><code>get_object_count</code></td><td><code>GetObjectCount</code></td></tr>
+					</tbody>
+				</table>
+			</div>
+		</article>
+
+		<article class="fn" id="catty.resource">
+			<div class="fn-head">
+				<h3 class="fn-name">catty.resource</h3>
+				<span class="tag tag-reflect">usertype</span>
+			</div>
+			<div class="fn-body">
+				<code class="sig">Catty::FResource · no_constructor</code>
+				<h4>Functions</h4>
+				<table>
+					<thead><tr><th>Lua</th><th>C++</th></tr></thead>
+					<tbody>
+						<tr><td><code>get_type</code></td><td><code>GetType</code></td></tr>
+						<tr><td><code>get_source_path</code></td><td><code>GetSourcePath</code></td></tr>
+						<tr><td><code>get_path</code></td><td><code>GetPath</code></td></tr>
+					</tbody>
+				</table>
+			</div>
+		</article>
+
 	</div>
 </section>
 <!-- @@CATTY_LUA_REFLECT_BODY_END@@ -->
-
-<section class="card">
-	<h2>速查表</h2>
-	<div class="body">
-		<table>
-			<thead>
-				<tr><th>Symbol</th><th>Signature</th><th>Kind</th></tr>
-			</thead>
-			<tbody>
-				<tr><td><a href="#catty.log"><code>catty.log</code></a></td><td><code>log(message)</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.log_warn"><code>catty.log_warn</code></a></td><td><code>log_warn(message)</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.log_error"><code>catty.log_error</code></a></td><td><code>log_error(message)</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.get_cvar_int"><code>catty.get_cvar_int</code></a></td><td><code>get_cvar_int(name [, default]) → number</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.get_cvar_float"><code>catty.get_cvar_float</code></a></td><td><code>get_cvar_float(name [, default]) → number</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.get_cvar_bool"><code>catty.get_cvar_bool</code></a></td><td><code>get_cvar_bool(name [, default]) → boolean</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.get_cvar_string"><code>catty.get_cvar_string</code></a></td><td><code>get_cvar_string(name [, default]) → string</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.set_cvar_int"><code>catty.set_cvar_int</code></a></td><td><code>set_cvar_int(name, value) → boolean</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.set_cvar_float"><code>catty.set_cvar_float</code></a></td><td><code>set_cvar_float(name, value) → boolean</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.set_cvar_bool"><code>catty.set_cvar_bool</code></a></td><td><code>set_cvar_bool(name, value) → boolean</code></td><td>API</td></tr>
-				<tr><td><a href="#catty.set_cvar_string"><code>catty.set_cvar_string</code></a></td><td><code>set_cvar_string(name, value) → boolean</code></td><td>API</td></tr>
-				<tr><td><a href="#OnUpdate"><code>OnUpdate</code></a></td><td><code>OnUpdate(dt)</code></td><td>Hook</td></tr>
-				<tr><td><a href="#OnFixedUpdate"><code>OnFixedUpdate</code></a></td><td><code>OnFixedUpdate(fixedDt)</code></td><td>Hook</td></tr>
-<!-- @@CATTY_LUA_REFLECT_QUICKREF_BEGIN@@ -->
-				<tr><td><a href="#catty.FReflectSmoke"><code>catty.FReflectSmoke</code></a></td><td><code>.new() · .X · .Y · :Scale(...)</code></td><td>Usertype</td></tr>
-<!-- @@CATTY_LUA_REFLECT_QUICKREF_END@@ -->
-			</tbody>
-		</table>
-	</div>
-</section>
-
 </main>
 </div>
 
 <footer>
-	手工 API 对照 <code>RegisterCoreBindings</code> / <code>FApp</code> 帧循环；
-	Reflect usertype 由 <code>Tools/reflect_codegen.bat</code> 同步写入本页标记区。
+	<code class="inline">CATTY_REFLECT_CLASS</code> · codegen ·
+	<a href="ReflectCatalog.md">ReflectCatalog.md</a>
 </footer>
 </body>
 </html>

@@ -56,8 +56,8 @@ __pycache__/
 *.app
 *.dwo
 
-# Reflect / Lua codegen outputs (Tools/reflect_codegen.py).
-# Regenerated at CMake configure / build — do not commit.
+# Reflect / Lua codegen (Tools/reflect_codegen.py).
+# All C++/JSON outputs live under Catty/Source/Generated/ — wiped by clean.bat.
 *.gen.h
 *.gen.cpp
 *.gen.json

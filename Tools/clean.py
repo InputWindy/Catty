@@ -87,6 +87,7 @@ def main(argv: list[str]) -> int:
 		removed = clean_project_tree(root, dry_run=False)
 		print(f"[Catty] Removed {len(removed)} path(s).")
 		print("[Catty] Kept: source, Build/, Tools/, Doc/, bats, configs.")
+		print("[Catty] Note: Catty/Source/Generated (reflect/Lua codegen) is wiped; rebuild regenerates it.")
 		return 0
 	except Exception as ex:  # noqa: BLE001
 		print(f"[ERROR] {ex}")

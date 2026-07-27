@@ -1,13 +1,11 @@
 #include "Catty/Core/Reflect.h"
 #include "Catty/Core/ReflectCatalog.h"
-#include "Catty/Resource/Object.h"
-#include "Catty/Resource/Package.h"
-#include "Catty/Resource/Resource.h"
+#include "ReflectMeta.gen.h"
 
 namespace Catty
 {
 
-// ReflectMeta.gen.cpp (codegen) must register these CATTY_REFLECT_CLASS types.
+// ReflectMeta.gen.h (codegen) must register these CATTY_REFLECT_CLASS types.
 static_assert(TIsReflectable_v<FObject>);
 static_assert(TIsReflectable_v<FPackage>);
 static_assert(TIsReflectable_v<FResource>);
