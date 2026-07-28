@@ -1899,8 +1899,8 @@ def render_lua_api_body(objects: list[FTypeEntry]) -> str:
 		'\t<div class="body">',
 		"\t\t<p>由 <code>object_reflect_codegen.py</code> 根据 <code>CATTY_OBJECT</code> 扫描生成具名 sol2 绑定；"
 		"方法/属性为 snake_case，对应 C++ 反射成员。"
-		"实例由 C++ / 游戏侧把 <code>FObjectRef</code> 推进 Lua；扩展绑定实现 <code>ILuaBindable</code>，"
-		"经 <code>FScriptSystem::Bind</code> 或 <code>GetOnLuaReady</code> 自动触发。</p>",
+		"实例可由 <code>catty.get_transient_package</code> / <code>find_*</code> / <code>create_*</code>（ResourceManager::BindLua）"
+		"或 C++ 推进 Lua；其它系统实现 <code>ILuaBindable</code> 经 <code>Bind</code> / <code>OnLuaReady</code> 挂接。</p>",
 		"",
 	]
 	for e in objects:

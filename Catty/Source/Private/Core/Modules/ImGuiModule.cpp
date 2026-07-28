@@ -50,7 +50,7 @@ bool FImGuiModule::OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 			const ImGuiIO& IO = ImGui::GetIO();
 			if (!IO.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Escape))
 			{
-				App.RequestExit();
+				OnExitRequested.Broadcast();
 			}
 		}
 		return true;

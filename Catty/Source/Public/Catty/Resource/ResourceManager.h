@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Catty/Core/Export.h"
 #include "Catty/Core/PoolAllocator.h"
@@ -29,8 +29,7 @@ class FResourceServer;
  * Each in-package FObject holds Outer as FObjectRef so the package stays valid.
  * GC ticks via FGCManager (FApp), not through this manager.
  *
- * Lua: implements ILuaBindable; catalog find/get helpers are NOT exposed here —
- * pass object refs into Lua from C++ / game code instead.
+ * Lua: implements ILuaBindable; BindLua registers catalog / create / load helpers on `catty.*`.
  */
 class CATTY_API FResourceManager : public ILuaBindable
 {
@@ -43,7 +42,7 @@ public:
 	FResourceManager(const FResourceManager&) = delete;
 	FResourceManager& operator=(const FResourceManager&) = delete;
 
-	/** ILuaBindable — reserved; catalog find/get is not exposed via Lua. */
+	/** Register ResourceManager APIs into Script's `catty` table. */
 	void BindLua(FScriptSystem& Script) override;
 
 	// --- Lifecycle ---

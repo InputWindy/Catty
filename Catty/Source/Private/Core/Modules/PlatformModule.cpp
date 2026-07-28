@@ -60,7 +60,7 @@ bool FPlatformModule::OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 			PlatformWindow->PollEvents();
 			if (PlatformWindow->ShouldClose())
 			{
-				App.RequestExit();
+				OnExitRequested.Broadcast();
 			}
 		}
 		return true;
@@ -75,7 +75,7 @@ bool FPlatformModule::OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 					CATTY_CORE_INFO(
 						"Requesting exit after {} frames (headless auto-exit)",
 						AutoExitFrameCount);
-					App.RequestExit();
+					OnExitRequested.Broadcast();
 				}
 			}
 		}

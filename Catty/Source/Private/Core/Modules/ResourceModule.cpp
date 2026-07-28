@@ -3,7 +3,6 @@
 #include "Catty/Core/App.h"
 #include "Catty/Core/Log.h"
 #include "Catty/Core/Modules/GCModule.h"
-#include "Catty/Core/Modules/ScriptModule.h"
 #include "Catty/Script/ScriptSystem.h"
 
 namespace Catty
@@ -34,23 +33,17 @@ bool FResourceModule::OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 			return false;
 		}
 
-		// Auto-bind when Lua becomes ready (Script Init broadcasts OnLuaReady).
-		if (FScriptModule* ScriptMod = App.GetModule<FScriptModule>())
-		{
-			LuaReadyHandle = ScriptMod->GetScriptSystem().GetOnLuaReady().AddRaw(
-				this,
-				&FResourceModule::OnLuaReady);
-		}
+		// FApp owns FScriptSystem; FScriptLayer Attach broadcasts OnLuaReady.
+		LuaReadyHandle = App.GetScriptSystem().GetOnLuaReady().AddRaw(
+			this,
+			&FResourceModule::OnLuaReady);
 		return true;
 	}
 
 	case EModuleStage::Shutdown:
 		if (LuaReadyHandle.IsValid())
 		{
-			if (FScriptModule* ScriptMod = App.GetModule<FScriptModule>())
-			{
-				ScriptMod->GetScriptSystem().GetOnLuaReady().Remove(LuaReadyHandle);
-			}
+			App.GetScriptSystem().GetOnLuaReady().Remove(LuaReadyHandle);
 			LuaReadyHandle = {};
 		}
 		if (ResourceManager.IsInitialized())

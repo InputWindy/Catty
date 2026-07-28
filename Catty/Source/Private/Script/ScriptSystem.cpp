@@ -138,6 +138,15 @@ bool FScriptSystem::Initialize(const std::string& InScriptsDirectory)
 	return true;
 }
 
+void* FScriptSystem::TryGetLuaState()
+{
+	if (!bInitialized || !Impl)
+	{
+		return nullptr;
+	}
+	return &Impl->Lua;
+}
+
 void FScriptSystem::Bind(ILuaBindable& Bindable)
 {
 	if (!bInitialized || !Impl)

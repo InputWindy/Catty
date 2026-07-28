@@ -200,6 +200,7 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 	<div class="sec">Core</div>
 	<ul>
 		<li><a href="#catty.log">log / cvar</a></li>
+		<li><a href="#catty.resources">resources</a></li>
 	</ul>
 <!-- @@CATTY_LUA_USERTYPE_TOC_BEGIN@@ -->
 	<div class="sec">Usertypes</div>
@@ -226,11 +227,52 @@ catty.set_cvar_int/float/bool/string(name, value)</code>
 	</div>
 </section>
 
+<section class="card" id="catty.resources">
+	<h2>ResourceManager（ILuaBindable）</h2>
+	<div class="body">
+		<p>由 <code>FResourceManager::BindLua</code> 在 <code>OnLuaReady</code> 时挂到 <code>catty.*</code>。返回值多为 codegen usertype（<code>catty.package</code> / <code>catty.resource</code> / <code>catty.object</code>）。</p>
+		<article class="fn">
+			<div class="fn-head"><h3 class="fn-name">enums / constants</h3><span class="tag tag-api">api</span></div>
+			<div class="fn-body">
+				<code class="sig">catty.package_flags.none|transient|persistent
+catty.resource_type.unknown|raw|texture|mesh|material|shader|audio|data
+catty.resource_load_state.invalid|pending|ready|failed
+catty.transient_package_name</code>
+			</div>
+		</article>
+		<article class="fn">
+			<div class="fn-head"><h3 class="fn-name">catalog / create</h3><span class="tag tag-api">api</span></div>
+			<div class="fn-body">
+				<code class="sig">catty.is_resource_manager_initialized() -> bool
+catty.get_transient_package() -> package
+catty.create_package(name [, flags]) -> package
+catty.find_package(name) -> package
+catty.unload_package(name) -> bool
+catty.create_resource(package, object_name, source_path [, type]) -> object
+catty.create_resource(source_path [, type [, object_name]]) -> object
+catty.find_object(package_name, object_name) -> object
+catty.find_object(package, object_name) -> object</code>
+			</div>
+		</article>
+		<article class="fn">
+			<div class="fn-head"><h3 class="fn-name">persistence / async</h3><span class="tag tag-api">api</span></div>
+			<div class="fn-body">
+				<code class="sig">catty.save_package(package [, file_path [, pretty [, save_deps]]]) -> bool
+catty.load_package(file_path) -> package
+catty.get_load_state(object) -> number
+catty.is_ready(object) -> bool
+catty.flush(object)
+catty.flush_all()</code>
+			</div>
+		</article>
+	</div>
+</section>
+
 <!-- @@CATTY_LUA_USERTYPE_BODY_BEGIN@@ -->
 <section class="card" id="usertypes">
 	<h2>Usertypes（codegen）</h2>
 	<div class="body">
-		<p>由 <code>object_reflect_codegen.py</code> 根据 <code>CATTY_OBJECT</code> 扫描生成具名 sol2 绑定；方法/属性为 snake_case，对应 C++ 反射成员。实例由 C++ / 游戏侧把 <code>FObjectRef</code> 推进 Lua；扩展绑定实现 <code>ILuaBindable</code>，经 <code>FScriptSystem::Bind</code> 或 <code>GetOnLuaReady</code> 自动触发。</p>
+		<p>由 <code>object_reflect_codegen.py</code> 根据 <code>CATTY_OBJECT</code> 扫描生成具名 sol2 绑定；方法/属性为 snake_case，对应 C++ 反射成员。实例可由 <code>catty.get_transient_package</code> / <code>find_*</code> / <code>create_*</code>（ResourceManager::BindLua）或 C++ 推进 Lua；其它系统实现 <code>ILuaBindable</code> 经 <code>Bind</code> / <code>OnLuaReady</code> 挂接。</p>
 
 		<article class="fn" id="catty.object">
 			<div class="fn-head">

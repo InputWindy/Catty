@@ -1,5 +1,7 @@
 #include <Catty/Catty.h>
 #include <Catty/EntryPoint.h>
+#include <Catty/Core/RegisterEngineModules.h>
+#include <Catty/Script/ScriptLayer.h>
 
 #include "Editor/EditorLayer.h"
 #include "World/WorldLayer.h"
@@ -21,6 +23,11 @@ protected:
 		OutConfig.ProjectConfigDir = "Config";
 	}
 
+	virtual void RegisterModules() override
+	{
+		Catty::RegisterEngineModules(*this);
+	}
+
 	virtual bool PostInitialize() override
 	{
 		PushLayer(std::make_unique<FWorldLayer>("MainWorld"));
@@ -28,12 +35,14 @@ protected:
 #if defined(GAME_WITH_EDITOR)
 		PushOverlay(std::make_unique<FEditorLayer>());
 #endif
+		PushOverlay(std::make_unique<Catty::FScriptLayer>(
+			GetScriptSystem(),
+			GetConfig().ProjectScriptsDir));
 		return true;
 	}
 
 	virtual void PreShutdown() override
 	{
-		// Tear down game-side resources before the base Shutdown tears down the engine.
 	}
 };
 

@@ -1,14 +1,7 @@
 #include "Catty/Core/App.h"
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
-#include "Catty/Core/Modules/EngineModule.h"
-#include "Catty/Core/Modules/GCModule.h"
-#include "Catty/Core/Modules/ImGuiModule.h"
 #include "Catty/Core/Modules/PlatformModule.h"
-#include "Catty/Core/Modules/RenderModule.h"
-#include "Catty/Core/Modules/ResourceModule.h"
-#include "Catty/Core/Modules/ScriptModule.h"
-#include "Catty/Core/Modules/WorkerModule.h"
 #include "Catty/Core/Timer.h"
 
 #include <algorithm>
@@ -87,34 +80,19 @@ bool FApp::IsShutdownFamily(EModuleStage Stage)
 		|| Stage == EModuleStage::PostShutdown;
 }
 
-FApp::FApp()
-{
-	RegisterDefaultModules();
-}
+FApp::FApp() = default;
 
 FApp::~FApp()
 {
 	ClearLayers();
-}
-
-void FApp::RegisterDefaultModules()
-{
-	RegisterModule(std::make_unique<FEngineModule>());
-	RegisterModule(std::make_unique<FPlatformModule>());
-	RegisterModule(std::make_unique<FRenderModule>());
-	RegisterModule(std::make_unique<FImGuiModule>());
-	RegisterModule(std::make_unique<FGCModule>());
-	RegisterModule(std::make_unique<FResourceModule>());
-	RegisterModule(std::make_unique<FWorkerModule>());
-	RegisterModule(std::make_unique<FScriptModule>());
-}
-
-float FApp::GetFixedDeltaSeconds() const
-{
-	return GCVarFixedDeltaSeconds.GetValue();
+	DetachModules();
 }
 
 void FApp::Configure(FEngineConfig& /*OutConfig*/)
+{
+}
+
+void FApp::RegisterModules()
 {
 }
 
@@ -135,6 +113,71 @@ void FApp::RequestExit()
 FApp::FStageMulticast& FApp::GetPostStageDelegate(EModuleStage Stage)
 {
 	return PostStageDelegates[StageIndex(Stage)];
+}
+
+void FApp::HandleModuleAttach(IModule& Module)
+{
+	(void)Module.GetOnExitRequested().AddRaw(this, &FApp::RequestExit);
+}
+
+void FApp::HandleModuleDetach(IModule& Module)
+{
+	Module.GetOnExitRequested().RemoveAll(this);
+}
+
+void FApp::AttachModules()
+{
+	for (IModule* Module : StartupOrder)
+	{
+		if (!Module)
+		{
+			continue;
+		}
+		(void)Module->GetOnAttach().AddRaw(this, &FApp::HandleModuleAttach);
+		(void)Module->GetOnDetach().AddRaw(this, &FApp::HandleModuleDetach);
+		Module->Attach();
+	}
+}
+
+void FApp::DetachModules()
+{
+	for (IModule* Module : ShutdownOrder)
+	{
+		if (Module)
+		{
+			Module->Detach();
+		}
+	}
+}
+
+void FApp::RemoveLayerPostBindings(FLayer& Layer)
+{
+	for (FStageMulticast& Delegate : PostStageDelegates)
+	{
+		Delegate.RemoveAll(&Layer);
+	}
+}
+
+void FApp::BindLayerPostBindings(FLayer& Layer)
+{
+	(void)GetPostStageDelegate(EModuleStage::BeginFrame).AddRaw(&Layer, &FLayer::OnBeginFrame);
+	(void)GetPostStageDelegate(EModuleStage::FixedUpdate).AddRaw(&Layer, &FLayer::OnFixedUpdate);
+	(void)GetPostStageDelegate(EModuleStage::Update).AddRaw(&Layer, &FLayer::OnUpdate);
+	(void)GetPostStageDelegate(EModuleStage::LateUpdate).AddRaw(&Layer, &FLayer::OnLateUpdate);
+	(void)GetPostStageDelegate(EModuleStage::PreRender).AddRaw(&Layer, &FLayer::OnPreRender);
+	(void)GetPostStageDelegate(EModuleStage::Render).AddRaw(&Layer, &FLayer::OnRender);
+	(void)GetPostStageDelegate(EModuleStage::PostRender).AddRaw(&Layer, &FLayer::OnPostRender);
+	(void)GetPostStageDelegate(EModuleStage::EndFrame).AddRaw(&Layer, &FLayer::OnEndFrame);
+}
+
+void FApp::HandleLayerAttach(FLayer& /*Layer*/)
+{
+	RebuildLayerPostBindings();
+}
+
+void FApp::HandleLayerDetach(FLayer& Layer)
+{
+	RemoveLayerPostBindings(Layer);
 }
 
 void FApp::RegisterModule(std::unique_ptr<IModule> Module)
@@ -248,78 +291,40 @@ bool FApp::ExecuteStage(EModuleStage Stage, FStageContext& Ctx)
 	}
 
 	PostStageDelegates[StageIndex(Stage)].Broadcast(Stage, *this, Ctx);
+
+	for (IModule* Module : GetOrderForStage(Stage))
+	{
+		Module->OnPostStage(Stage, *this, Ctx);
+	}
 	return true;
-}
-
-void FApp::UnbindLayerFromPostStages(FLayerBinding& Entry)
-{
-	GetPostStageDelegate(EModuleStage::BeginFrame).Remove(Entry.BeginFrame);
-	GetPostStageDelegate(EModuleStage::ProcessInput).Remove(Entry.ProcessInput);
-	GetPostStageDelegate(EModuleStage::FixedUpdate).Remove(Entry.FixedUpdate);
-	GetPostStageDelegate(EModuleStage::Update).Remove(Entry.Update);
-	GetPostStageDelegate(EModuleStage::LateUpdate).Remove(Entry.LateUpdate);
-	GetPostStageDelegate(EModuleStage::PreRender).Remove(Entry.PreRender);
-	GetPostStageDelegate(EModuleStage::Render).Remove(Entry.Render);
-	GetPostStageDelegate(EModuleStage::PostRender).Remove(Entry.PostRender);
-	GetPostStageDelegate(EModuleStage::EndFrame).Remove(Entry.EndFrame);
-
-	Entry.BeginFrame = {};
-	Entry.ProcessInput = {};
-	Entry.FixedUpdate = {};
-	Entry.Update = {};
-	Entry.LateUpdate = {};
-	Entry.PreRender = {};
-	Entry.Render = {};
-	Entry.PostRender = {};
-	Entry.EndFrame = {};
 }
 
 void FApp::RebuildLayerPostBindings()
 {
 	for (FLayerBinding& Entry : LayerBindings)
 	{
-		UnbindLayerFromPostStages(Entry);
+		if (Entry.Layer)
+		{
+			RemoveLayerPostBindings(*Entry.Layer);
+		}
 	}
-
-	auto BindForward = [this](FLayerBinding& Entry)
-	{
-		FLayer* L = Entry.Layer.get();
-		Entry.BeginFrame =
-			GetPostStageDelegate(EModuleStage::BeginFrame).AddRaw(L, &FLayer::OnBeginFrame);
-		Entry.FixedUpdate =
-			GetPostStageDelegate(EModuleStage::FixedUpdate).AddRaw(L, &FLayer::OnFixedUpdate);
-		Entry.Update =
-			GetPostStageDelegate(EModuleStage::Update).AddRaw(L, &FLayer::OnUpdate);
-		Entry.LateUpdate =
-			GetPostStageDelegate(EModuleStage::LateUpdate).AddRaw(L, &FLayer::OnLateUpdate);
-		Entry.PreRender =
-			GetPostStageDelegate(EModuleStage::PreRender).AddRaw(L, &FLayer::OnPreRender);
-		Entry.Render =
-			GetPostStageDelegate(EModuleStage::Render).AddRaw(L, &FLayer::OnRender);
-		Entry.PostRender =
-			GetPostStageDelegate(EModuleStage::PostRender).AddRaw(L, &FLayer::OnPostRender);
-		Entry.EndFrame =
-			GetPostStageDelegate(EModuleStage::EndFrame).AddRaw(L, &FLayer::OnEndFrame);
-	};
 
 	for (FLayerBinding& Entry : LayerBindings)
 	{
-		BindForward(Entry);
+		if (Entry.Layer)
+		{
+			BindLayerPostBindings(*Entry.Layer);
+		}
 	}
 
 	// ProcessInput: overlays first (reverse of stack order).
+	GetPostStageDelegate(EModuleStage::ProcessInput).Clear();
 	for (auto It = LayerBindings.rbegin(); It != LayerBindings.rend(); ++It)
 	{
-		It->ProcessInput = GetPostStageDelegate(EModuleStage::ProcessInput)
-			.AddRaw(It->Layer.get(), &FLayer::OnProcessInput);
-	}
-
-	// Keep script Post hooks after layer bindings.
-	if (FScriptModule* Script = GetModule<FScriptModule>())
-	{
-		if (Script->GetScriptSystem().IsInitialized())
+		if (It->Layer)
 		{
-			Script->BindPostStageHooks(*this);
+			(void)GetPostStageDelegate(EModuleStage::ProcessInput)
+				.AddRaw(It->Layer.get(), &FLayer::OnProcessInput);
 		}
 	}
 }
@@ -334,12 +339,14 @@ void FApp::PushLayer(std::unique_ptr<FLayer> Layer)
 	FLayerBinding Entry;
 	Entry.Layer = std::move(Layer);
 	Entry.bOverlay = false;
-	Entry.Layer->OnAttach();
+	FLayer* Raw = Entry.Layer.get();
+	(void)Raw->GetOnAttach().AddRaw(this, &FApp::HandleLayerAttach);
+	(void)Raw->GetOnDetach().AddRaw(this, &FApp::HandleLayerDetach);
 	LayerBindings.insert(
 		LayerBindings.begin() + static_cast<std::ptrdiff_t>(LayerInsertIndex),
 		std::move(Entry));
 	++LayerInsertIndex;
-	RebuildLayerPostBindings();
+	Raw->Attach();
 }
 
 void FApp::PushOverlay(std::unique_ptr<FLayer> Overlay)
@@ -352,19 +359,20 @@ void FApp::PushOverlay(std::unique_ptr<FLayer> Overlay)
 	FLayerBinding Entry;
 	Entry.Layer = std::move(Overlay);
 	Entry.bOverlay = true;
-	Entry.Layer->OnAttach();
+	FLayer* Raw = Entry.Layer.get();
+	(void)Raw->GetOnAttach().AddRaw(this, &FApp::HandleLayerAttach);
+	(void)Raw->GetOnDetach().AddRaw(this, &FApp::HandleLayerDetach);
 	LayerBindings.push_back(std::move(Entry));
-	RebuildLayerPostBindings();
+	Raw->Attach();
 }
 
 void FApp::ClearLayers()
 {
 	for (auto It = LayerBindings.rbegin(); It != LayerBindings.rend(); ++It)
 	{
-		UnbindLayerFromPostStages(*It);
 		if (It->Layer)
 		{
-			It->Layer->OnDetach();
+			It->Layer->Detach();
 		}
 	}
 	LayerBindings.clear();
@@ -374,6 +382,8 @@ void FApp::ClearLayers()
 bool FApp::Initialize()
 {
 	Configure(EngineConfig);
+
+	RegisterModules();
 
 	const int IniApplied = LoadProjectEngineIni(EngineConfig);
 	InitializeAppLogging(EngineConfig);
@@ -421,10 +431,8 @@ bool FApp::Initialize()
 		return false;
 	}
 
-	if (FScriptModule* Script = GetModule<FScriptModule>())
-	{
-		Script->BindPostStageHooks(*this);
-	}
+	// Game PostInitialize pushes content layers (World / Editor / Script / …).
+	AttachModules();
 
 	bRunning = true;
 	if (FPlatformModule* Platform = GetModule<FPlatformModule>())
@@ -442,6 +450,7 @@ void FApp::Shutdown()
 {
 	PreShutdown();
 	ClearLayers();
+	DetachModules();
 
 	FStageContext Ctx{};
 	Ctx.FrameIndex = FrameIndex;

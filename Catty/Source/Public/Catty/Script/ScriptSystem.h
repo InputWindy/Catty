@@ -60,6 +60,12 @@ public:
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 	[[nodiscard]] const std::string& GetScriptsDirectory() const { return ScriptsDirectory; }
 
+	/**
+	 * Opaque pointer to the engine sol::state (cast in .cpp that includes sol).
+	 * nullptr if not initialized. Public headers must not depend on sol2.
+	 */
+	[[nodiscard]] void* TryGetLuaState();
+
 	[[nodiscard]] FOnLuaReady& GetOnLuaReady() { return OnLuaReady; }
 	[[nodiscard]] const FOnLuaReady& GetOnLuaReady() const { return OnLuaReady; }
 

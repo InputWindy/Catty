@@ -1,14 +1,18 @@
-﻿#include "Catty/Resource/ResourceManager.h"
+#include "Catty/Resource/ResourceManager.h"
 
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Json.h"
 #include "Catty/Core/Log.h"
 #include "Catty/Script/ScriptSystem.h"
+#include "LuaReflectBindings.gen.h"
 #include "Resource/ResourceServer.h"
 
 #include <algorithm>
 #include <cctype>
 #include <utility>
+
+#define SOL_ALL_SAFETIES_ON 1
+#include <sol/sol.hpp>
 
 namespace Catty
 {
@@ -58,9 +62,156 @@ FResourceManager::~FResourceManager()
 
 void FResourceManager::BindLua(FScriptSystem& Script)
 {
-	(void)Script;
-	// Catalog find/get is not ResourceManager's Lua surface.
-	// Push FObjectRef / FPackage into Lua from game/engine call sites instead.
+	void* Native = Script.TryGetLuaState();
+	if (!Native)
+	{
+		return;
+	}
+
+	sol::state& Lua = *static_cast<sol::state*>(Native);
+	sol::table CattyTable = Lua["catty"];
+	if (!CattyTable.valid())
+	{
+		CattyTable = Lua.create_named_table("catty");
+	}
+
+	// --- Enums (numeric, snake_case keys) ---
+	{
+		sol::table PackageFlags = Lua.create_table();
+		PackageFlags["none"] = static_cast<std::uint32_t>(EPackageFlags::None);
+		PackageFlags["transient"] = static_cast<std::uint32_t>(EPackageFlags::Transient);
+		PackageFlags["persistent"] = static_cast<std::uint32_t>(EPackageFlags::Persistent);
+		CattyTable["package_flags"] = PackageFlags;
+
+		sol::table ResourceType = Lua.create_table();
+		ResourceType["unknown"] = static_cast<std::uint8_t>(EResourceType::Unknown);
+		ResourceType["raw"] = static_cast<std::uint8_t>(EResourceType::Raw);
+		ResourceType["texture"] = static_cast<std::uint8_t>(EResourceType::Texture);
+		ResourceType["mesh"] = static_cast<std::uint8_t>(EResourceType::Mesh);
+		ResourceType["material"] = static_cast<std::uint8_t>(EResourceType::Material);
+		ResourceType["shader"] = static_cast<std::uint8_t>(EResourceType::Shader);
+		ResourceType["audio"] = static_cast<std::uint8_t>(EResourceType::Audio);
+		ResourceType["data"] = static_cast<std::uint8_t>(EResourceType::Data);
+		CattyTable["resource_type"] = ResourceType;
+
+		sol::table LoadState = Lua.create_table();
+		LoadState["invalid"] = static_cast<std::uint8_t>(EResourceLoadState::Invalid);
+		LoadState["pending"] = static_cast<std::uint8_t>(EResourceLoadState::Pending);
+		LoadState["ready"] = static_cast<std::uint8_t>(EResourceLoadState::Ready);
+		LoadState["failed"] = static_cast<std::uint8_t>(EResourceLoadState::Failed);
+		CattyTable["resource_load_state"] = LoadState;
+	}
+
+	CattyTable["transient_package_name"] = TransientPackageName;
+
+	CattyTable["is_resource_manager_initialized"] = [this]()
+	{
+		return IsInitialized();
+	};
+
+	CattyTable["get_transient_package"] = [this]()
+	{
+		return MakeLua_FPackage(GetTransientPackage());
+	};
+
+	CattyTable["create_package"] = [this](const std::string& Name, sol::optional<std::uint32_t> Flags)
+	{
+		const EPackageFlags PackageFlags = Flags
+			? static_cast<EPackageFlags>(*Flags)
+			: EPackageFlags::Transient;
+		return MakeLua_FPackage(CreatePackage(Name, PackageFlags));
+	};
+
+	CattyTable["find_package"] = [this](const std::string& Name)
+	{
+		return MakeLua_FPackage(FindPackage(Name));
+	};
+
+	CattyTable["unload_package"] = [this](const std::string& Name)
+	{
+		return UnloadPackage(Name);
+	};
+
+	CattyTable["create_resource"] = sol::overload(
+		[this](
+			sol::this_state L,
+			FLua_FPackage Package,
+			const std::string& ObjectName,
+			const std::string& SourcePath,
+			sol::optional<std::uint8_t> Type) -> sol::object
+		{
+			const EResourceType ResourceType = Type
+				? static_cast<EResourceType>(*Type)
+				: EResourceType::Unknown;
+			return LuaWrapObjectRef(
+				sol::state_view(L),
+				CreateResource(Package.Ref, ObjectName, SourcePath, ResourceType));
+		},
+		[this](
+			sol::this_state L,
+			const std::string& SourcePath,
+			sol::optional<std::uint8_t> Type,
+			sol::optional<std::string> ObjectName) -> sol::object
+		{
+			const EResourceType ResourceType = Type
+				? static_cast<EResourceType>(*Type)
+				: EResourceType::Unknown;
+			return LuaWrapObjectRef(
+				sol::state_view(L),
+				CreateResource(SourcePath, ResourceType, ObjectName.value_or(std::string{})));
+		});
+
+	CattyTable["find_object"] = sol::overload(
+		[this](sol::this_state L, const std::string& PackageName, const std::string& ObjectName) -> sol::object
+		{
+			return LuaWrapObjectRef(
+				sol::state_view(L),
+				FindObject(PackageName, ObjectName));
+		},
+		[this](sol::this_state L, FLua_FPackage Package, const std::string& ObjectName) -> sol::object
+		{
+			return LuaWrapObjectRef(
+				sol::state_view(L),
+				FindObject(Package.Ref, ObjectName));
+		});
+
+	CattyTable["save_package"] = [this](
+		FLua_FPackage Package,
+		sol::optional<std::string> FilePath,
+		sol::optional<bool> bPretty,
+		sol::optional<bool> bSaveDependencies)
+	{
+		return SavePackage(
+			Package.Ref,
+			FilePath.value_or(std::string{}),
+			bPretty.value_or(true),
+			bSaveDependencies.value_or(true));
+	};
+
+	CattyTable["load_package"] = [this](sol::this_state L, const std::string& FilePath) -> sol::object
+	{
+		return LuaWrapObjectRef(sol::state_view(L), LoadPackage(FilePath));
+	};
+
+	CattyTable["get_load_state"] = [this](FLua_FObject Object) -> std::uint8_t
+	{
+		return static_cast<std::uint8_t>(GetLoadState(Object.Ref));
+	};
+
+	CattyTable["is_ready"] = [this](FLua_FObject Object)
+	{
+		return IsReady(Object.Ref);
+	};
+
+	CattyTable["flush"] = [this](FLua_FObject Object)
+	{
+		Flush(Object.Ref);
+	};
+
+	CattyTable["flush_all"] = [this]()
+	{
+		FlushAll();
+	};
 }
 
 bool FResourceManager::IsInitialized() const

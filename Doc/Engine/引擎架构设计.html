@@ -210,9 +210,9 @@ flowchart TB
 			<tbody>
 				<tr><td>语义</td><td>填满固定管线 stage</td><td>固定 stage <b>结束之后</b>插入</td></tr>
 				<tr><td>API</td><td><code>IModule::OnStage(Stage, App, Ctx)</code></td><td><code>FLayer::OnBeginFrame / OnUpdate / …</code></td></tr>
-				<tr><td>挂载</td><td><code>RegisterModule</code>（FApp 构造注册默认引擎模块）</td><td><code>PushLayer</code> / <code>PushOverlay</code></td></tr>
+				<tr><td>挂载</td><td>游戏 <code>RegisterModules</code> → <code>RegisterModule</code></td><td>游戏 <code>PostInitialize</code> → <code>PushLayer</code> / <code>PushOverlay</code></td></tr>
 				<tr><td>驱动</td><td><code>ExecuteStage</code> 按 DAG 直接调用</td><td>注册时 <code>AddRaw</code> 到 <code>PostStageDelegates</code>，由 Broadcast 带动</td></tr>
-				<tr><td>典型用户</td><td>Platform / Render / GC / Script …</td><td><code>FWorldLayer</code>、<code>FEditorLayer</code></td></tr>
+				<tr><td>典型用户</td><td>Platform / Render / GC / Resource / Worker …</td><td><code>FWorldLayer</code>、<code>FEditorLayer</code>、<code>FScriptLayer</code>（Lua）</td></tr>
 			</tbody>
 		</table>
 
@@ -244,26 +244,27 @@ sequenceDiagram
 
   Main->>App: CreateApplication / Run
   App->>Game: Configure(Config)
+  App->>Game: RegisterModules
   Note over App: Load DefaultEngine.ini CVars + FLog + Timer
   App->>Mods: RebuildModuleOrder DAG
   App->>Mods: ExecuteStage PreInit
   App->>Mods: ExecuteStage Init
   App->>Mods: ExecuteStage PostInit
   App->>Game: PostInitialize
-  Game->>App: PushLayer / PushOverlay
-  App->>Lay: OnAttach + Bind PostStageDelegates
-  App->>Mods: Script.BindPostStageHooks 在 Layer 之后
+  Game->>App: PushLayer / PushOverlay（含 FScriptLayer）
+  App->>Lay: Attach + Bind PostStageDelegates
+  App->>Mods: AttachModules
   loop while bRunning
     App->>Mods: Tick ExecuteStages
     Mods-->>Lay: Post Broadcast OnUpdate 等
   end
   App->>Game: PreShutdown
-  App->>Lay: Unbind + OnDetach + Clear
-  App->>Mods: PreShutdown / Shutdown / PostShutdown
+  App->>Lay: Detach + Clear
+  App->>Mods: DetachModules + Shutdown stages
 		</pre>
 		<div class="note">
 			<code>EntryPoint</code> 仍只调 <code>App-&gt;Run()</code>，不拆 Initialize/Shutdown。
-			Script 的 <code>OnUpdate</code> / <code>OnFixedUpdate</code> 也挂在 Post 上，且在 Layer 绑定之后再挂，保证脚本晚于 World Layer。
+			<code>FApp</code> 是空流水线：默认 Module / Layer 由游戏 <code>RegisterModules</code> / <code>PostInitialize</code> 组装（可调用 <code>RegisterEngineModules</code>）。
 		</div>
 	</div>
 </section>
@@ -280,7 +281,6 @@ flowchart TB
   ImGui --> GC["GC"]
   GC --> Res["Resource"]
   Res --> Work["Worker"]
-  Work --> Scr["Script"]
 		</pre>
 		<table>
 			<thead><tr><th>Module</th><th>依赖</th><th>Init 要点</th><th>Tick / 其它 stage</th></tr></thead>
@@ -290,11 +290,11 @@ flowchart TB
 				<tr><td><code>FRenderModule</code></td><td>Platform</td><td>RenderServer + RHI</td><td>BeginFrame：Resize；PostRender：无 ImGui 时 clear/present/flush</td></tr>
 				<tr><td><code>FImGuiModule</code></td><td>Render, Platform</td><td>有 OS 窗体才 Init</td><td>BeginFrame NewFrame；ProcessInput Escape；PostRender EndFrame+Present+Flush</td></tr>
 				<tr><td><code>FGCModule</code></td><td>ImGui</td><td><code>GCManager::Initialize</code></td><td>Update：<code>GCManager.Tick</code></td></tr>
-				<tr><td><code>FResourceModule</code></td><td>GC</td><td><code>ResourceManager::Initialize(GC)</code></td><td>—</td></tr>
+				<tr><td><code>FResourceModule</code></td><td>GC</td><td><code>ResourceManager::Initialize(GC)</code>；订阅 <code>App.GetScriptSystem().OnLuaReady</code></td><td>—</td></tr>
 				<tr><td><code>FWorkerModule</code></td><td>Resource</td><td><code>WorkerPool::Initialize</code></td><td>—</td></tr>
-				<tr><td><code>FScriptModule</code></td><td>Worker</td><td>Lua + OnLuaReady（ILuaBindable 自动 Bind）+ main.lua</td><td>Post：OnUpdate / OnFixedUpdate</td></tr>
 			</tbody>
 		</table>
+		<p class="note">Lua 不在 Module DAG：游戏 Push <code>FScriptLayer</code>；<code>FApp</code> 仅托管空的 <code>FScriptSystem</code> 供 Layer Attach 初始化。默认引擎 Module 用 <code>RegisterEngineModules(*this)</code> 由游戏主动拉取。</p>
 		<ul>
 			<li>访问：<code>App.GetModule&lt;FRenderModule&gt;()-&gt;GetServer()</code>，无 <code>GetRenderServer</code> 等特化 getter。</li>
 			<li>拓扑并列节点按 <b>注册顺序</b> 出队，保证启动序稳定。</li>
@@ -314,7 +314,6 @@ sequenceDiagram
   participant Eng as Engine
   participant Post as PostDelegates
   participant Lay as Layers
-  participant Scr as ScriptPost
 
   App->>Plat: BeginFrame PollEvents
   App->>ImGui: BeginFrame NewFrame
@@ -328,15 +327,13 @@ sequenceDiagram
 
   loop FixedUpdate accumulator
     App->>Post: Broadcast FixedUpdate
-    Post->>Lay: OnFixedUpdate
-    Post->>Scr: OnFixedUpdate Lua
+    Post->>Lay: OnFixedUpdate（含 FScriptLayer → Lua）
   end
 
   App->>Eng: Update Engine.Tick
   App->>GC: Update GC.Tick
   App->>Post: Broadcast Update
-  Post->>Lay: OnUpdate World/Editor
-  Post->>Scr: OnUpdate Lua
+  Post->>Lay: OnUpdate World/Editor/Script
 
   App->>Post: Broadcast LateUpdate / PreRender / Render
   Post->>Lay: OnLateUpdate / OnPreRender / OnRender
@@ -350,7 +347,7 @@ sequenceDiagram
   Post->>Lay: OnEndFrame
 		</pre>
 		<div class="note">
-			上图省略了未参与该 stage 的 Module。要点：同一 stage 内永远是 <b>全部 Module 先跑完</b>，再 <b>Post 广播</b>（Layer / Script Post）。
+			上图省略了未参与该 stage 的 Module。要点：同一 stage 内永远是 <b>全部 Module 先跑完</b>，再 <b>Post 广播</b>（含 FScriptLayer）。
 			ImGui EndFrame 与 Present 放在 <code>PostRender</code> 的 Module 侧，因此晚于 Layer 的 <code>OnRender</code>（以及 Update 里画的 ImGui Demo）。
 		</div>
 	</div>
@@ -474,7 +471,8 @@ flowchart LR
 				<tr><td>FApp 管线</td><td><code>Catty/Source/Public/Catty/Core/App.h</code>、<code>Private/Core/App.cpp</code></td></tr>
 				<tr><td>IModule / EModuleStage</td><td><code>Catty/Source/Public/Catty/Core/Module.h</code></td></tr>
 				<tr><td>引擎 Modules</td><td><code>Catty/Source/Public/Catty/Core/Modules/</code></td></tr>
-				<tr><td>FLayer</td><td><code>Catty/Source/Public/Catty/Core/Layer.h</code></td></tr>
+				<tr><td>FLayer / FScriptLayer</td><td><code>Catty/Source/Public/Catty/Core/Layer.h</code>、<code>Catty/Script/ScriptLayer.h</code></td></tr>
+				<tr><td>FScriptSystem</td><td><code>Catty/Source/Public/Catty/Script/ScriptSystem.h</code></td></tr>
 				<tr><td>多播 Delegate</td><td><code>Catty/Source/Public/Catty/Core/Delegate.h</code></td></tr>
 				<tr><td>EntryPoint</td><td><code>Catty/Source/Public/Catty/EntryPoint.h</code></td></tr>
 				<tr><td>GC / Object / Package / Resource</td><td><code>Catty/Source/Public/Catty/Resource/</code></td></tr>

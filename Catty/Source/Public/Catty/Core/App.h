@@ -6,6 +6,7 @@
 #include "Catty/Core/Layer.h"
 #include "Catty/Core/Module.h"
 #include "Catty/Core/Timer.h"
+#include "Catty/Script/ScriptSystem.h"
 
 #include <array>
 #include <cstdint>
@@ -21,10 +22,8 @@ namespace Catty
 {
 
 /**
- * Unconscious stage pipeline.
- * - IModule: extends fixed stage bodies (engine / plugins)
- * - FLayer: Push binds On* to PostStageDelegates (game / editor)
- * Lifecycle entry: Run() only. Game subclasses Configure / PostInitialize / PreShutdown.
+ * Empty stage pipeline. Game subclasses assemble Modules / Layers:
+ *   RegisterModules() → Init stages → PostInitialize (PushLayer) → AttachModules → loop.
  */
 class CATTY_API FApp
 {
@@ -60,18 +59,24 @@ public:
 	[[nodiscard]] const FEngineConfig& GetConfig() const { return EngineConfig; }
 
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
-	[[nodiscard]] const FTimer& GetTimer() const { return Timer; }
 
-	[[nodiscard]] float GetFixedDeltaSeconds() const;
+	/**
+	 * Lua VM host (empty until a FScriptLayer Attach initializes it).
+	 * Not a default Layer — games Push FScriptLayer when they want scripting.
+	 */
+	[[nodiscard]] FScriptSystem& GetScriptSystem() { return ScriptSystem; }
+	[[nodiscard]] const FScriptSystem& GetScriptSystem() const { return ScriptSystem; }
 
+	/** Game / tools may request exit; modules Broadcast IModule::OnExitRequested instead. */
 	void RequestExit();
 	[[nodiscard]] bool IsRunning() const { return bRunning; }
 
-	/** Layers bind here on Push; tools may Add too. No Pre-stage delegates. */
-	FStageMulticast& GetPostStageDelegate(EModuleStage Stage);
-
 protected:
 	virtual void Configure(FEngineConfig& OutConfig);
+
+	/** Assemble IModule graph. Default empty — games typically call RegisterEngineModules. */
+	virtual void RegisterModules();
+
 	virtual bool PostInitialize();
 	virtual void PreShutdown();
 
@@ -88,21 +93,10 @@ private:
 	{
 		std::unique_ptr<FLayer> Layer;
 		bool bOverlay = false;
-		FDelegateHandle BeginFrame;
-		FDelegateHandle ProcessInput;
-		FDelegateHandle FixedUpdate;
-		FDelegateHandle Update;
-		FDelegateHandle LateUpdate;
-		FDelegateHandle PreRender;
-		FDelegateHandle Render;
-		FDelegateHandle PostRender;
-		FDelegateHandle EndFrame;
 	};
 
 	static constexpr std::size_t StageCount =
 		static_cast<std::size_t>(EModuleStage::PostShutdown) + 1;
-
-	void RegisterDefaultModules();
 
 	bool Initialize();
 	void Shutdown();
@@ -116,11 +110,22 @@ private:
 	static bool IsShutdownFamily(EModuleStage Stage);
 	static std::size_t StageIndex(EModuleStage Stage);
 
-	void UnbindLayerFromPostStages(FLayerBinding& Entry);
+	void AttachModules();
+	void DetachModules();
+	void HandleModuleAttach(IModule& Module);
+	void HandleModuleDetach(IModule& Module);
+
+	void HandleLayerAttach(FLayer& Layer);
+	void HandleLayerDetach(FLayer& Layer);
 	void RebuildLayerPostBindings();
+	void RemoveLayerPostBindings(FLayer& Layer);
+	void BindLayerPostBindings(FLayer& Layer);
+
+	[[nodiscard]] FStageMulticast& GetPostStageDelegate(EModuleStage Stage);
 
 	FEngineConfig EngineConfig;
 	FTimer Timer;
+	FScriptSystem ScriptSystem;
 
 	std::vector<std::unique_ptr<IModule>> Modules;
 	std::unordered_map<std::type_index, IModule*> ModulesByType;
@@ -130,7 +135,7 @@ private:
 
 	std::array<FStageMulticast, StageCount> PostStageDelegates{};
 
-	/** Lifetime + bind handles only — never iterated to tick. */
+	/** Layer ownership only — Post binds live on PostStageDelegates. */
 	std::vector<FLayerBinding> LayerBindings;
 	std::size_t LayerInsertIndex = 0;
 

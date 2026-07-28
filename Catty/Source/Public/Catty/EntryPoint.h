@@ -17,9 +17,15 @@
  *           OutConfig.ApplicationName = "MyGame";
  *           OutConfig.ProjectConfigDir = "Config";
  *       }
+ *       virtual void RegisterModules() override
+ *       {
+ *           Catty::RegisterEngineModules(*this);
+ *       }
  *       virtual bool PostInitialize() override
  *       {
  *           PushLayer(std::make_unique<FWorldLayer>());
+ *           PushOverlay(std::make_unique<Catty::FScriptLayer>(
+ *               GetScriptSystem(), GetConfig().ProjectScriptsDir));
  *           return true;
  *       }
  *   };

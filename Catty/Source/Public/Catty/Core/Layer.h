@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Catty/Core/Delegate.h"
 #include "Catty/Core/Export.h"
 #include "Catty/Core/Module.h"
 
@@ -12,7 +13,8 @@ class FApp;
 
 /**
  * Game / editor slice bound to FApp PostStageDelegates on PushLayer / PushOverlay.
- * OnAttach / OnDetach are stack lifetime hooks, not pipeline stages.
+ * Lifecycle: Attach() / Detach() fire multicasts then virtual hooks.
+ * FApp listens GetOnDetach() to auto-remove Post bindings.
  *
  * Example:
  * ```
@@ -31,15 +33,37 @@ class FApp;
 class CATTY_API FLayer
 {
 public:
+	using FOnAttach = TMulticastDelegate<void(FLayer&)>;
+	using FOnDetach = TMulticastDelegate<void(FLayer&)>;
+
 	explicit FLayer(std::string Name = "Layer");
 	virtual ~FLayer();
 
 	FLayer(const FLayer&) = delete;
 	FLayer& operator=(const FLayer&) = delete;
 
-	/** Lifetime: called when pushed (before Post binds). Not a pipeline stage. */
+	/**
+	 * Enter stack: Broadcast GetOnAttach(), then virtual OnAttach().
+	 * Idempotent while already attached.
+	 */
+	void Attach();
+
+	/**
+	 * Leave stack: Broadcast GetOnDetach() (listeners unbind first), then virtual OnDetach().
+	 * Idempotent while already detached.
+	 */
+	void Detach();
+
+	[[nodiscard]] bool IsAttached() const { return bAttached; }
+
+	[[nodiscard]] FOnAttach& GetOnAttach() { return AttachEvent; }
+	[[nodiscard]] const FOnAttach& GetOnAttach() const { return AttachEvent; }
+	[[nodiscard]] FOnDetach& GetOnDetach() { return DetachEvent; }
+	[[nodiscard]] const FOnDetach& GetOnDetach() const { return DetachEvent; }
+
+	/** Subclass hook after AttachEvent. Not a pipeline stage. */
 	virtual void OnAttach() {}
-	/** Lifetime: called when removed (after Post unbinds). Not a pipeline stage. */
+	/** Subclass hook after DetachEvent (Post binds already cleared by listeners). */
 	virtual void OnDetach() {}
 
 	virtual void OnBeginFrame(EModuleStage Stage, FApp& App, FStageContext& Ctx)
@@ -109,6 +133,11 @@ public:
 
 protected:
 	std::string Name;
+
+private:
+	bool bAttached = false;
+	FOnAttach AttachEvent;
+	FOnDetach DetachEvent;
 };
 
 } // namespace Catty
