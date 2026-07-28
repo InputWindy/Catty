@@ -1,7 +1,8 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0.."
+cd /d "%~dp0"
 
-rem Internal: regenerate CATTY_REFLECT_* catalogs. Not a user-facing root launcher.
-call "%~dp0catty_python.bat" "%~dp0reflect_codegen.py" %*
+rem Legacy name — FObject reflection moved to object_reflect_codegen.
+echo [Catty] reflect_codegen.bat is deprecated; forwarding to object_reflect_codegen.bat
+call "%~dp0object_reflect_codegen.bat" %*
 exit /b %ERRORLEVEL%

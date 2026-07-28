@@ -19,6 +19,7 @@ class FResourceManager;
  * Persistent: may be written / loaded as JSON by FResourceManager.
  * Lifetime is RefCount only (catalog FObjectRef + Outer pins) — flags do not gate GC.
  */
+CATTY_ENUM()
 enum class EPackageFlags : std::uint32_t
 {
 	None = 0,
@@ -74,9 +75,11 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
  *   ResourceManager.SavePackage(Pkg, "Content/Maps/Demo.pkg.json");
  * ```
  */
-CATTY_REFLECT_CLASS()
+CATTY_OBJECT()
 class CATTY_API FPackage : public FObject
 {
+	CATTY_GENERATED_BODY()
+
 public:
 	FPackage(std::string InName, EPackageFlags InFlags = EPackageFlags::Transient);
 	virtual ~FPackage() override;
@@ -111,6 +114,7 @@ private:
 	[[nodiscard]] bool Serialize(FJsonValue& OutObject) const;
 	[[nodiscard]] bool Deserialize(const FJsonValue& InObject);
 
+	CATTY_PROPERTY()
 	std::string FilePath;
 	EPackageFlags PackageFlags = EPackageFlags::Transient;
 	/** Non-owning name table; lifetime owned by Refs + GC. */

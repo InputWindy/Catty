@@ -249,6 +249,8 @@ bool FApp::InitializeEngine()
 		return false;
 	}
 
+	ScriptSystem.BindResourceManager(ResourceManager);
+
 	// Optional entry script; missing file is OK (games may load later).
 	{
 		namespace fs = std::filesystem;

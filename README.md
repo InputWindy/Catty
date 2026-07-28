@@ -1,65 +1,43 @@
 # Catty
 
-UE-style engine (**Catty** DLL) + tools to spawn game projects (`.cproject`, like `.uproject`).
+UE 风格 C++ 引擎（`Catty` DLL）+ 工具链：用 `.cproject`（类似 `.uproject`）创建、生成、打包游戏工程。
 
-## First-time setup
+## 安装
+
+首次克隆后在引擎根目录执行：
 
 ```bat
 setup.bat
 ```
 
-Installs a **private** Python under `Tools/python/`（不写系统 PATH，不进 git）。之后工具**只**通过 `Tools/catty_python.bat` / `catty_pythonw.bat` / `launch_*.vbs` 调用它；直接用系统 `python` 跑 `Tools/*.py` 会被拒绝。
+会在 `Tools/python/` 安装**引擎私有** Python（不写系统 PATH，不进 git）。之后所有工具只走局部解释器；直接用系统 `python` 跑 `Tools/*.py` 会被拒绝。
 
 ```bat
-setup.bat --force   # 损坏时强制重装
+setup.bat --force   :: 损坏时强制重装
 ```
 
-## Root scripts（用户入口）
-
-| Script | Role |
-|--------|------|
-| `setup.bat` | 安装引擎局部 Python（`Tools/python`） |
-| `createProject.bat` | UI：新建游戏项目 / 注册 `.cproject` 双击 |
-| `clean.bat` | 清理 Intermediate / Binaries / Packaged / Cached / Saved 等 |
-
-日常生成 `.sln`、打包、codegen 在 `Tools/`，不必在根目录感知：
-
-| Internal | Role |
-|----------|------|
-| `Tools/generateProject.bat` | `.cproject` / 工作区 → `.sln`（也是双击 `.cproject` 的目标） |
-| `Tools/package.bat` | 引擎侧打包 UI |
-| `Tools/reflect_codegen.bat` | 反射目录 codegen |
-| `Tools/catty_python.bat` | 指定局部解释器 |
+## 创建项目
 
 ```bat
-setup.bat
 createProject.bat
-clean.bat
 ```
 
-游戏项目根目录另有 `package.bat` / `clean.bat`（模板）：读 `.cproject` 的 `EngineDirectory`，用引擎局部 Python 唤起引擎 Tools。
+1. 填写项目名、父目录、引擎路径 → Create  
+2. 得到 `Parent/Name/Name.cproject`  
+3. 双击 `.cproject` → 生成同级 `.sln` → 用 Visual Studio 打开  
 
-## New project flow
+也可在引擎根用 `Tools\generateProject.bat`（无参数）生成引擎工作区 `CattyWorkspace.sln`。
 
-1. `setup.bat`（首次）  
-2. `createProject.bat` → 填项目名、父目录、引擎路径 → Create  
-3. 得到 `Parent/Name/Name.cproject`  
-4. 双击 `.cproject` → 同级 `.sln` → VS 打开  
+## 打包
 
-## Layout
+| 位置 | 入口 |
+|------|------|
+| 游戏工程根目录 | `package.bat`（读 `.cproject` 的 `EngineDirectory`，唤起引擎 Tools） |
+| 引擎根目录 | `Tools\package.bat` |
 
-```text
-Catty/  Test0/
-Doc/
-Build/
-Tools/
-  python/              # 局部 Python（gitignore，setup.bat 安装）
-  _cache/              # 安装包缓存（gitignore）
-  generateProject.bat / package.bat / clean.bat / …
-setup.bat  createProject.bat  clean.bat
-```
+GUI 可选平台 / 配置，产物在工程（或引擎）下的 `Packaged/<Platform>/`。关闭窗口可中止打包。
 
-## Clean
+## 清理
 
 ```bat
 clean.bat
@@ -67,13 +45,58 @@ clean.bat --ask
 clean.bat --dry-run
 ```
 
-会整夹删除 `Intermediate` / `Binaries` / `Packaged` / `Cached` / `Saved` 等；**不删** `Tools/python`。
+会删除 `Intermediate` / `Binaries` / `Packaged` / `Cached` / `Saved`，以及 `Catty/Source/Generated/`（reflect / Lua codegen）。**不删** `Tools/python`。
 
-## Engine workspace
+---
 
-`Tools\generateProject.bat`（无参数）：`cmake -S Build -B Intermediate`，并在仓库根写出 `CattyWorkspace.sln`。
+## 目录结构
 
-## 引擎架构设计
+```text
+Catty/                          # 引擎仓库根
+├── setup.bat                   # 安装局部 Python
+├── createProject.bat           # 新建游戏项目（GUI）
+├── clean.bat                   # 清理中间产物
+├── Catty/                      # 引擎模块（DLL 源码）
+│   ├── Source/
+│   │   ├── Public/             # 对外头文件
+│   │   ├── Private/            # 实现
+│   │   └── Generated/          # codegen 输出（gitignore，clean 可清）
+│   ├── Shaders/
+│   └── Plugins/
+├── Build/                      # CMake 入口、模块、游戏工程模板
+├── Tools/                      # 工具脚本 + 局部 python/
+│   └── object_reflect_codegen.bat  # FObject 反射表生成
+│   └── package.bat             # 打包 GUI
+│   └── generateProject.bat     # .cproject / 工作区 → .sln
+├── ThirdParty/                 # 第三方依赖
+├── Doc/                        # 文档（HTML）
+│   ├── Engine/                 # 引擎 API / 架构
+│   └── …                       # UE 源码学习书（Nanite / Lumen / …）
+└── README.md
+```
 
-- **看图：** [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html)
-- 文本稿：[Doc/Engine/引擎架构设计.md](Doc/Engine/引擎架构设计.md)
+游戏工程（由模板生成）大致为：
+
+```text
+MyGame/
+├── MyGame.cproject
+├── package.bat / clean.bat
+├── Source/
+├── Scripts/
+├── Intermediate/               # VS / CMake 中间文件
+├── Binaries/
+└── Packaged/
+```
+
+---
+
+## 文档
+
+| 文档 | 说明 |
+|------|------|
+| [Doc/Engine/ObjectReflectAPI.html](Doc/Engine/ObjectReflectAPI.html) | Object / Struct / Enum 反射 C++ API（codegen 同步类型目录） |
+| [Doc/Engine/LuaAPI.html](Doc/Engine/LuaAPI.html) | Lua API（手工 `catty.*`；Object usertype 另案） |
+| [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html) | 引擎架构（FApp / GC / Resource / Package 等） |
+| [Doc/index.html](Doc/index.html) | UE 渲染源码解析文档集入口（可选阅读） |
+
+用浏览器或 Cursor **Live Preview** 打开 HTML 即可。

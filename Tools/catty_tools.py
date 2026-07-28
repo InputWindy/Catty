@@ -559,7 +559,6 @@ _WIPE_DIR_NAMES = (
 # Extra wipe paths relative to the clean root (engine tree).
 _WIPE_RELATIVE_PATHS = (
 	Path("Catty") / "Source" / "Generated",
-	Path("Doc") / "Engine" / "ReflectCatalog.md",
 )
 
 _DELETE_NAME_GLOBS = (

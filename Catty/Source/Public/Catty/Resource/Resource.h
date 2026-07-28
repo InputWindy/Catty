@@ -13,6 +13,7 @@ namespace Catty
 class FPackage;
 
 /** High-level asset kind (extend as typed resources appear). */
+CATTY_ENUM()
 enum class EResourceType : std::uint8_t
 {
 	Unknown = 0,
@@ -42,9 +43,11 @@ enum class EResourceType : std::uint8_t
  *   }
  * ```
  */
-CATTY_REFLECT_CLASS()
+CATTY_OBJECT()
 class CATTY_API FResource : public FObject
 {
+	CATTY_GENERATED_BODY()
+
 public:
 	FResource(
 		FPackage* InOuter,
@@ -65,7 +68,9 @@ public:
 
 protected:
 	FResourceId Id{};
+	CATTY_PROPERTY()
 	EResourceType Type = EResourceType::Unknown;
+	CATTY_PROPERTY()
 	std::string SourcePath;
 };
 

@@ -25,9 +25,10 @@ namespace Catty
  *   catty.log / log_warn / log_error(msg)
  *   catty.get_cvar_int / float / bool / string(name [, default])
  *   catty.set_cvar_int / float / bool / string(name, value)
+ *   catty.get/set_property, catty.call — FObject reflection bridge
+ *   catty.get_transient_package / find_package / find_object (after BindResourceManager)
  *
- * Generated usertypes (same `CATTY_REFLECT_*` macros → Tools/reflect_codegen.py):
- *   catty.<TypeName> with reflected properties / functions (opt-out: CATTY_LUA_SKIP)
+ * FObject userdata: property get/set via __index/__newindex; methods via reflection.
  */
 class CATTY_API FScriptSystem
 {
@@ -44,6 +45,9 @@ public:
 	 */
 	[[nodiscard]] bool Initialize(const std::string& ScriptsDirectory = "Scripts");
 	void Shutdown();
+
+	/** Bind ResourceManager helpers into `catty.*` (call once after Initialize). */
+	void BindResourceManager(class FResourceManager& ResourceManager);
 
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 	[[nodiscard]] const std::string& GetScriptsDirectory() const { return ScriptsDirectory; }

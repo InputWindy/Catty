@@ -250,7 +250,7 @@ unset(_CATTY_VENDORED_LUA)
 unset(_CATTY_VENDORED_SOL2)
 
 # ---------------------------------------------------------------------------
-# refl-cpp (header-only compile-time reflection) — Catty::Reflect / CATTY_REFLECT_*
+# refl-cpp (header-only) — optional / legacy; FObject reflection uses ObjectReflect.h + codegen.
 # ---------------------------------------------------------------------------
 set(_CATTY_VENDORED_REFL "${_CATTY_REPO_ROOT}/ThirdParty/refl-cpp")
 if(EXISTS "${_CATTY_VENDORED_REFL}/include/refl.hpp")

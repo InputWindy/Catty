@@ -103,10 +103,6 @@ main { padding: 24px 36px 80px; min-width: 0; }
 	margin: 0 0 16px;
 	overflow: hidden;
 }
-.fn:target {
-	border-color: rgba(102, 227, 224, 0.55);
-	box-shadow: 0 0 0 1px rgba(102, 227, 224, 0.25);
-}
 .fn-head {
 	display: flex;
 	flex-wrap: wrap;
@@ -167,7 +163,7 @@ th, td {
 	vertical-align: top;
 }
 th { background: #101823; color: #cfe4ff; }
-td code, .inline, p code {
+td code, .inline, p code, .subtitle code {
 	font-family: Consolas, "Cascadia Mono", monospace;
 	color: #9ee8ff;
 	background: rgba(102, 227, 224, 0.09);
@@ -191,105 +187,98 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 <header>
 	<h1>Catty Lua API</h1>
 	<div class="subtitle">
-		仅列出 <code class="inline">CATTY_REFLECT_*</code> 导出的 usertype。
-		log / cvar / 帧回调见 <a href="Lua脚本接入.md">Lua脚本接入.md</a>。
+		<code class="inline">catty.*</code> 手工绑定 + 经 Object Reflect 的 FObject 桥。
+		完整 C++ 反射见 <a href="ObjectReflectAPI.html">Object Reflect C++ API</a>。
+		· <a href="引擎架构设计.html">引擎架构设计</a>
 	</div>
 </header>
 
 <div class="layout">
 <nav class="toc" aria-label="API directory">
 	<h2>Directory</h2>
-<!-- @@CATTY_LUA_REFLECT_TOC_BEGIN@@ -->
-	<div class="sec">Usertypes</div>
+	<div class="sec">Core</div>
 	<ul>
-		<li><a href="#catty.object">object</a></li>
-		<li><a href="#catty.package">package</a></li>
-		<li><a href="#catty.resource">resource</a></li>
+		<li><a href="#catty.log">log / cvar</a></li>
 	</ul>
-<!-- @@CATTY_LUA_REFLECT_TOC_END@@ -->
+	<div class="sec">Reflect</div>
+	<ul>
+		<li><a href="#object">object</a></li>
+		<li><a href="#catty.call">get/set/call</a></li>
+		<li><a href="#catty.resources">packages</a></li>
+	</ul>
 </nav>
 
 <main>
-<!-- @@CATTY_LUA_REFLECT_BODY_BEGIN@@ -->
-<section class="card" id="usertypes">
-	<h2>Usertypes</h2>
+<section class="card" id="catty.log">
+	<h2>log / cvar</h2>
 	<div class="body">
-		<article class="fn" id="catty.object">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.object</h3>
-				<span class="tag tag-reflect">usertype</span>
-			</div>
+		<article class="fn">
+			<div class="fn-head"><h3 class="fn-name">catty.log*</h3><span class="tag tag-api">core</span></div>
 			<div class="fn-body">
-				<code class="sig">Catty::FObject · no_constructor</code>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Lua</th><th>C++</th></tr></thead>
-					<tbody>
-						<tr><td><code>get_name</code></td><td><code>GetName</code></td></tr>
-						<tr><td><code>get_path_name</code></td><td><code>GetPathName</code></td></tr>
-						<tr><td><code>get_ref_count</code></td><td><code>GetRefCount</code></td></tr>
-						<tr><td><code>get_flags</code></td><td><code>GetFlags</code></td></tr>
-						<tr><td><code>has_any_flags</code></td><td><code>HasAnyFlags</code></td></tr>
-						<tr><td><code>is_pending_kill</code></td><td><code>IsPendingKill</code></td></tr>
-						<tr><td><code>is_rooted</code></td><td><code>IsRooted</code></td></tr>
-						<tr><td><code>get_weak_serial</code></td><td><code>GetWeakSerial</code></td></tr>
-						<tr><td><code>add_to_root</code></td><td><code>AddToRoot</code></td></tr>
-						<tr><td><code>remove_from_root</code></td><td><code>RemoveFromRoot</code></td></tr>
-						<tr><td><code>mark_pending_kill</code></td><td><code>MarkPendingKill</code></td></tr>
-						<tr><td><code>mark_for_immediate_destroy</code></td><td><code>MarkForImmediateDestroy</code></td></tr>
-					</tbody>
-				</table>
+				<code class="sig">catty.log(msg)
+catty.log_warn(msg)
+catty.log_error(msg)
+catty.get_cvar_int/float/bool/string(name [, default])
+catty.set_cvar_int/float/bool/string(name, value)</code>
 			</div>
 		</article>
-
-		<article class="fn" id="catty.package">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.package</h3>
-				<span class="tag tag-reflect">usertype</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">Catty::FPackage · no_constructor</code>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Lua</th><th>C++</th></tr></thead>
-					<tbody>
-						<tr><td><code>get_file_path</code></td><td><code>GetFilePath</code></td></tr>
-						<tr><td><code>is_persistent</code></td><td><code>IsPersistent</code></td></tr>
-						<tr><td><code>is_transient</code></td><td><code>IsTransient</code></td></tr>
-						<tr><td><code>get_object_count</code></td><td><code>GetObjectCount</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="catty.resource">
-			<div class="fn-head">
-				<h3 class="fn-name">catty.resource</h3>
-				<span class="tag tag-reflect">usertype</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">Catty::FResource · no_constructor</code>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Lua</th><th>C++</th></tr></thead>
-					<tbody>
-						<tr><td><code>get_type</code></td><td><code>GetType</code></td></tr>
-						<tr><td><code>get_source_path</code></td><td><code>GetSourcePath</code></td></tr>
-						<tr><td><code>get_path</code></td><td><code>GetPath</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
 	</div>
 </section>
-<!-- @@CATTY_LUA_REFLECT_BODY_END@@ -->
+
+<section class="card" id="object">
+	<h2>object (FObjectRef)</h2>
+	<div class="body">
+		<article class="fn">
+			<div class="fn-head"><h3 class="fn-name">object</h3><span class="tag tag-reflect">usertype</span></div>
+			<div class="fn-body">
+				<code class="sig">pkg = catty.get_transient_package()
+print(pkg.ObjectName)           -- property (also object_name)
+pkg.ObjectName = "Renamed"
+print(pkg:GetName())            -- reflected function (also get_name)
+pkg:MarkPendingKill()</code>
+				<p>经 <code>CATTY_PROPERTY</code> / <code>CATTY_FUNCTION</code> 反射动态派发；PascalCase 与 snake_case 均可。</p>
+				<div class="note">仅暴露已标注的反射成员，不是全部 C++ 方法。</div>
+			</div>
+		</article>
+	</div>
+</section>
+
+<section class="card" id="catty.call">
+	<h2>get / set / call</h2>
+	<div class="body">
+		<article class="fn">
+			<div class="fn-head"><h3 class="fn-name">catty.get_property / set_property / call</h3><span class="tag tag-reflect">reflect</span></div>
+			<div class="fn-body">
+				<code class="sig">catty.get_property(obj, "ObjectName")
+catty.set_property(obj, "ObjectName", "x")
+catty.call(obj, "GetName")              -- returns value
+catty.call(obj, "MarkPendingKill")
+catty.reflect_types()                   -- registered FObject type names</code>
+			</div>
+		</article>
+	</div>
+</section>
+
+<section class="card" id="catty.resources">
+	<h2>packages</h2>
+	<div class="body">
+		<article class="fn">
+			<div class="fn-head"><h3 class="fn-name">catty.get_transient_package</h3><span class="tag tag-api">resource</span></div>
+			<div class="fn-body">
+				<code class="sig">catty.get_transient_package() → object
+catty.find_package(name) → object|nil
+catty.find_object(packageName, objectName) → object|nil</code>
+				<p>在 <code>FScriptSystem::BindResourceManager</code> 之后可用（引擎启动时自动绑定）。</p>
+			</div>
+		</article>
+	</div>
+</section>
 </main>
 </div>
 
 <footer>
-	<code class="inline">CATTY_REFLECT_CLASS</code> · codegen ·
-	<a href="ReflectCatalog.md">ReflectCatalog.md</a>
+	<code class="inline">LuaObjectReflect.cpp</code> ·
+	<a href="ObjectReflectAPI.html">Object Reflect C++ API</a>
 </footer>
 </body>
 </html>

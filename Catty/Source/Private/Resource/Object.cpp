@@ -21,6 +21,35 @@ std::uint32_t AllocateWeakSerial()
 	return Serial;
 }
 
+[[nodiscard]] bool PropertyKindsCompatible(EPropertyKind Expected, EPropertyKind Actual)
+{
+	if (Expected == Actual)
+	{
+		return true;
+	}
+	switch (Expected)
+	{
+	case EPropertyKind::Int32:
+	case EPropertyKind::Int64:
+	case EPropertyKind::UInt32:
+	case EPropertyKind::EnumInt32:
+		return Actual == EPropertyKind::Int32
+			|| Actual == EPropertyKind::Int64
+			|| Actual == EPropertyKind::UInt32
+			|| Actual == EPropertyKind::EnumInt32;
+	case EPropertyKind::UInt64:
+		return Actual == EPropertyKind::UInt64
+			|| Actual == EPropertyKind::Int64
+			|| Actual == EPropertyKind::Int32
+			|| Actual == EPropertyKind::UInt32;
+	case EPropertyKind::Float:
+	case EPropertyKind::Double:
+		return Actual == EPropertyKind::Float || Actual == EPropertyKind::Double;
+	default:
+		return false;
+	}
+}
+
 } // namespace
 
 // --- FObject ---
@@ -35,6 +64,55 @@ FObject::FObject(FPackage* InOuter, std::string InObjectName)
 FObject::~FObject()
 {
 	ClearOuter();
+}
+
+bool FObject::GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const
+{
+	const FProperty* Prop = GetObjectType().FindPropertyInHierarchy(Name);
+	if (!Prop || !Prop->Getter)
+	{
+		return false;
+	}
+	return Prop->Getter(this, OutValue);
+}
+
+bool FObject::SetPropertyValue(std::string_view Name, const FPropertyValue& Value)
+{
+	const FProperty* Prop = GetObjectType().FindPropertyInHierarchy(Name);
+	if (!Prop || !Prop->Setter)
+	{
+		return false;
+	}
+	return Prop->Setter(this, Value);
+}
+
+bool FObject::CallFunction(
+	std::string_view Name,
+	const FPropertyValue* Args,
+	std::size_t ArgCount,
+	FPropertyValue* OutReturn)
+{
+	const FFunction* Func = GetObjectType().FindFunctionInHierarchy(Name);
+	if (!Func || !Func->Invoke)
+	{
+		return false;
+	}
+	if (ArgCount != Func->ParamCount)
+	{
+		return false;
+	}
+	if (Func->ParamCount > 0 && (!Args || !Func->ParamKinds))
+	{
+		return false;
+	}
+	for (std::size_t I = 0; I < Func->ParamCount; ++I)
+	{
+		if (!PropertyKindsCompatible(Func->ParamKinds[I], Args[I].Kind))
+		{
+			return false;
+		}
+	}
+	return Func->Invoke(this, Args, ArgCount, OutReturn);
 }
 
 void FObject::ClearOuter()

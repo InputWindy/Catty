@@ -62,4 +62,3 @@ __pycache__/
 *.gen.cpp
 *.gen.json
 /Catty/Source/Generated/
-/Doc/Engine/ReflectCatalog.md

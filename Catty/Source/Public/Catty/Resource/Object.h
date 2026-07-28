@@ -1,11 +1,12 @@
 #pragma once
 
 #include "Catty/Core/Export.h"
-#include "Catty/Core/Reflect.h"
+#include "Catty/Core/ObjectReflect.h"
 
 #include <cstdint>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace Catty
@@ -66,6 +67,7 @@ private:
 };
 
 /** Object GC / lifetime flags. */
+CATTY_ENUM()
 enum class EObjectFlags : std::uint32_t
 {
 	None = 0,
@@ -110,10 +112,14 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
  * Not allocatable by itself — construct only via subclasses (FPackage, FResource, ...).
  * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
  * Outer is FObjectRef (empty for FPackage itself). Cleanup is fully owned by ~FObject.
+ *
+ * Reflection (editor / blueprint): CATTY_OBJECT + CATTY_PROPERTY / CATTY_FUNCTION.
  */
-CATTY_REFLECT_CLASS()
+CATTY_OBJECT()
 class CATTY_API FObject
 {
+	CATTY_GENERATED_BODY()
+
 public:
 	virtual ~FObject();
 
@@ -122,12 +128,48 @@ public:
 
 	[[nodiscard]] FObjectRef GetOuter() const;
 	[[nodiscard]] FObjectRef GetPackage() const;
+	/**
+	 * Invoke a reflected function by name (walks Super chain).
+	 * Args is type-erased; count must match the reflected signature.
+	 * OutReturn receives the return value when the function has one (may be null).
+	 */
+	[[nodiscard]] bool CallFunction(
+		std::string_view Name,
+		const FPropertyValue* Args,
+		std::size_t ArgCount,
+		FPropertyValue* OutReturn = nullptr);
+
+	[[nodiscard]] bool CallFunction(std::string_view Name)
+	{
+		return CallFunction(Name, static_cast<const FPropertyValue*>(nullptr), 0, nullptr);
+	}
+
+	template <typename TFirst, typename... TRest>
+	[[nodiscard]] bool CallFunction(std::string_view Name, TFirst&& First, TRest&&... Rest)
+	{
+		const FPropertyValue Pack[] = {
+			ToPropertyValue(std::forward<TFirst>(First)),
+			ToPropertyValue(std::forward<TRest>(Rest))...
+		};
+		return CallFunction(
+			Name,
+			static_cast<const FPropertyValue*>(Pack),
+			sizeof...(TRest) + 1,
+			static_cast<FPropertyValue*>(nullptr));
+	}
+
+	CATTY_FUNCTION()
 	[[nodiscard]] const std::string& GetName() const { return ObjectName; }
+	CATTY_FUNCTION()
 	[[nodiscard]] std::string GetPathName() const;
+	CATTY_FUNCTION()
 	[[nodiscard]] std::uint32_t GetRefCount() const { return RefCount; }
 	[[nodiscard]] EObjectFlags GetFlags() const { return ObjectFlags; }
 	[[nodiscard]] bool HasAnyFlags(EObjectFlags Test) const;
+
+	CATTY_FUNCTION()
 	[[nodiscard]] bool IsPendingKill() const;
+
 	[[nodiscard]] bool IsRooted() const;
 	[[nodiscard]] std::uint32_t GetWeakSerial() const { return WeakSerial; }
 
@@ -139,8 +181,13 @@ public:
 	void AddToRoot();
 	void RemoveFromRoot();
 
+	CATTY_FUNCTION()
 	void MarkPendingKill();
 	void MarkForImmediateDestroy();
+
+	/** Runtime property get/set by name (walks type Super chain). */
+	[[nodiscard]] bool GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const;
+	[[nodiscard]] bool SetPropertyValue(std::string_view Name, const FPropertyValue& Value);
 
 	virtual void GetReferencedObjects(std::vector<FObject*>& OutObjects) const;
 	virtual void SetReferencedObjects(const std::vector<FObject*>& InObjects);
@@ -151,6 +198,7 @@ protected:
 	void AddFlags(EObjectFlags InFlags) { ObjectFlags |= InFlags; }
 	void ClearFlags(EObjectFlags InFlags) { ObjectFlags &= ~InFlags; }
 
+	CATTY_PROPERTY()
 	std::string ObjectName;
 
 private:

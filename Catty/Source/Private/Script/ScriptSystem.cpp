@@ -2,10 +2,8 @@
 
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
-#include "LuaBindings.gen.h"
-
-#define SOL_ALL_SAFETIES_ON 1
-#include <sol/sol.hpp>
+#include "Catty/Resource/ResourceManager.h"
+#include "LuaObjectReflect.h"
 
 #include <filesystem>
 #include <utility>
@@ -123,11 +121,20 @@ bool FScriptSystem::Initialize(const std::string& InScriptsDirectory)
 	Impl->Lua["package"]["path"] = PackagePath;
 
 	RegisterCoreBindings(Impl->Lua);
-	RegisterGeneratedLuaBindings(Impl->Lua);
+	RegisterLuaObjectReflectBindings(Impl->Lua);
 
 	bInitialized = true;
 	CATTY_CORE_INFO("FScriptSystem initialized (Scripts='{}')", ScriptsDirectory);
 	return true;
+}
+
+void FScriptSystem::BindResourceManager(FResourceManager& ResourceManager)
+{
+	if (!bInitialized || !Impl)
+	{
+		return;
+	}
+	BindLuaResourceManager(Impl->Lua, ResourceManager);
 }
 
 void FScriptSystem::Shutdown()
