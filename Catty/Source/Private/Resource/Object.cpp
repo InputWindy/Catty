@@ -21,7 +21,7 @@ std::uint32_t AllocateWeakSerial()
 	return Serial;
 }
 
-[[nodiscard]] bool PropertyKindsCompatible(EPropertyKind Expected, EPropertyKind Actual)
+[[nodiscard]] bool PropertyTypesCompatible(EPropertyType Expected, EPropertyType Actual)
 {
 	if (Expected == Actual)
 	{
@@ -29,22 +29,24 @@ std::uint32_t AllocateWeakSerial()
 	}
 	switch (Expected)
 	{
-	case EPropertyKind::Int32:
-	case EPropertyKind::Int64:
-	case EPropertyKind::UInt32:
-	case EPropertyKind::EnumInt32:
-		return Actual == EPropertyKind::Int32
-			|| Actual == EPropertyKind::Int64
-			|| Actual == EPropertyKind::UInt32
-			|| Actual == EPropertyKind::EnumInt32;
-	case EPropertyKind::UInt64:
-		return Actual == EPropertyKind::UInt64
-			|| Actual == EPropertyKind::Int64
-			|| Actual == EPropertyKind::Int32
-			|| Actual == EPropertyKind::UInt32;
-	case EPropertyKind::Float:
-	case EPropertyKind::Double:
-		return Actual == EPropertyKind::Float || Actual == EPropertyKind::Double;
+	case EPropertyType::Int32:
+	case EPropertyType::Int64:
+	case EPropertyType::UInt32:
+	case EPropertyType::EnumInt32:
+		return Actual == EPropertyType::Int32
+			|| Actual == EPropertyType::Int64
+			|| Actual == EPropertyType::UInt32
+			|| Actual == EPropertyType::EnumInt32;
+	case EPropertyType::UInt64:
+		return Actual == EPropertyType::UInt64
+			|| Actual == EPropertyType::Int64
+			|| Actual == EPropertyType::Int32
+			|| Actual == EPropertyType::UInt32;
+	case EPropertyType::Float:
+	case EPropertyType::Double:
+		return Actual == EPropertyType::Float || Actual == EPropertyType::Double;
+	case EPropertyType::ObjectRef:
+		return Actual == EPropertyType::ObjectRef;
 	default:
 		return false;
 	}
@@ -101,13 +103,13 @@ bool FObject::CallFunction(
 	{
 		return false;
 	}
-	if (Func->ParamCount > 0 && (!Args || !Func->ParamKinds))
+	if (Func->ParamCount > 0 && (!Args || !Func->ParamTypes))
 	{
 		return false;
 	}
 	for (std::size_t I = 0; I < Func->ParamCount; ++I)
 	{
-		if (!PropertyKindsCompatible(Func->ParamKinds[I], Args[I].Kind))
+		if (!PropertyTypesCompatible(Func->ParamTypes[I], Args[I].Type))
 		{
 			return false;
 		}

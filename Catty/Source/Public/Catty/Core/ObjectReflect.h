@@ -34,7 +34,7 @@
  *   };
  *
  * Codegen: Tools/object_reflect_codegen.py → Source/Generated/ObjectReflect*.gen.*
- * Not used for Lua — script bindings are a separate pipeline.
+ * Lua usertypes are generated from the same scan (ObjectRef ↔ catty.object / package / …).
  */
 
 #include "Catty/Core/Export.h"
@@ -52,8 +52,8 @@ namespace Catty
 
 class FObject;
 
-/** Supported property storage kinds (phase 1). */
-enum class EPropertyKind : std::uint8_t
+/** Supported property / CallFunction value types. */
+enum class EPropertyType : std::uint8_t
 {
 	Bool = 0,
 	Int32,
@@ -64,6 +64,8 @@ enum class EPropertyKind : std::uint8_t
 	Double,
 	String,
 	EnumInt32,
+	/** FObjectRef (refcounted). Stored as FObject* with AddRef/ReleaseRef. */
+	ObjectRef,
 };
 
 /** Editor-facing property flags (phase 1: Edit only). */
@@ -83,22 +85,46 @@ enum class EPropertyFlags : std::uint32_t
 	return (static_cast<std::uint32_t>(Value) & static_cast<std::uint32_t>(Test)) != 0;
 }
 
-/** Type-erased property value for Get/SetPropertyValue. */
+/**
+ * Type-erased value for Get/SetPropertyValue and CallFunction.
+ * ObjectRef type owns one AddRef while ObjectValue is non-null.
+ */
 struct CATTY_API FPropertyValue
 {
-	EPropertyKind Kind = EPropertyKind::Bool;
+	EPropertyType Type = EPropertyType::Bool;
 
 	bool BoolValue = false;
 	std::int64_t IntValue = 0;
 	std::uint64_t UIntValue = 0;
 	double FloatValue = 0.0;
 	std::string StringValue;
+	FObject* ObjectValue = nullptr;
+
+	FPropertyValue() = default;
+	FPropertyValue(const FPropertyValue& Other);
+	FPropertyValue(FPropertyValue&& Other) noexcept;
+	~FPropertyValue();
+
+	FPropertyValue& operator=(const FPropertyValue& Other);
+	FPropertyValue& operator=(FPropertyValue&& Other) noexcept;
 
 	[[nodiscard]] static FPropertyValue FromBool(bool V);
 	[[nodiscard]] static FPropertyValue FromInt(std::int64_t V);
 	[[nodiscard]] static FPropertyValue FromUInt(std::uint64_t V);
 	[[nodiscard]] static FPropertyValue FromFloat(double V);
 	[[nodiscard]] static FPropertyValue FromString(std::string V);
+	/** AddRefs InObject when non-null. */
+	[[nodiscard]] static FPropertyValue FromObject(FObject* InObject);
+
+	[[nodiscard]] FObject* GetObjectPtr() const
+	{
+		return Type == EPropertyType::ObjectRef ? ObjectValue : nullptr;
+	}
+
+private:
+	void ReleaseObjectValue();
+	void CopyFrom(const FPropertyValue& Other);
+	void MoveFrom(FPropertyValue&& Other) noexcept;
 };
 
 /** Convert common C++ values into FPropertyValue for CallFunction packs. */
@@ -109,13 +135,13 @@ struct CATTY_API FPropertyValue
 [[nodiscard]] inline FPropertyValue ToPropertyValue(std::int32_t V)
 {
 	FPropertyValue Out = FPropertyValue::FromInt(V);
-	Out.Kind = EPropertyKind::Int32;
+	Out.Type = EPropertyType::Int32;
 	return Out;
 }
 [[nodiscard]] inline FPropertyValue ToPropertyValue(std::uint32_t V)
 {
 	FPropertyValue Out = FPropertyValue::FromInt(static_cast<std::int64_t>(V));
-	Out.Kind = EPropertyKind::UInt32;
+	Out.Type = EPropertyType::UInt32;
 	return Out;
 }
 [[nodiscard]] inline FPropertyValue ToPropertyValue(std::int64_t V)
@@ -129,7 +155,7 @@ struct CATTY_API FPropertyValue
 [[nodiscard]] inline FPropertyValue ToPropertyValue(float V)
 {
 	FPropertyValue Out = FPropertyValue::FromFloat(V);
-	Out.Kind = EPropertyKind::Float;
+	Out.Type = EPropertyType::Float;
 	return Out;
 }
 [[nodiscard]] inline FPropertyValue ToPropertyValue(double V)
@@ -156,7 +182,7 @@ template <typename TEnum>
 [[nodiscard]] inline std::enable_if_t<std::is_enum_v<TEnum>, FPropertyValue> ToPropertyValue(TEnum V)
 {
 	FPropertyValue Out = FPropertyValue::FromInt(static_cast<std::int64_t>(V));
-	Out.Kind = EPropertyKind::EnumInt32;
+	Out.Type = EPropertyType::EnumInt32;
 	return Out;
 }
 
@@ -172,7 +198,7 @@ using FFunctionInvokeFn = bool (*)(
 struct FProperty
 {
 	const char* Name = nullptr;
-	EPropertyKind Kind = EPropertyKind::Bool;
+	EPropertyType Type = EPropertyType::Bool;
 	EPropertyFlags Flags = EPropertyFlags::Edit;
 	FPropertyGetterFn Getter = nullptr;
 	FPropertySetterFn Setter = nullptr;
@@ -181,11 +207,11 @@ struct FProperty
 struct FFunction
 {
 	const char* Name = nullptr;
-	/** Expected parameter kinds (length = ParamCount); null when ParamCount == 0. */
-	const EPropertyKind* ParamKinds = nullptr;
+	/** Expected parameter types (length = ParamCount); null when ParamCount == 0. */
+	const EPropertyType* ParamTypes = nullptr;
 	std::size_t ParamCount = 0;
 	/** Meaningful when bHasReturn is true. */
-	EPropertyKind ReturnKind = EPropertyKind::Bool;
+	EPropertyType ReturnType = EPropertyType::Bool;
 	bool bHasReturn = false;
 	FFunctionInvokeFn Invoke = nullptr;
 };
@@ -240,7 +266,7 @@ using FStructPropertySetterFn = bool (*)(void* Struct, const FPropertyValue& Val
 struct FStructProperty
 {
 	const char* Name = nullptr;
-	EPropertyKind Kind = EPropertyKind::Bool;
+	EPropertyType Type = EPropertyType::Bool;
 	EPropertyFlags Flags = EPropertyFlags::Edit;
 	FStructPropertyGetterFn Getter = nullptr;
 	FStructPropertySetterFn Setter = nullptr;

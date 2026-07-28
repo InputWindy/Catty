@@ -57,21 +57,34 @@ public:
 		std::string InSourcePath);
 	virtual ~FResource() override;
 
+	// ---------------------------------------------------------------------------
+	// Queries (C++ typed Id — FResourceId not a CATTY_FUNCTION return kind yet)
+	// ---------------------------------------------------------------------------
 	[[nodiscard]] FResourceId GetId() const { return Id; }
+
+	// ---------------------------------------------------------------------------
+	// Reflection — CATTY_FUNCTION / CATTY_PROPERTY (game / editor / Lua)
+	// ---------------------------------------------------------------------------
+	CATTY_FUNCTION()
+	[[nodiscard]] std::uint64_t GetIdValue() const { return Id.Value; }
+	CATTY_FUNCTION()
 	[[nodiscard]] EResourceType GetType() const { return Type; }
-
-	/** Disk path of the external asset file (not the Package.ObjectName path). */
+	CATTY_FUNCTION()
 	[[nodiscard]] const std::string& GetSourcePath() const { return SourcePath; }
-
 	/** Alias for GetSourcePath (legacy name). */
+	CATTY_FUNCTION()
 	[[nodiscard]] const std::string& GetPath() const { return SourcePath; }
 
 protected:
-	FResourceId Id{};
 	CATTY_PROPERTY()
 	EResourceType Type = EResourceType::Unknown;
 	CATTY_PROPERTY()
 	std::string SourcePath;
+
+	// ---------------------------------------------------------------------------
+	// Fields
+	// ---------------------------------------------------------------------------
+	FResourceId Id{};
 };
 
 } // namespace Catty

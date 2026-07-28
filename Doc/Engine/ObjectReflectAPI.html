@@ -356,20 +356,22 @@ void Reset();</code>
 			<div class="fn-body">
 				<code class="sig">struct FPropertyValue
 {
-	EPropertyKind Kind;
+	EPropertyType Type;
 	bool BoolValue;
 	std::int64_t IntValue;
 	std::uint64_t UIntValue;
 	double FloatValue;
 	std::string StringValue;
+	FObject* ObjectValue;
 
 	static FPropertyValue FromBool(bool);
 	static FPropertyValue FromInt(std::int64_t);
 	static FPropertyValue FromUInt(std::uint64_t);
 	static FPropertyValue FromFloat(double);
 	static FPropertyValue FromString(std::string);
+	static FPropertyValue FromObject(FObject*);
 };</code>
-				<p>类型擦除的属性读写载体。<code>EPropertyKind</code>：Bool / Int32 / UInt32 / Int64 / UInt64 / Float / Double / String / EnumInt32。</p>
+				<p>类型擦除的属性读写载体。<code>EPropertyType</code>：Bool / Int32 / UInt32 / Int64 / UInt64 / Float / Double / String / EnumInt32 / ObjectRef。</p>
 			</div>
 		</article>
 
@@ -390,7 +392,7 @@ bool FObject::CallFunction(name, arg0, arg1, ...); // variadic → FPropertyValu
 bool FObject::CallFunction(name, Args*, ArgCount); // type-erased
 
 FObjectTypeRegistry::Get().FindType("Catty::FResource");</code>
-				<p><code>FObjectType</code> 含 <code>Name</code>、<code>Super</code>、本类 Properties / Functions。<code>Find*InHierarchy</code> / <code>Gather*InHierarchy</code> 沿 Super 链行走。函数元数据含 <code>ParamKinds</code> / <code>ParamCount</code>，调用前校验个数与类型。</p>
+				<p><code>FObjectType</code> 含 <code>Name</code>、<code>Super</code>、本类 Properties / Functions。<code>Find*InHierarchy</code> / <code>Gather*InHierarchy</code> 沿 Super 链行走。函数元数据含 <code>ParamTypes</code> / <code>ParamCount</code>，调用前校验个数与类型。</p>
 			</div>
 		</article>
 
@@ -438,7 +440,7 @@ Type-&gt;FindByValue(static_cast&lt;std::int64_t&gt;(EResourceType::Mesh));</cod
 			</div>
 			<div class="fn-body">
 				<code class="sig">FPropertyValue V;
-if (Pkg.GetPropertyValue("ObjectName", V) &amp;&amp; V.Kind == EPropertyKind::String)
+if (Pkg.GetPropertyValue("ObjectName", V) &amp;&amp; V.Type == EPropertyType::String)
 {
 	// V.StringValue
 }
@@ -488,10 +490,10 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: (root) · Catty/Source/Public/Catty/Resource/Object.h:118</code>
+				<code class="sig">super: (root) · Catty/Source/Public/Catty/Resource/Object.h:119</code>
 				<h4>Properties</h4>
 				<table>
-					<thead><tr><th>Name</th><th>C++</th><th>Kind</th></tr></thead>
+					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
 					<tbody>
 						<tr><td><code>ObjectName</code></td><td><code>std::string</code></td><td><code>String</code></td></tr>
 					</tbody>
@@ -502,9 +504,18 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 					<tbody>
 						<tr><td><code>GetName</code></td><td><code>std::string()</code></td></tr>
 						<tr><td><code>GetPathName</code></td><td><code>std::string()</code></td></tr>
+						<tr><td><code>GetOuter</code></td><td><code>FObjectRef()</code></td></tr>
+						<tr><td><code>GetPackage</code></td><td><code>FObjectRef()</code></td></tr>
 						<tr><td><code>GetRefCount</code></td><td><code>std::uint32_t()</code></td></tr>
+						<tr><td><code>GetFlags</code></td><td><code>EObjectFlags()</code></td></tr>
+						<tr><td><code>HasAnyFlags</code></td><td><code>bool(EObjectFlags)</code></td></tr>
+						<tr><td><code>GetWeakSerial</code></td><td><code>std::uint32_t()</code></td></tr>
 						<tr><td><code>IsPendingKill</code></td><td><code>bool()</code></td></tr>
+						<tr><td><code>IsRooted</code></td><td><code>bool()</code></td></tr>
+						<tr><td><code>AddToRoot</code></td><td><code>void()</code></td></tr>
+						<tr><td><code>RemoveFromRoot</code></td><td><code>void()</code></td></tr>
 						<tr><td><code>MarkPendingKill</code></td><td><code>void()</code></td></tr>
+						<tr><td><code>MarkForImmediateDestroy</code></td><td><code>void()</code></td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -517,11 +528,18 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 			</div>
 			<div class="fn-body">
 				<code class="sig">super: Catty::FObject · Catty/Source/Public/Catty/Resource/Package.h:78</code>
-				<h4>Properties</h4>
+				<p>无反射属性。</p>
+				<h4>Functions</h4>
 				<table>
-					<thead><tr><th>Name</th><th>C++</th><th>Kind</th></tr></thead>
+					<thead><tr><th>Name</th><th>Signature</th></tr></thead>
 					<tbody>
-						<tr><td><code>FilePath</code></td><td><code>std::string</code></td><td><code>String</code></td></tr>
+						<tr><td><code>FindObject</code></td><td><code>FObjectRef(std::string)</code></td></tr>
+						<tr><td><code>GetFilePath</code></td><td><code>std::string()</code></td></tr>
+						<tr><td><code>SetFilePath</code></td><td><code>void(std::string)</code></td></tr>
+						<tr><td><code>GetPackageFlags</code></td><td><code>EPackageFlags()</code></td></tr>
+						<tr><td><code>IsPersistent</code></td><td><code>bool()</code></td></tr>
+						<tr><td><code>IsTransient</code></td><td><code>bool()</code></td></tr>
+						<tr><td><code>GetObjectCount</code></td><td><code>std::uint32_t()</code></td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -536,10 +554,20 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<code class="sig">super: Catty::FObject · Catty/Source/Public/Catty/Resource/Resource.h:46</code>
 				<h4>Properties</h4>
 				<table>
-					<thead><tr><th>Name</th><th>C++</th><th>Kind</th></tr></thead>
+					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
 					<tbody>
 						<tr><td><code>Type</code></td><td><code>EResourceType</code></td><td><code>EnumInt32</code></td></tr>
 						<tr><td><code>SourcePath</code></td><td><code>std::string</code></td><td><code>String</code></td></tr>
+					</tbody>
+				</table>
+				<h4>Functions</h4>
+				<table>
+					<thead><tr><th>Name</th><th>Signature</th></tr></thead>
+					<tbody>
+						<tr><td><code>GetIdValue</code></td><td><code>std::uint64_t()</code></td></tr>
+						<tr><td><code>GetType</code></td><td><code>EResourceType()</code></td></tr>
+						<tr><td><code>GetSourcePath</code></td><td><code>std::string()</code></td></tr>
+						<tr><td><code>GetPath</code></td><td><code>std::string()</code></td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -554,7 +582,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<code class="sig">Catty/Source/Public/Catty/Resource/ResourceHandle.h:21</code>
 				<h4>Properties</h4>
 				<table>
-					<thead><tr><th>Name</th><th>C++</th><th>Kind</th></tr></thead>
+					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
 					<tbody>
 						<tr><td><code>Value</code></td><td><code>std::uint64_t</code></td><td><code>UInt64</code></td></tr>
 					</tbody>
@@ -568,7 +596,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Catty/Resource/Object.h:70</code>
+				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Catty/Resource/Object.h:71</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>

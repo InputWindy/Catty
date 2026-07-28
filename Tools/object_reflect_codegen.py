@@ -33,11 +33,19 @@ _DEFAULT_OUT_H = _DEFAULT_GEN_DIR / "ObjectReflectTypes.gen.h"
 _DEFAULT_OUT_CPP = _DEFAULT_GEN_DIR / "ObjectReflectTypes.gen.cpp"
 _DEFAULT_OUT_JSON = _DEFAULT_GEN_DIR / "ObjectReflectCatalog.gen.json"
 _DEFAULT_OUT_HTML = ENGINE_ROOT / "Doc" / "Engine" / "ObjectReflectAPI.html"
+_DEFAULT_OUT_LUA_H = _DEFAULT_GEN_DIR / "LuaReflectBindings.gen.h"
+_DEFAULT_OUT_LUA_CPP = _DEFAULT_GEN_DIR / "LuaReflectBindings.gen.cpp"
+_DEFAULT_OUT_LUA_HTML = ENGINE_ROOT / "Doc" / "Engine" / "LuaAPI.html"
 
 _HTML_TOC_BEGIN = "<!-- @@CATTY_OBJECT_REFLECT_TOC_BEGIN@@ -->"
 _HTML_TOC_END = "<!-- @@CATTY_OBJECT_REFLECT_TOC_END@@ -->"
 _HTML_BODY_BEGIN = "<!-- @@CATTY_OBJECT_REFLECT_BODY_BEGIN@@ -->"
 _HTML_BODY_END = "<!-- @@CATTY_OBJECT_REFLECT_BODY_END@@ -->"
+
+_LUA_HTML_TOC_BEGIN = "<!-- @@CATTY_LUA_USERTYPE_TOC_BEGIN@@ -->"
+_LUA_HTML_TOC_END = "<!-- @@CATTY_LUA_USERTYPE_TOC_END@@ -->"
+_LUA_HTML_BODY_BEGIN = "<!-- @@CATTY_LUA_USERTYPE_BODY_BEGIN@@ -->"
+_LUA_HTML_BODY_END = "<!-- @@CATTY_LUA_USERTYPE_BODY_END@@ -->"
 
 _SOURCE_SUFFIXES = {".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp"}
 _SKIP_DIR_NAMES = {".git", "Intermediate", "Binaries", "ThirdParty", "_deps", "Generated"}
@@ -57,10 +65,10 @@ class FMember:
 	Name: str
 	Kind: str  # property | function
 	CppType: str = ""
-	PropertyKind: str = ""  # EPropertyKind enumerator name
+	PropertyType: str = ""  # EPropertyType enumerator name
 	ParamTypes: list[str] = field(default_factory=list)  # C++ param types
-	ParamKinds: list[str] = field(default_factory=list)  # EPropertyKind names
-	ReturnKind: str = ""  # EPropertyKind name when bHasReturn
+	ParamPropertyTypes: list[str] = field(default_factory=list)  # EPropertyType names
+	ReturnType: str = ""  # EPropertyType name when bHasReturn
 	bHasReturn: bool = False
 	bSupported: bool = True
 	SkipReason: str = ""
@@ -245,6 +253,8 @@ def _map_property_kind(cpp_type: str) -> tuple[str, bool, str]:
 		"double": ("Double", True, ""),
 		"std::string": ("String", True, ""),
 		"string": ("String", True, ""),
+		"FObjectRef": ("ObjectRef", True, ""),
+		"Catty::FObjectRef": ("ObjectRef", True, ""),
 		"EResourceType": ("EnumInt32", True, ""),
 		"EObjectFlags": ("EnumInt32", True, ""),
 		"EPackageFlags": ("EnumInt32", True, ""),
@@ -423,8 +433,8 @@ def _scan_class_body(body: str, *, b_allow_functions: bool) -> list[FMember]:
 								Kind="function",
 								CppType=ret,
 								ParamTypes=[p[0] for p in params],
-								ParamKinds=[p[1] for p in params],
-								ReturnKind=ret_kind,
+								ParamPropertyTypes=[p[1] for p in params],
+								ReturnType=ret_kind,
 								bHasReturn=b_ret,
 								bSupported=b_ok,
 								SkipReason=reason if not b_ok else "",
@@ -445,7 +455,7 @@ def _scan_class_body(body: str, *, b_allow_functions: bool) -> list[FMember]:
 								Name=name,
 								Kind="property",
 								CppType=cpp_type,
-								PropertyKind=kind,
+								PropertyType=kind,
 								bSupported=ok,
 								SkipReason=reason,
 							)
@@ -460,8 +470,8 @@ def _scan_class_body(body: str, *, b_allow_functions: bool) -> list[FMember]:
 								Kind="function",
 								CppType=ret,
 								ParamTypes=[p[0] for p in params],
-								ParamKinds=[p[1] for p in params],
-								ReturnKind=ret_kind,
+								ParamPropertyTypes=[p[1] for p in params],
+								ReturnType=ret_kind,
 								bHasReturn=b_ret,
 								bSupported=b_ok,
 								SkipReason=reason if not b_ok else "",
@@ -826,59 +836,68 @@ def render_header() -> str:
 def _emit_prop_read(lines: list[str], kind: str, access: str) -> None:
 	if kind == "Bool":
 		lines.append(f"\tOutValue = FPropertyValue::FromBool({access});")
+		lines.append("\tOutValue.Type = EPropertyType::Bool;")
 	elif kind in {"Int32", "UInt32", "Int64", "EnumInt32"}:
 		lines.append(f"\tOutValue = FPropertyValue::FromInt(static_cast<std::int64_t>({access}));")
+		lines.append("\tOutValue.Type = EPropertyType::" + kind + ";")
 	elif kind == "UInt64":
 		lines.append(f"\tOutValue = FPropertyValue::FromUInt(static_cast<std::uint64_t>({access}));")
+		lines.append("\tOutValue.Type = EPropertyType::UInt64;")
 	elif kind in {"Float", "Double"}:
 		lines.append(f"\tOutValue = FPropertyValue::FromFloat(static_cast<double>({access}));")
+		lines.append("\tOutValue.Type = EPropertyType::" + kind + ";")
 	elif kind == "String":
 		lines.append(f"\tOutValue = FPropertyValue::FromString({access});")
-	lines.append("\tOutValue.Kind = EPropertyKind::" + kind + ";")
+		lines.append("\tOutValue.Type = EPropertyType::String;")
+	elif kind == "ObjectRef":
+		lines.append(f"\tOutValue = ToPropertyValue({access});")
 
 
 def _emit_prop_write(lines: list[str], kind: str, cpp_type: str, access: str) -> None:
 	if kind == "Bool":
-		lines.append("\tif (Value.Kind != EPropertyKind::Bool) { return false; }")
+		lines.append("\tif (Value.Type != EPropertyType::Bool) { return false; }")
 		lines.append(f"\t{access} = Value.BoolValue;")
 	elif kind in {"Int32", "EnumInt32"}:
-		lines.append("\tif (Value.Kind != EPropertyKind::Int32 && Value.Kind != EPropertyKind::Int64")
+		lines.append("\tif (Value.Type != EPropertyType::Int32 && Value.Type != EPropertyType::Int64")
 		lines.append(
-			"\t\t&& Value.Kind != EPropertyKind::UInt32 && Value.Kind != EPropertyKind::EnumInt32) { return false; }"
+			"\t\t&& Value.Type != EPropertyType::UInt32 && Value.Type != EPropertyType::EnumInt32) { return false; }"
 		)
 		lines.append(f"\t{access} = static_cast<{cpp_type}>(Value.IntValue);")
 	elif kind == "UInt32":
-		lines.append("\tif (Value.Kind != EPropertyKind::UInt32 && Value.Kind != EPropertyKind::Int64")
-		lines.append("\t\t&& Value.Kind != EPropertyKind::Int32) { return false; }")
+		lines.append("\tif (Value.Type != EPropertyType::UInt32 && Value.Type != EPropertyType::Int64")
+		lines.append("\t\t&& Value.Type != EPropertyType::Int32) { return false; }")
 		lines.append(f"\t{access} = static_cast<std::uint32_t>(Value.IntValue);")
 	elif kind == "Int64":
-		lines.append("\tif (Value.Kind != EPropertyKind::Int64 && Value.Kind != EPropertyKind::Int32")
-		lines.append("\t\t&& Value.Kind != EPropertyKind::UInt32) { return false; }")
+		lines.append("\tif (Value.Type != EPropertyType::Int64 && Value.Type != EPropertyType::Int32")
+		lines.append("\t\t&& Value.Type != EPropertyType::UInt32) { return false; }")
 		lines.append(f"\t{access} = Value.IntValue;")
 	elif kind == "UInt64":
-		lines.append("\tif (Value.Kind != EPropertyKind::UInt64 && Value.Kind != EPropertyKind::Int64")
-		lines.append("\t\t&& Value.Kind != EPropertyKind::Int32 && Value.Kind != EPropertyKind::UInt32) { return false; }")
-		lines.append("\tif (Value.Kind == EPropertyKind::UInt64) {")
+		lines.append("\tif (Value.Type != EPropertyType::UInt64 && Value.Type != EPropertyType::Int64")
+		lines.append("\t\t&& Value.Type != EPropertyType::Int32 && Value.Type != EPropertyType::UInt32) { return false; }")
+		lines.append("\tif (Value.Type == EPropertyType::UInt64) {")
 		lines.append(f"\t\t{access} = Value.UIntValue;")
 		lines.append("\t} else {")
 		lines.append(f"\t\t{access} = static_cast<std::uint64_t>(Value.IntValue);")
 		lines.append("\t}")
 	elif kind == "Float":
-		lines.append("\tif (Value.Kind != EPropertyKind::Float && Value.Kind != EPropertyKind::Double) { return false; }")
+		lines.append("\tif (Value.Type != EPropertyType::Float && Value.Type != EPropertyType::Double) { return false; }")
 		lines.append(f"\t{access} = static_cast<float>(Value.FloatValue);")
 	elif kind == "Double":
-		lines.append("\tif (Value.Kind != EPropertyKind::Double && Value.Kind != EPropertyKind::Float) { return false; }")
+		lines.append("\tif (Value.Type != EPropertyType::Double && Value.Type != EPropertyType::Float) { return false; }")
 		lines.append(f"\t{access} = Value.FloatValue;")
 	elif kind == "String":
-		lines.append("\tif (Value.Kind != EPropertyKind::String) { return false; }")
+		lines.append("\tif (Value.Type != EPropertyType::String) { return false; }")
 		lines.append(f"\t{access} = Value.StringValue;")
+	elif kind == "ObjectRef":
+		lines.append("\tif (Value.Type != EPropertyType::ObjectRef) { return false; }")
+		lines.append(f"\t{access} = ObjectRefFromPropertyValue(Value);")
 
 
 def _getter_setter_fns(e: FTypeEntry, mem: FMember) -> tuple[str, str, str]:
 	mangled = _mangled(e.TypeName)
 	gname = f"Get_{mangled}_{mem.Name}"
 	sname = f"Set_{mangled}_{mem.Name}"
-	kind = mem.PropertyKind
+	kind = mem.PropertyType
 	lines: list[str] = []
 	lines.append(f"bool FObjectReflectDetail::{gname}(const FObject* Object, FPropertyValue& OutValue)")
 	lines.append("{")
@@ -901,7 +920,7 @@ def _struct_getter_setter_fns(e: FTypeEntry, mem: FMember) -> tuple[str, str, st
 	mangled = _mangled(e.TypeName)
 	gname = f"Get_{mangled}_{mem.Name}"
 	sname = f"Set_{mangled}_{mem.Name}"
-	kind = mem.PropertyKind
+	kind = mem.PropertyType
 	lines: list[str] = []
 	lines.append(f"bool FStructReflectDetail::{gname}(const void* Struct, FPropertyValue& OutValue)")
 	lines.append("{")
@@ -932,7 +951,7 @@ def _invoke_fn(e: FTypeEntry, mem: FMember) -> tuple[str, str]:
 		f"\tauto* Self = static_cast<{e.TypeName}*>(Object);",
 	]
 	call_args: list[str] = []
-	for idx, (cpp_type, kind) in enumerate(zip(mem.ParamTypes, mem.ParamKinds)):
+	for idx, (cpp_type, kind) in enumerate(zip(mem.ParamTypes, mem.ParamPropertyTypes)):
 		var = f"A{idx}"
 		if kind == "Bool":
 			lines.append(f"\tconst bool {var} = Args[{idx}].BoolValue;")
@@ -940,7 +959,7 @@ def _invoke_fn(e: FTypeEntry, mem: FMember) -> tuple[str, str]:
 			lines.append(f"\tconst auto {var} = static_cast<{cpp_type}>(Args[{idx}].IntValue);")
 		elif kind == "UInt64":
 			lines.append(f"\tstd::uint64_t {var} = 0;")
-			lines.append(f"\tif (Args[{idx}].Kind == EPropertyKind::UInt64)")
+			lines.append(f"\tif (Args[{idx}].Type == EPropertyType::UInt64)")
 			lines.append("\t{")
 			lines.append(f"\t\t{var} = Args[{idx}].UIntValue;")
 			lines.append("\t}")
@@ -956,6 +975,8 @@ def _invoke_fn(e: FTypeEntry, mem: FMember) -> tuple[str, str]:
 			lines.append(f"\tconst auto {var} = static_cast<{cpp_type}>(Args[{idx}].FloatValue);")
 		elif kind == "String":
 			lines.append(f"\tconst std::string& {var} = Args[{idx}].StringValue;")
+		elif kind == "ObjectRef":
+			lines.append(f"\tFObjectRef {var} = ObjectRefFromPropertyValue(Args[{idx}]);")
 		else:
 			lines.append(f"\treturn false; // unsupported kind {kind}")
 			lines.append("}")
@@ -968,7 +989,7 @@ def _invoke_fn(e: FTypeEntry, mem: FMember) -> tuple[str, str]:
 		lines.append(f"\tauto Result = Self->{mem.Name}({args_joined});")
 		lines.append("\tif (OutReturn)")
 		lines.append("\t{")
-		rk = mem.ReturnKind
+		rk = mem.ReturnType
 		if rk == "Bool":
 			lines.append("\t\t*OutReturn = FPropertyValue::FromBool(static_cast<bool>(Result));")
 		elif rk in {"Int32", "UInt32", "Int64", "EnumInt32"}:
@@ -979,7 +1000,10 @@ def _invoke_fn(e: FTypeEntry, mem: FMember) -> tuple[str, str]:
 			lines.append("\t\t*OutReturn = FPropertyValue::FromFloat(static_cast<double>(Result));")
 		elif rk == "String":
 			lines.append("\t\t*OutReturn = FPropertyValue::FromString(std::string(Result));")
-		lines.append(f"\t\tOutReturn->Kind = EPropertyKind::{rk};")
+		elif rk == "ObjectRef":
+			lines.append("\t\t*OutReturn = ToPropertyValue(std::move(Result));")
+		if rk != "ObjectRef":
+			lines.append(f"\t\tOutReturn->Type = EPropertyType::{rk};")
 		lines.append("\t}")
 	else:
 		lines.append(f"\tSelf->{mem.Name}({args_joined});")
@@ -1065,34 +1089,34 @@ def render_cpp(
 			lines.append("{")
 			for mem, g, s in props:
 				lines.append(
-					f"\t{{ {_cpp_string(mem.Name)}, EPropertyKind::{mem.PropertyKind}, "
+					f"\t{{ {_cpp_string(mem.Name)}, EPropertyType::{mem.PropertyType}, "
 					f"EPropertyFlags::Edit, {g}, {s} }},"
 				)
 			lines.append("};")
 			lines.append("")
 		for mem, iname in funcs:
-			if mem.ParamKinds:
-				lines.append(f"static const EPropertyKind GParams_{mangled}_{mem.Name}[] =")
+			if mem.ParamPropertyTypes:
+				lines.append(f"static const EPropertyType GParams_{mangled}_{mem.Name}[] =")
 				lines.append("{")
-				for kind in mem.ParamKinds:
-					lines.append(f"\tEPropertyKind::{kind},")
+				for kind in mem.ParamPropertyTypes:
+					lines.append(f"\tEPropertyType::{kind},")
 				lines.append("};")
 				lines.append("")
 		if funcs:
 			lines.append(f"static const FFunction GFunctions_{mangled}[] =")
 			lines.append("{")
 			for mem, iname in funcs:
-				if mem.ParamKinds:
+				if mem.ParamPropertyTypes:
 					params_expr = f"GParams_{mangled}_{mem.Name}"
-					count_expr = str(len(mem.ParamKinds))
+					count_expr = str(len(mem.ParamPropertyTypes))
 				else:
 					params_expr = "nullptr"
 					count_expr = "0"
 				if mem.bHasReturn:
-					ret_kind = f"EPropertyKind::{mem.ReturnKind}"
+					ret_kind = f"EPropertyType::{mem.ReturnType}"
 					b_ret = "true"
 				else:
-					ret_kind = "EPropertyKind::Bool"
+					ret_kind = "EPropertyType::Bool"
 					b_ret = "false"
 				lines.append(
 					f"\t{{ {_cpp_string(mem.Name)}, {params_expr}, {count_expr}, "
@@ -1169,7 +1193,7 @@ def render_cpp(
 			lines.append("{")
 			for mem, g, s in props:
 				lines.append(
-					f"\t{{ {_cpp_string(mem.Name)}, EPropertyKind::{mem.PropertyKind}, "
+					f"\t{{ {_cpp_string(mem.Name)}, EPropertyType::{mem.PropertyType}, "
 					f"EPropertyFlags::Edit, {g}, {s} }},"
 				)
 			lines.append("};")
@@ -1277,7 +1301,7 @@ def render_json(
 				"super": e.Super,
 				"source": f"{e.SourceRel}:{e.SourceLine}",
 				"properties": [
-					{"name": m.Name, "cppType": m.CppType, "kind": m.PropertyKind}
+					{"name": m.Name, "cppType": m.CppType, "type": m.PropertyType}
 					for m in e.Members
 					if m.Kind == "property" and m.bSupported
 				],
@@ -1285,10 +1309,10 @@ def render_json(
 					{
 						"name": m.Name,
 						"params": [
-							{"cppType": t, "kind": k}
-							for t, k in zip(m.ParamTypes, m.ParamKinds)
+							{"cppType": t, "type": k}
+							for t, k in zip(m.ParamTypes, m.ParamPropertyTypes)
 						],
-						"returnKind": m.ReturnKind if m.bHasReturn else None,
+						"returnType": m.ReturnType if m.bHasReturn else None,
 					}
 					for m in e.Members
 					if m.Kind == "function" and m.bSupported
@@ -1301,7 +1325,7 @@ def render_json(
 				"type": e.TypeName,
 				"source": f"{e.SourceRel}:{e.SourceLine}",
 				"properties": [
-					{"name": m.Name, "cppType": m.CppType, "kind": m.PropertyKind}
+					{"name": m.Name, "cppType": m.CppType, "type": m.PropertyType}
 					for m in e.Members
 					if m.Kind == "property" and m.bSupported
 				],
@@ -1391,14 +1415,14 @@ def render_html_body(
 			return
 		lines.append("\t\t\t\t<h4>Properties</h4>")
 		lines.append("\t\t\t\t<table>")
-		lines.append("\t\t\t\t\t<thead><tr><th>Name</th><th>C++</th><th>Kind</th></tr></thead>")
+		lines.append("\t\t\t\t\t<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>")
 		lines.append("\t\t\t\t\t<tbody>")
 		for m in props:
 			lines.append(
 				"\t\t\t\t\t\t<tr>"
 				f"<td><code>{_html_escape(m.Name)}</code></td>"
 				f"<td><code>{_html_escape(m.CppType)}</code></td>"
-				f"<td><code>{_html_escape(m.PropertyKind)}</code></td>"
+				f"<td><code>{_html_escape(m.PropertyType)}</code></td>"
 				"</tr>"
 			)
 		lines.append("\t\t\t\t\t</tbody>")
@@ -1505,6 +1529,459 @@ def _patch_marked_region(text: str, begin: str, end: str, replacement: str) -> s
 	return text[:i0] + replacement + text[i1_end:]
 
 
+def pascal_to_snake(name: str) -> str:
+	out: list[str] = []
+	for i, ch in enumerate(name):
+		if ch.isupper():
+			if i > 0:
+				out.append("_")
+			out.append(ch.lower())
+		else:
+			out.append(ch)
+	return "".join(out)
+
+
+def _lua_usertype_name(short: str) -> str:
+	"""FObject -> object, FPackage -> package."""
+	if short.startswith("F") and len(short) > 1 and short[1].isupper():
+		return pascal_to_snake(short[1:])
+	return pascal_to_snake(short)
+
+
+def _lua_wrapper_name(short: str) -> str:
+	return f"FLua_{short}"
+
+
+def _cpp_lua_arg_type(kind: str) -> str:
+	return {
+		"Bool": "bool",
+		"Int32": "std::int32_t",
+		"UInt32": "std::uint32_t",
+		"Int64": "std::int64_t",
+		"UInt64": "std::uint64_t",
+		"Float": "float",
+		"Double": "double",
+		"String": "std::string",
+		"EnumInt32": "std::int64_t",
+		"ObjectRef": "FLua_FObject",
+	}.get(kind, "std::int64_t")
+
+
+def _emit_pack_from_lua_arg(lines: list[str], indent: str, var: str, kind: str, arg_expr: str) -> None:
+	if kind == "Bool":
+		lines.append(f"{indent}{var} = FPropertyValue::FromBool({arg_expr});")
+		lines.append(f"{indent}{var}.Type = EPropertyType::Bool;")
+	elif kind in {"Int32", "Int64", "UInt32", "EnumInt32"}:
+		lines.append(f"{indent}{var} = FPropertyValue::FromInt(static_cast<std::int64_t>({arg_expr}));")
+		lines.append(f"{indent}{var}.Type = EPropertyType::{kind};")
+	elif kind == "UInt64":
+		lines.append(f"{indent}{var} = FPropertyValue::FromUInt(static_cast<std::uint64_t>({arg_expr}));")
+	elif kind in {"Float", "Double"}:
+		lines.append(f"{indent}{var} = FPropertyValue::FromFloat(static_cast<double>({arg_expr}));")
+		lines.append(f"{indent}{var}.Type = EPropertyType::{kind};")
+	elif kind == "String":
+		lines.append(f"{indent}{var} = FPropertyValue::FromString({arg_expr});")
+	elif kind == "ObjectRef":
+		lines.append(f"{indent}{var} = FPropertyValue::FromObject({arg_expr}.GetRaw());")
+	else:
+		lines.append(f"{indent}{var} = FPropertyValue::FromInt(static_cast<std::int64_t>({arg_expr}));")
+		lines.append(f"{indent}{var}.Type = EPropertyType::EnumInt32;")
+
+
+def _emit_return_from_property_value(kind: str, expr: str = "Out") -> str:
+	if kind == "Bool":
+		return f"{expr}.BoolValue"
+	if kind in {"Int32", "Int64", "UInt32", "EnumInt32"}:
+		return f"static_cast<{_cpp_lua_arg_type(kind)}>({expr}.IntValue)"
+	if kind == "UInt64":
+		return f"{expr}.UIntValue"
+	if kind in {"Float", "Double"}:
+		return f"static_cast<{_cpp_lua_arg_type(kind)}>({expr}.FloatValue)"
+	if kind == "String":
+		return f"{expr}.StringValue"
+	if kind == "ObjectRef":
+		# Caller must wrap with LuaWrapObjectRef(state, ObjectRefFromPropertyValue(...))
+		return f"ObjectRefFromPropertyValue({expr})"
+	return f"{expr}.IntValue"
+
+
+def render_lua_header(objects: list[FTypeEntry]) -> str:
+	lines = [
+		"//*****************************************************************************",
+		"// LuaReflectBindings.gen.h — GENERATED by Tools/object_reflect_codegen.py.",
+		"//*****************************************************************************",
+		"#pragma once",
+		"",
+		'#include "Catty/Resource/Object.h"',
+		"",
+		"#define SOL_ALL_SAFETIES_ON 1",
+		"#include <sol/sol.hpp>",
+		"",
+		"namespace Catty",
+		"{",
+		"",
+		"/** Lua userdata handle for reflected FObject instances. */",
+		"struct FLua_FObject",
+		"{",
+		"\tFObjectRef Ref;",
+		"",
+		"\t[[nodiscard]] bool IsValid() const { return Ref.IsValid(); }",
+		"\t[[nodiscard]] FObject* GetRaw() const { return Ref ? Ref.operator->() : nullptr; }",
+		"};",
+		"",
+	]
+	for e in objects:
+		if e.ShortName == "FObject":
+			continue
+		w = _lua_wrapper_name(e.ShortName)
+		lines.append(f"struct {w} : FLua_FObject")
+		lines.append("{")
+		lines.append("};")
+		lines.append("")
+
+	lines += [
+		"void RegisterGeneratedLuaObjectBindings(sol::state& Lua);",
+		"",
+		"/** Push the most-derived Lua usertype for an FObjectRef (never pushes FObjectRef itself). */",
+		"[[nodiscard]] sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref);",
+		"",
+		"[[nodiscard]] FLua_FObject MakeLuaObject(FObjectRef Ref);",
+	]
+	for e in objects:
+		if e.ShortName == "FObject":
+			continue
+		w = _lua_wrapper_name(e.ShortName)
+		lines.append(f"[[nodiscard]] {w} MakeLua_{e.ShortName}(FObjectRef Ref);")
+	lines += [
+		"",
+		"} // namespace Catty",
+		"",
+	]
+	return "\n".join(lines)
+
+
+def render_lua_cpp(objects: list[FTypeEntry]) -> str:
+	includes: list[str] = []
+	seen: set[str] = set()
+	for e in objects:
+		inc = e.IncludePath.replace("\\", "/")
+		if inc and inc not in seen:
+			seen.add(inc)
+			includes.append(inc)
+
+	lines: list[str] = [
+		"//*****************************************************************************",
+		"// LuaReflectBindings.gen.cpp — GENERATED by Tools/object_reflect_codegen.py.",
+		"// Named sol2 usertypes from CATTY_OBJECT reflection metadata.",
+		"//*****************************************************************************",
+		"",
+		'#include "LuaReflectBindings.gen.h"',
+		"",
+		"#define SOL_ALL_SAFETIES_ON 1",
+		"#include <sol/sol.hpp>",
+		"",
+		'#include "Catty/Core/ObjectReflect.h"',
+		'#include "ObjectReflectTypes.gen.h"',
+		"",
+	]
+	for inc in includes:
+		lines.append(f'#include "{inc}"')
+	lines += [
+		"",
+		"namespace Catty",
+		"{",
+		"",
+		"FLua_FObject MakeLuaObject(FObjectRef Ref)",
+		"{",
+		"\treturn FLua_FObject{ std::move(Ref) };",
+		"}",
+		"",
+	]
+	for e in objects:
+		if e.ShortName == "FObject":
+			continue
+		w = _lua_wrapper_name(e.ShortName)
+		lines.append(f"{w} MakeLua_{e.ShortName}(FObjectRef Ref)")
+		lines.append("{")
+		lines.append(f"\t{w} Out;")
+		lines.append("\tOut.Ref = std::move(Ref);")
+		lines.append("\treturn Out;")
+		lines.append("}")
+		lines.append("")
+
+	# Prefer most-derived wrap when known
+	lines.append("sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref)")
+	lines.append("{")
+	lines.append("\tif (!Ref)")
+	lines.append("\t{")
+	lines.append("\t\treturn sol::lua_nil;")
+	lines.append("\t}")
+
+	def depth(e: FTypeEntry) -> int:
+		d = 0
+		cur = e
+		names = {x.TypeName: x for x in objects}
+		while cur.Super and cur.Super in names:
+			d += 1
+			cur = names[cur.Super]
+		return d
+
+	by_depth = sorted([e for e in objects if e.ShortName != "FObject"], key=depth, reverse=True)
+	for e in by_depth:
+		lines.append(f"\tif (Ref.Cast<{e.TypeName}>())")
+		lines.append("\t{")
+		lines.append(f"\t\treturn sol::make_object(Lua, MakeLua_{e.ShortName}(std::move(Ref)));")
+		lines.append("\t}")
+	lines.append("\treturn sol::make_object(Lua, MakeLuaObject(std::move(Ref)));")
+	lines.append("}")
+	lines.append("")
+
+	lines.append("void RegisterGeneratedLuaObjectBindings(sol::state& Lua)")
+	lines.append("{")
+	lines.append("\tEnsureObjectReflectRegistered();")
+	lines.append("")
+	lines.append("\tsol::table CattyTable = Lua[\"catty\"];")
+	lines.append("")
+
+	# Register each usertype
+	for e in objects:
+		w = _lua_wrapper_name(e.ShortName)
+		uname = _lua_usertype_name(e.ShortName)
+		props = [m for m in e.Members if m.Kind == "property" and m.bSupported]
+		funcs = [m for m in e.Members if m.Kind == "function" and m.bSupported]
+
+		lines.append(f"\t// --- {e.TypeName} => catty.{uname} ---")
+		if e.ShortName == "FObject" or not e.Super:
+			lines.append(f"\tsol::usertype<{w}> UT_{e.ShortName} = Lua.new_usertype<{w}>(")
+			lines.append(f'\t\t"{uname}",')
+			lines.append("\t\tsol::no_constructor,")
+			lines.append('\t\t"is_valid", &FLua_FObject::IsValid,')
+			lines.append('\t\t"get_type", [](const FLua_FObject& Self) -> std::string')
+			lines.append("\t\t{")
+			lines.append("\t\t\tFObject* Obj = Self.GetRaw();")
+			lines.append("\t\t\tif (!Obj || !Obj->GetObjectType().Name) { return {}; }")
+			lines.append("\t\t\treturn Obj->GetObjectType().Name;")
+			lines.append("\t\t}")
+			lines.append("\t);")
+		else:
+			super_short = e.Super.rsplit("::", 1)[-1]
+			super_w = _lua_wrapper_name(super_short)
+			lines.append(f"\tsol::usertype<{w}> UT_{e.ShortName} = Lua.new_usertype<{w}>(")
+			lines.append(f'\t\t"{uname}",')
+			lines.append("\t\tsol::no_constructor,")
+			lines.append(f"\t\tsol::base_classes, sol::bases<{super_w}>()")
+			lines.append("\t);")
+
+		for mem in props:
+			snake = pascal_to_snake(mem.Name)
+			kind = mem.PropertyType
+			ret_cpp = _cpp_lua_arg_type(kind)
+			lines.append(f"\tUT_{e.ShortName}[\"{snake}\"] = sol::property(")
+			lines.append(f"\t\t[](const {w}& Self) -> sol::optional<{ret_cpp}>")
+			lines.append("\t\t{")
+			lines.append("\t\t\tFObject* Obj = Self.GetRaw();")
+			lines.append("\t\t\tif (!Obj) { return sol::nullopt; }")
+			lines.append("\t\t\tFPropertyValue Value;")
+			lines.append(f'\t\t\tif (!Obj->GetPropertyValue("{mem.Name}", Value)) {{ return sol::nullopt; }}')
+			lines.append(f"\t\t\treturn {_emit_return_from_property_value(kind, 'Value')};")
+			lines.append("\t\t},")
+			lines.append(f"\t\t[]({w}& Self, {ret_cpp} InValue)")
+			lines.append("\t\t{")
+			lines.append("\t\t\tFObject* Obj = Self.GetRaw();")
+			lines.append("\t\t\tif (!Obj) { return; }")
+			lines.append("\t\t\tFPropertyValue Packed;")
+			_emit_pack_from_lua_arg(lines, "\t\t\t", "Packed", kind, "InValue")
+			lines.append(f'\t\t\t(void)Obj->SetPropertyValue("{mem.Name}", Packed);')
+			lines.append("\t\t}")
+			lines.append("\t);")
+
+		for mem in funcs:
+			snake = pascal_to_snake(mem.Name)
+			b_obj_ret = mem.bHasReturn and mem.ReturnType == "ObjectRef"
+			arg_decls: list[str] = []
+			for i, kind in enumerate(mem.ParamPropertyTypes):
+				arg_decls.append(f"{_cpp_lua_arg_type(kind)} A{i}")
+			if b_obj_ret:
+				arg_decls.append("sol::this_state L")
+			args_sig = ", ".join(arg_decls)
+
+			if b_obj_ret:
+				ret_sig = "sol::object"
+			elif mem.bHasReturn:
+				ret_sig = _cpp_lua_arg_type(mem.ReturnType)
+			else:
+				ret_sig = "void"
+
+			if args_sig:
+				lines.append(
+					f"\tUT_{e.ShortName}[\"{snake}\"] = []({w}& Self, {args_sig})"
+					+ (f" -> {ret_sig}" if mem.bHasReturn or b_obj_ret else "")
+				)
+			else:
+				lines.append(
+					f"\tUT_{e.ShortName}[\"{snake}\"] = []({w}& Self)"
+					+ (f" -> {ret_sig}" if mem.bHasReturn else "")
+				)
+			lines.append("\t{")
+			lines.append("\t\tFObject* Obj = Self.GetRaw();")
+			if b_obj_ret:
+				lines.append("\t\tif (!Obj) { return sol::lua_nil; }")
+			elif mem.bHasReturn:
+				default = "false" if mem.ReturnType == "Bool" else ("{}" if mem.ReturnType == "String" else "0")
+				lines.append(f"\t\tif (!Obj) {{ return {default}; }}")
+			else:
+				lines.append("\t\tif (!Obj) { return; }")
+
+			n = len(mem.ParamPropertyTypes)
+			if n > 0:
+				lines.append(f"\t\tFPropertyValue Pack[{n}];")
+				for i, kind in enumerate(mem.ParamPropertyTypes):
+					_emit_pack_from_lua_arg(lines, "\t\t", f"Pack[{i}]", kind, f"A{i}")
+				pack_ptr = "Pack"
+			else:
+				pack_ptr = "static_cast<const FPropertyValue*>(nullptr)"
+
+			if mem.bHasReturn:
+				lines.append("\t\tFPropertyValue Out;")
+				lines.append(
+					f'\t\tif (!Obj->CallFunction("{mem.Name}", {pack_ptr}, {n}, &Out))'
+				)
+				lines.append("\t\t{")
+				if b_obj_ret:
+					lines.append("\t\t\treturn sol::lua_nil;")
+				else:
+					default = "false" if mem.ReturnType == "Bool" else ("{}" if mem.ReturnType == "String" else "0")
+					lines.append(f"\t\t\treturn {default};")
+				lines.append("\t\t}")
+				if b_obj_ret:
+					lines.append(
+						"\t\treturn LuaWrapObjectRef(sol::state_view(L), ObjectRefFromPropertyValue(Out));"
+					)
+				else:
+					lines.append(f"\t\treturn {_emit_return_from_property_value(mem.ReturnType, 'Out')};")
+			else:
+				lines.append(f'\t\t(void)Obj->CallFunction("{mem.Name}", {pack_ptr}, {n}, nullptr);')
+			lines.append("\t};")
+
+		lines.append(f'\tCattyTable["{uname}"] = UT_{e.ShortName};')
+		lines.append("")
+
+	lines.append('\tCattyTable["wrap_object"] = [](sol::this_state L, FLua_FObject Handle) -> sol::object')
+	lines.append("\t{")
+	lines.append("\t\treturn LuaWrapObjectRef(sol::state_view(L), std::move(Handle.Ref));")
+	lines.append("\t};")
+	lines.append("}")
+	lines.append("")
+	lines.append("} // namespace Catty")
+	lines.append("")
+	return "\n".join(lines)
+
+
+def render_lua_api_toc(objects: list[FTypeEntry]) -> str:
+	lines = [
+		_LUA_HTML_TOC_BEGIN,
+		'\t<div class="sec">Usertypes</div>',
+		"\t<ul>",
+	]
+	for e in objects:
+		uname = _lua_usertype_name(e.ShortName)
+		lines.append(f'\t\t<li><a href="#catty.{uname}">catty.{uname}</a></li>')
+	lines.append("\t</ul>")
+	lines.append(_LUA_HTML_TOC_END)
+	return "\n".join(lines)
+
+
+def render_lua_api_body(objects: list[FTypeEntry]) -> str:
+	lines = [
+		_LUA_HTML_BODY_BEGIN,
+		'<section class="card" id="usertypes">',
+		"\t<h2>Usertypes（codegen）</h2>",
+		'\t<div class="body">',
+		"\t\t<p>由 <code>object_reflect_codegen.py</code> 根据 <code>CATTY_OBJECT</code> 扫描生成具名 sol2 绑定；"
+		"方法/属性为 snake_case，对应 C++ 反射成员。"
+		"实例入口：<code>catty.get_transient_package()</code> / <code>find_package</code> / "
+		"<code>find_object</code>（返回对应 usertype）。</p>",
+		"",
+	]
+	for e in objects:
+		uname = _lua_usertype_name(e.ShortName)
+		super_txt = ""
+		if e.Super:
+			super_short = e.Super.rsplit("::", 1)[-1]
+			super_txt = f" · extends catty.{_lua_usertype_name(super_short)}"
+		lines.append(f'\t\t<article class="fn" id="catty.{uname}">')
+		lines.append('\t\t\t<div class="fn-head">')
+		lines.append(f'\t\t\t\t<h3 class="fn-name">catty.{uname}</h3>')
+		lines.append('\t\t\t\t<span class="tag tag-reflect">usertype</span>')
+		lines.append("\t\t\t</div>")
+		lines.append('\t\t\t<div class="fn-body">')
+		lines.append(
+			f'\t\t\t\t<code class="sig">{_html_escape(e.TypeName)}{super_txt}</code>'
+		)
+		props = [m for m in e.Members if m.Kind == "property" and m.bSupported]
+		funcs = [m for m in e.Members if m.Kind == "function" and m.bSupported]
+		if props:
+			lines.append("\t\t\t\t<h4>Properties</h4>")
+			lines.append("\t\t\t\t<table>")
+			lines.append("\t\t\t\t\t<thead><tr><th>Lua</th><th>C++</th><th>Type</th></tr></thead>")
+			lines.append("\t\t\t\t\t<tbody>")
+			for m in props:
+				lines.append(
+					"\t\t\t\t\t\t<tr>"
+					f"<td><code>{_html_escape(pascal_to_snake(m.Name))}</code></td>"
+					f"<td><code>{_html_escape(m.Name)}</code></td>"
+					f"<td><code>{_html_escape(m.PropertyType)}</code></td>"
+					"</tr>"
+				)
+			lines.append("\t\t\t\t\t</tbody>")
+			lines.append("\t\t\t\t</table>")
+		if funcs:
+			lines.append("\t\t\t\t<h4>Functions</h4>")
+			lines.append("\t\t\t\t<table>")
+			lines.append("\t\t\t\t\t<thead><tr><th>Lua</th><th>C++</th><th>Signature</th></tr></thead>")
+			lines.append("\t\t\t\t\t<tbody>")
+			for m in funcs:
+				ret = m.CppType if m.bHasReturn else "void"
+				sig = f"{ret}({', '.join(m.ParamTypes)})"
+				lines.append(
+					"\t\t\t\t\t\t<tr>"
+					f"<td><code>{_html_escape(pascal_to_snake(m.Name))}</code></td>"
+					f"<td><code>{_html_escape(m.Name)}</code></td>"
+					f"<td><code>{_html_escape(sig)}</code></td>"
+					"</tr>"
+				)
+			lines.append("\t\t\t\t\t</tbody>")
+			lines.append("\t\t\t\t</table>")
+		if not props and not funcs:
+			lines.append("\t\t\t\t<p>本类无直接反射成员（方法见基类）。</p>")
+		lines.append("\t\t\t</div>")
+		lines.append("\t\t</article>")
+		lines.append("")
+	lines.append("\t</div>")
+	lines.append("</section>")
+	lines.append(_LUA_HTML_BODY_END)
+	return "\n".join(lines)
+
+
+def sync_lua_api_html(path: Path, objects: list[FTypeEntry]) -> bool:
+	if not path.is_file():
+		print(f"[WARN] skip Lua API html (missing): {path}")
+		return False
+	raw = path.read_text(encoding="utf-8")
+	updated = _patch_marked_region(
+		raw, _LUA_HTML_TOC_BEGIN, _LUA_HTML_TOC_END, render_lua_api_toc(objects)
+	)
+	updated = _patch_marked_region(
+		updated, _LUA_HTML_BODY_BEGIN, _LUA_HTML_BODY_END, render_lua_api_body(objects)
+	)
+	updated_n = updated.replace("\r\n", "\n")
+	raw_n = raw.replace("\r\n", "\n")
+	if updated_n == raw_n:
+		return False
+	path.write_text(updated_n, encoding="utf-8", newline="\n")
+	return True
+
+
 def sync_api_html(
 	path: Path,
 	objects: list[FTypeEntry],
@@ -1536,7 +2013,10 @@ def main(argv: list[str]) -> int:
 	parser.add_argument("--out-cpp", type=Path, default=_DEFAULT_OUT_CPP)
 	parser.add_argument("--out-json", type=Path, default=_DEFAULT_OUT_JSON)
 	parser.add_argument("--out-html", type=Path, default=_DEFAULT_OUT_HTML)
-	parser.add_argument("--no-html", action="store_true", help="Do not sync ObjectReflectAPI.html")
+	parser.add_argument("--out-lua-h", type=Path, default=_DEFAULT_OUT_LUA_H)
+	parser.add_argument("--out-lua-cpp", type=Path, default=_DEFAULT_OUT_LUA_CPP)
+	parser.add_argument("--out-lua-html", type=Path, default=_DEFAULT_OUT_LUA_HTML)
+	parser.add_argument("--no-html", action="store_true", help="Do not sync ObjectReflectAPI.html / LuaAPI.html")
 	parser.add_argument("--repo-root", type=Path, default=ENGINE_ROOT)
 	parser.add_argument("--check", action="store_true")
 	args = parser.parse_args(argv)
@@ -1553,45 +2033,34 @@ def main(argv: list[str]) -> int:
 	header = render_header()
 	cpp = render_cpp(objects, structs, enums)
 	js = render_json(objects, structs, enums)
+	lua_h = render_lua_header(objects)
+	lua_cpp = render_lua_cpp(objects)
 
 	print(
 		f"[Catty] reflect scan: {len(objects)} object(s), {len(structs)} struct(s), "
 		f"{len(enums)} enum(s) from {len(roots)} root(s)"
 	)
 
+	outputs = (
+		(args.out_h, header),
+		(args.out_cpp, cpp),
+		(args.out_json, js),
+		(args.out_lua_h, lua_h),
+		(args.out_lua_cpp, lua_cpp),
+	)
+
 	if args.check:
 		ok = True
-		for path, content in ((args.out_h, header), (args.out_cpp, cpp), (args.out_json, js)):
+		for path, content in outputs:
 			if not path.is_file() or path.read_text(encoding="utf-8") != content:
 				print(f"[CHECK] stale: {path}")
 				ok = False
 			else:
 				print(f"[CHECK] ok: {path}")
-		if not args.no_html and args.out_html.is_file():
-			# Re-sync in memory and compare
-			raw = args.out_html.read_text(encoding="utf-8")
-			try:
-				expect = _patch_marked_region(
-					raw, _HTML_TOC_BEGIN, _HTML_TOC_END, render_html_toc(objects, structs, enums)
-				)
-				expect = _patch_marked_region(
-					expect, _HTML_BODY_BEGIN, _HTML_BODY_END, render_html_body(objects, structs, enums)
-				)
-			except ValueError as ex:
-				print(f"[CHECK] html markers: {ex}")
-				ok = False
-			else:
-				# Normalize newlines for compare
-				norm = lambda s: s.replace("\r\n", "\n")
-				if norm(expect) != norm(raw):
-					print(f"[CHECK] stale: {args.out_html}")
-					ok = False
-				else:
-					print(f"[CHECK] ok: {args.out_html}")
 		return 0 if ok else 2
 
 	changed = False
-	for path, content in ((args.out_h, header), (args.out_cpp, cpp), (args.out_json, js)):
+	for path, content in outputs:
 		if write_if_changed(path, content):
 			print(f"[Catty] wrote {path}")
 			changed = True
@@ -1605,6 +2074,11 @@ def main(argv: list[str]) -> int:
 				changed = True
 			elif args.out_html.is_file():
 				print(f"[Catty] up-to-date {args.out_html}")
+			if sync_lua_api_html(args.out_lua_html, objects):
+				print(f"[Catty] wrote {args.out_lua_html}")
+				changed = True
+			elif args.out_lua_html.is_file():
+				print(f"[Catty] up-to-date {args.out_lua_html}")
 		except ValueError as ex:
 			print(f"[ERROR] API html sync failed: {ex}", file=sys.stderr)
 			return 1

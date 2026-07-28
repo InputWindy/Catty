@@ -25,10 +25,11 @@ namespace Catty
  *   catty.log / log_warn / log_error(msg)
  *   catty.get_cvar_int / float / bool / string(name [, default])
  *   catty.set_cvar_int / float / bool / string(name, value)
- *   catty.get/set_property, catty.call — FObject reflection bridge
- *   catty.get_transient_package / find_package / find_object (after BindResourceManager)
+ *   catty.get/set_cvar_* 
+ *   catty.get_transient_package / find_package / find_object
+ *   catty.object / package / resource — codegen usertypes (snake_case methods)
  *
- * FObject userdata: property get/set via __index/__newindex; methods via reflection.
+ * Object reflection macros feed Lua usertype codegen — see ObjectReflect.h.
  */
 class CATTY_API FScriptSystem
 {

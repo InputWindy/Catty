@@ -58,6 +58,7 @@ private:
 	friend class FResourceManager;
 	friend class FGCManager;
 	friend class FObject;
+	friend struct FPropertyValue;
 
 	explicit FObjectRef(FObject* InObject);
 
@@ -126,8 +127,17 @@ public:
 	FObject(const FObject&) = delete;
 	FObject& operator=(const FObject&) = delete;
 
-	[[nodiscard]] FObjectRef GetOuter() const;
-	[[nodiscard]] FObjectRef GetPackage() const;
+	// ---------------------------------------------------------------------------
+	// Identity / hierarchy helpers (static path split — out-params, not reflectable)
+	// ---------------------------------------------------------------------------
+	[[nodiscard]] static bool SplitObjectPath(
+		const std::string& PathName,
+		std::string& OutPackageName,
+		std::string& OutObjectName);
+
+	// ---------------------------------------------------------------------------
+	// Runtime reflect invoke (by name; not CATTY_FUNCTION markers)
+	// ---------------------------------------------------------------------------
 	/**
 	 * Invoke a reflected function by name (walks Super chain).
 	 * Args is type-erased; count must match the reflected signature.
@@ -144,8 +154,16 @@ public:
 		return CallFunction(Name, static_cast<const FPropertyValue*>(nullptr), 0, nullptr);
 	}
 
+	/**
+	 * Typed convenience overload. Excludes the type-erased
+	 * CallFunction(Name, Args*, Count, OutReturn) form (and nullptr Args).
+	 */
 	template <typename TFirst, typename... TRest>
 	[[nodiscard]] bool CallFunction(std::string_view Name, TFirst&& First, TRest&&... Rest)
+		requires(
+			!std::is_same_v<std::remove_cvref_t<TFirst>, std::nullptr_t>
+			&& !std::is_convertible_v<TFirst, const FPropertyValue*>
+			&& !std::is_convertible_v<TFirst, FPropertyValue*>)
 	{
 		const FPropertyValue Pack[] = {
 			ToPropertyValue(std::forward<TFirst>(First)),
@@ -158,65 +176,85 @@ public:
 			static_cast<FPropertyValue*>(nullptr));
 	}
 
+	[[nodiscard]] bool GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const;
+	[[nodiscard]] bool SetPropertyValue(std::string_view Name, const FPropertyValue& Value);
+
+	// ---------------------------------------------------------------------------
+	// GC references (package serialize hooks — not game script API)
+	// ---------------------------------------------------------------------------
+	virtual void GetReferencedObjects(std::vector<FObject*>& OutObjects) const;
+	virtual void SetReferencedObjects(const std::vector<FObject*>& InObjects);
+
+	// ---------------------------------------------------------------------------
+	// Reflection — CATTY_FUNCTION / CATTY_PROPERTY (game / editor / Lua)
+	// ---------------------------------------------------------------------------
 	CATTY_FUNCTION()
 	[[nodiscard]] const std::string& GetName() const { return ObjectName; }
 	CATTY_FUNCTION()
 	[[nodiscard]] std::string GetPathName() const;
 	CATTY_FUNCTION()
+	[[nodiscard]] FObjectRef GetOuter() const;
+	CATTY_FUNCTION()
+	[[nodiscard]] FObjectRef GetPackage() const;
+	CATTY_FUNCTION()
 	[[nodiscard]] std::uint32_t GetRefCount() const { return RefCount; }
+	CATTY_FUNCTION()
 	[[nodiscard]] EObjectFlags GetFlags() const { return ObjectFlags; }
+	CATTY_FUNCTION()
 	[[nodiscard]] bool HasAnyFlags(EObjectFlags Test) const;
-
+	CATTY_FUNCTION()
+	[[nodiscard]] std::uint32_t GetWeakSerial() const { return WeakSerial; }
 	CATTY_FUNCTION()
 	[[nodiscard]] bool IsPendingKill() const;
-
+	CATTY_FUNCTION()
 	[[nodiscard]] bool IsRooted() const;
-	[[nodiscard]] std::uint32_t GetWeakSerial() const { return WeakSerial; }
-
-	[[nodiscard]] static bool SplitObjectPath(
-		const std::string& PathName,
-		std::string& OutPackageName,
-		std::string& OutObjectName);
-
+	CATTY_FUNCTION()
 	void AddToRoot();
+	CATTY_FUNCTION()
 	void RemoveFromRoot();
-
 	CATTY_FUNCTION()
 	void MarkPendingKill();
+	CATTY_FUNCTION()
 	void MarkForImmediateDestroy();
-
-	/** Runtime property get/set by name (walks type Super chain). */
-	[[nodiscard]] bool GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const;
-	[[nodiscard]] bool SetPropertyValue(std::string_view Name, const FPropertyValue& Value);
-
-	virtual void GetReferencedObjects(std::vector<FObject*>& OutObjects) const;
-	virtual void SetReferencedObjects(const std::vector<FObject*>& InObjects);
 
 protected:
 	FObject(FPackage* InOuter, std::string InObjectName);
 
+	// ---------------------------------------------------------------------------
+	// Flags (subclass / package helpers — engine-only)
+	// ---------------------------------------------------------------------------
 	void AddFlags(EObjectFlags InFlags) { ObjectFlags |= InFlags; }
 	void ClearFlags(EObjectFlags InFlags) { ObjectFlags &= ~InFlags; }
 
+	// ---------------------------------------------------------------------------
+	// Reflection — fields
+	// ---------------------------------------------------------------------------
 	CATTY_PROPERTY()
 	std::string ObjectName;
 
 private:
+	friend class FObjectRef;
+	friend class FPackage;
+	friend class FResourceManager;
+	friend class FGCManager;
+	friend struct FPropertyValue;
+
+	// ---------------------------------------------------------------------------
+	// RefCount (FObjectRef only)
+	// ---------------------------------------------------------------------------
 	std::uint32_t AddRef();
 	std::uint32_t ReleaseRef();
 	void ClearOuter();
 
+	// ---------------------------------------------------------------------------
+	// Fields
+	// ---------------------------------------------------------------------------
 	FGCManager* GCOwner = nullptr;
 	/** Pins Outer package. Empty for FPackage itself. */
 	FObjectRef Outer;
 	std::uint32_t RefCount = 0;
 	std::uint32_t WeakSerial = 0;
 	EObjectFlags ObjectFlags = EObjectFlags::None;
-
-	friend class FObjectRef;
-	friend class FPackage;
-	friend class FResourceManager;
-	friend class FGCManager;
 };
 
 /** Non-owning handle; invalid after target destroy (WeakSerial mismatch). */
@@ -247,6 +285,16 @@ template <typename TObject>
 [[nodiscard]] TObject* Cast(const FObjectRef& Ref)
 {
 	return Ref.Cast<TObject>();
+}
+
+[[nodiscard]] inline FPropertyValue ToPropertyValue(const FObjectRef& Ref)
+{
+	return FPropertyValue::FromObject(Ref ? Ref.operator->() : nullptr);
+}
+
+[[nodiscard]] inline FObjectRef ObjectRefFromPropertyValue(const FPropertyValue& Value)
+{
+	return FObjectRef::Wrap(Value.GetObjectPtr());
 }
 
 } // namespace Catty

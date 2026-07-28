@@ -22,6 +22,8 @@ set(_CATTY_OBJECT_REFLECT_CODEGEN_PY "${_CATTY_ENGINE_ROOT_FOR_CODEGEN}/Tools/ob
 set(_CATTY_LOCAL_PYTHON "${_CATTY_ENGINE_ROOT_FOR_CODEGEN}/Tools/python/python.exe")
 set(_CATTY_GEN_OBJECT_H "${CATTY_GENERATED_DIR}/ObjectReflectTypes.gen.h")
 set(_CATTY_GEN_OBJECT_CPP "${CATTY_GENERATED_DIR}/ObjectReflectTypes.gen.cpp")
+set(_CATTY_GEN_LUA_H "${CATTY_GENERATED_DIR}/LuaReflectBindings.gen.h")
+set(_CATTY_GEN_LUA_CPP "${CATTY_GENERATED_DIR}/LuaReflectBindings.gen.cpp")
 
 # Build-time FObject reflection codegen.
 if(NOT EXISTS "${_CATTY_LOCAL_PYTHON}")
@@ -63,6 +65,8 @@ set(CATTY_SOURCES "${_CATTY_SOURCES_FILTERED}")
 list(APPEND CATTY_SOURCES
 	"${_CATTY_GEN_OBJECT_CPP}"
 	"${_CATTY_GEN_OBJECT_H}"
+	"${_CATTY_GEN_LUA_CPP}"
+	"${_CATTY_GEN_LUA_H}"
 )
 list(REMOVE_DUPLICATES CATTY_SOURCES)
 

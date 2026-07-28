@@ -70,7 +70,7 @@ void SelfTestObjectReflect()
 
 	assert(TransientPkg.GetPropertyValue("ObjectName", NameValue));
 
-	assert(NameValue.Kind == EPropertyKind::String);
+	assert(NameValue.Type == EPropertyType::String);
 
 	assert(NameValue.StringValue == "/Temp/ObjectReflectSelfTest");
 
@@ -83,19 +83,22 @@ void SelfTestObjectReflect()
 
 
 	FPropertyValue PathValue;
+	assert(TransientPkg.CallFunction("GetFilePath", nullptr, 0, &PathValue));
+	assert(PathValue.Type == EPropertyType::String);
 
-	assert(TransientPkg.GetPropertyValue("FilePath", PathValue));
-
-	assert(PathValue.Kind == EPropertyKind::String);
+	FPropertyValue OuterRet;
+	assert(TransientPkg.CallFunction("GetOuter", nullptr, 0, &OuterRet));
+	assert(OuterRet.Type == EPropertyType::ObjectRef);
+	assert(OuterRet.GetObjectPtr() == nullptr);
 
 	FPropertyValue Pending;
 	assert(TransientPkg.CallFunction("IsPendingKill", nullptr, 0, &Pending));
-	assert(Pending.Kind == EPropertyKind::Bool);
+	assert(Pending.Type == EPropertyType::Bool);
 	assert(Pending.BoolValue == false);
 
 	FPropertyValue NameRet;
 	assert(TransientPkg.CallFunction("GetName", nullptr, 0, &NameRet));
-	assert(NameRet.Kind == EPropertyKind::String);
+	assert(NameRet.Type == EPropertyType::String);
 	assert(NameRet.StringValue == "Renamed");
 
 
@@ -120,7 +123,7 @@ void SelfTestObjectReflect()
 
 	assert(GetStructPropertyValue(ResourceIdType, &Id, "Value", IdValue));
 
-	assert(IdValue.Kind == EPropertyKind::UInt64);
+	assert(IdValue.Type == EPropertyType::UInt64);
 
 	assert(IdValue.UIntValue == 42);
 

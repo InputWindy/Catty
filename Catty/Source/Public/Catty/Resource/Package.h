@@ -87,34 +87,53 @@ public:
 	FPackage(const FPackage&) = delete;
 	FPackage& operator=(const FPackage&) = delete;
 
-	// --- Queries ---
-	[[nodiscard]] const std::string& GetFilePath() const { return FilePath; }
-	[[nodiscard]] bool IsPersistent() const;
-	[[nodiscard]] bool IsTransient() const;
-	[[nodiscard]] std::size_t GetObjectCount() const { return Objects.size(); }
-
-	// --- Lookup ---
+	// ---------------------------------------------------------------------------
+	// Lookup / reflection — CATTY_FUNCTION (game / editor / Lua)
+	// ---------------------------------------------------------------------------
+	CATTY_FUNCTION()
 	[[nodiscard]] FObjectRef FindObject(const std::string& InObjectName) const;
+	CATTY_FUNCTION()
+	[[nodiscard]] const std::string& GetFilePath() const { return FilePath; }
+	CATTY_FUNCTION()
+	void SetFilePath(std::string InPath) { FilePath = std::move(InPath); }
+	CATTY_FUNCTION()
+	[[nodiscard]] EPackageFlags GetPackageFlags() const { return PackageFlags; }
+	CATTY_FUNCTION()
+	[[nodiscard]] bool IsPersistent() const;
+	CATTY_FUNCTION()
+	[[nodiscard]] bool IsTransient() const;
+	CATTY_FUNCTION()
+	[[nodiscard]] std::uint32_t GetObjectCount() const
+	{
+		return static_cast<std::uint32_t>(Objects.size());
+	}
 
 private:
 	friend class FResourceManager;
 	friend class FObject;
 
-	// --- Catalog / residency (FResourceManager) ---
-	void SetFilePath(std::string InPath) { FilePath = std::move(InPath); }
+	// ---------------------------------------------------------------------------
+	// Catalog / residency (FResourceManager)
+	// ---------------------------------------------------------------------------
 	void AddPackageFlags(EPackageFlags InFlags) { PackageFlags |= InFlags; }
 	void ClearPackageFlags(EPackageFlags InFlags) { PackageFlags &= ~InFlags; }
 
-	// --- Object table ---
+	// ---------------------------------------------------------------------------
+	// Object table
+	// ---------------------------------------------------------------------------
 	[[nodiscard]] bool RegisterObject(FObject* Object);
 	/** Name-table only; called from FObject::ClearOuter. */
 	void DetachObject(FObject* Object);
 
-	// --- Persistence IO (FResourceManager) ---
+	// ---------------------------------------------------------------------------
+	// Persistence IO (FResourceManager)
+	// ---------------------------------------------------------------------------
 	[[nodiscard]] bool Serialize(FJsonValue& OutObject) const;
 	[[nodiscard]] bool Deserialize(const FJsonValue& InObject);
 
-	CATTY_PROPERTY()
+	// ---------------------------------------------------------------------------
+	// Fields
+	// ---------------------------------------------------------------------------
 	std::string FilePath;
 	EPackageFlags PackageFlags = EPackageFlags::Transient;
 	/** Non-owning name table; lifetime owned by Refs + GC. */
