@@ -18,6 +18,11 @@
 
 namespace ed = ax::NodeEditor;
 
+// Set to 1 to restore previous demo widgets inside editor panels.
+#define CATTY_EDITOR_DEMO_CONTENT 0
+// Output / Blueprint / Plot / file dialogs — keep code, hide from shell for now.
+#define CATTY_EDITOR_EXTRA_PANELS 0
+
 namespace
 {
 
@@ -34,6 +39,7 @@ namespace
 	return Text;
 }
 
+#if CATTY_EDITOR_DEMO_CONTENT
 [[nodiscard]] const char* PlayStateLabel(FEditorLayer::EPlayState State)
 {
 	switch (State)
@@ -46,15 +52,17 @@ namespace
 		return "Stopped";
 	}
 }
+#endif
 
 // Dock / window titles must stay in sync with DockBuilderDockWindow.
-constexpr const char* kWinToolbar = ICON_FA_TOOLBOX " Toolbar";
+constexpr const char* kWinDocument = ICON_FA_MAP "  MyGame";
 constexpr const char* kWinViewport = ICON_FA_DISPLAY " Viewport";
 constexpr const char* kWinContent = ICON_FA_FOLDER_TREE " Content Browser";
 constexpr const char* kWinOutput = ICON_FA_TERMINAL " Output Log";
 constexpr const char* kWinBlueprint = ICON_FA_DIAGRAM_PROJECT " Blueprint";
 constexpr const char* kWinPlot = ICON_FA_CHART_LINE " Plot";
 
+#if CATTY_EDITOR_DEMO_CONTENT
 struct FContentIcon
 {
 	const char* Glyph = ICON_FA_FILE;
@@ -104,6 +112,7 @@ struct FContentIcon
 	}
 	return {ICON_FA_FILE, ImVec4(0.78f, 0.82f, 0.88f, 1.0f)};
 }
+#endif
 
 void IdentityMatrix(float* M)
 {
@@ -178,6 +187,7 @@ FEditorLayer::~FEditorLayer()
 
 void FEditorLayer::OnAttach()
 {
+#if CATTY_EDITOR_DEMO_CONTENT
 	std::error_code ErrorCode;
 	ContentRoot = std::filesystem::current_path(ErrorCode);
 	if (ErrorCode)
@@ -192,6 +202,7 @@ void FEditorLayer::OnAttach()
 	Config.SettingsFile = "Config/NodeEditor.json";
 	NodeEditorContext = ed::CreateEditor(&Config);
 	bBlueprintInited = NodeEditorContext != nullptr;
+#endif
 }
 
 void FEditorLayer::OnDetach()
@@ -214,16 +225,18 @@ void FEditorLayer::OnUpdate(
 		return;
 	}
 
-	DrawMainMenuBar(App);
-	DrawDockSpace();
-	DrawToolbar();
+	DrawDockSpace(App); // menu + toolbar + placeholder + main dock
+	DrawDocumentPanel();
 	DrawViewportPanel();
 	DrawContentBrowser();
+#if CATTY_EDITOR_EXTRA_PANELS
 	DrawOutputPanel(App);
 	DrawBlueprintPanel();
 	DrawPlotPanel();
 	DrawFileDialogs();
+#endif
 
+#if CATTY_EDITOR_DEMO_CONTENT
 	if (bShowDemoWindow)
 	{
 		ImGui::ShowDemoWindow(&bShowDemoWindow);
@@ -232,83 +245,141 @@ void FEditorLayer::OnUpdate(
 	{
 		ImPlot::ShowDemoWindow(&bShowImPlotDemo);
 	}
+#endif
 }
 
-void FEditorLayer::DrawMainMenuBar(Catty::FApp& App)
+void FEditorLayer::DrawMenuItems(Catty::FApp& App, float RowH)
 {
-	if (!ImGui::BeginMainMenuBar())
+	// Full-row-height menu buttons (BeginMenu in a MenuBar only hits on text height).
+	auto DrawTopLevelMenu = [&](const char* Id, const char* Label, auto&& FillMenu)
 	{
-		return;
-	}
+		const ImVec2 LabelSize = ImGui::CalcTextSize(Label);
+		const float PadX = 10.0f;
+		const ImVec2 BtnSize(LabelSize.x + PadX * 2.0f, RowH);
 
-	if (ImGui::BeginMenu(ICON_FA_FILE " File"))
+		ImGui::PushID(Id);
+		const ImVec2 P0 = ImGui::GetCursorScreenPos();
+		const bool bPopupOpen = ImGui::IsPopupOpen(Id);
+		if (ImGui::InvisibleButton("##Hit", BtnSize))
+		{
+			ImGui::OpenPopup(Id);
+		}
+		const bool bHovered = ImGui::IsItemHovered();
+
+		if (bHovered || bPopupOpen)
+		{
+			const ImU32 Col = ImGui::GetColorU32(bPopupOpen ? ImGuiCol_HeaderActive : ImGuiCol_HeaderHovered);
+			ImGui::GetWindowDrawList()->AddRectFilled(P0, ImVec2(P0.x + BtnSize.x, P0.y + BtnSize.y), Col);
+		}
+
+		ImGui::GetWindowDrawList()->AddText(
+			ImVec2(P0.x + PadX, P0.y + (RowH - LabelSize.y) * 0.5f),
+			ImGui::GetColorU32(ImGuiCol_Text),
+			Label);
+
+		if (ImGui::BeginPopup(Id))
+		{
+			FillMenu();
+			ImGui::EndPopup();
+		}
+		ImGui::PopID();
+		ImGui::SameLine(0.0f, 0.0f);
+	};
+
+	DrawTopLevelMenu("MenuFile", "File", [&]()
 	{
-		if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN " Open..."))
+#if CATTY_EDITOR_DEMO_CONTENT
+		if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN "  Open..."))
 		{
 			IGFD::FileDialogConfig Config;
 			Config.path = ContentRoot.string();
 			ImGuiFileDialog::Instance()->OpenDialog("EditorOpenDlg", "Open File", ".*", Config);
 		}
-		if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK " Save As..."))
+		if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK "  Save As..."))
 		{
 			IGFD::FileDialogConfig Config;
 			Config.path = ContentRoot.string();
 			ImGuiFileDialog::Instance()->OpenDialog("EditorSaveDlg", "Save File", ".*", Config);
 		}
 		ImGui::Separator();
-		if (ImGui::MenuItem(ICON_FA_ARROWS_ROTATE " Refresh Content Browser", "F5"))
+		if (ImGui::MenuItem(ICON_FA_ARROWS_ROTATE "  Refresh Content Browser", "F5"))
 		{
 			RefreshContentListing();
 			AppendOutput("Content browser refreshed.");
 		}
 		ImGui::Separator();
-		if (ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET " Exit"))
+#endif
+		if (ImGui::MenuItem(ICON_FA_RIGHT_FROM_BRACKET "  Exit"))
 		{
 			App.OnRequestExit();
 		}
-		ImGui::EndMenu();
-	}
+	});
 
-	if (ImGui::BeginMenu(ICON_FA_WINDOW_MAXIMIZE " Window"))
+	DrawTopLevelMenu("MenuWindow", "Window", [&]()
 	{
-		ImGui::MenuItem(ICON_FA_SCROLL " Output Auto-Scroll", nullptr, &bAutoScrollOutput);
-		ImGui::MenuItem(ICON_FA_TABLE_CELLS " ImGui Demo", nullptr, &bShowDemoWindow);
-		ImGui::MenuItem(ICON_FA_CHART_AREA " ImPlot Demo", nullptr, &bShowImPlotDemo);
-		if (ImGui::MenuItem(ICON_FA_TABLE_CELLS_LARGE " Reset Dock Layout"))
+#if CATTY_EDITOR_DEMO_CONTENT
+		ImGui::MenuItem(ICON_FA_SCROLL "  Output Auto-Scroll", nullptr, &bAutoScrollOutput);
+		ImGui::MenuItem(ICON_FA_TABLE_CELLS "  ImGui Demo", nullptr, &bShowDemoWindow);
+		ImGui::MenuItem(ICON_FA_CHART_AREA "  ImPlot Demo", nullptr, &bShowImPlotDemo);
+#endif
+		if (ImGui::MenuItem(ICON_FA_TABLE_CELLS_LARGE "  Reset Dock Layout"))
 		{
 			bBuildDefaultLayout = true;
 		}
-		ImGui::EndMenu();
-	}
+	});
 
-	if (ImGui::BeginMenu(ICON_FA_CIRCLE_QUESTION " Help"))
+	DrawTopLevelMenu("MenuHelp", "Help", [&]()
 	{
-		if (ImGui::MenuItem(ICON_FA_CIRCLE_INFO " CVar help"))
+#if CATTY_EDITOR_DEMO_CONTENT
+		if (ImGui::MenuItem(ICON_FA_CIRCLE_INFO "  CVar help"))
 		{
 			AppendOutput("Commands: `Dump` | `Name` | `Name Value` | `help`");
 		}
-		ImGui::EndMenu();
-	}
-
-	// Hairline under menu bar so it separates from dock tab strips below.
-	{
-		const ImVec2 Min = ImGui::GetWindowPos();
-		const ImVec2 Size = ImGui::GetWindowSize();
-		ImGui::GetWindowDrawList()->AddLine(
-			ImVec2(Min.x, Min.y + Size.y - 1.0f),
-			ImVec2(Min.x + Size.x, Min.y + Size.y - 1.0f),
-			IM_COL32(78, 82, 92, 255),
-			1.0f);
-	}
-
-	ImGui::EndMainMenuBar();
+#endif
+	});
 }
 
-void FEditorLayer::DrawToolbar()
+void FEditorLayer::DrawBrandBlock(float Size)
 {
-	ImGui::Begin(kWinToolbar, nullptr,
-		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar);
+	const ImVec4 BrandBg = ImVec4(14.0f / 255.0f, 14.0f / 255.0f, 16.0f / 255.0f, 1.0f);
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, BrandBg);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::BeginChild(
+		"##EditorBrand",
+		ImVec2(Size, Size),
+		ImGuiChildFlags_None,
+		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
 
+	const char* Glyph = ICON_FA_CAT;
+	ImGui::SetWindowFontScale(1.75f);
+	const ImVec2 Scaled = ImGui::CalcTextSize(Glyph);
+	const ImVec2 Region = ImGui::GetContentRegionAvail();
+	ImGui::SetCursorPos(ImVec2(
+		(Region.x - Scaled.x) * 0.5f,
+		(Region.y - Scaled.y) * 0.5f));
+	ImGui::TextUnformatted(Glyph);
+	ImGui::SetWindowFontScale(1.0f);
+
+	ImGui::EndChild();
+	ImGui::PopStyleVar();
+	ImGui::PopStyleColor();
+}
+
+void FEditorLayer::DrawToolbarPrimary()
+{
+	// Always-on placeholder icons for the dark toolbar (row under the menu).
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 0.0f));
+	ImGui::Button(ICON_FA_FLOPPY_DISK "##Tb1Save");
+	ImGui::SameLine();
+	ImGui::Button(ICON_FA_FOLDER_OPEN "##Tb1Open");
+	ImGui::SameLine();
+	ImGui::Button(ICON_FA_MAGNIFYING_GLASS "##Tb1Search");
+	ImGui::PopStyleVar();
+
+#if CATTY_EDITOR_DEMO_CONTENT
+	ImGui::SameLine();
+	ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+	ImGui::SameLine();
 	const bool bCanPlay = PlayState == EPlayState::Stopped || PlayState == EPlayState::Paused;
 	const bool bCanPause = PlayState == EPlayState::Playing;
 	const bool bCanStop = PlayState != EPlayState::Stopped;
@@ -354,83 +425,222 @@ void FEditorLayer::DrawToolbar()
 	ImGui::RadioButton(ICON_FA_ROTATE " Rotate", &GizmoOperation, static_cast<int>(ImGuizmo::ROTATE));
 	ImGui::SameLine();
 	ImGui::RadioButton(ICON_FA_EXPAND " Scale", &GizmoOperation, static_cast<int>(ImGuizmo::SCALE));
+#endif
+}
 
-	ImGui::End();
+void FEditorLayer::DrawToolbarSecondary()
+{
+	// Placeholder icons for the light-gray toolbar 2 strip.
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 0.0f));
+	ImGui::Button(ICON_FA_ARROW_POINTER "##Tb2Select");
+	ImGui::SameLine();
+	ImGui::Button(ICON_FA_HAND "##Tb2Pan");
+	ImGui::SameLine();
+	ImGui::Button(ICON_FA_EYE "##Tb2View");
+	ImGui::PopStyleVar();
 }
 
 void FEditorLayer::EnsureDefaultDockLayout(std::uint32_t DockspaceId)
 {
-	if (!bBuildDefaultLayout)
-	{
-		return;
-	}
-	bBuildDefaultLayout = false;
-
 	ImGui::DockBuilderRemoveNode(DockspaceId);
 	ImGui::DockBuilderAddNode(DockspaceId, ImGuiDockNodeFlags_DockSpace);
-	ImGui::DockBuilderSetNodeSize(DockspaceId, ImGui::GetMainViewport()->WorkSize);
+	ImGui::DockBuilderSetNodeSize(DockspaceId, ImGui::GetContentRegionAvail());
 
 	ImGuiID DockMain = DockspaceId;
 	ImGuiID DockLeft = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Left, 0.22f, nullptr, &DockMain);
+	ImGuiID DockCenter = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Left, 0.45f, nullptr, &DockMain);
+
+	ImGui::DockBuilderDockWindow(kWinContent, DockLeft);
+	ImGui::DockBuilderDockWindow(kWinDocument, DockCenter);
+	ImGui::DockBuilderDockWindow(kWinViewport, DockMain);
+#if CATTY_EDITOR_EXTRA_PANELS
 	ImGuiID DockBottom = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Down, 0.28f, nullptr, &DockMain);
 	ImGuiID DockBottomRight = ImGui::DockBuilderSplitNode(DockBottom, ImGuiDir_Right, 0.55f, nullptr, &DockBottom);
 	ImGuiID DockRight = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Right, 0.28f, nullptr, &DockMain);
-
-	ImGui::DockBuilderDockWindow(kWinToolbar, DockMain);
-	ImGui::DockBuilderDockWindow(kWinViewport, DockMain);
-	ImGui::DockBuilderDockWindow(kWinContent, DockLeft);
 	ImGui::DockBuilderDockWindow(kWinOutput, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinPlot, DockBottomRight);
 	ImGui::DockBuilderDockWindow(kWinBlueprint, DockRight);
+#endif
 	ImGui::DockBuilderFinish(DockspaceId);
 }
 
-void FEditorLayer::DrawDockSpace()
+void FEditorLayer::DrawDockSpace(Catty::FApp& App)
 {
 	ImGuiViewport* Viewport = ImGui::GetMainViewport();
 	ImGui::SetNextWindowPos(Viewport->WorkPos);
 	ImGui::SetNextWindowSize(Viewport->WorkSize);
 	ImGui::SetNextWindowViewport(Viewport->ID);
 
-	// Full-viewport chassis; WindowPadding insets DockSpace so panels sit inside a
-	// chrome ring instead of flush against the OS/client edge.
 	const float OuterPad = 8.0f;
 	const ImVec4 DockChassis = ImVec4(14.0f / 255.0f, 14.0f / 255.0f, 16.0f / 255.0f, 1.0f);
-	ImGuiWindowFlags HostFlags =
+	const ImVec4 ChromeBg = DockChassis;
+	const ImVec4 PlaceholderBg = ImVec4(38.0f / 255.0f, 39.0f / 255.0f, 43.0f / 255.0f, 1.0f);
+	const ImVec4 MenuHover = ImVec4(52.0f / 255.0f, 54.0f / 255.0f, 60.0f / 255.0f, 1.0f);
+	const ImVec4 MenuActive = ImVec4(66.0f / 255.0f, 70.0f / 255.0f, 78.0f / 255.0f, 1.0f);
+	ImGuiWindowFlags RootFlags =
 		ImGuiWindowFlags_NoDocking
 		| ImGuiWindowFlags_NoTitleBar
 		| ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoBringToFrontOnFocus
-		| ImGuiWindowFlags_NoNavFocus;
+		| ImGuiWindowFlags_NoNavFocus
+		| ImGuiWindowFlags_NoScrollbar
+		| ImGuiWindowFlags_NoScrollWithMouse;
 
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ImGui::GetStyle().WindowRounding);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(OuterPad, OuterPad));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, DockChassis);
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, DockChassis);
-	ImGui::Begin("##EditorDockHost", nullptr, HostFlags);
-	ImGui::PopStyleVar(3);
+	ImGui::Begin("##EditorRoot", nullptr, RootFlags);
+	ImGui::PopStyleVar(4);
 
-	// DockNodeUpdate copies Style.Colors[Border] into Separator — keep it clear
-	// here so gutters stay chassis-colored; floating windows keep visible Border.
 	ImGuiStyle& Style = ImGui::GetStyle();
+	const ImVec2 ThemeFramePadding = Style.FramePadding;
+	// Brand is the vertical reference; menu and toolbar are each exactly half its height.
+	const float BrandSize = ImMax(56.0f, ImGui::GetFrameHeight() * 2.0f + ThemeFramePadding.y * 2.0f);
+	const float MenuRowH = BrandSize * 0.5f;
+	const float ToolbarHeight = BrandSize * 0.5f;
+	// Light-gray reserved strip under brand+toolbar.
+	const float PlaceholderH = MenuRowH;
+
+	ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(1.0f, 1.0f));
+
+	// Brand spans menu + toolbar rows; menu and toolbar sit to its right.
+	DrawBrandBlock(BrandSize);
+	ImGui::SameLine(0.0f, 0.0f);
+
+	// Kill MenuBar bottom hairline for the whole header (drawn with Border * FrameBorderSize).
+	const float BackupFrameBorderSize = Style.FrameBorderSize;
+	const ImVec4 BackupHeaderBorder = Style.Colors[ImGuiCol_Border];
+	Style.FrameBorderSize = 0.0f;
+	Style.Colors[ImGuiCol_Border] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ChromeBg);
+	ImGui::BeginChild(
+		"##EditorHeaderRight",
+		ImVec2(0.0f, BrandSize),
+		ImGuiChildFlags_None,
+		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
+
+	// Row 1: main menu bar — full-height buttons (half brand height).
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ChromeBg);
+	ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+	ImGui::PushStyleColor(ImGuiCol_HeaderHovered, MenuHover);
+	ImGui::PushStyleColor(ImGuiCol_HeaderActive, MenuActive);
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::BeginChild(
+		"##EditorMenuRow",
+		ImVec2(0.0f, MenuRowH),
+		ImGuiChildFlags_AlwaysUseWindowPadding,
+		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
+	DrawMenuItems(App, MenuRowH);
+	ImGui::EndChild();
+	ImGui::PopStyleVar(2);
+	ImGui::PopStyleColor(4);
+
+	// Row 2: pinned toolbar — exact remaining half of the brand height.
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ChromeBg);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+	ImGui::BeginChild(
+		"##EditorToolbar",
+		ImVec2(0.0f, ToolbarHeight),
+		ImGuiChildFlags_AlwaysUseWindowPadding,
+		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
+	{
+		const float Y = (ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeight()) * 0.5f;
+		if (Y > 0.0f)
+		{
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Y);
+		}
+		DrawToolbarPrimary();
+	}
+	ImGui::EndChild();
+	ImGui::PopStyleVar(2);
+	ImGui::PopStyleColor();
+
+	ImGui::EndChild(); // ##EditorHeaderRight
+	ImGui::PopStyleColor();
+
+	Style.FrameBorderSize = BackupFrameBorderSize;
+	Style.Colors[ImGuiCol_Border] = BackupHeaderBorder;
+
+	ImGui::PopStyleVar(7);
+
+	// Toolbar 2: light-gray strip inset like the main dock (same OuterPad seam).
+	ImGui::SetCursorPos(ImVec2(OuterPad, ImGui::GetCursorPosY() + OuterPad));
+	{
+		const float Toolbar2W = ImGui::GetContentRegionAvail().x - OuterPad;
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, PlaceholderBg);
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 2.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 0.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+		ImGui::BeginChild(
+			"##EditorToolbar2",
+			ImVec2(Toolbar2W, PlaceholderH),
+			ImGuiChildFlags_AlwaysUseWindowPadding,
+			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
+		{
+			const float Y = (ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeight()) * 0.5f;
+			if (Y > 0.0f)
+			{
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Y);
+			}
+			DrawToolbarSecondary();
+		}
+		ImGui::EndChild();
+		ImGui::PopStyleVar(3);
+		ImGui::PopStyleColor();
+	}
+
+	// Fixed main docking space for all editor windows
+	ImGui::SetCursorPos(ImVec2(OuterPad, ImGui::GetCursorPosY() + OuterPad));
+	const ImVec2 DockAvail = ImGui::GetContentRegionAvail();
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, DockChassis);
+	ImGui::BeginChild(
+		"##EditorDockHost",
+		ImVec2(DockAvail.x - OuterPad, DockAvail.y - OuterPad),
+		ImGuiChildFlags_None,
+		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
+
 	const ImVec4 BackupBorder = Style.Colors[ImGuiCol_Border];
 	Style.Colors[ImGuiCol_Border] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-	const ImGuiID DockspaceId = ImGui::GetID("CattyEditorDockspaceChassis");
-	EnsureDefaultDockLayout(DockspaceId);
+	const ImGuiID DockspaceId = ImGui::GetID("CattyEditorMainDock");
+	if (bBuildDefaultLayout)
+	{
+		EnsureDefaultDockLayout(DockspaceId);
+		bBuildDefaultLayout = false;
+	}
 	ImGui::DockSpace(DockspaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
 
 	Style.Colors[ImGuiCol_Border] = BackupBorder;
+	ImGui::EndChild();
+	ImGui::PopStyleColor();
+
 	ImGui::End();
-	ImGui::PopStyleColor(2);
+	ImGui::PopStyleColor();
+}
+
+void FEditorLayer::DrawDocumentPanel()
+{
+	ImGui::Begin(kWinDocument);
+	ImGui::End();
 }
 
 void FEditorLayer::DrawViewportPanel()
 {
 	ImGui::Begin(kWinViewport);
+#if CATTY_EDITOR_DEMO_CONTENT
 	const ImVec2 Canvas = ImGui::GetContentRegionAvail();
 	const ImVec2 Origin = ImGui::GetCursorScreenPos();
 	ImDrawList* DrawList = ImGui::GetWindowDrawList();
@@ -455,12 +665,14 @@ void FEditorLayer::DrawViewportPanel()
 			ObjectMatrix);
 	}
 	ImGui::Dummy(Canvas);
+#endif
 	ImGui::End();
 }
 
 void FEditorLayer::DrawContentBrowser()
 {
 	ImGui::Begin(kWinContent);
+#if CATTY_EDITOR_DEMO_CONTENT
 	if (ImGui::Button(ICON_FA_ARROW_UP " Up"))
 	{
 		if (CurrentFolder != ContentRoot)
@@ -528,12 +740,14 @@ void FEditorLayer::DrawContentBrowser()
 	}
 	ImGui::EndChild();
 	ImGui::PopStyleColor();
+#endif
 	ImGui::End();
 }
 
 void FEditorLayer::DrawOutputPanel(Catty::FApp& App)
 {
 	ImGui::Begin(kWinOutput);
+#if CATTY_EDITOR_DEMO_CONTENT
 	const float Footer = ImGui::GetFrameHeightWithSpacing() + 4.0f;
 	ImGui::BeginChild("##OutputScroll", ImVec2(0.0f, -Footer), ImGuiChildFlags_AlwaysUseWindowPadding);
 	ImGuiListClipper Clipper;
@@ -563,12 +777,16 @@ void FEditorLayer::DrawOutputPanel(Catty::FApp& App)
 		ExecuteConsoleLine(App, Line);
 		ImGui::SetKeyboardFocusHere(-1);
 	}
+#else
+	(void)App;
+#endif
 	ImGui::End();
 }
 
 void FEditorLayer::DrawBlueprintPanel()
 {
 	ImGui::Begin(kWinBlueprint);
+#if CATTY_EDITOR_DEMO_CONTENT
 	if (!bBlueprintInited || !NodeEditorContext)
 	{
 		ImGui::TextDisabled("Node editor context unavailable.");
@@ -606,12 +824,14 @@ void FEditorLayer::DrawBlueprintPanel()
 
 	ed::End();
 	ed::SetCurrentEditor(nullptr);
+#endif
 	ImGui::End();
 }
 
 void FEditorLayer::DrawPlotPanel()
 {
 	ImGui::Begin(kWinPlot);
+#if CATTY_EDITOR_DEMO_CONTENT
 	static float Values[90] = {};
 	static int Offset = 0;
 	Values[Offset] = 0.5f + 0.5f * std::sin(static_cast<float>(ImGui::GetTime()) * 3.0f);
@@ -622,11 +842,13 @@ void FEditorLayer::DrawPlotPanel()
 		ImPlot::PlotLine("sin", Values, IM_ARRAYSIZE(Values), 1.0, 0, ImPlotLineFlags_None, Offset);
 		ImPlot::EndPlot();
 	}
+#endif
 	ImGui::End();
 }
 
 void FEditorLayer::DrawFileDialogs()
 {
+#if CATTY_EDITOR_DEMO_CONTENT
 	const ImVec2 MaxSize = ImVec2(900.0f, 600.0f);
 	const ImVec2 MinSize = ImVec2(500.0f, 300.0f);
 	if (ImGuiFileDialog::Instance()->Display("EditorOpenDlg", ImGuiWindowFlags_NoCollapse, MinSize, MaxSize))
@@ -645,6 +867,7 @@ void FEditorLayer::DrawFileDialogs()
 		}
 		ImGuiFileDialog::Instance()->Close();
 	}
+#endif
 }
 
 void FEditorLayer::RefreshContentListing()

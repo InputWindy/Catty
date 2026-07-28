@@ -64,10 +64,9 @@ void ApplyCattyNightTheme()
 	Style.DockingSeparatorSize = 4.0f; // dock gutter thickness (fill stays transparent via Border)
 
 	// Chrome hierarchy:
-	//   MenuBar → chassis TabWell (dock gutters) → TabBar strip → TabIdle → selected Panel
+	//   MenuBar → chassis TabWell (dock gutters + tab strip) → TabIdle → selected Panel
 	const ImVec4 MenuBar = Rgba(12, 12, 14);
-	const ImVec4 TabWell = Rgba(14, 14, 16);       // deepest chassis / dock gutters
-	const ImVec4 TabBar = Rgba(24, 25, 28);        // tab strip (brighter than chassis, darker than selected)
+	const ImVec4 TabWell = Rgba(14, 14, 16);       // deepest chassis / dock gutters / tab strip bg
 	const ImVec4 TabIdle = Rgba(30, 31, 35);       // unselected tab face
 	const ImVec4 Panel = Rgba(38, 39, 43);         // panel body + selected tab
 	const ImVec4 Well = Rgba(26, 27, 30);
@@ -96,9 +95,9 @@ void ApplyCattyNightTheme()
 	Colors[ImGuiCol_FrameBg] = Well;
 	Colors[ImGuiCol_FrameBgHovered] = Raised;
 	Colors[ImGuiCol_FrameBgActive] = Pressed;
-	Colors[ImGuiCol_TitleBg] = TabBar;
-	Colors[ImGuiCol_TitleBgActive] = TabBar;
-	Colors[ImGuiCol_TitleBgCollapsed] = TabBar;
+	Colors[ImGuiCol_TitleBg] = TabWell;
+	Colors[ImGuiCol_TitleBgActive] = TabWell;
+	Colors[ImGuiCol_TitleBgCollapsed] = TabWell;
 	Colors[ImGuiCol_MenuBarBg] = MenuBar;
 	Colors[ImGuiCol_ScrollbarBg] = TabWell;
 	Colors[ImGuiCol_ScrollbarGrab] = Raised;
@@ -124,7 +123,7 @@ void ApplyCattyNightTheme()
 	Colors[ImGuiCol_TabHovered] = Hover;
 	Colors[ImGuiCol_TabSelected] = Panel;
 	Colors[ImGuiCol_TabSelectedOverline] = Accent;
-	Colors[ImGuiCol_TabDimmed] = TabBar;
+	Colors[ImGuiCol_TabDimmed] = TabWell;
 	Colors[ImGuiCol_TabDimmedSelected] = Panel;
 	Colors[ImGuiCol_TabDimmedSelectedOverline] = Rgba(70, 148, 235, 0.45f);
 	Colors[ImGuiCol_DockingPreview] = AccentSoft;
@@ -133,7 +132,7 @@ void ApplyCattyNightTheme()
 	Colors[ImGuiCol_PlotLinesHovered] = AccentHover;
 	Colors[ImGuiCol_PlotHistogram] = Accent;
 	Colors[ImGuiCol_PlotHistogramHovered] = AccentHover;
-	Colors[ImGuiCol_TableHeaderBg] = TabBar;
+	Colors[ImGuiCol_TableHeaderBg] = TabWell;
 	Colors[ImGuiCol_TableBorderStrong] = EdgeStrong;
 	Colors[ImGuiCol_TableBorderLight] = EdgeSoft;
 	Colors[ImGuiCol_TableRowBg] = Rgba(0, 0, 0, 0.0f);

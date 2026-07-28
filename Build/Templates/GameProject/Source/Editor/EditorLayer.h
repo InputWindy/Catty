@@ -34,9 +34,13 @@ public:
 		Catty::FStageContext& Ctx) override;
 
 private:
-	void DrawMainMenuBar(Catty::FApp& App);
-	void DrawToolbar();
-	void DrawDockSpace();
+	void DrawMenuItems(Catty::FApp& App, float RowH);
+	void DrawBrandBlock(float Size);
+	void DrawToolbarPrimary();
+	void DrawToolbarSecondary();
+	// menu → toolbar1(+brand) → toolbar2 → fixed main dockspace
+	void DrawDockSpace(Catty::FApp& App);
+	void DrawDocumentPanel();
 	void DrawViewportPanel();
 	void DrawContentBrowser();
 	void DrawOutputPanel(Catty::FApp& App);
