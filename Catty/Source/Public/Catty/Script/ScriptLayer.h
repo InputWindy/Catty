@@ -11,7 +11,7 @@ namespace Catty
 
 /**
  * Programmable Lua layer (not an engine Module).
- * Owns no ScriptSystem — uses FApp's FScriptSystem; Init on Attach, tick via OnUpdate / OnFixedUpdate.
+ * Owns no ScriptSystem — uses FApp::GetScriptSystem(); Init on Attach.
  * Games PushOverlay this after World / Editor so Lua runs last among content layers.
  */
 class CATTY_API FScriptLayer final : public FLayer

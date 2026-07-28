@@ -80,17 +80,6 @@ public:
 		return true;
 	}
 
-	/**
-	 * After PostStageDelegates Broadcast (Layers already ran).
-	 * Use this instead of binding App's private Post delegates.
-	 */
-	virtual void OnPostStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
-	{
-		(void)Stage;
-		(void)App;
-		(void)Ctx;
-	}
-
 	[[nodiscard]] FOnExitRequested& GetOnExitRequested() { return OnExitRequested; }
 	[[nodiscard]] const FOnExitRequested& GetOnExitRequested() const { return OnExitRequested; }
 

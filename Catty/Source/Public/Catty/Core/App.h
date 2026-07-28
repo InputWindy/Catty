@@ -1,9 +1,11 @@
 #pragma once
 
+#include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Delegate.h"
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Export.h"
 #include "Catty/Core/Layer.h"
+#include "Catty/Core/Log.h"
 #include "Catty/Core/Module.h"
 #include "Catty/Core/Timer.h"
 #include "Catty/Script/ScriptSystem.h"
@@ -58,12 +60,9 @@ public:
 	[[nodiscard]] FEngineConfig& GetConfig() { return EngineConfig; }
 	[[nodiscard]] const FEngineConfig& GetConfig() const { return EngineConfig; }
 
+	[[nodiscard]] FLog& GetLog() { return Log; }
+	[[nodiscard]] FConsoleManager& GetConsoleManager() { return ConsoleManager; }
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
-
-	/**
-	 * Lua VM host (empty until a FScriptLayer Attach initializes it).
-	 * Not a default Layer — games Push FScriptLayer when they want scripting.
-	 */
 	[[nodiscard]] FScriptSystem& GetScriptSystem() { return ScriptSystem; }
 	[[nodiscard]] const FScriptSystem& GetScriptSystem() const { return ScriptSystem; }
 
@@ -73,17 +72,10 @@ public:
 
 protected:
 	virtual void Configure(FEngineConfig& OutConfig);
-
-	/** Assemble IModule graph. Default empty — games typically call RegisterEngineModules. */
 	virtual void RegisterModules();
-
 	virtual bool PostInitialize();
 	virtual void PreShutdown();
 
-	/**
-	 * Owns Layer lifetime. Binds On* to PostStageDelegates; does not tick Layers.
-	 * Layer section then Overlay section (overlays sit above layers).
-	 */
 	void PushLayer(std::unique_ptr<FLayer> Layer);
 	void PushOverlay(std::unique_ptr<FLayer> Overlay);
 	void ClearLayers();
@@ -92,7 +84,6 @@ private:
 	struct FLayerBinding
 	{
 		std::unique_ptr<FLayer> Layer;
-		bool bOverlay = false;
 	};
 
 	static constexpr std::size_t StageCount =
@@ -124,6 +115,9 @@ private:
 	[[nodiscard]] FStageMulticast& GetPostStageDelegate(EModuleStage Stage);
 
 	FEngineConfig EngineConfig;
+	/** Boot order: Log → ConsoleManager → Timer; ScriptSystem with core services. */
+	FLog Log;
+	FConsoleManager ConsoleManager;
 	FTimer Timer;
 	FScriptSystem ScriptSystem;
 
@@ -134,17 +128,17 @@ private:
 	std::vector<IModule*> ShutdownOrder;
 
 	std::array<FStageMulticast, StageCount> PostStageDelegates{};
-
-	/** Layer ownership only — Post binds live on PostStageDelegates. */
 	std::vector<FLayerBinding> LayerBindings;
 	std::size_t LayerInsertIndex = 0;
 
 	bool bRunning = false;
-	bool bModuleOrderBuilt = false;
 	float FixedUpdateAccumulator = 0.0f;
 	double LastFrameTimeSeconds = 0.0;
 	std::uint64_t FrameIndex = 0;
 };
+
+/** Process-wide App while an FApp exists (set in FApp ctor, cleared in dtor). */
+CATTY_API extern FApp* GApp;
 
 FApp* CreateApplication();
 

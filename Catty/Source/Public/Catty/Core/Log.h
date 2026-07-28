@@ -33,49 +33,48 @@ struct FLogConfig
 };
 
 /**
- * spdlog facade for Catty.
- * Use CATTY_CORE_* for engine code and CATTY_* for game code.
- *
- * Example:
- * ```
- *   Catty::FLogConfig Config;
- *   Config.ClientLoggerName = "MyGame";
- *   Config.LogDirectory = "Saved/Logs";
- *   Catty::FLog::Initialize(Config);
- *
- *   CATTY_CORE_INFO("engine ready");
- *   CATTY_INFO("hello from game, frame={}", FrameIndex);
- *   Catty::FLog::Shutdown();
- * ```
+ * App-owned spdlog facade. CATTY_* macros resolve via GApp->GetLog().
  */
 class CATTY_API FLog
 {
 public:
-	/** Create / replace loggers. Safe to call again (re-initializes). */
-	static void Initialize(const FLogConfig& Config);
+	FLog() = default;
+	~FLog();
 
-	static void Shutdown();
+	FLog(const FLog&) = delete;
+	FLog& operator=(const FLog&) = delete;
 
-	[[nodiscard]] static bool IsInitialized();
+	/** Create / replace this instance's loggers. Safe to call again. */
+	void Initialize(const FLogConfig& Config);
+	void Shutdown();
 
-	[[nodiscard]] static std::shared_ptr<spdlog::logger>& GetCoreLogger();
-	[[nodiscard]] static std::shared_ptr<spdlog::logger>& GetClientLogger();
+	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
+
+	[[nodiscard]] std::shared_ptr<spdlog::logger>& GetCoreLogger() { return CoreLogger; }
+	[[nodiscard]] std::shared_ptr<spdlog::logger>& GetClientLogger() { return ClientLogger; }
+
+	/** Macro helpers — forward to GApp->GetLog(). */
+	[[nodiscard]] static std::shared_ptr<spdlog::logger>& GetActiveCoreLogger();
+	[[nodiscard]] static std::shared_ptr<spdlog::logger>& GetActiveClientLogger();
+
+private:
+	std::shared_ptr<spdlog::logger> CoreLogger;
+	std::shared_ptr<spdlog::logger> ClientLogger;
+	bool bInitialized = false;
 };
 
 } // namespace Catty
 
-// Engine (core) macros
-#define CATTY_CORE_TRACE(...)    ::Catty::FLog::GetCoreLogger()->trace(__VA_ARGS__)
-#define CATTY_CORE_DEBUG(...)    ::Catty::FLog::GetCoreLogger()->debug(__VA_ARGS__)
-#define CATTY_CORE_INFO(...)     ::Catty::FLog::GetCoreLogger()->info(__VA_ARGS__)
-#define CATTY_CORE_WARN(...)     ::Catty::FLog::GetCoreLogger()->warn(__VA_ARGS__)
-#define CATTY_CORE_ERROR(...)    ::Catty::FLog::GetCoreLogger()->error(__VA_ARGS__)
-#define CATTY_CORE_CRITICAL(...) ::Catty::FLog::GetCoreLogger()->critical(__VA_ARGS__)
+#define CATTY_CORE_TRACE(...)    ::Catty::FLog::GetActiveCoreLogger()->trace(__VA_ARGS__)
+#define CATTY_CORE_DEBUG(...)    ::Catty::FLog::GetActiveCoreLogger()->debug(__VA_ARGS__)
+#define CATTY_CORE_INFO(...)     ::Catty::FLog::GetActiveCoreLogger()->info(__VA_ARGS__)
+#define CATTY_CORE_WARN(...)     ::Catty::FLog::GetActiveCoreLogger()->warn(__VA_ARGS__)
+#define CATTY_CORE_ERROR(...)    ::Catty::FLog::GetActiveCoreLogger()->error(__VA_ARGS__)
+#define CATTY_CORE_CRITICAL(...) ::Catty::FLog::GetActiveCoreLogger()->critical(__VA_ARGS__)
 
-// Game (client) macros
-#define CATTY_TRACE(...)         ::Catty::FLog::GetClientLogger()->trace(__VA_ARGS__)
-#define CATTY_DEBUG(...)         ::Catty::FLog::GetClientLogger()->debug(__VA_ARGS__)
-#define CATTY_INFO(...)          ::Catty::FLog::GetClientLogger()->info(__VA_ARGS__)
-#define CATTY_WARN(...)          ::Catty::FLog::GetClientLogger()->warn(__VA_ARGS__)
-#define CATTY_ERROR(...)         ::Catty::FLog::GetClientLogger()->error(__VA_ARGS__)
-#define CATTY_CRITICAL(...)      ::Catty::FLog::GetClientLogger()->critical(__VA_ARGS__)
+#define CATTY_TRACE(...)         ::Catty::FLog::GetActiveClientLogger()->trace(__VA_ARGS__)
+#define CATTY_DEBUG(...)         ::Catty::FLog::GetActiveClientLogger()->debug(__VA_ARGS__)
+#define CATTY_INFO(...)          ::Catty::FLog::GetActiveClientLogger()->info(__VA_ARGS__)
+#define CATTY_WARN(...)          ::Catty::FLog::GetActiveClientLogger()->warn(__VA_ARGS__)
+#define CATTY_ERROR(...)         ::Catty::FLog::GetActiveClientLogger()->error(__VA_ARGS__)
+#define CATTY_CRITICAL(...)      ::Catty::FLog::GetActiveClientLogger()->critical(__VA_ARGS__)

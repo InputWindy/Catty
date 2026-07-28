@@ -294,7 +294,7 @@ flowchart TB
 				<tr><td><code>FWorkerModule</code></td><td>Resource</td><td><code>WorkerPool::Initialize</code></td><td>—</td></tr>
 			</tbody>
 		</table>
-		<p class="note">Lua 不在 Module DAG：游戏 Push <code>FScriptLayer</code>；<code>FApp</code> 仅托管空的 <code>FScriptSystem</code> 供 Layer Attach 初始化。默认引擎 Module 用 <code>RegisterEngineModules(*this)</code> 由游戏主动拉取。</p>
+		<p class="note">Lua 不在 Module DAG：游戏 Push <code>FScriptLayer</code>；<code>FScriptSystem</code> 与 <code>FLog</code> / <code>FConsoleManager</code> / <code>FTimer</code> 同级由 <code>FApp</code> 托管，经 <code>GApp</code> / <code>GetScriptSystem()</code> 访问。默认引擎 Module 用 <code>RegisterEngineModules(*this)</code> 由游戏主动拉取。</p>
 		<ul>
 			<li>访问：<code>App.GetModule&lt;FRenderModule&gt;()-&gt;GetServer()</code>，无 <code>GetRenderServer</code> 等特化 getter。</li>
 			<li>拓扑并列节点按 <b>注册顺序</b> 出队，保证启动序稳定。</li>

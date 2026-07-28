@@ -43,34 +43,16 @@ struct CATTY_API FTimerDataPackage
 
 /**
  * App-owned multi-category timer.
- * Categories are string keys (e.g. "Engine" / "Render" / "Game");
- * macros record into the active instance set by FApp::Run.
- *
- * Example:
- * ```
- *   {
- *       CATTY_SCOPED_TIMER("Game", "Simulate");
- *       Simulate();
- *   }
- *   Catty::FTimerDataPackage Package;
- *   if (App.GetTimer().TryQuery("Game", Package))
- *   {
- *       CATTY_INFO("{}", Package.Serialize());
- *   }
- * ```
+ * CATTY_SCOPED_TIMER resolves via GApp->GetTimer().
  */
 class CATTY_API FTimer
 {
 public:
 	FTimer() = default;
-	~FTimer();
+	~FTimer() = default;
 
 	FTimer(const FTimer&) = delete;
 	FTimer& operator=(const FTimer&) = delete;
-
-	/** Bound for the lifetime of FApp::Run so CATTY_SCOPED_TIMER can find it. */
-	void MakeActive();
-	void ClearActive();
 
 	[[nodiscard]] static FTimer* TryGet();
 	[[nodiscard]] static FTimer& Get();
@@ -95,8 +77,6 @@ private:
 
 	mutable std::mutex Mutex;
 	std::unordered_map<std::string, std::unordered_map<std::string, FScopeAccum>> Categories;
-
-	static FTimer* GActive;
 };
 
 /**

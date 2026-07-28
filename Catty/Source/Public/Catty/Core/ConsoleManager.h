@@ -10,33 +10,26 @@ namespace Catty
 {
 
 /**
- * Process-wide CVar registry (UE IConsoleManager subset).
+ * CVar registry (UE IConsoleManager subset). Process-wide variable storage;
+ * FApp owns a facade — FConsoleManager::Get() resolves via GApp.
  *
- * Cross-module string access (no need to include the registering TU's header):
+ * Cross-module string access:
  *   FConsoleManager::Get().GetInt("catty.Window.Width");
- *   if (IConsoleVariable* V = FConsoleManager::Get().Find("r.Foo")) { ... }
- *
- * Startup: FApp loads Config/DefaultEngine.ini [ConsoleVariables] during Initialize,
- * then ApplyEngineCVarsToConfig. Unknown names are queued (early set) and applied on Register.
- *
- * Example:
- * ```
- *   // Register once in a .cpp (defining module):
- *   static Catty::TAutoConsoleVariable CVarQuality("mygame.Quality", 2, "0=low 2=high");
- *
- *   // Read / write from any module by name only:
- *   const int Q = Catty::FConsoleManager::Get().GetInt("mygame.Quality", 2);
- *   Catty::FConsoleManager::Get().SetInt("mygame.Quality", 3);
- *   Catty::FConsoleManager::Get().LoadConsoleVariablesFromIni("Config/DefaultEngine.ini");
- * ```
  */
 class CATTY_API FConsoleManager
 {
 public:
-	static FConsoleManager& Get();
+	FConsoleManager() = default;
+	~FConsoleManager() = default;
 
 	FConsoleManager(const FConsoleManager&) = delete;
 	FConsoleManager& operator=(const FConsoleManager&) = delete;
+
+	/**
+	 * App-owned manager when GApp is set; otherwise a pre-App fallback
+	 * (static TAutoConsoleVariable registration before main).
+	 */
+	[[nodiscard]] static FConsoleManager& Get();
 
 	[[nodiscard]] IConsoleVariable* RegisterBool(
 		const char* Name,
@@ -103,9 +96,6 @@ public:
 
 	/** Log all registered CVars (name = value). */
 	void Dump() const;
-
-private:
-	FConsoleManager() = default;
 };
 
 /**

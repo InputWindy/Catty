@@ -33,7 +33,6 @@ bool FResourceModule::OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 			return false;
 		}
 
-		// FApp owns FScriptSystem; FScriptLayer Attach broadcasts OnLuaReady.
 		LuaReadyHandle = App.GetScriptSystem().GetOnLuaReady().AddRaw(
 			this,
 			&FResourceModule::OnLuaReady);

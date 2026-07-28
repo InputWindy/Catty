@@ -1,5 +1,6 @@
 #include "Catty/Core/ConsoleManager.h"
 
+#include "Catty/Core/App.h"
 #include "Catty/Core/ConfigFile.h"
 #include "Catty/Core/Engine.h"
 #include "Catty/Core/Log.h"
@@ -470,8 +471,12 @@ bool SetByNameFromString(const char* Name, const char* Value, EConsoleVariableSe
 
 FConsoleManager& FConsoleManager::Get()
 {
-	static FConsoleManager Instance;
-	return Instance;
+	if (GApp)
+	{
+		return GApp->GetConsoleManager();
+	}
+	static FConsoleManager PreAppFallback;
+	return PreAppFallback;
 }
 
 IConsoleVariable* FConsoleManager::RegisterBool(

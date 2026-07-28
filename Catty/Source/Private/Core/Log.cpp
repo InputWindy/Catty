@@ -1,9 +1,11 @@
 #include "Catty/Core/Log.h"
 
+#include "Catty/Core/App.h"
 #include "Catty/Core/ConsoleManager.h"
 
 #include <algorithm>
 #include <filesystem>
+#include <stdexcept>
 #include <vector>
 
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -11,12 +13,9 @@
 
 namespace Catty
 {
+
 namespace
 {
-
-std::shared_ptr<spdlog::logger> GCoreLogger;
-std::shared_ptr<spdlog::logger> GClientLogger;
-bool GbLogInitialized = false;
 
 constexpr const char* GLogPattern = "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%l%$] %v";
 
@@ -34,6 +33,11 @@ std::shared_ptr<spdlog::logger> CreateLogger(
 	const std::string& Name,
 	const std::vector<spdlog::sink_ptr>& Sinks)
 {
+	if (auto Existing = spdlog::get(Name))
+	{
+		spdlog::drop(Name);
+	}
+
 	auto Logger = std::make_shared<spdlog::logger>(Name, Sinks.begin(), Sinks.end());
 	Logger->set_pattern(GLogPattern);
 	Logger->set_level(spdlog::level::trace);
@@ -44,9 +48,14 @@ std::shared_ptr<spdlog::logger> CreateLogger(
 
 } // namespace
 
+FLog::~FLog()
+{
+	Shutdown();
+}
+
 void FLog::Initialize(const FLogConfig& Config)
 {
-	if (GbLogInitialized)
+	if (bInitialized)
 	{
 		Shutdown();
 	}
@@ -86,52 +95,59 @@ void FLog::Initialize(const FLogConfig& Config)
 		Sinks.push_back(ConsoleSink);
 	}
 
-	GCoreLogger = CreateLogger(Config.CoreLoggerName, Sinks);
-	GClientLogger = CreateLogger(Config.ClientLoggerName, Sinks);
-	spdlog::set_default_logger(GCoreLogger);
+	CoreLogger = CreateLogger(Config.CoreLoggerName, Sinks);
+	ClientLogger = CreateLogger(Config.ClientLoggerName, Sinks);
+	spdlog::set_default_logger(CoreLogger);
 
-	GbLogInitialized = true;
-	GCoreLogger->info("Logging initialized (console={}, file={})",
+	bInitialized = true;
+	CoreLogger->info(
+		"Logging initialized (console={}, file={})",
 		Config.bEnableConsole,
 		Config.bEnableFile);
 }
 
 void FLog::Shutdown()
 {
-	if (!GbLogInitialized)
+	if (!bInitialized)
 	{
 		return;
 	}
 
-	if (GCoreLogger)
+	if (CoreLogger)
 	{
-		GCoreLogger->info("Logging shutdown");
-		GCoreLogger->flush();
+		CoreLogger->info("Logging shutdown");
+		CoreLogger->flush();
+		spdlog::drop(CoreLogger->name());
+		CoreLogger.reset();
 	}
-	if (GClientLogger)
+	if (ClientLogger)
 	{
-		GClientLogger->flush();
+		ClientLogger->flush();
+		spdlog::drop(ClientLogger->name());
+		ClientLogger.reset();
 	}
 
-	spdlog::shutdown();
-	GCoreLogger.reset();
-	GClientLogger.reset();
-	GbLogInitialized = false;
+	bInitialized = false;
 }
 
-bool FLog::IsInitialized()
+std::shared_ptr<spdlog::logger>& FLog::GetActiveCoreLogger()
 {
-	return GbLogInitialized;
+	FLog& Log = GApp->GetLog();
+	if (!Log.CoreLogger)
+	{
+		throw std::runtime_error("FLog: core logger not initialized (FApp::Initialize)");
+	}
+	return Log.CoreLogger;
 }
 
-std::shared_ptr<spdlog::logger>& FLog::GetCoreLogger()
+std::shared_ptr<spdlog::logger>& FLog::GetActiveClientLogger()
 {
-	return GCoreLogger;
-}
-
-std::shared_ptr<spdlog::logger>& FLog::GetClientLogger()
-{
-	return GClientLogger;
+	FLog& Log = GApp->GetLog();
+	if (!Log.ClientLogger)
+	{
+		throw std::runtime_error("FLog: client logger not initialized (FApp::Initialize)");
+	}
+	return Log.ClientLogger;
 }
 
 } // namespace Catty

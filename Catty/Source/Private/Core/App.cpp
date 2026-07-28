@@ -28,7 +28,17 @@ static TAutoConsoleVariable GCVarMaxDeltaSeconds(
 	0.25f,
 	"Clamp frame delta seconds after hitch / debugger pause");
 
-void InitializeAppLogging(const FEngineConfig& Config)
+void BootstrapAppLogging(FApp& App)
+{
+	FLogConfig LogConfig;
+	LogConfig.CoreLoggerName = "Catty";
+	LogConfig.ClientLoggerName = "App";
+	LogConfig.bEnableConsole = true;
+	LogConfig.bEnableFile = false;
+	App.GetLog().Initialize(LogConfig);
+}
+
+void ApplyAppLoggingFromConfig(FApp& App, const FEngineConfig& Config)
 {
 	FLogConfig LogConfig;
 	LogConfig.CoreLoggerName = "Catty";
@@ -36,7 +46,7 @@ void InitializeAppLogging(const FEngineConfig& Config)
 	LogConfig.LogDirectory = Config.SavedDir + "/Logs";
 	LogConfig.bEnableConsole = true;
 	LogConfig.bEnableFile = true;
-	FLog::Initialize(LogConfig);
+	App.GetLog().Initialize(LogConfig);
 }
 
 void ShutdownAppLogging(FApp& App)
@@ -48,18 +58,20 @@ void ShutdownAppLogging(FApp& App)
 			CATTY_CORE_INFO("{}", Report.Serialize());
 		}
 	}
-	FLog::Shutdown();
+	App.GetLog().Shutdown();
 }
 
-int LoadProjectEngineIni(FEngineConfig& Config)
+int LoadProjectEngineIni(FApp& App, FEngineConfig& Config)
 {
 	const std::string IniPath = Config.ProjectConfigDir + "/DefaultEngine.ini";
-	const int Applied = FConsoleManager::Get().LoadConsoleVariablesFromIni(IniPath);
+	const int Applied = App.GetConsoleManager().LoadConsoleVariablesFromIni(IniPath);
 	ApplyEngineCVarsToConfig(Config);
 	return Applied;
 }
 
 } // namespace
+
+FApp* GApp = nullptr;
 
 std::size_t FApp::StageIndex(EModuleStage Stage)
 {
@@ -80,12 +92,28 @@ bool FApp::IsShutdownFamily(EModuleStage Stage)
 		|| Stage == EModuleStage::PostShutdown;
 }
 
-FApp::FApp() = default;
+FApp::FApp()
+{
+	GApp = this;
+
+	// Earliest services, in order: Log → ConsoleManager → Timer.
+	// ConsoleManager / Timer are ready via member construction order; Log needs sinks now.
+	BootstrapAppLogging(*this);
+	CATTY_CORE_INFO("FApp core services ready (Log, ConsoleManager, Timer)");
+}
 
 FApp::~FApp()
 {
 	ClearLayers();
 	DetachModules();
+	if (Log.IsInitialized())
+	{
+		Log.Shutdown();
+	}
+	if (GApp == this)
+	{
+		GApp = nullptr;
+	}
 }
 
 void FApp::Configure(FEngineConfig& /*OutConfig*/)
@@ -192,7 +220,6 @@ void FApp::RegisterModule(std::unique_ptr<IModule> Module)
 	ModulesByName[Name ? Name : ""] = Raw;
 	ModulesByType[std::type_index(typeid(*Raw))] = Raw;
 	Modules.push_back(std::move(Module));
-	bModuleOrderBuilt = false;
 }
 
 bool FApp::RebuildModuleOrder()
@@ -264,7 +291,6 @@ bool FApp::RebuildModuleOrder()
 	}
 
 	ShutdownOrder.assign(StartupOrder.rbegin(), StartupOrder.rend());
-	bModuleOrderBuilt = true;
 	return true;
 }
 
@@ -291,11 +317,6 @@ bool FApp::ExecuteStage(EModuleStage Stage, FStageContext& Ctx)
 	}
 
 	PostStageDelegates[StageIndex(Stage)].Broadcast(Stage, *this, Ctx);
-
-	for (IModule* Module : GetOrderForStage(Stage))
-	{
-		Module->OnPostStage(Stage, *this, Ctx);
-	}
 	return true;
 }
 
@@ -338,7 +359,6 @@ void FApp::PushLayer(std::unique_ptr<FLayer> Layer)
 
 	FLayerBinding Entry;
 	Entry.Layer = std::move(Layer);
-	Entry.bOverlay = false;
 	FLayer* Raw = Entry.Layer.get();
 	(void)Raw->GetOnAttach().AddRaw(this, &FApp::HandleLayerAttach);
 	(void)Raw->GetOnDetach().AddRaw(this, &FApp::HandleLayerDetach);
@@ -358,7 +378,6 @@ void FApp::PushOverlay(std::unique_ptr<FLayer> Overlay)
 
 	FLayerBinding Entry;
 	Entry.Layer = std::move(Overlay);
-	Entry.bOverlay = true;
 	FLayer* Raw = Entry.Layer.get();
 	(void)Raw->GetOnAttach().AddRaw(this, &FApp::HandleLayerAttach);
 	(void)Raw->GetOnDetach().AddRaw(this, &FApp::HandleLayerDetach);
@@ -383,10 +402,10 @@ bool FApp::Initialize()
 {
 	Configure(EngineConfig);
 
-	RegisterModules();
+	// Upgrade console-only bootstrap log with file sinks + game logger name.
+	ApplyAppLoggingFromConfig(*this, EngineConfig);
 
-	const int IniApplied = LoadProjectEngineIni(EngineConfig);
-	InitializeAppLogging(EngineConfig);
+	const int IniApplied = LoadProjectEngineIni(*this, EngineConfig);
 	if (IniApplied < 0)
 	{
 		CATTY_CORE_WARN(
@@ -401,11 +420,10 @@ bool FApp::Initialize()
 			EngineConfig.ProjectConfigDir);
 	}
 
-	Timer.MakeActive();
+	RegisterModules();
 
 	if (!RebuildModuleOrder())
 	{
-		Timer.ClearActive();
 		ShutdownAppLogging(*this);
 		return false;
 	}
@@ -417,7 +435,6 @@ bool FApp::Initialize()
 	{
 		CATTY_CORE_ERROR("FApp::Initialize module stages failed");
 		Shutdown();
-		Timer.ClearActive();
 		ShutdownAppLogging(*this);
 		return false;
 	}
@@ -426,7 +443,6 @@ bool FApp::Initialize()
 	{
 		CATTY_CORE_ERROR("FApp::PostInitialize failed");
 		Shutdown();
-		Timer.ClearActive();
 		ShutdownAppLogging(*this);
 		return false;
 	}
@@ -552,7 +568,6 @@ void FApp::Run()
 
 	RunMainLoop();
 	Shutdown();
-	Timer.ClearActive();
 	ShutdownAppLogging(*this);
 }
 

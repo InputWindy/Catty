@@ -1,12 +1,12 @@
 #include "Catty/Core/Timer.h"
 
+#include "Catty/Core/App.h"
+
 #include <sstream>
 #include <utility>
 
 namespace Catty
 {
-
-FTimer* FTimer::GActive = nullptr;
 
 std::string FTimerDataPackage::Serialize() const
 {
@@ -27,35 +27,14 @@ std::string FTimerDataPackage::Serialize() const
 	return Stream.str();
 }
 
-FTimer::~FTimer()
-{
-	if (GActive == this)
-	{
-		GActive = nullptr;
-	}
-}
-
-void FTimer::MakeActive()
-{
-	GActive = this;
-}
-
-void FTimer::ClearActive()
-{
-	if (GActive == this)
-	{
-		GActive = nullptr;
-	}
-}
-
 FTimer* FTimer::TryGet()
 {
-	return GActive;
+	return GApp ? &GApp->GetTimer() : nullptr;
 }
 
 FTimer& FTimer::Get()
 {
-	return *GActive;
+	return GApp->GetTimer();
 }
 
 void FTimer::Record(const char* CategoryName, const char* ScopeName, double ElapsedMilliseconds)
