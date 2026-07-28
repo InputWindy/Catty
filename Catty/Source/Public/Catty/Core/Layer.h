@@ -33,8 +33,8 @@ class FApp;
 class CATTY_API FLayer
 {
 public:
-	using FOnAttach = TMulticastDelegate<void(FLayer&)>;
-	using FOnDetach = TMulticastDelegate<void(FLayer&)>;
+	CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnAttach, FLayer&);
+	CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnDetach, FLayer&);
 
 	explicit FLayer(std::string Name = "Layer");
 	virtual ~FLayer();

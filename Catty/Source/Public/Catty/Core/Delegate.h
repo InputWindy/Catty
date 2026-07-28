@@ -370,12 +370,14 @@ private:
 } // namespace Catty
 
 // ---------------------------------------------------------------------------
-// CATTY_DECLARE_* macros (thin aliases over TDelegate / TMulticastDelegate)
+// CATTY_DECLARE_* macros — prefer these for named delegate types.
+// Do not write `using FOnX = TMulticastDelegate<...>` / `TDelegate<...>` at call sites.
 //
 //   CATTY_DECLARE_DELEGATE(FOnReady);
 //   CATTY_DECLARE_DELEGATE_OneParam(FOnScore, int);
 //   CATTY_DECLARE_DELEGATE_RetVal_TwoParams(bool, FOnQuery, int, float);
 //   CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnChanged, int);
+//   CATTY_DECLARE_MULTICAST_DELEGATE_ThreeParams(FStageMulticast, EModuleStage, FApp&, FStageContext&);
 // ---------------------------------------------------------------------------
 
 #define CATTY_DECLARE_DELEGATE(DelegateName) \

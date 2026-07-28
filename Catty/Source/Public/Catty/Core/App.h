@@ -29,8 +29,15 @@ namespace Catty
  */
 class CATTY_API FApp
 {
+	// ---------------------------------------------------------------------------
+	// Type aliases & lifetime
+	// ---------------------------------------------------------------------------
 public:
-	using FStageMulticast = TMulticastDelegate<void(EModuleStage, FApp&, FStageContext&)>;
+	CATTY_DECLARE_MULTICAST_DELEGATE_ThreeParams(
+		FStageMulticast,
+		EModuleStage,
+		FApp&,
+		FStageContext&);
 
 	FApp();
 	virtual ~FApp();
@@ -38,9 +45,64 @@ public:
 	FApp(const FApp&) = delete;
 	FApp& operator=(const FApp&) = delete;
 
-	/** Sole public lifecycle entry: private Initialize → loop → Shutdown. */
+	// ---------------------------------------------------------------------------
+	// Lifecycle
+	// Run owns Initialize → main loop → Shutdown. Games override the hooks below.
+	// ---------------------------------------------------------------------------
+public:
+	/** Sole public lifecycle entry. */
 	void Run();
 
+	[[nodiscard]] bool IsRunning() const { return bRunning; }
+
+	/**
+	 * Bound to Module / Layer multicasts (RegisterModule / PushLayer|Overlay).
+	 * OnAttachLayer / OnDetachLayer also maintain PostStage bindings.
+	 */
+	void OnRequestExit();
+	void OnAttachLayer(FLayer& Layer);
+	void OnDetachLayer(FLayer& Layer);
+	void OnAttachModule(IModule& Module);
+	void OnDetachModule(IModule& Module);
+
+protected:
+	virtual void Configure(FEngineConfig& OutConfig);
+	virtual void RegisterModules();
+	virtual bool PostInitialize();
+	virtual void PreShutdown();
+
+private:
+	bool Initialize();
+	void Shutdown();
+	void RunMainLoop();
+
+	// ---------------------------------------------------------------------------
+	// Core services
+	// Hardcoded engine services (not Modules). Construction order:
+	//   Log → ConsoleManager → Timer → ScriptSystem.
+	// ---------------------------------------------------------------------------
+public:
+	[[nodiscard]] FEngineConfig& GetConfig() { return EngineConfig; }
+	[[nodiscard]] const FEngineConfig& GetConfig() const { return EngineConfig; }
+
+	[[nodiscard]] FLog& GetLog() { return Log; }
+	[[nodiscard]] FConsoleManager& GetConsoleManager() { return ConsoleManager; }
+	[[nodiscard]] FTimer& GetTimer() { return Timer; }
+	[[nodiscard]] FScriptSystem& GetScriptSystem() { return ScriptSystem; }
+	[[nodiscard]] const FScriptSystem& GetScriptSystem() const { return ScriptSystem; }
+
+private:
+	FEngineConfig EngineConfig;
+	FLog Log;
+	FConsoleManager ConsoleManager;
+	FTimer Timer;
+	FScriptSystem ScriptSystem;
+
+	// ---------------------------------------------------------------------------
+	// Modules
+	// Fixed pipeline stage bodies (DAG). Register → topo order → OnStage / Attach.
+	// ---------------------------------------------------------------------------
+public:
 	void RegisterModule(std::unique_ptr<IModule> Module);
 
 	template <typename T>
@@ -57,25 +119,24 @@ public:
 		return const_cast<FApp*>(this)->GetModule<T>();
 	}
 
-	[[nodiscard]] FEngineConfig& GetConfig() { return EngineConfig; }
-	[[nodiscard]] const FEngineConfig& GetConfig() const { return EngineConfig; }
+private:
+	bool RebuildModuleOrder();
+	[[nodiscard]] const std::vector<IModule*>& GetOrderForStage(EModuleStage Stage) const;
 
-	[[nodiscard]] FLog& GetLog() { return Log; }
-	[[nodiscard]] FConsoleManager& GetConsoleManager() { return ConsoleManager; }
-	[[nodiscard]] FTimer& GetTimer() { return Timer; }
-	[[nodiscard]] FScriptSystem& GetScriptSystem() { return ScriptSystem; }
-	[[nodiscard]] const FScriptSystem& GetScriptSystem() const { return ScriptSystem; }
+	void AttachModules();
+	void DetachModules();
 
-	/** Game / tools may request exit; modules Broadcast IModule::OnExitRequested instead. */
-	void RequestExit();
-	[[nodiscard]] bool IsRunning() const { return bRunning; }
+	std::vector<std::unique_ptr<IModule>> Modules;
+	std::unordered_map<std::type_index, IModule*> ModulesByType;
+	std::unordered_map<std::string, IModule*> ModulesByName;
+	std::vector<IModule*> StartupOrder;
+	std::vector<IModule*> ShutdownOrder;
 
+	// ---------------------------------------------------------------------------
+	// Layers
+	// Programmable content stack (World / Editor / Script). Post-bound on Attach.
+	// ---------------------------------------------------------------------------
 protected:
-	virtual void Configure(FEngineConfig& OutConfig);
-	virtual void RegisterModules();
-	virtual bool PostInitialize();
-	virtual void PreShutdown();
-
 	void PushLayer(std::unique_ptr<FLayer> Layer);
 	void PushOverlay(std::unique_ptr<FLayer> Overlay);
 	void ClearLayers();
@@ -86,52 +147,40 @@ private:
 		std::unique_ptr<FLayer> Layer;
 	};
 
+	std::vector<FLayerBinding> LayerBindings;
+	std::size_t LayerInsertIndex = 0;
+
+	// ---------------------------------------------------------------------------
+	// Stage pipeline
+	// Module OnStage then Layer Post multicast per EModuleStage.
+	// ---------------------------------------------------------------------------
+private:
 	static constexpr std::size_t StageCount =
 		static_cast<std::size_t>(EModuleStage::PostShutdown) + 1;
 
-	bool Initialize();
-	void Shutdown();
-	void RunMainLoop();
 	bool ExecuteStage(EModuleStage Stage, FStageContext& Ctx);
+	[[nodiscard]] FStageMulticast& GetPostStageDelegate(EModuleStage Stage);
 
-	bool RebuildModuleOrder();
-	[[nodiscard]] const std::vector<IModule*>& GetOrderForStage(EModuleStage Stage) const;
-	float CalculateDeltaSeconds();
-	static bool IsInitFamily(EModuleStage Stage);
-	static bool IsShutdownFamily(EModuleStage Stage);
-	static std::size_t StageIndex(EModuleStage Stage);
-
-	void AttachModules();
-	void DetachModules();
-	void HandleModuleAttach(IModule& Module);
-	void HandleModuleDetach(IModule& Module);
-
-	void HandleLayerAttach(FLayer& Layer);
-	void HandleLayerDetach(FLayer& Layer);
 	void RebuildLayerPostBindings();
 	void RemoveLayerPostBindings(FLayer& Layer);
 	void BindLayerPostBindings(FLayer& Layer);
 
-	[[nodiscard]] FStageMulticast& GetPostStageDelegate(EModuleStage Stage);
-
-	FEngineConfig EngineConfig;
-	/** Boot order: Log → ConsoleManager → Timer; ScriptSystem with core services. */
-	FLog Log;
-	FConsoleManager ConsoleManager;
-	FTimer Timer;
-	FScriptSystem ScriptSystem;
-
-	std::vector<std::unique_ptr<IModule>> Modules;
-	std::unordered_map<std::type_index, IModule*> ModulesByType;
-	std::unordered_map<std::string, IModule*> ModulesByName;
-	std::vector<IModule*> StartupOrder;
-	std::vector<IModule*> ShutdownOrder;
+	static bool IsInitFamily(EModuleStage Stage);
+	static bool IsShutdownFamily(EModuleStage Stage);
+	static std::size_t StageIndex(EModuleStage Stage);
 
 	std::array<FStageMulticast, StageCount> PostStageDelegates{};
-	std::vector<FLayerBinding> LayerBindings;
-	std::size_t LayerInsertIndex = 0;
+
+	// ---------------------------------------------------------------------------
+	// Frame state
+	// Per-frame timing; UpdateAppState() refreshes these each tick.
+	// ---------------------------------------------------------------------------
+private:
+	/** Sample clock, write DeltaSeconds, advance FrameIndex / LastFrameTimeSeconds. */
+	void UpdateAppState();
 
 	bool bRunning = false;
+	float DeltaSeconds = 0.0f;
 	float FixedUpdateAccumulator = 0.0f;
 	double LastFrameTimeSeconds = 0.0;
 	std::uint64_t FrameIndex = 0;

@@ -46,14 +46,15 @@ struct FStageContext
  * Game content uses FLayer bound to PostStageDelegates instead.
  *
  * Lifecycle multicasts (Attach / Detach) mirror FLayer — listeners optional.
- * OnExitRequested: Broadcast to ask the app to quit; FApp binds on Attach.
+ * OnExitRequested: Broadcast to ask the app to quit; FApp binds OnRequestExit in RegisterModule.
+ * Attach / Detach multicasts: FApp binds OnAttachModule / OnDetachModule in RegisterModule.
  */
 class CATTY_API IModule
 {
 public:
-	using FOnAttach = TMulticastDelegate<void(IModule&)>;
-	using FOnDetach = TMulticastDelegate<void(IModule&)>;
-	using FOnExitRequested = TMulticastDelegate<void()>;
+	CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnAttach, IModule&);
+	CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnDetach, IModule&);
+	CATTY_DECLARE_MULTICAST_DELEGATE(FOnExitRequested);
 
 	virtual ~IModule()
 	{

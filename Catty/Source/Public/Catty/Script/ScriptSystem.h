@@ -42,7 +42,7 @@ class CATTY_API FScriptSystem
 {
 public:
 	/** Fired after Initialize succeeds (and after any Bind queued before init). */
-	using FOnLuaReady = TMulticastDelegate<void(FScriptSystem&)>;
+	CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnLuaReady, FScriptSystem&);
 
 	FScriptSystem();
 	~FScriptSystem();

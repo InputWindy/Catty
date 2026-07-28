@@ -34,7 +34,6 @@
 #include "Catty/Core/Modules/GCModule.h"
 #include "Catty/Core/Modules/ResourceModule.h"
 #include "Catty/Core/Modules/WorkerModule.h"
-#include "Catty/Core/RegisterEngineModules.h"
 #include "Catty/Platform/PlatformWindow.h"
 #include "Catty/RHI/RHI.h"
 #include "Catty/Render/RenderServer.h"
