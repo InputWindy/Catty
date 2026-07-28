@@ -20,7 +20,7 @@ namespace Catty
  *   struct FRangeContext { const T* Data; int* Out; std::size_t Count; };
  *   FRangeContext Ctx{...};
  *   const std::size_t Threads = 4;
- *   App.GetWorkerPool().Fork(Threads, [&Ctx, Threads](std::size_t WorkerIndex)
+ *   App.GetModule<Catty::FWorkerModule>()->GetWorkerPool().Fork(Threads, [&Ctx, Threads](std::size_t WorkerIndex)
  *   {
  *       const std::size_t Begin = Ctx.Count * WorkerIndex / Threads;
  *       const std::size_t End = Ctx.Count * (WorkerIndex + 1) / Threads;

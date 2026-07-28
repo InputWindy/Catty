@@ -16,7 +16,7 @@ namespace Catty
  *   FConsoleManager::Get().GetInt("catty.Window.Width");
  *   if (IConsoleVariable* V = FConsoleManager::Get().Find("r.Foo")) { ... }
  *
- * Startup: FApp loads Config/DefaultEngine.ini [ConsoleVariables] before InitializeEngine,
+ * Startup: FApp loads Config/DefaultEngine.ini [ConsoleVariables] during Initialize,
  * then ApplyEngineCVarsToConfig. Unknown names are queued (early set) and applied on Register.
  *
  * Example:

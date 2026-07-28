@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Catty/Core/Layer.h>
+#include <Catty/Core/Module.h>
 
 /**
  * Project-side editor overlay (ImGui tooling / demo).
@@ -12,7 +13,10 @@ public:
 	FEditorLayer();
 	~FEditorLayer() override = default;
 
-	virtual void OnUpdate(float DeltaSeconds) override;
+	virtual void OnUpdate(
+		Catty::EModuleStage Stage,
+		Catty::FApp& App,
+		Catty::FStageContext& Ctx) override;
 
 	bool bShowDemoWindow = true;
 };

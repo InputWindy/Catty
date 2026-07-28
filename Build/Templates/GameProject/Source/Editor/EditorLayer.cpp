@@ -1,5 +1,7 @@
 #include "Editor/EditorLayer.h"
 
+#include <Catty/Core/App.h>
+
 #include <imgui.h>
 
 FEditorLayer::FEditorLayer()
@@ -7,8 +9,16 @@ FEditorLayer::FEditorLayer()
 {
 }
 
-void FEditorLayer::OnUpdate(float /*DeltaSeconds*/)
+void FEditorLayer::OnUpdate(
+	Catty::EModuleStage /*Stage*/,
+	Catty::FApp& /*App*/,
+	Catty::FStageContext& /*Ctx*/)
 {
+	if (ImGui::GetCurrentContext() == nullptr)
+	{
+		return;
+	}
+
 	if (bShowDemoWindow)
 	{
 		ImGui::ShowDemoWindow(&bShowDemoWindow);

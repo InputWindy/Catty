@@ -1,5 +1,6 @@
 #include "World/WorldLayer.h"
 
+#include <Catty/Core/App.h>
 #include <Catty/Core/Log.h>
 
 #include <utility>
@@ -23,7 +24,10 @@ void FWorldLayer::OnDetach()
 	World.Shutdown();
 }
 
-void FWorldLayer::OnUpdate(float DeltaSeconds)
+void FWorldLayer::OnUpdate(
+	Catty::EModuleStage /*Stage*/,
+	Catty::FApp& /*App*/,
+	Catty::FStageContext& Ctx)
 {
-	World.Tick(DeltaSeconds);
+	World.Tick(Ctx.DeltaSeconds);
 }

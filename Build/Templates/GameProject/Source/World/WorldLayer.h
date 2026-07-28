@@ -3,6 +3,7 @@
 #include "World/World.h"
 
 #include <Catty/Core/Layer.h>
+#include <Catty/Core/Module.h>
 
 /**
  * Project layer that owns and ticks FWorld.
@@ -16,7 +17,10 @@ public:
 
 	virtual void OnAttach() override;
 	virtual void OnDetach() override;
-	virtual void OnUpdate(float DeltaSeconds) override;
+	virtual void OnUpdate(
+		Catty::EModuleStage Stage,
+		Catty::FApp& App,
+		Catty::FStageContext& Ctx) override;
 
 	[[nodiscard]] FWorld& GetWorld() { return World; }
 	[[nodiscard]] const FWorld& GetWorld() const { return World; }

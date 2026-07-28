@@ -32,7 +32,7 @@ struct FEngineConfig
 	bool bCreateMainWindow = true;
 	bool bResizableWindow = true;
 
-	/** Clear color used by the default FApp::Render path. */
+	/** Clear color used by the default clear/present path (Render / ImGui PostRender). */
 	float ClearColorR = 0.08f;
 	float ClearColorG = 0.10f;
 	float ClearColorB = 0.16f;
