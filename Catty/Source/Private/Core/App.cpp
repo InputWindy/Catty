@@ -592,12 +592,22 @@ void FApp::BindLayerPostBindings(FLayer& Layer)
 
 void FApp::RebuildLayerPostBindings()
 {
-	for (FLayerBinding& Entry : LayerBindings)
+	// Clear stage posts first — RemoveAll alone is not enough if older AddRaw
+	// bindings lacked RawObject (would leave duplicate Layer callbacks).
+	static constexpr EModuleStage kLayerStages[] = {
+		EModuleStage::BeginFrame,
+		EModuleStage::FixedUpdate,
+		EModuleStage::Update,
+		EModuleStage::LateUpdate,
+		EModuleStage::PreRender,
+		EModuleStage::Render,
+		EModuleStage::PostRender,
+		EModuleStage::EndFrame,
+		EModuleStage::ProcessInput,
+	};
+	for (const EModuleStage Stage : kLayerStages)
 	{
-		if (Entry.Layer)
-		{
-			RemoveLayerPostBindings(*Entry.Layer);
-		}
+		GetPostStageDelegate(Stage).Clear();
 	}
 
 	for (FLayerBinding& Entry : LayerBindings)

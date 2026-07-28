@@ -246,21 +246,31 @@ public:
 	template <typename TUser>
 	[[nodiscard]] FDelegateHandle AddRaw(TUser* UserObject, void (TUser::*Method)(TArgs...))
 	{
-		return AddInternal(FFunction(
-			[UserObject, Method](TArgs... Args)
-			{
-				(UserObject->*Method)(std::forward<TArgs>(Args)...);
-			}));
+		FBinding Binding;
+		Binding.Handle.Id = DelegatePrivate::NextHandleId();
+		Binding.RawObject = UserObject;
+		Binding.RawMethod = DetailMethodKey(Method);
+		Binding.Function = [UserObject, Method](TArgs... Args)
+		{
+			(UserObject->*Method)(std::forward<TArgs>(Args)...);
+		};
+		Bindings.push_back(std::move(Binding));
+		return Bindings.back().Handle;
 	}
 
 	template <typename TUser>
 	[[nodiscard]] FDelegateHandle AddRaw(const TUser* UserObject, void (TUser::*Method)(TArgs...) const)
 	{
-		return AddInternal(FFunction(
-			[UserObject, Method](TArgs... Args)
-			{
-				(UserObject->*Method)(std::forward<TArgs>(Args)...);
-			}));
+		FBinding Binding;
+		Binding.Handle.Id = DelegatePrivate::NextHandleId();
+		Binding.RawObject = const_cast<TUser*>(UserObject);
+		Binding.RawMethod = DetailMethodKey(Method);
+		Binding.Function = [UserObject, Method](TArgs... Args)
+		{
+			(UserObject->*Method)(std::forward<TArgs>(Args)...);
+		};
+		Bindings.push_back(std::move(Binding));
+		return Bindings.back().Handle;
 	}
 
 	/** Add if no existing binding shares the same handle id (always unique) — prefer AddUniqueRaw. */
