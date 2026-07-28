@@ -657,3 +657,227 @@ def clean_project_tree(project_dir: Path, *, dry_run: bool = False) -> list[Path
 			print(f"[WARN] Still locked (skipped): {t}")
 
 	return removed
+
+
+# ---------------------------------------------------------------------------
+# .cplugin scan (module DAG for multi-DLL builds)
+# ---------------------------------------------------------------------------
+
+CPLUGIN_FILE_VERSION = 1
+DEFAULT_ENGINE_PLUGINS_DIR = ENGINE_ROOT / "Catty" / "Plugins"
+
+
+def discover_cplugin_files(plugin_roots: list[Path]) -> list[Path]:
+	"""Find *.cplugin under each root (one level of plugin folders, or loose files)."""
+	found: list[Path] = []
+	seen: set[Path] = set()
+	for root in plugin_roots:
+		root = root.resolve()
+		if not root.is_dir():
+			continue
+		# Prefer <PluginName>/<PluginName>.cplugin
+		for child in sorted(root.iterdir()):
+			if not child.is_dir():
+				continue
+			if child.name.startswith("."):
+				continue
+			candidate = child / f"{child.name}.cplugin"
+			if candidate.is_file():
+				resolved = candidate.resolve()
+				if resolved not in seen:
+					seen.add(resolved)
+					found.append(resolved)
+				continue
+			# Fallback: any .cplugin directly in the plugin folder
+			for cplugin in sorted(child.glob("*.cplugin")):
+				resolved = cplugin.resolve()
+				if resolved not in seen:
+					seen.add(resolved)
+					found.append(resolved)
+		# Loose .cplugin at root (discouraged, still accepted)
+		for cplugin in sorted(root.glob("*.cplugin")):
+			resolved = cplugin.resolve()
+			if resolved not in seen:
+				seen.add(resolved)
+				found.append(resolved)
+	return found
+
+
+def read_cplugin(path: Path) -> dict[str, Any]:
+	path = path.resolve()
+	with path.open("r", encoding="utf-8") as f:
+		data = json.load(f)
+	if not isinstance(data, dict):
+		raise ValueError(f"Invalid .cplugin (root must be object): {path}")
+	version = data.get("FileVersion")
+	if version is None:
+		raise ValueError(f"Invalid .cplugin (missing FileVersion): {path}")
+	if int(version) != CPLUGIN_FILE_VERSION:
+		raise ValueError(
+			f"Unsupported .cplugin FileVersion {version} (expected {CPLUGIN_FILE_VERSION}): {path}"
+		)
+	modules = data.get("Modules")
+	if not isinstance(modules, list) or not modules:
+		raise ValueError(f"Invalid .cplugin (Modules must be a non-empty array): {path}")
+	return data
+
+
+def _normalize_module_entry(raw: Any, *, cplugin_path: Path) -> dict[str, Any]:
+	if not isinstance(raw, dict):
+		raise ValueError(f"Invalid module entry in {cplugin_path}")
+	name = raw.get("Name")
+	if not isinstance(name, str) or not name.strip():
+		raise ValueError(f"Module missing Name in {cplugin_path}")
+	name = name.strip()
+	module_type = raw.get("Type", "Runtime")
+	if not isinstance(module_type, str) or not module_type.strip():
+		module_type = "Runtime"
+	deps_raw = raw.get("Dependencies", [])
+	if deps_raw is None:
+		deps_raw = []
+	if not isinstance(deps_raw, list):
+		raise ValueError(f"Module '{name}' Dependencies must be an array in {cplugin_path}")
+	deps: list[str] = []
+	for dep in deps_raw:
+		if not isinstance(dep, str) or not dep.strip():
+			raise ValueError(f"Module '{name}' has invalid dependency in {cplugin_path}")
+		deps.append(dep.strip())
+	return {
+		"Name": name,
+		"Type": module_type.strip(),
+		"Dependencies": deps,
+	}
+
+
+def topo_sort_modules(
+	modules_by_name: dict[str, dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+	"""
+	Return (startup_order, shutdown_order).
+	Raises ValueError on missing dependency or cycle.
+	"""
+	in_degree: dict[str, int] = {name: 0 for name in modules_by_name}
+	adj: dict[str, list[str]] = {name: [] for name in modules_by_name}
+
+	for name, module in modules_by_name.items():
+		for dep in module["Dependencies"]:
+			if dep not in modules_by_name:
+				raise ValueError(f"Module '{name}' depends on missing module '{dep}'")
+			adj[dep].append(name)
+			in_degree[name] += 1
+
+	# Stable: among zero-degree nodes, preserve declaration order via sorted ready by first-seen index
+	order_index = {name: i for i, name in enumerate(modules_by_name.keys())}
+	ready = sorted(
+		[name for name, deg in in_degree.items() if deg == 0],
+		key=lambda n: order_index[n],
+	)
+	startup: list[str] = []
+	while ready:
+		name = ready.pop(0)
+		startup.append(name)
+		next_ready: list[str] = []
+		for nxt in adj[name]:
+			in_degree[nxt] -= 1
+			if in_degree[nxt] == 0:
+				next_ready.append(nxt)
+		next_ready.sort(key=lambda n: order_index[n])
+		ready.extend(next_ready)
+		ready.sort(key=lambda n: order_index[n])
+
+	if len(startup) != len(modules_by_name):
+		remaining = [n for n, d in in_degree.items() if d > 0]
+		raise ValueError(f"Module dependency cycle involving: {', '.join(sorted(remaining))}")
+
+	shutdown = list(reversed(startup))
+	return startup, shutdown
+
+
+def scan_plugin_modules(
+	plugin_roots: list[Path],
+	*,
+	include_disabled: bool = False,
+) -> dict[str, Any]:
+	"""
+	Scan .cplugin manifests and resolve a global module dependency DAG.
+
+	Returns a JSON-serializable dict with Plugins, Modules, BuildOrder, ShutdownOrder.
+	"""
+	cplugin_files = discover_cplugin_files(plugin_roots)
+	plugins_out: list[dict[str, Any]] = []
+	modules_by_name: dict[str, dict[str, Any]] = {}
+
+	for cplugin_path in cplugin_files:
+		data = read_cplugin(cplugin_path)
+		enabled = data.get("EnabledByDefault", True)
+		if enabled is None:
+			enabled = True
+		if not include_disabled and not bool(enabled):
+			continue
+
+		plugin_dir = cplugin_path.parent
+		plugin_name = plugin_dir.name
+		friendly = data.get("FriendlyName", plugin_name)
+
+		plugin_modules: list[dict[str, Any]] = []
+		for raw in data["Modules"]:
+			normalized = _normalize_module_entry(raw, cplugin_path=cplugin_path)
+			name = normalized["Name"]
+			if name in modules_by_name:
+				other = modules_by_name[name]["Cplugin"]
+				raise ValueError(
+					f"Duplicate module name '{name}' in:\n  {cplugin_path}\n  and\n  {other}"
+				)
+			entry = {
+				"Name": name,
+				"Type": normalized["Type"],
+				"Dependencies": list(normalized["Dependencies"]),
+				"Plugin": plugin_name,
+				"PluginPath": str(plugin_dir.resolve()),
+				"Cplugin": str(cplugin_path.resolve()),
+				"SourceDir": str((plugin_dir / "Source" / name).resolve()),
+			}
+			modules_by_name[name] = entry
+			plugin_modules.append(
+				{
+					"Name": name,
+					"Type": normalized["Type"],
+					"Dependencies": list(normalized["Dependencies"]),
+				}
+			)
+
+		plugins_out.append(
+			{
+				"Name": plugin_name,
+				"FriendlyName": friendly,
+				"Path": str(plugin_dir.resolve()),
+				"Cplugin": str(cplugin_path.resolve()),
+				"EnabledByDefault": bool(enabled),
+				"Modules": plugin_modules,
+			}
+		)
+
+	startup, shutdown = topo_sort_modules(modules_by_name)
+
+	return {
+		"FileVersion": 1,
+		"PluginRoots": [str(p.resolve()) for p in plugin_roots if p.is_dir()],
+		"Plugins": plugins_out,
+		"Modules": [modules_by_name[name] for name in startup],
+		"BuildOrder": startup,
+		"ShutdownOrder": shutdown,
+	}
+
+
+def resolve_plugin_roots_for_cproject(cproject_path: Path) -> list[Path]:
+	"""Engine Catty/Plugins + game Project/Plugins (or Plugins/) when present."""
+	cproject_path = cproject_path.resolve()
+	data = read_cproject(cproject_path)
+	engine_root = resolve_engine_directory(cproject_path, data)
+	project_dir = cproject_path.parent
+	roots = [engine_root / "Catty" / "Plugins"]
+	for candidate in (project_dir / "Plugins", project_dir / "Project" / "Plugins"):
+		if candidate.is_dir():
+			roots.append(candidate)
+			break
+	return roots

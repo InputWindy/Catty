@@ -13,6 +13,7 @@ Engine-local tooling. Root only exposes thin user-facing `.bat` launchers.
 | `package.py` | Headless CLI package |
 | `clean.py` | Wipe generated/temp files (`clean.bat` at engine root) |
 | `object_reflect_codegen.py` / `.bat` | Scan `CATTY_OBJECT` → ObjectReflectTypes.gen.* |
+| `scan_plugins.py` / `scan_plugins.bat` | Scan `.cplugin` → module DAG / build-order JSON |
 | `reflect_codegen.bat` | Deprecated alias → `object_reflect_codegen.bat` |
 | `catty_tools.py` | Shared helpers |
 

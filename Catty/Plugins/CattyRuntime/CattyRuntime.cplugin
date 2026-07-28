@@ -1,0 +1,46 @@
+{
+	"FileVersion": 1,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Catty Runtime",
+	"Description": "Built-in engine modules (each Module builds as its own DLL).",
+	"Category": "Engine",
+	"EnabledByDefault": true,
+	"Modules": [
+		{
+			"Name": "Engine",
+			"Type": "Runtime",
+			"Dependencies": []
+		},
+		{
+			"Name": "Platform",
+			"Type": "Runtime",
+			"Dependencies": ["Engine"]
+		},
+		{
+			"Name": "Render",
+			"Type": "Runtime",
+			"Dependencies": ["Platform"]
+		},
+		{
+			"Name": "ImGui",
+			"Type": "Runtime",
+			"Dependencies": ["Render", "Platform"]
+		},
+		{
+			"Name": "GC",
+			"Type": "Runtime",
+			"Dependencies": ["ImGui"]
+		},
+		{
+			"Name": "Resource",
+			"Type": "Runtime",
+			"Dependencies": ["GC"]
+		},
+		{
+			"Name": "Worker",
+			"Type": "Runtime",
+			"Dependencies": ["Resource"]
+		}
+	]
+}
