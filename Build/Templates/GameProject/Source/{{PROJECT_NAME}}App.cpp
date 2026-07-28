@@ -1,6 +1,5 @@
 #include <Catty/Catty.h>
 #include <Catty/EntryPoint.h>
-#include <Catty/Core/RegisterEngineModules.h>
 #include <Catty/Script/ScriptLayer.h>
 
 #include "Editor/EditorLayer.h"
@@ -25,7 +24,13 @@ protected:
 
 	virtual void RegisterModules() override
 	{
-		Catty::RegisterEngineModules(*this);
+		RegisterModule(std::make_unique<Catty::FEngineModule>());
+		RegisterModule(std::make_unique<Catty::FPlatformModule>());
+		RegisterModule(std::make_unique<Catty::FRenderModule>());
+		RegisterModule(std::make_unique<Catty::FImGuiModule>());
+		RegisterModule(std::make_unique<Catty::FGCModule>());
+		RegisterModule(std::make_unique<Catty::FResourceModule>());
+		RegisterModule(std::make_unique<Catty::FWorkerModule>());
 	}
 
 	virtual bool PostInitialize() override
