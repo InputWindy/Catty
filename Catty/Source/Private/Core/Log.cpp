@@ -1,7 +1,7 @@
-#include "Core/Log.h"
+#include <Core/Log.h>
 
-#include "Core/App.h"
-#include "Core/ConsoleManager.h"
+#include <Core/App.h>
+#include <Core/ConsoleManager.h>
 
 #include <algorithm>
 #include <filesystem>

@@ -7,7 +7,7 @@
  * FApp ctor assigns Catty::GApp. CATTY_* / CVar / Timer resolve through GApp.
  */
 
-#include "Core/App.h"
+#include <Core/App.h>
 
 #include <cstdio>
 

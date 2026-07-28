@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Platform/PlatformWindow.h"
-#include "RHI/RHI.h"
-#include "Server/ThreadedServer.h"
+#include <Core/PlatformWindow.h>
+#include <Render/RHI/RHI.h>
+#include <Core/Server/ThreadedServer.h>
 
 namespace Catty
 {

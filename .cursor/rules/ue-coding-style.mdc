@@ -58,6 +58,14 @@ namespace test0 {
 - 不在头文件里滥用 `using namespace`
 - 游戏入口：`#include <Catty.h>` + `#include <EntryPoint.h>`，继承 `Catty::FApp`，实现 `CreateApplication()`
 
+## Include 形式
+
+- **Public** 路径上的头（引擎 `Source/Public`、插件 `Source/*/Public`、Generated 公共生成头）：一律 `#include <...>`  
+  它们在编译的 include path 里，对外暴露。
+- **Private** 路径上的头（`Source/Private`、插件 `Source/*/Private`）：一律 `#include "..."`  
+  Private 不对外暴露，只用引号做同模块内部引用。
+- 第三方 / 系统头：保持尖括号（如 `<imgui.h>`、`<vector>`）。
+
 ## 注释语言
 
 - **所有代码注释必须用英文**（`//`、`/* */`、`/** */` 文档注释一律如此）

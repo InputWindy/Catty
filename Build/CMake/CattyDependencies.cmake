@@ -121,13 +121,13 @@ target_include_directories(imgui
 	PUBLIC
 		"${CATTY_IMGUI_SOURCE_DIR}"
 		"${CATTY_IMGUI_SOURCE_DIR}/backends"
-		# IMGUI_USER_CONFIG resolves to UI/ImGuiConfig.h under this include root.
+		# IMGUI_USER_CONFIG resolves to Render/UI/ImGuiConfig.h under this include root.
 		"${_CATTY_PUBLIC_HEADERS}"
 )
 
 target_compile_definitions(imgui
 	PUBLIC
-		IMGUI_USER_CONFIG="UI/ImGuiConfig.h"
+		IMGUI_USER_CONFIG="Render/UI/ImGuiConfig.h"
 		CATTY_WITH_IMGUI=1
 	PRIVATE
 		$<$<BOOL:${CATTY_BUILD_SHARED}>:CATTY_BUILD_SHARED=1>

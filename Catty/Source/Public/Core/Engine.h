@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/Export.h"
-#include "Platform/PlatformWindow.h"
+#include <Core/Export.h>
+#include <Core/PlatformWindow.h>
 
 #include <cstdint>
 #include <string>

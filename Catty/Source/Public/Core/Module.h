@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/Delegate.h"
-#include "Core/Export.h"
+#include <Core/Delegate.h>
+#include <Core/Export.h>
 
 #include <cstdint>
 #include <string>
@@ -74,7 +74,7 @@ public:
 	 * Fixed stage body (before Layers / Post broadcast).
 	 * Init-family may return false to abort startup.
 	 */
-	virtual bool OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
+	virtual bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 	{
 		(void)Stage;
 		(void)App;
@@ -102,7 +102,7 @@ public:
 
 	/**
 	 * Leave active lifetime: Broadcast GetOnDetach(), then virtual OnDetach().
-	 * FApp calls after Shutdown stages (once module OnStage teardown has run).
+	 * FApp calls after Shutdown stages (once module ExecuteStage teardown has run).
 	 */
 	void Detach()
 	{

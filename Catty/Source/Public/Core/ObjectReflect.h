@@ -37,7 +37,7 @@
  * Lua usertypes are generated from the same scan (ObjectRef ↔ catty.object / package / …).
  */
 
-#include "Core/Export.h"
+#include <Core/Export.h>
 
 #include <cstddef>
 #include <cstdint>

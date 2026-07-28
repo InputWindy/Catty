@@ -1,15 +1,15 @@
 #pragma once
 
-#include "Core/ConsoleManager.h"
-#include "Core/Delegate.h"
-#include "Core/Engine.h"
-#include "Core/Export.h"
-#include "Core/Layer.h"
-#include "Core/Log.h"
-#include "Core/Module.h"
-#include "Core/Timer.h"
-#include "Core/WorkerPool.h"
-#include "Script/ScriptSystem.h"
+#include <Core/ConsoleManager.h>
+#include <Core/Delegate.h>
+#include <Core/Engine.h>
+#include <Core/Export.h>
+#include <Core/Layer.h>
+#include <Core/Log.h>
+#include <Core/Module.h>
+#include <Core/Timer.h>
+#include <Core/WorkerPool.h>
+#include <Core/Layer/ScriptSystem.h>
 
 #include <array>
 #include <cstdint>
@@ -68,6 +68,7 @@ public:
 
 protected:
 	virtual void Configure(FEngineConfig& OutConfig);
+	/** Registers built-in Platform / Render / GC / Resource. Override and call FApp::RegisterModules() first for extras. */
 	virtual void RegisterModules();
 	virtual bool PostInitialize();
 	virtual void PreShutdown();
@@ -108,7 +109,7 @@ private:
 
 	// ---------------------------------------------------------------------------
 	// Modules
-	// Fixed pipeline stage bodies (DAG). Register → topo order → OnStage / Attach.
+	// Fixed pipeline stage bodies (DAG). Register → topo order → ExecuteStage / Attach.
 	// ---------------------------------------------------------------------------
 public:
 	void RegisterModule(std::unique_ptr<IModule> Module);
@@ -129,10 +130,6 @@ public:
 
 	[[nodiscard]] IModule* GetModuleByName(const char* Name);
 	[[nodiscard]] const IModule* GetModuleByName(const char* Name) const;
-
-	/** When true, ImGui (or another overlay) owns EndFrame + present after Layer OnRender. */
-	void SetPresentOwnedExternally(bool bOwned) { bPresentOwnedExternally = bOwned; }
-	[[nodiscard]] bool IsPresentOwnedExternally() const { return bPresentOwnedExternally; }
 
 private:
 	bool RebuildModuleOrder();
@@ -167,7 +164,7 @@ private:
 
 	// ---------------------------------------------------------------------------
 	// Stage pipeline
-	// Module OnStage then Layer Post multicast per EModuleStage.
+	// Module ExecuteStage then Layer Post multicast per EModuleStage.
 	// ---------------------------------------------------------------------------
 private:
 	static constexpr std::size_t StageCount =
@@ -195,7 +192,6 @@ private:
 	void UpdateAppState();
 
 	bool bRunning = false;
-	bool bPresentOwnedExternally = false;
 	float DeltaSeconds = 0.0f;
 	float FixedUpdateAccumulator = 0.0f;
 	double LastFrameTimeSeconds = 0.0;

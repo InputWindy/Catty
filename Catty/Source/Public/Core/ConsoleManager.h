@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/ConsoleVariable.h"
-#include "Core/Export.h"
+#include <Core/ConsoleVariable.h>
+#include <Core/Export.h>
 
 #include <string>
 #include <vector>

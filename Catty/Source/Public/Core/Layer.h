@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Core/Delegate.h"
-#include "Core/Export.h"
-#include "Core/Module.h"
+#include <Core/Delegate.h>
+#include <Core/Export.h>
+#include <Core/Module.h>
 
 #include <string>
 

@@ -1,4 +1,4 @@
-#include "Core/ConfigFile.h"
+#include <Core/ConfigFile.h>
 
 #include <cctype>
 #include <fstream>

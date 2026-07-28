@@ -1,6 +1,6 @@
 #include <Catty.h>
 #include <EntryPoint.h>
-#include <Script/ScriptLayer.h>
+#include <Core/Layer/ScriptLayer.h>
 
 #include "Editor/EditorLayer.h"
 #include "World/WorldLayer.h"
@@ -20,15 +20,6 @@ protected:
 		OutConfig.CachedDir = "Cached";
 		OutConfig.SavedDir = "Saved";
 		OutConfig.ProjectConfigDir = "Config";
-	}
-
-	virtual void RegisterModules() override
-	{
-		RegisterModule(std::make_unique<Catty::FPlatformModule>());
-		RegisterModule(std::make_unique<Catty::FRenderModule>());
-		RegisterModule(std::make_unique<Catty::FImGuiModule>());
-		RegisterModule(std::make_unique<Catty::FGCModule>());
-		RegisterModule(std::make_unique<Catty::FResourceModule>());
 	}
 
 	virtual bool PostInitialize() override

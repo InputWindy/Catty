@@ -57,10 +57,7 @@ set(_CATTY_SOURCES_FILTERED "")
 foreach(_src IN LISTS CATTY_SOURCES)
 	string(FIND "${_src}" "/Generated/" _catty_gen_pos)
 	string(FIND "${_src}" "\\Generated\\" _catty_gen_pos_win)
-	string(FIND "${_src}" "/Core/Modules/" _catty_mod_pos)
-	string(FIND "${_src}" "\\Core\\Modules\\" _catty_mod_pos_win)
-	if(_catty_gen_pos EQUAL -1 AND _catty_gen_pos_win EQUAL -1
-		AND _catty_mod_pos EQUAL -1 AND _catty_mod_pos_win EQUAL -1)
+	if(_catty_gen_pos EQUAL -1 AND _catty_gen_pos_win EQUAL -1)
 		list(APPEND _CATTY_SOURCES_FILTERED "${_src}")
 	endif()
 endforeach()
@@ -220,13 +217,4 @@ else()
 		SCAN_SCRIPT "${_CATTY_SCAN_PLUGINS_PY}"
 		PYTHON_EXE "${_CATTY_LOCAL_PYTHON}"
 	)
-endif()
-
-# CResourceManager owns FResourceManager + private FResourceServer (needs sol2 / lua / json).
-if(TARGET CResourceManager)
-	target_include_directories(CResourceManager PRIVATE
-		"${CATTY_SOL2_INCLUDE_DIR}"
-		"${CATTY_NLOHMANN_JSON_INCLUDE_DIR}"
-	)
-	target_link_libraries(CResourceManager PRIVATE lua)
 endif()

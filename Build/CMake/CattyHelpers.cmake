@@ -210,7 +210,7 @@ function(catty_add_plugin_modules)
 		endforeach()
 		set(_MOD_SOURCES "${_MOD_SOURCES_NORM}")
 
-		# Target / DLL = module Name (e.g. CPlatformWindow).
+		# Target / DLL = module Name (e.g. CMyFeature).
 		set(_MOD_TARGET "${_MOD_NAME}")
 		string(TOUPPER "${_MOD_NAME}" _MOD_EXPORT_TOKEN)
 

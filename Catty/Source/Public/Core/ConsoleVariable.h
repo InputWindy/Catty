@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/Delegate.h"
-#include "Core/Export.h"
+#include <Core/Delegate.h>
+#include <Core/Export.h>
 
 #include <cstdint>
 #include <functional>

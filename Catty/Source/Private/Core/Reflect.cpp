@@ -1,14 +1,14 @@
-#include "Core/ObjectReflect.h"
+#include <Core/ObjectReflect.h>
 
-#include "Resource/Object.h"
+#include <Core/Object.h>
 
-#include "Resource/Package.h"
+#include <Core/Resource/Package.h>
 
-#include "Resource/Resource.h"
+#include <Core/Resource/Resource.h>
 
-#include "Resource/ResourceHandle.h"
+#include <Core/Resource/ResourceHandle.h>
 
-#include "ObjectReflectTypes.gen.h"
+#include <ObjectReflectTypes.gen.h>
 
 
 

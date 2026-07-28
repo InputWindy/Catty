@@ -1,5 +1,5 @@
-#include "Core/ObjectReflect.h"
-#include "Resource/Object.h"
+#include <Core/ObjectReflect.h>
+#include <Core/Object.h>
 #include <algorithm>
 namespace Catty
 {

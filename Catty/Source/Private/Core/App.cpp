@@ -1,12 +1,17 @@
-#include "Core/App.h"
-#include "Core/ConsoleManager.h"
-#include "Core/Log.h"
-#include "Core/Timer.h"
-#include "Core/WorkerPool.h"
+#include <Core/App.h>
+#include <Core/ConsoleManager.h>
+#include <Core/Log.h>
+#include <Core/Modules/GCModule.h>
+#include <Core/Modules/PlatformModule.h>
+#include <Core/Modules/RenderModule.h>
+#include <Core/Modules/ResourceModule.h>
+#include <Core/Timer.h>
+#include <Core/WorkerPool.h>
 
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <memory>
 #include <utility>
 
 namespace Catty
@@ -113,6 +118,10 @@ void FApp::Configure(FEngineConfig& /*OutConfig*/)
 
 void FApp::RegisterModules()
 {
+	RegisterModule(std::make_unique<FPlatformModule>());
+	RegisterModule(std::make_unique<FRenderModule>());
+	RegisterModule(std::make_unique<FGCModule>());
+	RegisterModule(std::make_unique<FResourceModule>());
 }
 
 bool FApp::PostInitialize()
@@ -544,7 +553,7 @@ bool FApp::ExecuteStage(EModuleStage Stage, FStageContext& Ctx)
 {
 	for (IModule* Module : GetOrderForStage(Stage))
 	{
-		if (!Module->OnStage(Stage, *this, Ctx))
+		if (!Module->ExecuteStage(Stage, *this, Ctx))
 		{
 			if (IsInitFamily(Stage))
 			{

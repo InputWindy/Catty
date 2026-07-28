@@ -1,36 +1,42 @@
 # Catty Engine Plugins
 
-Drop engine-wide plugins here. Each plugin is a folder with a `.cplugin` manifest
-(JSON, UTF-8). Game-specific plugins belong in the game project's `Plugins/`.
+Optional runtime plugins live here (`.cplugin` + `Source/`). They are **not** part of
+`Catty.dll`.
 
-**Convention:** one feature = one plugin = one module. `Catty.dll` is the engine
-core (`FApp` + Log / Console / Timer / WorkerPool / ScriptSystem).
+Built-in always-on modules ship inside the engine core instead:
 
-`FResourceServer` is a private implementation detail of the **CResourceManager**
-plugin (compiled into that DLL), not a separate plugin.
+| Module class | `GetName()` | Location |
+|--------------|-------------|----------|
+| `FPlatformModule` | `Platform` | `Source/Public/Core/Modules/` |
+| `FRenderModule` | `Render` | (same) |
+| `FGCModule` | `GC` | (same) |
+| `FResourceModule` | `Resource` | (same) |
 
-## Naming
+`FApp::RegisterModules()` registers those four. Game apps only need extra
+`RegisterModule` calls for optional / project plugins.
+
+Game-specific plugins belong in the game project's `Plugins/`.
+
+## Optional plugin naming
 
 | Layer | Rule | Example |
 |-------|------|---------|
-| Plugin folder / `.cplugin` / CMake target / DLL / `GetName()` | `C` + subsystem | `CResourceManager` |
-| Module class | `F` + role + `Module` | `class FResourceModule` |
-| Module headers | `*Module.h` / `*Module.cpp` | `#include "ResourceModule.h"` |
-| Export macros | per-plugin `Public/<CName>Api.h` | `#include "CResourceManagerApi.h"` |
-
-Built-in plugins: `CPlatformWindow`, `CRenderServer`, `CImGuiSystem`,
-`CGCManager`, `CResourceManager`.
+| Plugin folder / `.cplugin` / CMake target / DLL / `GetName()` | `C` + subsystem | `CMyFeature` |
+| Module class | `F` + role + `Module` | `class FMyFeatureModule` |
+| Module headers | Public path → `<>` | `#include <MyFeatureModule.h>` |
+| Private headers | Private path → `""` | `#include "MyFeaturePrivate.h"` |
+| Export macros | per-plugin `Public/<CName>Api.h` | `#include <CMyFeatureApi.h>` |
 
 ## Game `.cproject` Plugins list
 
 ```json
 "Plugins": [
-  { "Name": "CPlatformWindow", "Enabled": true },
-  { "Name": "CResourceManager", "Enabled": true }
+  { "Name": "CMyFeature", "Enabled": true }
 ]
 ```
 
-Module dependency cycles / missing deps → **FATAL** at configure.
+Empty `"Plugins": []` means no optional plugin DLLs. Module dependency cycles /
+missing deps → **FATAL** at configure.
 
 ## Layout
 
