@@ -3,6 +3,7 @@
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Json.h"
 #include "Catty/Core/Log.h"
+#include "Catty/Script/ScriptSystem.h"
 #include "Resource/ResourceServer.h"
 
 #include <algorithm>
@@ -53,6 +54,13 @@ FResourceManager::FResourceManager()
 FResourceManager::~FResourceManager()
 {
 	Shutdown();
+}
+
+void FResourceManager::BindLua(FScriptSystem& Script)
+{
+	(void)Script;
+	// Catalog find/get is not ResourceManager's Lua surface.
+	// Push FObjectRef / FPackage into Lua from game/engine call sites instead.
 }
 
 bool FResourceManager::IsInitialized() const

@@ -280,7 +280,7 @@ flowchart TB
   ImGui --> GC["GC"]
   GC --> Res["Resource"]
   Res --> Work["Worker"]
-  Res --> Scr["Script"]
+  Work --> Scr["Script"]
 		</pre>
 		<table>
 			<thead><tr><th>Module</th><th>依赖</th><th>Init 要点</th><th>Tick / 其它 stage</th></tr></thead>
@@ -292,7 +292,7 @@ flowchart TB
 				<tr><td><code>FGCModule</code></td><td>ImGui</td><td><code>GCManager::Initialize</code></td><td>Update：<code>GCManager.Tick</code></td></tr>
 				<tr><td><code>FResourceModule</code></td><td>GC</td><td><code>ResourceManager::Initialize(GC)</code></td><td>—</td></tr>
 				<tr><td><code>FWorkerModule</code></td><td>Resource</td><td><code>WorkerPool::Initialize</code></td><td>—</td></tr>
-				<tr><td><code>FScriptModule</code></td><td>Resource</td><td>Lua + BindResourceManager + main.lua</td><td>Post：OnUpdate / OnFixedUpdate</td></tr>
+				<tr><td><code>FScriptModule</code></td><td>Worker</td><td>Lua + OnLuaReady（ILuaBindable 自动 Bind）+ main.lua</td><td>Post：OnUpdate / OnFixedUpdate</td></tr>
 			</tbody>
 		</table>
 		<ul>

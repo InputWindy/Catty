@@ -2,7 +2,6 @@
 
 #include "Catty/Core/ConsoleManager.h"
 #include "Catty/Core/Log.h"
-#include "Catty/Resource/ResourceManager.h"
 #include "LuaObjectReflect.h"
 
 #include <filesystem>
@@ -125,20 +124,36 @@ bool FScriptSystem::Initialize(const std::string& InScriptsDirectory)
 
 	bInitialized = true;
 	CATTY_CORE_INFO("FScriptSystem initialized (Scripts='{}')", ScriptsDirectory);
+
+	for (ILuaBindable* Bindable : PendingBindables)
+	{
+		if (Bindable)
+		{
+			Bindable->BindLua(*this);
+		}
+	}
+	PendingBindables.clear();
+
+	OnLuaReady.Broadcast(*this);
 	return true;
 }
 
-void FScriptSystem::BindResourceManager(FResourceManager& ResourceManager)
+void FScriptSystem::Bind(ILuaBindable& Bindable)
 {
 	if (!bInitialized || !Impl)
 	{
+		PendingBindables.push_back(&Bindable);
 		return;
 	}
-	BindLuaResourceManager(Impl->Lua, ResourceManager);
+
+	Bindable.BindLua(*this);
 }
 
 void FScriptSystem::Shutdown()
 {
+	OnLuaReady.Clear();
+	PendingBindables.clear();
+
 	if (!bInitialized)
 	{
 		Impl.reset();

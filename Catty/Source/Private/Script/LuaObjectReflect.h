@@ -8,9 +8,6 @@
 namespace Catty
 {
 
-class FResourceManager;
-
 void RegisterLuaObjectReflectBindings(sol::state& Lua);
-void BindLuaResourceManager(sol::state& Lua, FResourceManager& ResourceManager);
 
 } // namespace Catty

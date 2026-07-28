@@ -1,39 +1,49 @@
 #pragma once
 
+#include "Catty/Core/Delegate.h"
 #include "Catty/Core/Export.h"
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace Catty
 {
+
+class FScriptSystem;
+
+/**
+ * Types that can register themselves into the Lua VM.
+ * FScriptSystem::Bind forwards to BindLua — no per-type hardcode on ScriptSystem.
+ * Prefer auto-bind by listening to FScriptSystem::GetOnLuaReady().
+ */
+class CATTY_API ILuaBindable
+{
+public:
+	virtual ~ILuaBindable() = default;
+
+	/** Called when Lua is ready (or immediately if already initialized). */
+	virtual void BindLua(FScriptSystem& Script) = 0;
+};
 
 /**
  * Embedded Lua VM (sol2 + Lua 5.4) for game logic scripting.
  * Runs on the game thread only — do not Call from worker / render threads.
  *
- * Example:
- * ```
- *   ScriptSystem.Initialize("Scripts");
- *   ScriptSystem.DoFile("main.lua");   // defines OnUpdate(dt)
- *   // each frame:
- *   ScriptSystem.Call("OnUpdate", DeltaSeconds);
- *   ScriptSystem.Shutdown();
- * ```
- *
  * Built-in bindings (table `catty`):
  *   catty.log / log_warn / log_error(msg)
- *   catty.get_cvar_int / float / bool / string(name [, default])
- *   catty.set_cvar_int / float / bool / string(name, value)
- *   catty.get/set_cvar_* 
- *   catty.get_transient_package / find_package / find_object
+ *   catty.get/set_cvar_*
  *   catty.object / package / resource — codegen usertypes (snake_case methods)
  *
- * Object reflection macros feed Lua usertype codegen — see ObjectReflect.h.
+ * Extra bindings: implement ILuaBindable::BindLua and either
+ *   Script.Bind(Obj) or subscribe to GetOnLuaReady() for auto-bind.
  */
 class CATTY_API FScriptSystem
 {
 public:
+	/** Fired after Initialize succeeds (and after any Bind queued before init). */
+	using FOnLuaReady = TMulticastDelegate<void(FScriptSystem&)>;
+
 	FScriptSystem();
 	~FScriptSystem();
 
@@ -41,17 +51,22 @@ public:
 	FScriptSystem& operator=(const FScriptSystem&) = delete;
 
 	/**
-	 * Create the Lua state, register core bindings, set package.path for Scripts/.
-	 * @param ScriptsDirectory Project Scripts/ root (relative to process CWD is fine).
+	 * Create the Lua state, register core + object-reflect bindings, set package.path.
+	 * Broadcasts OnLuaReady when done.
 	 */
 	[[nodiscard]] bool Initialize(const std::string& ScriptsDirectory = "Scripts");
 	void Shutdown();
 
-	/** Bind ResourceManager helpers into `catty.*` (call once after Initialize). */
-	void BindResourceManager(class FResourceManager& ResourceManager);
-
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 	[[nodiscard]] const std::string& GetScriptsDirectory() const { return ScriptsDirectory; }
+
+	[[nodiscard]] FOnLuaReady& GetOnLuaReady() { return OnLuaReady; }
+	[[nodiscard]] const FOnLuaReady& GetOnLuaReady() const { return OnLuaReady; }
+
+	/**
+	 * Forward to Bindable.BindLua(*this). If Lua is not ready yet, queues until Initialize.
+	 */
+	void Bind(ILuaBindable& Bindable);
 
 	/**
 	 * Load and run a .lua file. Relative paths are resolved under ScriptsDirectory.
@@ -72,6 +87,8 @@ private:
 	std::unique_ptr<FImpl> Impl;
 	bool bInitialized = false;
 	std::string ScriptsDirectory;
+	FOnLuaReady OnLuaReady;
+	std::vector<ILuaBindable*> PendingBindables;
 };
 
 } // namespace Catty

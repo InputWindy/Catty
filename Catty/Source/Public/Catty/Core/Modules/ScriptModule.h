@@ -10,7 +10,7 @@
 namespace Catty
 {
 
-/** Lua script system. Depends on Resource (BindResourceManager). */
+/** Lua script system. Boot after Worker; ILuaBindable types auto-bind via OnLuaReady. */
 class CATTY_API FScriptModule final : public IModule
 {
 public:
@@ -18,7 +18,7 @@ public:
 
 	void GetDependencies(std::vector<std::string>& OutNames) const override
 	{
-		OutNames.push_back("Resource");
+		OutNames.push_back("Worker");
 	}
 
 	bool OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;

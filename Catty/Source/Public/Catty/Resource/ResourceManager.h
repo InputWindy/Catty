@@ -7,6 +7,7 @@
 #include "Catty/Resource/Package.h"
 #include "Catty/Resource/Resource.h"
 #include "Catty/Resource/ResourceHandle.h"
+#include "Catty/Script/ScriptSystem.h"
 
 #include <memory>
 #include <string>
@@ -27,17 +28,23 @@ class FResourceServer;
  * UnloadPackage drops the catalog Ref only — package/object Free is GC-driven.
  * Each in-package FObject holds Outer as FObjectRef so the package stays valid.
  * GC ticks via FGCManager (FApp), not through this manager.
+ *
+ * Lua: implements ILuaBindable; catalog find/get helpers are NOT exposed here —
+ * pass object refs into Lua from C++ / game code instead.
  */
-class CATTY_API FResourceManager
+class CATTY_API FResourceManager : public ILuaBindable
 {
 public:
 	static constexpr const char* TransientPackageName = "/Engine/Transient";
 
 	FResourceManager();
-	~FResourceManager();
+	~FResourceManager() override;
 
 	FResourceManager(const FResourceManager&) = delete;
 	FResourceManager& operator=(const FResourceManager&) = delete;
+
+	/** ILuaBindable — reserved; catalog find/get is not exposed via Lua. */
+	void BindLua(FScriptSystem& Script) override;
 
 	// --- Lifecycle ---
 	[[nodiscard]] bool Initialize(FGCManager& InGC);

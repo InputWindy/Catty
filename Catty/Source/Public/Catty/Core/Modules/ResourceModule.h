@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Catty/Core/Delegate.h"
 #include "Catty/Core/Export.h"
 #include "Catty/Core/Module.h"
 #include "Catty/Resource/ResourceManager.h"
@@ -8,6 +9,8 @@
 
 namespace Catty
 {
+
+class FScriptSystem;
 
 class CATTY_API FResourceModule final : public IModule
 {
@@ -25,7 +28,10 @@ public:
 	[[nodiscard]] const FResourceManager& GetResourceManager() const { return ResourceManager; }
 
 private:
+	void OnLuaReady(FScriptSystem& Script);
+
 	FResourceManager ResourceManager;
+	FDelegateHandle LuaReadyHandle;
 };
 
 } // namespace Catty

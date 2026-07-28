@@ -2,7 +2,6 @@
 
 #include "Catty/Core/App.h"
 #include "Catty/Core/Log.h"
-#include "Catty/Core/Modules/ResourceModule.h"
 
 #include <filesystem>
 
@@ -21,11 +20,6 @@ bool FScriptModule::OnStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 		{
 			CATTY_CORE_ERROR("FScriptModule: Initialize failed");
 			return false;
-		}
-
-		if (FResourceModule* Resource = App.GetModule<FResourceModule>())
-		{
-			ScriptSystem.BindResourceManager(Resource->GetResourceManager());
 		}
 
 		namespace fs = std::filesystem;
