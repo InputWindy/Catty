@@ -392,9 +392,9 @@ void FEditorLayer::DrawDockSpace()
 	ImGui::SetNextWindowSize(Viewport->WorkSize);
 	ImGui::SetNextWindowViewport(Viewport->ID);
 
-	// SplitterBehavior fills the dock gap with WindowBg first, then Separator
-	// (which docking remaps from Border). Keep Border transparent and leave
-	// TabWell WindowBg pushed through DockSpace so the gap shows chrome bg.
+	// Full-viewport chassis; WindowPadding insets DockSpace so panels sit inside a
+	// chrome ring instead of flush against the OS/client edge.
+	const float OuterPad = 8.0f;
 	const ImVec4 DockChassis = ImVec4(14.0f / 255.0f, 14.0f / 255.0f, 16.0f / 255.0f, 1.0f);
 	ImGuiWindowFlags HostFlags =
 		ImGuiWindowFlags_NoDocking
@@ -405,17 +405,25 @@ void FEditorLayer::DrawDockSpace()
 		| ImGuiWindowFlags_NoBringToFrontOnFocus
 		| ImGuiWindowFlags_NoNavFocus;
 
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ImGui::GetStyle().WindowRounding);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(OuterPad, OuterPad));
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, DockChassis);
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, DockChassis);
 	ImGui::Begin("##EditorDockHost", nullptr, HostFlags);
 	ImGui::PopStyleVar(3);
 
+	// DockNodeUpdate copies Style.Colors[Border] into Separator — keep it clear
+	// here so gutters stay chassis-colored; floating windows keep visible Border.
+	ImGuiStyle& Style = ImGui::GetStyle();
+	const ImVec4 BackupBorder = Style.Colors[ImGuiCol_Border];
+	Style.Colors[ImGuiCol_Border] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+
 	const ImGuiID DockspaceId = ImGui::GetID("CattyEditorDockspaceChassis");
 	EnsureDefaultDockLayout(DockspaceId);
 	ImGui::DockSpace(DockspaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+
+	Style.Colors[ImGuiCol_Border] = BackupBorder;
 	ImGui::End();
 	ImGui::PopStyleColor(2);
 }
@@ -487,7 +495,10 @@ void FEditorLayer::DrawContentBrowser()
 	ImGui::TextWrapped("%s", CurrentFolder.string().c_str());
 	ImGui::Separator();
 
-	ImGui::BeginChild("##ContentList", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+	// List area uses deepest chassis bg (same as dock gutters), not panel sheet gray.
+	const ImVec4 DeepBg = ImVec4(14.0f / 255.0f, 14.0f / 255.0f, 16.0f / 255.0f, 1.0f);
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, DeepBg);
+	ImGui::BeginChild("##ContentList", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AlwaysUseWindowPadding);
 	for (const std::filesystem::path& Folder : FolderEntries)
 	{
 		const FContentIcon Icon = ContentIconForPath(Folder, true);
@@ -516,6 +527,7 @@ void FEditorLayer::DrawContentBrowser()
 		ImGui::PopStyleColor();
 	}
 	ImGui::EndChild();
+	ImGui::PopStyleColor();
 	ImGui::End();
 }
 
@@ -523,7 +535,7 @@ void FEditorLayer::DrawOutputPanel(Catty::FApp& App)
 {
 	ImGui::Begin(kWinOutput);
 	const float Footer = ImGui::GetFrameHeightWithSpacing() + 4.0f;
-	ImGui::BeginChild("##OutputScroll", ImVec2(0.0f, -Footer), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+	ImGui::BeginChild("##OutputScroll", ImVec2(0.0f, -Footer), ImGuiChildFlags_AlwaysUseWindowPadding);
 	ImGuiListClipper Clipper;
 	Clipper.Begin(static_cast<int>(OutputLines.size()));
 	while (Clipper.Step())
@@ -565,6 +577,13 @@ void FEditorLayer::DrawBlueprintPanel()
 	}
 
 	ed::SetCurrentEditor(static_cast<ed::EditorContext*>(NodeEditorContext));
+	// Match Catty panel WindowBg so the canvas does not read as a lighter child sheet.
+	{
+		ed::Style& NodeStyle = ed::GetStyle();
+		const ImVec4 PanelBg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+		NodeStyle.Colors[ed::StyleColor_Bg] = PanelBg;
+		NodeStyle.Colors[ed::StyleColor_Grid] = ImVec4(1.0f, 1.0f, 1.0f, 0.04f);
+	}
 	ed::Begin("BlueprintCanvas");
 
 	ed::BeginNode(ed::NodeId(1));

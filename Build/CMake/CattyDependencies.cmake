@@ -100,6 +100,7 @@ set(CATTY_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}" CACHE INTERNAL "Dear ImGui sour
 message(STATUS "Catty: ImGui (FetchContent) at ${CATTY_IMGUI_SOURCE_DIR}")
 
 # Flush-left dock tabs without clearing FramePadding (needed for centered tab labels).
+# Also skip WindowBorderSize inset so enabling window borders does not shift tabs 1px.
 # Idempotent: skips if already patched.
 set(_CATTY_IMGUI_CPP "${CATTY_IMGUI_SOURCE_DIR}/imgui.cpp")
 if(EXISTS "${_CATTY_IMGUI_CPP}")
@@ -113,7 +114,20 @@ if(EXISTS "${_CATTY_IMGUI_CPP}")
 			file(WRITE "${_CATTY_IMGUI_CPP}" "${_CATTY_IMGUI_CONTENTS}")
 			message(STATUS "Catty: patched ImGui DockNodeCalcTabBarLayout for flush-left tabs")
 		else()
-			message(WARNING "Catty: failed to patch ImGui dock tab-bar inset (source layout changed?)")
+			message(WARNING "Catty: failed to patch ImGui dock tab-bar FramePadding inset (source layout changed?)")
+		endif()
+	endif()
+	file(READ "${_CATTY_IMGUI_CPP}" _CATTY_IMGUI_CONTENTS)
+	if(NOT _CATTY_IMGUI_CONTENTS MATCHES "Catty: do not inset tab bar by WindowBorderSize")
+		string(REPLACE
+			"if (out_title_rect) { *out_title_rect = r; }\n\n    r.Min.x += style.WindowBorderSize;\n    r.Max.x -= style.WindowBorderSize;\n\n    float button_sz = g.FontSize;"
+			"if (out_title_rect) { *out_title_rect = r; }\n\n    // Catty: do not inset tab bar by WindowBorderSize (keeps tabs flush with panel edge when borders are on).\n    // r.Min.x += style.WindowBorderSize;\n    // r.Max.x -= style.WindowBorderSize;\n\n    float button_sz = g.FontSize;"
+			_CATTY_IMGUI_CONTENTS "${_CATTY_IMGUI_CONTENTS}")
+		if(_CATTY_IMGUI_CONTENTS MATCHES "Catty: do not inset tab bar by WindowBorderSize")
+			file(WRITE "${_CATTY_IMGUI_CPP}" "${_CATTY_IMGUI_CONTENTS}")
+			message(STATUS "Catty: patched ImGui DockNodeCalcTabBarLayout WindowBorderSize inset")
+		else()
+			message(WARNING "Catty: failed to patch ImGui dock tab-bar WindowBorderSize inset (source layout changed?)")
 		endif()
 	endif()
 endif()

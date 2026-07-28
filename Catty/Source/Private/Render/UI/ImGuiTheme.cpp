@@ -26,13 +26,14 @@ void ApplyCattyNightTheme()
 	Style.Alpha = 1.0f;
 	Style.DisabledAlpha = 0.38f;
 	Style.WindowPadding = ImVec2(8.0f, 8.0f);
-	Style.WindowRounding = 0.0f;
-	Style.WindowBorderSize = 0.0f;
+	Style.WindowRounding = 8.0f; // align with Win11 main-window corner radius
+	Style.WindowBorderSize = 1.0f; // floating / undocked window edge
 	Style.WindowMinSize = ImVec2(96.0f, 48.0f);
 	Style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
 	Style.WindowMenuButtonPosition = ImGuiDir_None;
-	Style.ChildRounding = 0.0f;
-	// Must be > 0: ImGui zeroes Child WindowPadding when border size is 0.
+	Style.ChildRounding = 8.0f;
+	// Keep > 0 so non-padded child paths still work; panels that need padding
+	// use ImGuiChildFlags_AlwaysUseWindowPadding and omit Borders (no outer stroke).
 	Style.ChildBorderSize = 1.0f;
 	Style.PopupRounding = 2.0f;
 	Style.PopupBorderSize = 1.0f;
@@ -60,19 +61,19 @@ void ApplyCattyNightTheme()
 	Style.SeparatorTextBorderSize = 1.0f;
 	Style.SeparatorTextAlign = ImVec2(0.0f, 0.5f);
 	Style.SeparatorTextPadding = ImVec2(10.0f, 2.0f);
-	Style.DockingSeparatorSize = 4.0f; // keep hit area; fill is fully transparent via Border
+	Style.DockingSeparatorSize = 4.0f; // dock gutter thickness (fill stays transparent via Border)
 
-	// Top chrome hierarchy:
-	//   MenuBar → recessed Tab well → selected tab flushes with Panel (raised out of the well)
+	// Chrome hierarchy:
+	//   MenuBar → chassis TabWell (dock gutters) → TabBar strip → TabIdle → selected Panel
 	const ImVec4 MenuBar = Rgba(12, 12, 14);
-	const ImVec4 TabWell = Rgba(14, 14, 16);       // sunken strip behind unselected tabs / dock splitters
-	const ImVec4 TabIdle = Rgba(20, 21, 24);       // unselected tab face (still in the well)
-	const ImVec4 Panel = Rgba(38, 39, 43);         // content + selected tab (same plane)
+	const ImVec4 TabWell = Rgba(14, 14, 16);       // deepest chassis / dock gutters
+	const ImVec4 TabBar = Rgba(24, 25, 28);        // tab strip (brighter than chassis, darker than selected)
+	const ImVec4 TabIdle = Rgba(30, 31, 35);       // unselected tab face
+	const ImVec4 Panel = Rgba(38, 39, 43);         // panel body + selected tab
 	const ImVec4 Well = Rgba(26, 27, 30);
 	const ImVec4 Raised = Rgba(52, 54, 60);
 	const ImVec4 Hover = Rgba(66, 70, 78);
 	const ImVec4 Pressed = Rgba(30, 31, 35);
-	const ImVec4 Edge = Rgba(78, 82, 92);
 	const ImVec4 EdgeStrong = Rgba(96, 100, 112);
 	const ImVec4 EdgeSoft = Rgba(48, 50, 56);
 	const ImVec4 Text = Rgba(236, 237, 240);
@@ -86,20 +87,18 @@ void ApplyCattyNightTheme()
 	Colors[ImGuiCol_Text] = Text;
 	Colors[ImGuiCol_TextDisabled] = TextMuted;
 	Colors[ImGuiCol_WindowBg] = Panel;
-	Colors[ImGuiCol_ChildBg] = Well;
+	Colors[ImGuiCol_ChildBg] = Panel;
 	Colors[ImGuiCol_PopupBg] = Rgba(28, 29, 33, 0.98f);
-	// Dock splitters: ImGui remaps Separator → Border, then SplitterBehavior
-	// paints WindowBg under that. Border stays fully transparent; the visible
-	// gutter is WindowBg of the dock host (kept as TabWell while DockSpace runs).
-	Colors[ImGuiCol_Border] = Rgba(0, 0, 0, 0.0f);
-	Colors[ImGuiCol_BorderShadow] = Rgba(0, 0, 0, 0.0f);
+	// Visible window edge for floating panels. DockSpace temporarily clears
+	// Style.Colors[Border] so docking splitters stay transparent gutters.
+	Colors[ImGuiCol_Border] = Rgba(110, 114, 124, 0.55f);
+	Colors[ImGuiCol_BorderShadow] = Rgba(0, 0, 0, 0.50f);
 	Colors[ImGuiCol_FrameBg] = Well;
 	Colors[ImGuiCol_FrameBgHovered] = Raised;
 	Colors[ImGuiCol_FrameBgActive] = Pressed;
-	// Title strip = recessed tab well (docked tab bars read as inset).
-	Colors[ImGuiCol_TitleBg] = TabWell;
-	Colors[ImGuiCol_TitleBgActive] = TabWell;
-	Colors[ImGuiCol_TitleBgCollapsed] = TabWell;
+	Colors[ImGuiCol_TitleBg] = TabBar;
+	Colors[ImGuiCol_TitleBgActive] = TabBar;
+	Colors[ImGuiCol_TitleBgCollapsed] = TabBar;
 	Colors[ImGuiCol_MenuBarBg] = MenuBar;
 	Colors[ImGuiCol_ScrollbarBg] = TabWell;
 	Colors[ImGuiCol_ScrollbarGrab] = Raised;
@@ -125,7 +124,7 @@ void ApplyCattyNightTheme()
 	Colors[ImGuiCol_TabHovered] = Hover;
 	Colors[ImGuiCol_TabSelected] = Panel;
 	Colors[ImGuiCol_TabSelectedOverline] = Accent;
-	Colors[ImGuiCol_TabDimmed] = TabWell;
+	Colors[ImGuiCol_TabDimmed] = TabBar;
 	Colors[ImGuiCol_TabDimmedSelected] = Panel;
 	Colors[ImGuiCol_TabDimmedSelectedOverline] = Rgba(70, 148, 235, 0.45f);
 	Colors[ImGuiCol_DockingPreview] = AccentSoft;
@@ -134,7 +133,7 @@ void ApplyCattyNightTheme()
 	Colors[ImGuiCol_PlotLinesHovered] = AccentHover;
 	Colors[ImGuiCol_PlotHistogram] = Accent;
 	Colors[ImGuiCol_PlotHistogramHovered] = AccentHover;
-	Colors[ImGuiCol_TableHeaderBg] = TabWell;
+	Colors[ImGuiCol_TableHeaderBg] = TabBar;
 	Colors[ImGuiCol_TableBorderStrong] = EdgeStrong;
 	Colors[ImGuiCol_TableBorderLight] = EdgeSoft;
 	Colors[ImGuiCol_TableRowBg] = Rgba(0, 0, 0, 0.0f);
