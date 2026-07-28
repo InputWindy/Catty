@@ -430,14 +430,89 @@ void FEditorLayer::DrawToolbarPrimary()
 
 void FEditorLayer::DrawToolbarSecondary()
 {
-	// Placeholder icons for the light-gray toolbar 2 strip.
-	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 0.0f));
-	ImGui::Button(ICON_FA_ARROW_POINTER "##Tb2Select");
-	ImGui::SameLine();
-	ImGui::Button(ICON_FA_HAND "##Tb2Pan");
-	ImGui::SameLine();
-	ImGui::Button(ICON_FA_EYE "##Tb2View");
-	ImGui::PopStyleVar();
+	// Flush buttons within a group; dark chassis gutters between groups.
+	// Buttons fill the toolbar strip height (no vertical inset).
+	const ImU32 ChassisGutter = IM_COL32(14, 14, 16, 255);
+	const float GutterW = 6.0f;
+	const float BtnH = ImGui::GetContentRegionAvail().y;
+	const ImVec2 BtnSize(BtnH, BtnH);
+
+	auto DrawGroupGutter = [ChassisGutter, GutterW, BtnH]()
+	{
+		ImGui::SameLine(0.0f, 0.0f);
+		const ImVec2 P0 = ImGui::GetCursorScreenPos();
+		ImGui::GetWindowDrawList()->AddRectFilled(
+			P0,
+			ImVec2(P0.x + GutterW, P0.y + BtnH),
+			ChassisGutter);
+		ImGui::Dummy(ImVec2(GutterW, BtnH));
+		ImGui::SameLine(0.0f, 0.0f);
+	};
+
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+
+	if (ImGui::Button(ICON_FA_ARROW_POINTER "##Tb2Select", BtnSize))
+	{
+		ViewportTool = EViewportTool::Select;
+	}
+	ImGui::SameLine(0.0f, 0.0f);
+	if (ImGui::Button(ICON_FA_UP_DOWN_LEFT_RIGHT "##Tb2Translate", BtnSize))
+	{
+		ViewportTool = EViewportTool::Translate;
+		GizmoOperation = static_cast<int>(ImGuizmo::TRANSLATE);
+	}
+	ImGui::SameLine(0.0f, 0.0f);
+	if (ImGui::Button(ICON_FA_ARROW_ROTATE_RIGHT "##Tb2Rotate", BtnSize))
+	{
+		ViewportTool = EViewportTool::Rotate;
+		GizmoOperation = static_cast<int>(ImGuizmo::ROTATE);
+	}
+	ImGui::SameLine(0.0f, 0.0f);
+	if (ImGui::Button(ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER "##Tb2Scale", BtnSize))
+	{
+		ViewportTool = EViewportTool::Scale;
+		GizmoOperation = static_cast<int>(ImGuizmo::SCALE);
+	}
+
+	DrawGroupGutter();
+
+	const bool bCanPlay = PlayState == EPlayState::Stopped || PlayState == EPlayState::Paused;
+	const bool bCanStep = PlayState != EPlayState::Stopped;
+	const bool bCanStop = PlayState != EPlayState::Stopped;
+
+	ImGui::BeginDisabled(!bCanPlay);
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.86f, 0.42f, 1.0f));
+	if (ImGui::Button(ICON_FA_PLAY "##Tb2Play", BtnSize))
+	{
+		PlayState = EPlayState::Playing;
+		AppendOutput("PIE: Play");
+	}
+	ImGui::PopStyleColor();
+	ImGui::EndDisabled();
+	ImGui::SameLine(0.0f, 0.0f);
+	ImGui::BeginDisabled(!bCanStep);
+	if (ImGui::Button(ICON_FA_FORWARD_STEP "##Tb2Step", BtnSize))
+	{
+		PlayState = EPlayState::Paused;
+		AppendOutput("PIE: Step / Pause");
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine(0.0f, 0.0f);
+	ImGui::BeginDisabled(!bCanStop);
+	if (ImGui::Button(ICON_FA_STOP "##Tb2Stop", BtnSize))
+	{
+		PlayState = EPlayState::Stopped;
+		AppendOutput("PIE: Stop");
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine(0.0f, 0.0f);
+	ImGui::Button(ICON_FA_EJECT "##Tb2Possess", BtnSize);
+
+	DrawGroupGutter();
+	ImGui::Button(ICON_FA_ELLIPSIS_VERTICAL "##Tb2More", BtnSize);
+
+	ImGui::PopStyleVar(2);
 }
 
 void FEditorLayer::EnsureDefaultDockLayout(std::uint32_t DockspaceId)
@@ -582,23 +657,17 @@ void FEditorLayer::DrawDockSpace(Catty::FApp& App)
 		const float Toolbar2W = ImGui::GetContentRegionAvail().x - OuterPad;
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, PlaceholderBg);
 		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 2.0f);
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 0.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 		ImGui::BeginChild(
 			"##EditorToolbar2",
 			ImVec2(Toolbar2W, PlaceholderH),
 			ImGuiChildFlags_AlwaysUseWindowPadding,
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
-		{
-			const float Y = (ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeight()) * 0.5f;
-			if (Y > 0.0f)
-			{
-				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Y);
-			}
-			DrawToolbarSecondary();
-		}
+		DrawToolbarSecondary();
 		ImGui::EndChild();
-		ImGui::PopStyleVar(3);
+		ImGui::PopStyleVar(4);
 		ImGui::PopStyleColor();
 	}
 
@@ -657,12 +726,15 @@ void FEditorLayer::DrawViewportPanel()
 	{
 		PerspectiveRH(ProjectionMatrix, 45.0f * 3.14159265f / 180.0f, Canvas.x / Canvas.y, 0.1f, 100.0f);
 		ImGuizmo::DrawGrid(ViewMatrix, ProjectionMatrix, ObjectMatrix, 10.0f);
-		ImGuizmo::Manipulate(
-			ViewMatrix,
-			ProjectionMatrix,
-			static_cast<ImGuizmo::OPERATION>(GizmoOperation),
-			ImGuizmo::LOCAL,
-			ObjectMatrix);
+		if (ViewportTool != EViewportTool::Select)
+		{
+			ImGuizmo::Manipulate(
+				ViewMatrix,
+				ProjectionMatrix,
+				static_cast<ImGuizmo::OPERATION>(GizmoOperation),
+				ImGuizmo::LOCAL,
+				ObjectMatrix);
+		}
 	}
 	ImGui::Dummy(Canvas);
 #endif

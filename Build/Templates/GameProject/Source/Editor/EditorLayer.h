@@ -22,6 +22,14 @@ public:
 		Paused
 	};
 
+	enum class EViewportTool : std::uint8_t
+	{
+		Select,
+		Translate,
+		Rotate,
+		Scale
+	};
+
 	FEditorLayer();
 	~FEditorLayer() override;
 
@@ -74,7 +82,8 @@ private:
 	float ViewMatrix[16] = {};
 	float ProjectionMatrix[16] = {};
 	float ObjectMatrix[16] = {};
-	int GizmoOperation = 7; // ImGuizmo::TRANSLATE
+	EViewportTool ViewportTool = EViewportTool::Select;
+	int GizmoOperation = 7; // ImGuizmo::TRANSLATE (kept in sync with ViewportTool)
 
 	// Blueprint node editor
 	void* NodeEditorContext = nullptr;
