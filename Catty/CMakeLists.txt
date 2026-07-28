@@ -190,6 +190,17 @@ set_target_properties(Catty PROPERTIES
 )
 
 catty_copy_shaders(Catty "${CATTY_SHADERS_DIR}" "Engine/Shaders")
+if(DEFINED CATTY_ENGINE_FONTS_DIR AND IS_DIRECTORY "${CATTY_ENGINE_FONTS_DIR}")
+	add_custom_command(TARGET Catty POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Catty>/Engine/Fonts"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${CATTY_ENGINE_FONTS_DIR}"
+			"$<TARGET_FILE_DIR:Catty>/Engine/Fonts"
+		COMMENT "Copy engine Fonts"
+		VERBATIM
+	)
+	catty_install_directory("${CATTY_ENGINE_FONTS_DIR}" "Engine/Fonts")
+endif()
 
 # Preserve -DCATTY_ENGINE_ROOT from game projects (repo root). Never overwrite with Catty/.
 if(NOT CATTY_ENGINE_ROOT)

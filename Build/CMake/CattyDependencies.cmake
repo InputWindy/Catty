@@ -80,6 +80,9 @@ else()
 endif()
 unset(_CATTY_VENDORED_NLOHMANN_JSON)
 
+# Prefer cached clones; avoid VS rebuilds re-running git populate.
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Skip FetchContent update steps when already populated")
+
 # ---------------------------------------------------------------------------
 # Dear ImGui + extensions via FetchContent (do not vendor these trees in git).
 # ---------------------------------------------------------------------------
@@ -96,7 +99,28 @@ endif()
 set(CATTY_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}" CACHE INTERNAL "Dear ImGui source directory" FORCE)
 message(STATUS "Catty: ImGui (FetchContent) at ${CATTY_IMGUI_SOURCE_DIR}")
 
-# ImGuizmo has no recent release tags; master tracks current Dear ImGui.
+# Flush-left dock tabs without clearing FramePadding (needed for centered tab labels).
+# Idempotent: skips if already patched.
+set(_CATTY_IMGUI_CPP "${CATTY_IMGUI_SOURCE_DIR}/imgui.cpp")
+if(EXISTS "${_CATTY_IMGUI_CPP}")
+	file(READ "${_CATTY_IMGUI_CPP}" _CATTY_IMGUI_CONTENTS)
+	if(NOT _CATTY_IMGUI_CONTENTS MATCHES "Catty: dock tab bar flush-left")
+		string(REPLACE
+			"float button_sz = g.FontSize;\n    r.Min.x += style.FramePadding.x;\n    r.Max.x -= style.FramePadding.x;\n    ImVec2 window_menu_button_pos"
+			"float button_sz = g.FontSize;\n    // Catty: dock tab bar flush-left — keep FramePadding for TabItem label centering.\n    // Upstream insets the whole bar by FramePadding.x, which prevents flush-left tabs.\n    // r.Min.x += style.FramePadding.x;\n    // r.Max.x -= style.FramePadding.x;\n    ImVec2 window_menu_button_pos"
+			_CATTY_IMGUI_CONTENTS "${_CATTY_IMGUI_CONTENTS}")
+		if(_CATTY_IMGUI_CONTENTS MATCHES "Catty: dock tab bar flush-left")
+			file(WRITE "${_CATTY_IMGUI_CPP}" "${_CATTY_IMGUI_CONTENTS}")
+			message(STATUS "Catty: patched ImGui DockNodeCalcTabBarLayout for flush-left tabs")
+		else()
+			message(WARNING "Catty: failed to patch ImGui dock tab-bar inset (source layout changed?)")
+		endif()
+	endif()
+endif()
+unset(_CATTY_IMGUI_CPP)
+unset(_CATTY_IMGUI_CONTENTS)
+
+# ImGuizmo master (v1.9+) lays sources under src/; pin master + use that subdir.
 FetchContent_Declare(
 	imguizmo
 	GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
@@ -107,12 +131,19 @@ FetchContent_GetProperties(imguizmo)
 if(NOT imguizmo_POPULATED)
 	FetchContent_Populate(imguizmo)
 endif()
-set(CATTY_IMGUIZMO_SOURCE_DIR "${imguizmo_SOURCE_DIR}" CACHE INTERNAL "ImGuizmo source directory" FORCE)
+if(EXISTS "${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp")
+	set(CATTY_IMGUIZMO_SOURCE_DIR "${imguizmo_SOURCE_DIR}/src" CACHE INTERNAL "ImGuizmo source directory" FORCE)
+elseif(EXISTS "${imguizmo_SOURCE_DIR}/ImGuizmo.cpp")
+	set(CATTY_IMGUIZMO_SOURCE_DIR "${imguizmo_SOURCE_DIR}" CACHE INTERNAL "ImGuizmo source directory" FORCE)
+else()
+	message(FATAL_ERROR "Catty: ImGuizmo sources not found under ${imguizmo_SOURCE_DIR}")
+endif()
 
 FetchContent_Declare(
 	imgui_node_editor
 	GIT_REPOSITORY https://github.com/thedmd/imgui-node-editor.git
-	GIT_TAG v0.9.3
+	# v0.9.3 predates ImGui 1.90+ (ImVec2 ops / GetKeyIndex removal); develop tracks current ImGui.
+	GIT_TAG develop
 	GIT_SHALLOW TRUE
 )
 FetchContent_GetProperties(imgui_node_editor)
@@ -175,7 +206,6 @@ set(CATTY_IMGUI_SOURCES
 
 set(CATTY_IMGUI_EXT_SOURCES
 	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImGuizmo.cpp"
-	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImSequencer.cpp"
 	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImCurveEdit.cpp"
 	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImGradient.cpp"
 	"${CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR}/imgui_node_editor.cpp"

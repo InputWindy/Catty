@@ -10,8 +10,7 @@
 #include <vector>
 
 /**
- * Project-side editor shell (UE-inspired ImGui layout).
- * Main menu + toolbar (Play / Pause / Stop), viewport, content browser, output + CVar line.
+ * Project-side editor shell (UE-inspired, ImGui docking + extensions).
  */
 class FEditorLayer final : public Catty::FLayer
 {
@@ -24,9 +23,10 @@ public:
 	};
 
 	FEditorLayer();
-	~FEditorLayer() override = default;
+	~FEditorLayer() override;
 
 	virtual void OnAttach() override;
+	virtual void OnDetach() override;
 
 	virtual void OnUpdate(
 		Catty::EModuleStage Stage,
@@ -36,18 +36,24 @@ public:
 private:
 	void DrawMainMenuBar(Catty::FApp& App);
 	void DrawToolbar();
-	void DrawEditorShell(Catty::FApp& App);
+	void DrawDockSpace();
 	void DrawViewportPanel();
 	void DrawContentBrowser();
 	void DrawOutputPanel(Catty::FApp& App);
+	void DrawBlueprintPanel();
+	void DrawPlotPanel();
+	void DrawFileDialogs();
 
 	void RefreshContentListing();
 	void AppendOutput(std::string Line);
 	void ExecuteConsoleLine(Catty::FApp& App, const std::string& Line);
+	void EnsureDefaultDockLayout(std::uint32_t DockspaceId);
 
 	EPlayState PlayState = EPlayState::Stopped;
 	bool bShowDemoWindow = false;
+	bool bShowImPlotDemo = false;
 	bool bAutoScrollOutput = true;
+	bool bBuildDefaultLayout = true;
 
 	std::filesystem::path ContentRoot;
 	std::filesystem::path CurrentFolder;
@@ -58,6 +64,15 @@ private:
 	std::deque<std::string> OutputLines;
 	char ConsoleInput[512] = {};
 	std::vector<std::string> ConsoleHistory;
-
 	static constexpr std::size_t MaxOutputLines = 500;
+
+	// Viewport / ImGuizmo
+	float ViewMatrix[16] = {};
+	float ProjectionMatrix[16] = {};
+	float ObjectMatrix[16] = {};
+	int GizmoOperation = 7; // ImGuizmo::TRANSLATE
+
+	// Blueprint node editor
+	void* NodeEditorContext = nullptr;
+	bool bBlueprintInited = false;
 };

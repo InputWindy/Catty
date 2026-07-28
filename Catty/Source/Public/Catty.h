@@ -50,7 +50,9 @@
 #include <Core/Server/ServerTask.h>
 #include <Core/Server/TaskContext.h>
 #include <Render/UI/ImGuiSystem.h>
+#include <Render/UI/ImGuiTheme.h>
 
 #if defined(CATTY_WITH_IMGUI)
 #	include <imgui.h>
+#	include <Render/UI/ImGuiExtensions.h>
 #endif

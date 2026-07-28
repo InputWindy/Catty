@@ -9,8 +9,8 @@ Small in-repo assets and optional vendored single-headers. Large C++ libraries a
 | spdlog | FetchContent | v1.15.3 |
 | GLFW | FetchContent | 3.4 |
 | Dear ImGui | FetchContent | v1.91.9-docking |
-| ImGuizmo | FetchContent | master |
-| imgui-node-editor | FetchContent | v0.9.3 |
+| ImGuizmo | FetchContent | master (`src/` layout) |
+| imgui-node-editor | FetchContent | develop |
 | ImPlot | FetchContent | v0.16 |
 | ImGuiFileDialog | FetchContent | v0.6.7 |
 | IconFontCppHeaders | FetchContent | main |
