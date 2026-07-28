@@ -1,13 +1,27 @@
 # ThirdParty
 
-Vendored dependencies used when network FetchContent is unavailable.
+Small in-repo assets and optional vendored single-headers. Large C++ libraries are pulled by CMake `FetchContent` (see `Build/CMake/CattyDependencies.cmake`) — do **not** commit their full source trees here.
 
-| Tree | Version | Notes |
-|------|---------|--------|
-| `imgui/` | v1.91.9 | Dear ImGui (MIT). Preferred by `CattyDependencies.cmake`. |
-| `nlohmann/json.hpp` | v3.11.3 | nlohmann/json single header (MIT). Used privately by `FJsonDocument`. |
-| `lua/` | 5.4.x | Optional vendored Lua `src/` (lua.h). Else FetchContent lua-5.4.7. |
-| `sol2/` | v3.3.1 | Optional vendored sol2 (`include/sol/sol.hpp`). Else FetchContent. |
-| `refl-cpp/` | v0.12.4 | Header-only compile-time reflection (`include/refl.hpp`). Else FetchContent. |
+## Fetched at configure time (not in git)
 
-If a vendored tree is removed, CMake falls back to FetchContent from GitHub.
+| Dependency | Source | Pin |
+|------------|--------|-----|
+| spdlog | FetchContent | v1.15.3 |
+| GLFW | FetchContent | 3.4 |
+| Dear ImGui | FetchContent | v1.91.9-docking |
+| ImGuizmo | FetchContent | master |
+| imgui-node-editor | FetchContent | v0.9.3 |
+| ImPlot | FetchContent | v0.16 |
+| ImGuiFileDialog | FetchContent | v0.6.7 |
+| IconFontCppHeaders | FetchContent | main |
+| Lua / sol2 / refl-cpp | FetchContent (or optional local override) | see CMake |
+
+First configure needs network. CMake caches downloads under the build tree (`_deps/`).
+
+## Kept in this folder
+
+| Tree | Notes |
+|------|--------|
+| `fonts/` | UI + icon TTFs copied to `Engine/Fonts` at build (`Inter`, `Roboto`, `fa-solid-900`). |
+| `nlohmann/json.hpp` | Optional single-header vendor; else FetchContent nlohmann/json v3.11.3. |
+| `lua/`, `sol2/`, `refl-cpp/` | Optional local overrides; else FetchContent. |

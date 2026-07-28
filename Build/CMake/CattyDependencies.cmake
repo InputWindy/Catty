@@ -80,27 +80,88 @@ else()
 endif()
 unset(_CATTY_VENDORED_NLOHMANN_JSON)
 
-# Dear ImGui as a dedicated ThirdParty static library.
-# Catty only consumes ImGui headers + links Catty::ImGui; imgui*.cpp stay out of the Catty target.
-set(_CATTY_VENDORED_IMGUI "${_CATTY_REPO_ROOT}/ThirdParty/imgui")
-
-if(EXISTS "${_CATTY_VENDORED_IMGUI}/imgui.cpp")
-	set(CATTY_IMGUI_SOURCE_DIR "${_CATTY_VENDORED_IMGUI}" CACHE INTERNAL "Dear ImGui source directory")
-	message(STATUS "Catty: ImGui (vendored) at ${CATTY_IMGUI_SOURCE_DIR}")
-else()
-	FetchContent_Declare(
-		imgui
-		GIT_REPOSITORY https://github.com/ocornut/imgui.git
-		GIT_TAG v1.91.9
-		GIT_SHALLOW TRUE
-	)
-	FetchContent_GetProperties(imgui)
-	if(NOT imgui_POPULATED)
-		FetchContent_Populate(imgui)
-	endif()
-	set(CATTY_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}" CACHE INTERNAL "Dear ImGui source directory")
-	message(STATUS "Catty: ImGui (FetchContent) at ${CATTY_IMGUI_SOURCE_DIR}")
+# ---------------------------------------------------------------------------
+# Dear ImGui + extensions via FetchContent (do not vendor these trees in git).
+# ---------------------------------------------------------------------------
+FetchContent_Declare(
+	imgui
+	GIT_REPOSITORY https://github.com/ocornut/imgui.git
+	GIT_TAG v1.91.9-docking
+	GIT_SHALLOW TRUE
+)
+FetchContent_GetProperties(imgui)
+if(NOT imgui_POPULATED)
+	FetchContent_Populate(imgui)
 endif()
+set(CATTY_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}" CACHE INTERNAL "Dear ImGui source directory" FORCE)
+message(STATUS "Catty: ImGui (FetchContent) at ${CATTY_IMGUI_SOURCE_DIR}")
+
+# ImGuizmo has no recent release tags; master tracks current Dear ImGui.
+FetchContent_Declare(
+	imguizmo
+	GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+	GIT_TAG master
+	GIT_SHALLOW TRUE
+)
+FetchContent_GetProperties(imguizmo)
+if(NOT imguizmo_POPULATED)
+	FetchContent_Populate(imguizmo)
+endif()
+set(CATTY_IMGUIZMO_SOURCE_DIR "${imguizmo_SOURCE_DIR}" CACHE INTERNAL "ImGuizmo source directory" FORCE)
+
+FetchContent_Declare(
+	imgui_node_editor
+	GIT_REPOSITORY https://github.com/thedmd/imgui-node-editor.git
+	GIT_TAG v0.9.3
+	GIT_SHALLOW TRUE
+)
+FetchContent_GetProperties(imgui_node_editor)
+if(NOT imgui_node_editor_POPULATED)
+	FetchContent_Populate(imgui_node_editor)
+endif()
+set(CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR "${imgui_node_editor_SOURCE_DIR}" CACHE INTERNAL "imgui-node-editor source directory" FORCE)
+
+FetchContent_Declare(
+	implot
+	GIT_REPOSITORY https://github.com/epezent/implot.git
+	GIT_TAG v0.16
+	GIT_SHALLOW TRUE
+)
+FetchContent_GetProperties(implot)
+if(NOT implot_POPULATED)
+	FetchContent_Populate(implot)
+endif()
+set(CATTY_IMPLOT_SOURCE_DIR "${implot_SOURCE_DIR}" CACHE INTERNAL "ImPlot source directory" FORCE)
+
+FetchContent_Declare(
+	imgui_file_dialog
+	GIT_REPOSITORY https://github.com/aiekick/ImGuiFileDialog.git
+	GIT_TAG v0.6.7
+	GIT_SHALLOW TRUE
+)
+FetchContent_GetProperties(imgui_file_dialog)
+if(NOT imgui_file_dialog_POPULATED)
+	FetchContent_Populate(imgui_file_dialog)
+endif()
+set(CATTY_IMGUI_FILE_DIALOG_SOURCE_DIR "${imgui_file_dialog_SOURCE_DIR}" CACHE INTERNAL "ImGuiFileDialog source directory" FORCE)
+
+FetchContent_Declare(
+	icon_font_cpp_headers
+	GIT_REPOSITORY https://github.com/juliettef/IconFontCppHeaders.git
+	GIT_TAG main
+	GIT_SHALLOW TRUE
+)
+FetchContent_GetProperties(icon_font_cpp_headers)
+if(NOT icon_font_cpp_headers_POPULATED)
+	FetchContent_Populate(icon_font_cpp_headers)
+endif()
+set(CATTY_ICON_FONT_HEADERS_DIR "${icon_font_cpp_headers_SOURCE_DIR}" CACHE INTERNAL "IconFontCppHeaders include directory" FORCE)
+
+message(STATUS "Catty: ImGuizmo            ${CATTY_IMGUIZMO_SOURCE_DIR}")
+message(STATUS "Catty: imgui-node-editor   ${CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR}")
+message(STATUS "Catty: ImPlot              ${CATTY_IMPLOT_SOURCE_DIR}")
+message(STATUS "Catty: ImGuiFileDialog     ${CATTY_IMGUI_FILE_DIALOG_SOURCE_DIR}")
+message(STATUS "Catty: IconFontCppHeaders  ${CATTY_ICON_FONT_HEADERS_DIR}")
 
 set(CATTY_IMGUI_SOURCES
 	"${CATTY_IMGUI_SOURCE_DIR}/imgui.cpp"
@@ -112,9 +173,24 @@ set(CATTY_IMGUI_SOURCES
 	"${CATTY_IMGUI_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
 )
 
+set(CATTY_IMGUI_EXT_SOURCES
+	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImGuizmo.cpp"
+	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImSequencer.cpp"
+	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImCurveEdit.cpp"
+	"${CATTY_IMGUIZMO_SOURCE_DIR}/ImGradient.cpp"
+	"${CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR}/imgui_node_editor.cpp"
+	"${CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR}/imgui_node_editor_api.cpp"
+	"${CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR}/imgui_canvas.cpp"
+	"${CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR}/crude_json.cpp"
+	"${CATTY_IMPLOT_SOURCE_DIR}/implot.cpp"
+	"${CATTY_IMPLOT_SOURCE_DIR}/implot_items.cpp"
+	"${CATTY_IMPLOT_SOURCE_DIR}/implot_demo.cpp"
+	"${CATTY_IMGUI_FILE_DIALOG_SOURCE_DIR}/ImGuiFileDialog.cpp"
+)
+
 # STATIC ThirdParty lib (own .vcxproj under ThirdParty/). Avoid OBJECT — VS would
 # nest imgui*.obj under Catty's "Object Libraries" filter.
-add_library(imgui STATIC ${CATTY_IMGUI_SOURCES})
+add_library(imgui STATIC ${CATTY_IMGUI_SOURCES} ${CATTY_IMGUI_EXT_SOURCES})
 add_library(Catty::ImGui ALIAS imgui)
 
 target_include_directories(imgui
@@ -123,12 +199,20 @@ target_include_directories(imgui
 		"${CATTY_IMGUI_SOURCE_DIR}/backends"
 		# IMGUI_USER_CONFIG resolves to Render/UI/ImGuiConfig.h under this include root.
 		"${_CATTY_PUBLIC_HEADERS}"
+		"${CATTY_IMGUIZMO_SOURCE_DIR}"
+		"${CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR}"
+		"${CATTY_IMPLOT_SOURCE_DIR}"
+		"${CATTY_IMGUI_FILE_DIALOG_SOURCE_DIR}"
+		"${CATTY_ICON_FONT_HEADERS_DIR}"
 )
 
 target_compile_definitions(imgui
 	PUBLIC
 		IMGUI_USER_CONFIG="Render/UI/ImGuiConfig.h"
 		CATTY_WITH_IMGUI=1
+		CATTY_WITH_IMGUI_EXTENSIONS=1
+		USE_IMGUI_API=1
+		USE_STD_FILESYSTEM=1
 	PRIVATE
 		$<$<BOOL:${CATTY_BUILD_SHARED}>:CATTY_BUILD_SHARED=1>
 		$<$<BOOL:${CATTY_BUILD_SHARED}>:CATTY_EXPORTS=1>
@@ -145,6 +229,7 @@ target_compile_features(imgui PUBLIC cxx_std_20)
 
 if(MSVC)
 	target_compile_options(imgui PRIVATE /W4 /permissive- /Zc:preprocessor /utf-8)
+	set_source_files_properties(${CATTY_IMGUI_EXT_SOURCES} PROPERTIES COMPILE_FLAGS "/W3")
 endif()
 
 set_target_properties(imgui PROPERTIES
@@ -153,6 +238,14 @@ set_target_properties(imgui PROPERTIES
 )
 
 source_group(TREE "${CATTY_IMGUI_SOURCE_DIR}" PREFIX "imgui" FILES ${CATTY_IMGUI_SOURCES})
+source_group("imgui_ext" FILES ${CATTY_IMGUI_EXT_SOURCES})
+list(LENGTH CATTY_IMGUI_EXT_SOURCES _CATTY_IMGUI_EXT_COUNT)
+message(STATUS "Catty: ImGui extensions: ${_CATTY_IMGUI_EXT_COUNT} source file(s)")
+unset(_CATTY_IMGUI_EXT_COUNT)
+
+# Engine fonts stay in-repo (binary assets copied next to the binary at build).
+set(_CATTY_TP "${_CATTY_REPO_ROOT}/ThirdParty")
+set(CATTY_ENGINE_FONTS_DIR "${_CATTY_TP}/fonts" CACHE INTERNAL "Engine icon/UI fonts")
 
 # ---------------------------------------------------------------------------
 # Lua 5.4 (static) + sol2 (header-only bindings)
@@ -277,4 +370,4 @@ unset(_CATTY_VENDORED_REFL)
 
 unset(_CATTY_REPO_ROOT)
 unset(_CATTY_PUBLIC_HEADERS)
-unset(_CATTY_VENDORED_IMGUI)
+unset(_CATTY_TP)
