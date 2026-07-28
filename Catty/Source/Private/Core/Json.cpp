@@ -1,6 +1,6 @@
-#include "Catty/Core/Json.h"
+#include "Core/Json.h"
 
-#include "Catty/Core/Log.h"
+#include "Core/Log.h"
 
 #include <nlohmann/json.hpp>
 

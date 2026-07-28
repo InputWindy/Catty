@@ -1,6 +1,6 @@
-#include "Catty/Server/ThreadedServer.h"
+#include "Server/ThreadedServer.h"
 
-#include "Catty/Core/Log.h"
+#include "Core/Log.h"
 
 #include <condition_variable>
 #include <cstdint>

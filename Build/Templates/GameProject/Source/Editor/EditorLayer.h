@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Catty/Core/Layer.h>
-#include <Catty/Core/Module.h>
+#include <Core/Layer.h>
+#include <Core/Module.h>
 
 /**
  * Project-side editor overlay (ImGui tooling / demo).

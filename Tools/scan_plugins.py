@@ -21,6 +21,8 @@ sys.path.insert(0, str(TOOLS_DIR))
 from catty_tools import (  # noqa: E402
 	DEFAULT_ENGINE_PLUGINS_DIR,
 	ENGINE_ROOT,
+	parse_cproject_plugin_overrides,
+	read_cproject,
 	resolve_plugin_roots_for_cproject,
 	scan_plugin_modules,
 )
@@ -73,6 +75,7 @@ def main(argv: list[str]) -> int:
 	engine_root = args.engine_root.resolve()
 
 	try:
+		enabled_overrides = None
 		if args.cproject is not None:
 			cproject = args.cproject.expanduser().resolve()
 			if cproject.suffix.lower() != ".cproject":
@@ -82,6 +85,7 @@ def main(argv: list[str]) -> int:
 				print(f"[ERROR] File not found: {cproject}", file=sys.stderr)
 				return 1
 			roots = resolve_plugin_roots_for_cproject(cproject)
+			enabled_overrides = parse_cproject_plugin_overrides(read_cproject(cproject))
 		elif args.plugins_dir:
 			roots = [p.expanduser().resolve() for p in args.plugins_dir]
 		else:
@@ -89,7 +93,11 @@ def main(argv: list[str]) -> int:
 			if not roots[0].is_dir():
 				roots = [DEFAULT_ENGINE_PLUGINS_DIR.resolve()]
 
-		result = scan_plugin_modules(roots, include_disabled=bool(args.include_disabled))
+		result = scan_plugin_modules(
+			roots,
+			include_disabled=bool(args.include_disabled),
+			enabled_overrides=enabled_overrides,
+		)
 	except Exception as ex:  # noqa: BLE001
 		print(f"[ERROR] {ex}", file=sys.stderr)
 		return 1

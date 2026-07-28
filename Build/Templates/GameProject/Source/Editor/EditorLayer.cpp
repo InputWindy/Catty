@@ -1,6 +1,6 @@
 #include "Editor/EditorLayer.h"
 
-#include <Catty/Core/App.h>
+#include <Core/App.h>
 
 #include <imgui.h>
 

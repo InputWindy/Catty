@@ -3,50 +3,47 @@
 Drop engine-wide plugins here. Each plugin is a folder with a `.cplugin` manifest
 (JSON, UTF-8). Game-specific plugins belong in the game project's `Plugins/`.
 
-## `.cplugin` schema (FileVersion 1)
+**Convention:** one feature = one plugin = one module. `Catty.dll` is the engine
+core (`FApp` + Log / Console / Timer / WorkerPool / ScriptSystem).
+
+`FResourceServer` is a private implementation detail of the **CResourceManager**
+plugin (compiled into that DLL), not a separate plugin.
+
+## Naming
+
+| Layer | Rule | Example |
+|-------|------|---------|
+| Plugin folder / `.cplugin` / CMake target / DLL / `GetName()` | `C` + subsystem | `CResourceManager` |
+| Module class | `F` + role + `Module` | `class FResourceModule` |
+| Module headers | `*Module.h` / `*Module.cpp` | `#include "ResourceModule.h"` |
+| Export macros | per-plugin `Public/<CName>Api.h` | `#include "CResourceManagerApi.h"` |
+
+Built-in plugins: `CPlatformWindow`, `CRenderServer`, `CImGuiSystem`,
+`CGCManager`, `CResourceManager`.
+
+## Game `.cproject` Plugins list
 
 ```json
-{
-  "FileVersion": 1,
-  "Version": 1,
-  "VersionName": "1.0",
-  "FriendlyName": "Catty Runtime",
-  "Description": "...",
-  "Category": "Engine",
-  "EnabledByDefault": true,
-  "Modules": [
-    {
-      "Name": "Platform",
-      "Type": "Runtime",
-      "Dependencies": ["Engine"]
-    }
-  ]
-}
+"Plugins": [
+  { "Name": "CPlatformWindow", "Enabled": true },
+  { "Name": "CResourceManager", "Enabled": true }
+]
 ```
 
-| Field | Required | Notes |
-|-------|----------|-------|
-| `FileVersion` | yes | Manifest format version (`1`) |
-| `Modules` | yes | Non-empty array |
-| `Modules[].Name` | yes | Unique across **all** discovered plugins |
-| `Modules[].Type` | no | Default `Runtime` (`Runtime` / `Editor` / `Developer`) |
-| `Modules[].Dependencies` | no | Other **module** names (not plugin names); empty = no deps |
-| `EnabledByDefault` | no | Default `true`; scan skips when `false` unless `--include-disabled` |
+Module dependency cycles / missing deps → **FATAL** at configure.
 
 ## Layout
 
 ```text
-Catty/Plugins/<PluginName>/<PluginName>.cplugin
-Catty/Plugins/<PluginName>/Source/<ModuleName>/   # future per-module sources / DLL
+Catty/Plugins/<CName>/
+  <CName>.cplugin
+  Source/<CName>/
+    Public/<X>Module.h
+    Private/<X>Module.cpp
 ```
-
-The `.cplugin` file name should match the plugin folder name (e.g. `CattyRuntime/CattyRuntime.cplugin`).
 
 ## Scan tool
 
 ```text
-Tools\scan_plugins.bat
-Tools\scan_plugins.bat --cproject path\to\Game.cproject --out Intermediate\plugin_modules.json
+Tools\scan_plugins.bat --cproject path\to\Game.cproject
 ```
-
-Resolves module dependency topology (startup / shutdown order), detects missing deps and cycles. Output JSON is intended for the CMake multi-DLL build step.

@@ -1,4 +1,4 @@
-#include "Catty/Resource/Resource.h"
+#include "Resource/Resource.h"
 
 namespace Catty
 {

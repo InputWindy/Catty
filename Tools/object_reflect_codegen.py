@@ -819,7 +819,7 @@ def render_header() -> str:
 		"//*****************************************************************************",
 		"#pragma once",
 		"",
-		'#include "Catty/Core/ObjectReflect.h"',
+		'#include "Core/ObjectReflect.h"',
 		"",
 		"namespace Catty",
 		"{",
@@ -1033,7 +1033,7 @@ def render_cpp(
 		"",
 		'#include "ObjectReflectTypes.gen.h"',
 		"",
-		'#include "Catty/Core/ObjectReflect.h"',
+		'#include "Core/ObjectReflect.h"',
 		"",
 	]
 	for inc in includes:
@@ -1612,7 +1612,7 @@ def render_lua_header(objects: list[FTypeEntry]) -> str:
 		"//*****************************************************************************",
 		"#pragma once",
 		"",
-		'#include "Catty/Resource/Object.h"',
+		'#include "Resource/Object.h"',
 		"",
 		"#define SOL_ALL_SAFETIES_ON 1",
 		"#include <sol/sol.hpp>",
@@ -1643,15 +1643,15 @@ def render_lua_header(objects: list[FTypeEntry]) -> str:
 		"void RegisterGeneratedLuaObjectBindings(sol::state& Lua);",
 		"",
 		"/** Push the most-derived Lua usertype for an FObjectRef (never pushes FObjectRef itself). */",
-		"[[nodiscard]] sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref);",
+		"CATTY_API [[nodiscard]] sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref);",
 		"",
-		"[[nodiscard]] FLua_FObject MakeLuaObject(FObjectRef Ref);",
+		"CATTY_API [[nodiscard]] FLua_FObject MakeLuaObject(FObjectRef Ref);",
 	]
 	for e in objects:
 		if e.ShortName == "FObject":
 			continue
 		w = _lua_wrapper_name(e.ShortName)
-		lines.append(f"[[nodiscard]] {w} MakeLua_{e.ShortName}(FObjectRef Ref);")
+		lines.append(f"CATTY_API [[nodiscard]] {w} MakeLua_{e.ShortName}(FObjectRef Ref);")
 	lines += [
 		"",
 		"} // namespace Catty",
@@ -1680,7 +1680,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		"#define SOL_ALL_SAFETIES_ON 1",
 		"#include <sol/sol.hpp>",
 		"",
-		'#include "Catty/Core/ObjectReflect.h"',
+		'#include "Core/ObjectReflect.h"',
 		'#include "ObjectReflectTypes.gen.h"',
 		"",
 	]
@@ -1691,7 +1691,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		"namespace Catty",
 		"{",
 		"",
-		"FLua_FObject MakeLuaObject(FObjectRef Ref)",
+		"CATTY_API FLua_FObject MakeLuaObject(FObjectRef Ref)",
 		"{",
 		"\treturn FLua_FObject{ std::move(Ref) };",
 		"}",
@@ -1701,7 +1701,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		if e.ShortName == "FObject":
 			continue
 		w = _lua_wrapper_name(e.ShortName)
-		lines.append(f"{w} MakeLua_{e.ShortName}(FObjectRef Ref)")
+		lines.append(f"CATTY_API {w} MakeLua_{e.ShortName}(FObjectRef Ref)")
 		lines.append("{")
 		lines.append(f"\t{w} Out;")
 		lines.append("\tOut.Ref = std::move(Ref);")
@@ -1710,7 +1710,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		lines.append("")
 
 	# Prefer most-derived wrap when known
-	lines.append("sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref)")
+	lines.append("CATTY_API sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref)")
 	lines.append("{")
 	lines.append("\tif (!Ref)")
 	lines.append("\t{")

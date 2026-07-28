@@ -54,9 +54,9 @@ namespace test0 {
 
 - 缩进用 **Tab**（与 UE 一致）
 - 指针/引用：`Type* Ptr`、`Type& Ref`（`*` `/` `&` 靠类型名）
-- 头文件 include 守卫或 `#pragma once`；对外头放 `Source/Public`
+- 对外头放 `Source/Public`（`Core/`、`Resource/`…，不再套一层 `Public/Catty/`）
 - 不在头文件里滥用 `using namespace`
-- 游戏入口：`#include <Catty/Catty.h>` + `#include <Catty/EntryPoint.h>`，继承 `Catty::FApp`，实现 `CreateApplication()`
+- 游戏入口：`#include <Catty.h>` + `#include <EntryPoint.h>`，继承 `Catty::FApp`，实现 `CreateApplication()`
 
 ## 注释语言
 

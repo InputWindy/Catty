@@ -1,7 +1,7 @@
 #include "World/WorldLayer.h"
 
-#include <Catty/Core/App.h>
-#include <Catty/Core/Log.h>
+#include <Core/App.h>
+#include <Core/Log.h>
 
 #include <utility>
 

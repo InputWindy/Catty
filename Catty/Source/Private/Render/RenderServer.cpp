@@ -1,6 +1,6 @@
-#include "Catty/Render/RenderServer.h"
+#include "Render/RenderServer.h"
 
-#include "Catty/Core/Log.h"
+#include "Core/Log.h"
 #include "RHI/VulkanRHI.h"
 
 #include <atomic>

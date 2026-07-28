@@ -1,4 +1,4 @@
-#include "Catty/Core/Layer.h"
+#include "Core/Layer.h"
 
 namespace Catty
 {

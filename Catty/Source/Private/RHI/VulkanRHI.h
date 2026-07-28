@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Catty/RHI/RHI.h"
+#include "RHI/RHI.h"
 
 #include <vector>
 

@@ -2,8 +2,8 @@
 
 #include "World/World.h"
 
-#include <Catty/Core/Layer.h>
-#include <Catty/Core/Module.h>
+#include <Core/Layer.h>
+#include <Core/Module.h>
 
 /**
  * Project layer that owns and ticks FWorld.

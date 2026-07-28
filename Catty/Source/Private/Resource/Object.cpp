@@ -1,8 +1,8 @@
-#include "Catty/Resource/Object.h"
+#include "Resource/Object.h"
 
-#include "Catty/Core/Log.h"
-#include "Catty/Resource/GCManager.h"
-#include "Catty/Resource/Package.h"
+#include "Core/Log.h"
+#include "Resource/GCManager.h"
+#include "Resource/Package.h"
 
 namespace Catty
 {

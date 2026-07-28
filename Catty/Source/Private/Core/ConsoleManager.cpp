@@ -1,9 +1,9 @@
-#include "Catty/Core/ConsoleManager.h"
+#include "Core/ConsoleManager.h"
 
-#include "Catty/Core/App.h"
-#include "Catty/Core/ConfigFile.h"
-#include "Catty/Core/Engine.h"
-#include "Catty/Core/Log.h"
+#include "Core/App.h"
+#include "Core/ConfigFile.h"
+#include "Core/Engine.h"
+#include "Core/Log.h"
 
 #include <cctype>
 #include <memory>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Catty/Platform/PlatformWindow.h"
+#include "Platform/PlatformWindow.h"
 
 struct GLFWwindow;
 

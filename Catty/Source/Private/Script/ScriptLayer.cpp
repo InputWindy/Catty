@@ -1,6 +1,6 @@
-#include "Catty/Script/ScriptLayer.h"
+#include "Script/ScriptLayer.h"
 
-#include "Catty/Core/Log.h"
+#include "Core/Log.h"
 
 #include <filesystem>
 

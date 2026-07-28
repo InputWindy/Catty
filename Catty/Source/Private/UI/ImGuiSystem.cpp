@@ -1,9 +1,9 @@
-#include "Catty/UI/ImGuiSystem.h"
+#include "UI/ImGuiSystem.h"
 
-#include "Catty/Core/ConsoleManager.h"
-#include "Catty/Core/Log.h"
-#include "Catty/Platform/PlatformWindow.h"
-#include "Catty/Render/RenderServer.h"
+#include "Core/ConsoleManager.h"
+#include "Core/Log.h"
+#include "Platform/PlatformWindow.h"
+#include "Render/RenderServer.h"
 #include "RHI/VulkanRHI.h"
 
 #include <imgui.h>
@@ -182,6 +182,17 @@ void FImGuiSystem::EndFrame()
 	}
 
 	ImGui::Render();
+}
+
+bool FImGuiSystem::PollExitRequest() const
+{
+	if (!bInitialized)
+	{
+		return false;
+	}
+
+	const ImGuiIO& IO = ImGui::GetIO();
+	return !IO.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Escape);
 }
 
 } // namespace Catty

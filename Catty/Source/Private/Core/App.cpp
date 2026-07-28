@@ -1,10 +1,12 @@
-#include "Catty/Core/App.h"
-#include "Catty/Core/ConsoleManager.h"
-#include "Catty/Core/Log.h"
-#include "Catty/Core/Modules/PlatformModule.h"
-#include "Catty/Core/Timer.h"
+#include "Core/App.h"
+#include "Core/ConsoleManager.h"
+#include "Core/Log.h"
+#include "Core/Timer.h"
+#include "Core/WorkerPool.h"
 
 #include <algorithm>
+#include <cassert>
+#include <chrono>
 #include <utility>
 
 namespace Catty
@@ -81,10 +83,10 @@ FApp::FApp()
 {
 	GApp = this;
 
-	// Earliest services, in order: Log → ConsoleManager → Timer.
-	// ConsoleManager / Timer are ready via member construction order; Log needs sinks now.
+	// Earliest services, in order: Log → ConsoleManager → Timer → WorkerPool.
+	// ConsoleManager / Timer / WorkerPool are ready via member construction order; Log needs sinks now.
 	BootstrapAppLogging(*this);
-	CATTY_CORE_INFO("FApp core services ready (Log, ConsoleManager, Timer)");
+	CATTY_CORE_INFO("FApp core services ready (Log, ConsoleManager, Timer, WorkerPool)");
 }
 
 FApp::~FApp()
@@ -149,11 +151,10 @@ void FApp::OnDetachLayer(FLayer& Layer)
 
 bool FApp::Initialize()
 {
+	// Game fills path defaults / ApplicationName first.
 	Configure(EngineConfig);
 
-	// Upgrade console-only bootstrap log with file sinks + game logger name.
-	ApplyAppLoggingFromConfig(*this, EngineConfig);
-
+	// Load DefaultEngine.ini CVars, then sync into EngineConfig.
 	const int IniApplied = LoadProjectEngineIni(*this, EngineConfig);
 	if (IniApplied < 0)
 	{
@@ -169,10 +170,20 @@ bool FApp::Initialize()
 			EngineConfig.ProjectConfigDir);
 	}
 
+	// Logging sinks need final SavedDir / ApplicationName from Configure + ini.
+	ApplyAppLoggingFromConfig(*this, EngineConfig);
+
 	RegisterModules();
 
 	if (!RebuildModuleOrder())
 	{
+		ShutdownAppLogging(*this);
+		return false;
+	}
+
+	if (!WorkerPool.Initialize())
+	{
+		CATTY_CORE_ERROR("FApp::Initialize: WorkerPool Initialize failed");
 		ShutdownAppLogging(*this);
 		return false;
 	}
@@ -200,28 +211,30 @@ bool FApp::Initialize()
 	AttachModules();
 
 	bRunning = true;
-	if (FPlatformModule* Platform = GetModule<FPlatformModule>())
-	{
-		if (FPlatformWindow* Window = Platform->GetWindow())
-		{
-			LastFrameTimeSeconds = Window->GetTimeSeconds();
-		}
-	}
+	LastFrameTimeSeconds = std::chrono::duration<double>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
 
 	return true;
 }
 
 void FApp::Shutdown()
 {
-	PreShutdown();
+	FStageContext Ctx{};
+	Ctx.FrameIndex = FrameIndex;
+
+	// Stages while modules are still attached (and layers may still exist).
+	ExecuteStage(EModuleStage::PreShutdown, Ctx);
+	ExecuteStage(EModuleStage::Shutdown, Ctx);
+
+	// Tear down content, then leave module active lifetime.
 	ClearLayers();
 	DetachModules();
 
-	FStageContext Ctx{};
-	Ctx.FrameIndex = FrameIndex;
-	ExecuteStage(EModuleStage::PreShutdown, Ctx);
-	ExecuteStage(EModuleStage::Shutdown, Ctx);
-	ExecuteStage(EModuleStage::PostShutdown, Ctx);
+	if (WorkerPool.IsInitialized())
+	{
+		WorkerPool.Shutdown();
+	}
+
 	bRunning = false;
 }
 
@@ -288,6 +301,7 @@ void FApp::Run()
 	}
 
 	RunMainLoop();
+	PreShutdown();
 	Shutdown();
 	ShutdownAppLogging(*this);
 }
@@ -336,6 +350,21 @@ void FApp::RegisterModule(std::unique_ptr<IModule> Module)
 	(void)Raw->GetOnAttach().AddRaw(this, &FApp::OnAttachModule);
 	(void)Raw->GetOnDetach().AddRaw(this, &FApp::OnDetachModule);
 	Modules.push_back(std::move(Module));
+}
+
+IModule* FApp::GetModuleByName(const char* Name)
+{
+	if (!Name)
+	{
+		return nullptr;
+	}
+	const auto It = ModulesByName.find(Name);
+	return It != ModulesByName.end() ? It->second : nullptr;
+}
+
+const IModule* FApp::GetModuleByName(const char* Name) const
+{
+	return const_cast<FApp*>(this)->GetModuleByName(Name);
 }
 
 bool FApp::RebuildModuleOrder()
@@ -402,7 +431,22 @@ bool FApp::RebuildModuleOrder()
 
 	if (StartupOrder.size() != Modules.size())
 	{
-		CATTY_CORE_ERROR("Module dependency cycle detected");
+		std::string Remaining;
+		for (const auto& Module : Modules)
+		{
+			const std::string Name = Module->GetName();
+			if (InDegree[Name] > 0)
+			{
+				if (!Remaining.empty())
+				{
+					Remaining += ", ";
+				}
+				Remaining += Name;
+			}
+		}
+		CATTY_CORE_ERROR(
+			"FATAL: Module dependency cycle involving: {}",
+			Remaining.empty() ? "(unknown)" : Remaining);
 		return false;
 	}
 
@@ -473,7 +517,9 @@ void FApp::ClearLayers()
 
 std::size_t FApp::StageIndex(EModuleStage Stage)
 {
-	return static_cast<std::size_t>(Stage);
+	const std::size_t Index = static_cast<std::size_t>(Stage);
+	assert(Index < static_cast<std::size_t>(EModuleStage::NumMaxStage));
+	return Index;
 }
 
 bool FApp::IsInitFamily(EModuleStage Stage)
@@ -486,8 +532,7 @@ bool FApp::IsInitFamily(EModuleStage Stage)
 bool FApp::IsShutdownFamily(EModuleStage Stage)
 {
 	return Stage == EModuleStage::PreShutdown
-		|| Stage == EModuleStage::Shutdown
-		|| Stage == EModuleStage::PostShutdown;
+		|| Stage == EModuleStage::Shutdown;
 }
 
 FApp::FStageMulticast& FApp::GetPostStageDelegate(EModuleStage Stage)
@@ -572,14 +617,8 @@ void FApp::RebuildLayerPostBindings()
 
 void FApp::UpdateAppState()
 {
-	double NowSeconds = LastFrameTimeSeconds;
-	if (FPlatformModule* Platform = GetModule<FPlatformModule>())
-	{
-		if (FPlatformWindow* Window = Platform->GetWindow())
-		{
-			NowSeconds = Window->GetTimeSeconds();
-		}
-	}
+	const double NowSeconds = std::chrono::duration<double>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
 
 	float NewDelta = static_cast<float>(NowSeconds - LastFrameTimeSeconds);
 	LastFrameTimeSeconds = NowSeconds;

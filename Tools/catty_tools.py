@@ -272,6 +272,7 @@ def create_project(
 				"Type": "Runtime",
 			}
 		],
+		"Plugins": default_engine_plugin_entries(engine_root),
 	}
 	cproject_path = project_dir / f"{project_name}.cproject"
 	write_cproject(cproject_path, cproject)
@@ -382,6 +383,7 @@ def run_cmake_generate(
 	binary_dir: Path,
 	engine_root: Path | None = None,
 	*,
+	cproject: Path | None = None,
 	log: Any = print,
 	cancel_event: threading.Event | None = None,
 	proc_holder: list[Any] | None = None,
@@ -400,6 +402,8 @@ def run_cmake_generate(
 	]
 	if engine_root is not None:
 		cmd.append(f"-DCATTY_ENGINE_ROOT={engine_root}")
+	if cproject is not None:
+		cmd.append(f"-DCATTY_CPROJECT={cproject}")
 	run_command(cmd, log=log, cancel_event=cancel_event, proc_holder=proc_holder)
 
 
@@ -425,6 +429,7 @@ def generate_from_cproject(
 		project_dir,
 		intermediate,
 		engine_root=engine_root,
+		cproject=cproject_path,
 		log=log,
 		cancel_event=cancel_event,
 		proc_holder=proc_holder,
@@ -705,7 +710,7 @@ def discover_cplugin_files(plugin_roots: list[Path]) -> list[Path]:
 
 def read_cplugin(path: Path) -> dict[str, Any]:
 	path = path.resolve()
-	with path.open("r", encoding="utf-8") as f:
+	with path.open("r", encoding="utf-8-sig") as f:
 		data = json.load(f)
 	if not isinstance(data, dict):
 		raise ValueError(f"Invalid .cplugin (root must be object): {path}")
@@ -762,7 +767,9 @@ def topo_sort_modules(
 	for name, module in modules_by_name.items():
 		for dep in module["Dependencies"]:
 			if dep not in modules_by_name:
-				raise ValueError(f"Module '{name}' depends on missing module '{dep}'")
+				raise ValueError(
+					f"FATAL: Module '{name}' depends on missing module '{dep}'"
+				)
 			adj[dep].append(name)
 			in_degree[name] += 1
 
@@ -787,21 +794,70 @@ def topo_sort_modules(
 
 	if len(startup) != len(modules_by_name):
 		remaining = [n for n, d in in_degree.items() if d > 0]
-		raise ValueError(f"Module dependency cycle involving: {', '.join(sorted(remaining))}")
+		raise ValueError(
+			"FATAL: Module dependency cycle involving: "
+			+ ", ".join(sorted(remaining))
+		)
 
 	shutdown = list(reversed(startup))
 	return startup, shutdown
+
+
+def parse_cproject_plugin_overrides(data: dict[str, Any]) -> dict[str, bool] | None:
+	"""
+	Read .cproject Plugins[] overrides (UE .uproject style).
+	Returns None when the field is absent (fall back to each .cplugin EnabledByDefault).
+	Listed entries: {"Name": "...", "Enabled": true|false} or bare "Name" (Enabled=true).
+	Unlisted plugins still use EnabledByDefault.
+	"""
+	raw = data.get("Plugins")
+	if raw is None:
+		return None
+	if not isinstance(raw, list):
+		raise ValueError(".cproject Plugins must be an array")
+	overrides: dict[str, bool] = {}
+	for entry in raw:
+		if isinstance(entry, str):
+			name = entry.strip()
+			if not name:
+				raise ValueError(".cproject Plugins entry is an empty string")
+			overrides[name] = True
+			continue
+		if not isinstance(entry, dict):
+			raise ValueError(".cproject Plugins entries must be objects or strings")
+		name = str(entry.get("Name", "")).strip()
+		if not name:
+			raise ValueError(".cproject Plugins entry missing Name")
+		overrides[name] = bool(entry.get("Enabled", True))
+	return overrides
+
+
+def default_engine_plugin_entries(engine_root: Path | None = None) -> list[dict[str, Any]]:
+	"""Seed .cproject Plugins from EnabledByDefault engine plugins (stable name order)."""
+	root = (engine_root or ENGINE_ROOT).resolve() / "Catty" / "Plugins"
+	if not root.is_dir():
+		return []
+	names: list[str] = []
+	for cplugin_path in discover_cplugin_files([root]):
+		data = read_cplugin(cplugin_path)
+		if not bool(data.get("EnabledByDefault", True)):
+			continue
+		names.append(cplugin_path.parent.name)
+	names.sort()
+	return [{"Name": name, "Enabled": True} for name in names]
 
 
 def scan_plugin_modules(
 	plugin_roots: list[Path],
 	*,
 	include_disabled: bool = False,
+	enabled_overrides: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
 	"""
 	Scan .cplugin manifests and resolve a global module dependency DAG.
 
 	Returns a JSON-serializable dict with Plugins, Modules, BuildOrder, ShutdownOrder.
+	Raises ValueError on duplicate names, missing deps, or dependency cycles (FATAL).
 	"""
 	cplugin_files = discover_cplugin_files(plugin_roots)
 	plugins_out: list[dict[str, Any]] = []
@@ -809,14 +865,18 @@ def scan_plugin_modules(
 
 	for cplugin_path in cplugin_files:
 		data = read_cplugin(cplugin_path)
-		enabled = data.get("EnabledByDefault", True)
-		if enabled is None:
-			enabled = True
-		if not include_disabled and not bool(enabled):
-			continue
-
+		default_enabled = data.get("EnabledByDefault", True)
+		if default_enabled is None:
+			default_enabled = True
 		plugin_dir = cplugin_path.parent
 		plugin_name = plugin_dir.name
+		if enabled_overrides is not None and plugin_name in enabled_overrides:
+			enabled = enabled_overrides[plugin_name]
+		else:
+			enabled = bool(default_enabled)
+		if not include_disabled and not enabled:
+			continue
+
 		friendly = data.get("FriendlyName", plugin_name)
 
 		plugin_modules: list[dict[str, Any]] = []
@@ -852,7 +912,8 @@ def scan_plugin_modules(
 				"FriendlyName": friendly,
 				"Path": str(plugin_dir.resolve()),
 				"Cplugin": str(cplugin_path.resolve()),
-				"EnabledByDefault": bool(enabled),
+				"EnabledByDefault": bool(default_enabled),
+				"Enabled": bool(enabled),
 				"Modules": plugin_modules,
 			}
 		)

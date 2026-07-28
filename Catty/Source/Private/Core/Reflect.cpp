@@ -1,12 +1,12 @@
-#include "Catty/Core/ObjectReflect.h"
+#include "Core/ObjectReflect.h"
 
-#include "Catty/Resource/Object.h"
+#include "Resource/Object.h"
 
-#include "Catty/Resource/Package.h"
+#include "Resource/Package.h"
 
-#include "Catty/Resource/Resource.h"
+#include "Resource/Resource.h"
 
-#include "Catty/Resource/ResourceHandle.h"
+#include "Resource/ResourceHandle.h"
 
 #include "ObjectReflectTypes.gen.h"
 

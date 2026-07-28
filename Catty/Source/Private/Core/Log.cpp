@@ -1,7 +1,7 @@
-#include "Catty/Core/Log.h"
+#include "Core/Log.h"
 
-#include "Catty/Core/App.h"
-#include "Catty/Core/ConsoleManager.h"
+#include "Core/App.h"
+#include "Core/ConsoleManager.h"
 
 #include <algorithm>
 #include <filesystem>

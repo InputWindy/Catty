@@ -1,7 +1,7 @@
-﻿#include "Catty/Resource/GCManager.h"
+﻿#include "Resource/GCManager.h"
 
-#include "Catty/Core/ConsoleManager.h"
-#include "Catty/Core/Log.h"
+#include "Core/ConsoleManager.h"
+#include "Core/Log.h"
 
 #include <algorithm>
 

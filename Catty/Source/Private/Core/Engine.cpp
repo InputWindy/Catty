@@ -1,5 +1,5 @@
-#include "Catty/Core/Engine.h"
-#include "Catty/Core/Log.h"
+#include "Core/Engine.h"
+#include "Core/Log.h"
 
 namespace Catty
 {

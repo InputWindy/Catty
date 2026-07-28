@@ -1,7 +1,7 @@
-#include "Catty/Core/WorkerPool.h"
+#include "Core/WorkerPool.h"
 
-#include "Catty/Core/ConsoleManager.h"
-#include "Catty/Core/Log.h"
+#include "Core/ConsoleManager.h"
+#include "Core/Log.h"
 
 #include <algorithm>
 #include <atomic>

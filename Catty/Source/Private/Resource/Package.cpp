@@ -1,7 +1,7 @@
-﻿#include "Catty/Resource/Package.h"
+﻿#include "Resource/Package.h"
 
-#include "Catty/Core/Log.h"
-#include "Catty/Resource/Resource.h"
+#include "Core/Log.h"
+#include "Resource/Resource.h"
 
 #include <unordered_map>
 #include <vector>

@@ -1,6 +1,6 @@
-#include <Catty/Catty.h>
-#include <Catty/EntryPoint.h>
-#include <Catty/Script/ScriptLayer.h>
+#include <Catty.h>
+#include <EntryPoint.h>
+#include <Script/ScriptLayer.h>
 
 #include "Editor/EditorLayer.h"
 #include "World/WorldLayer.h"
@@ -24,13 +24,11 @@ protected:
 
 	virtual void RegisterModules() override
 	{
-		RegisterModule(std::make_unique<Catty::FEngineModule>());
 		RegisterModule(std::make_unique<Catty::FPlatformModule>());
 		RegisterModule(std::make_unique<Catty::FRenderModule>());
 		RegisterModule(std::make_unique<Catty::FImGuiModule>());
 		RegisterModule(std::make_unique<Catty::FGCModule>());
 		RegisterModule(std::make_unique<Catty::FResourceModule>());
-		RegisterModule(std::make_unique<Catty::FWorkerModule>());
 	}
 
 	virtual bool PostInitialize() override

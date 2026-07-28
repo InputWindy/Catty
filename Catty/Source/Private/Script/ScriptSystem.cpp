@@ -1,7 +1,7 @@
-#include "Catty/Script/ScriptSystem.h"
+#include "Script/ScriptSystem.h"
 
-#include "Catty/Core/ConsoleManager.h"
-#include "Catty/Core/Log.h"
+#include "Core/ConsoleManager.h"
+#include "Core/Log.h"
 #include "LuaObjectReflect.h"
 
 #include <filesystem>

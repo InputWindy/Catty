@@ -1,6 +1,6 @@
 #include "Platform/GlfwPlatformWindow.h"
 
-#include "Catty/Core/Log.h"
+#include "Core/Log.h"
 
 #include <GLFW/glfw3.h>
 
