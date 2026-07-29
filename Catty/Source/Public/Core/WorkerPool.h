@@ -49,6 +49,8 @@ public:
 
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 	[[nodiscard]] std::size_t GetNumWorkers() const;
+	/** True when no Push'd tasks are outstanding. */
+	[[nodiscard]] bool IsIdle() const;
 
 	/**
 	 * Run Body on NumWorkers logical workers with indices [0, NumWorkers), then join.

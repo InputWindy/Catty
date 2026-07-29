@@ -167,7 +167,7 @@ flowchart TB
 
   Loop --> TickStages["每帧 ExecuteStage 族"]
   Shut --> ClearL["ClearLayers"]
-  Shut --> StagesShut["PreShutdown / Shutdown / PostShutdown"]
+  Shut --> StagesShut["PrepareExit (WaitForExit) / Shutdown"]
 		</pre>
 		<table>
 			<thead><tr><th>组件</th><th>职责</th><th>不负责</th></tr></thead>

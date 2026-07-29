@@ -263,4 +263,15 @@ void FWorkerPool::Flush()
 	});
 }
 
+bool FWorkerPool::IsIdle() const
+{
+	if (!Impl || !bInitialized)
+	{
+		return true;
+	}
+
+	std::lock_guard<std::mutex> Lock(Impl->Mutex);
+	return Impl->PendingCount == 0;
+}
+
 } // namespace Catty

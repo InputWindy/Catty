@@ -171,12 +171,19 @@ bool FResourceManager::Initialize()
 		return false;
 	}
 
+	bAcceptingNewWork = true;
 	CATTY_CORE_INFO("ResourceManager initialized");
 	return true;
 }
 
 bool FResourceManager::RegisterResource(const FObjectRef& Resource)
 {
+	if (!bAcceptingNewWork)
+	{
+		CATTY_CORE_ERROR("FResourceManager::RegisterResource: refused during exit");
+		return false;
+	}
+
 	FResource* ResourcePtr = Resource.Cast<FResource>();
 	if (!ResourcePtr)
 	{
@@ -293,12 +300,15 @@ void FResourceManager::UnregisterResourcesInPackage(const std::string& PackageNa
 	}
 }
 
-void FResourceManager::Shutdown()
+void FResourceManager::PrepareForExit()
 {
 	if (!IsInitialized())
 	{
 		return;
 	}
+
+	bAcceptingNewWork = false;
+	FlushAll();
 
 	std::vector<FObjectRef> Snapshot;
 	Snapshot.reserve(Resources.size());
@@ -318,27 +328,27 @@ void FResourceManager::Shutdown()
 
 	Resources.clear();
 	Snapshot.clear();
+}
 
-	if (FGC* GC = Detail::GetGC())
+bool FResourceManager::IsIdle() const
+{
+	if (!IsInitialized())
 	{
-		GC->CollectGarbage();
-		GC->PurgePendingKill();
-
-		const std::size_t LiveResources = GC->GetPooledLiveCount<FResource>();
-		const std::size_t LivePackages = GC->GetPooledLiveCount<FPackage>();
-		if (LiveResources > 0)
-		{
-			CATTY_CORE_ERROR(
-				"FResourceManager::Shutdown: {} resource slot(s) still live in GC pool",
-				LiveResources);
-		}
-		if (LivePackages > 0)
-		{
-			CATTY_CORE_ERROR(
-				"FResourceManager::Shutdown: {} package slot(s) still live in GC pool",
-				LivePackages);
-		}
+		return true;
 	}
+	return !bAcceptingNewWork
+		&& Resources.empty()
+		&& !Server->HasPendingLoads();
+}
+
+void FResourceManager::Shutdown()
+{
+	if (!IsInitialized())
+	{
+		return;
+	}
+
+	PrepareForExit();
 
 	if (Server->IsInitialized())
 	{
@@ -357,6 +367,12 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 	if (!IsInitialized())
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: not initialized");
+		return {};
+	}
+
+	if (!bAcceptingNewWork)
+	{
+		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: refused during exit");
 		return {};
 	}
 
@@ -437,12 +453,20 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 
 	if (!PackageObj.RegisterObject(Resource))
 	{
+		if (Server->IsInitialized() && Id.IsValid())
+		{
+			Server->Release(Id);
+		}
 		Resource->ClearOuter();
 		return {};
 	}
 
 	if (!RegisterResource(ResourceRef))
 	{
+		if (Server->IsInitialized() && Id.IsValid())
+		{
+			Server->Release(Id);
+		}
 		Resource->ClearOuter();
 		return {};
 	}
@@ -763,6 +787,12 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	if (!IsInitialized())
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadPackage: not initialized");
+		return {};
+	}
+
+	if (!bAcceptingNewWork)
+	{
+		CATTY_CORE_ERROR("FResourceManager::LoadPackage: refused during exit");
 		return {};
 	}
 

@@ -16,9 +16,29 @@ class CATTY_API FRenderModule final : public IModule
 public:
 	const char* GetName() const override { return "Render"; }
 
-	void GetDependencies(std::vector<std::string>& OutNames) const override
+	void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const override
 	{
-		OutNames.push_back("Platform");
+		switch (Stage)
+		{
+		case EModuleStage::PreInit:
+		case EModuleStage::Init:
+		case EModuleStage::PostInit:
+		case EModuleStage::BeginFrame:
+		case EModuleStage::ProcessInput:
+		case EModuleStage::FixedUpdate:
+		case EModuleStage::Update:
+		case EModuleStage::LateUpdate:
+		case EModuleStage::PreRender:
+		case EModuleStage::Render:
+		case EModuleStage::PostRender:
+		case EModuleStage::EndFrame:
+		case EModuleStage::PrepareExit:
+		case EModuleStage::Shutdown:
+			OutNames.push_back("Platform");
+			break;
+		default:
+			break;
+		}
 	}
 
 	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;

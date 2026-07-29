@@ -116,10 +116,8 @@ bool FRenderModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& C
 		}
 		ClearPresentAndFlush(App);
 		return true;
-	case EModuleStage::PreShutdown:
-		Flush();
-		return true;
 	case EModuleStage::Shutdown:
+		Flush();
 		if (ImGui.IsInitialized())
 		{
 			ImGui.Shutdown(RenderServer);

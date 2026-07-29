@@ -15,12 +15,22 @@ class CATTY_API FResourceModule final : public IModule
 public:
 	const char* GetName() const override { return "Resource"; }
 
-	void GetDependencies(std::vector<std::string>& OutNames) const override
+	void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const override
 	{
-		OutNames.push_back("GC");
+		switch (Stage)
+		{
+		case EModuleStage::PreInit:
+		case EModuleStage::Init:
+		case EModuleStage::PostInit:
+			OutNames.push_back("GC");
+			break;
+		default:
+			break;
+		}
 	}
 
 	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
+	[[nodiscard]] bool IsIdle() const override;
 
 	[[nodiscard]] FResourceManager& GetResourceManager() { return ResourceManager; }
 	[[nodiscard]] const FResourceManager& GetResourceManager() const { return ResourceManager; }

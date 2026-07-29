@@ -42,6 +42,13 @@ public:
 	void Shutdown();
 	[[nodiscard]] bool IsInitialized() const;
 
+	/**
+	 * WaitForExit / PrepareExit: refuse new loads, flush async, drop catalog refs.
+	 * Does not destroy FResourceServer — that waits for Shutdown stage.
+	 */
+	void PrepareForExit();
+	[[nodiscard]] bool IsIdle() const;
+
 	// --- Catalog ---
 	[[nodiscard]] bool RegisterResource(const FObjectRef& Resource);
 	bool UnregisterResource(FObject* Resource);
@@ -111,6 +118,7 @@ private:
 
 	std::unique_ptr<FResourceServer> Server;
 	std::unordered_map<std::string, FObjectRef> Resources;
+	bool bAcceptingNewWork = true;
 };
 
 namespace Detail

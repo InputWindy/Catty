@@ -40,6 +40,8 @@ public:
 	/** Drop a handle from the registry (safe if already invalid). */
 	void Release(FResourceId Id);
 
+	[[nodiscard]] bool HasPendingLoads() const;
+
 protected:
 	[[nodiscard]] virtual const char* GetServerThreadName() const override { return "CattyResourceThread"; }
 	[[nodiscard]] virtual const char* GetServerLogName() const override { return "ResourceServer"; }

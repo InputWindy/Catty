@@ -193,6 +193,9 @@ public:
 	void PurgePendingKill();
 	void Tick(float DeltaSeconds);
 
+	/** True when no live pooled objects and PendingKill is empty. */
+	[[nodiscard]] bool IsIdle() const;
+
 	void SetPurgeIntervalSeconds(float Seconds) { PurgeIntervalSeconds = Seconds; }
 	void SetCollectIntervalSeconds(float Seconds) { CollectIntervalSeconds = Seconds; }
 

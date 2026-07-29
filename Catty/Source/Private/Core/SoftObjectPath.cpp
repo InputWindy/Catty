@@ -113,15 +113,15 @@ FSoftObjectPath::FSoftObjectPath(
 FSoftObjectPath FSoftObjectPath::FromObject(const FObject& Object)
 {
 	FSoftObjectPath Path;
-	const FObjectRef Outer = Object.GetOuter();
-	if (!Outer)
+	const FObjectRef Package = Object.GetPackage();
+	if (!Package || Package.Get() == &Object)
 	{
-		// Package root or orphan — treat name as package-only if it looks mounted.
+		// Package root (or orphan with no outer) — package-only path.
 		Path.PackageName = FPaths::NormalizePackagePath(Object.GetName());
 		return Path;
 	}
 
-	Path.PackageName = FPaths::NormalizePackagePath(Outer->GetName());
+	Path.PackageName = FPaths::NormalizePackagePath(Package->GetName());
 	Path.AssetName = Object.GetName();
 	return Path;
 }

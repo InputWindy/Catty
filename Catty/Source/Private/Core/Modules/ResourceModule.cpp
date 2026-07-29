@@ -19,6 +19,9 @@ bool FResourceModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext&
 			return false;
 		}
 		return true;
+	case EModuleStage::PrepareExit:
+		ResourceManager.PrepareForExit();
+		return true;
 	case EModuleStage::Shutdown:
 		if (ResourceManager.IsInitialized())
 		{
@@ -28,6 +31,11 @@ bool FResourceModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext&
 	default:
 		return true;
 	}
+}
+
+bool FResourceModule::IsIdle() const
+{
+	return ResourceManager.IsIdle();
 }
 
 } // namespace Catty

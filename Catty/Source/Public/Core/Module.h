@@ -3,7 +3,9 @@
 #include <Core/Delegate.h>
 #include <Core/Export.h>
 
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -28,7 +30,9 @@ enum class EModuleStage : std::uint8_t
 	PostRender,
 	EndFrame,
 
-	PreShutdown,
+	/** WaitForExit drain: refuse new work, finish in-flight; FApp waits until IsIdle. */
+	PrepareExit,
+
 	Shutdown,
 
 	NumMaxStage
@@ -46,9 +50,9 @@ struct FStageContext
  * Engine / plugin extension of a fixed pipeline stage.
  * Game content uses FLayer bound to PostStageDelegates instead.
  *
- * Lifecycle multicasts (Attach / Detach) mirror FLayer — listeners optional.
- * OnExitRequested: Broadcast to ask the app to quit; FApp binds OnRequestExit in RegisterModule.
- * Attach / Detach multicasts: FApp binds OnAttachModule / OnDetachModule in RegisterModule.
+ * Per-stage dependencies act like barriers: for stage S, a module waits until every
+ * named dependency has finished S before running ExecuteStage(S). FApp may run
+ * independent modules concurrently via WorkerPool (PreferMainThread() == false).
  */
 class CATTY_API IModule
 {
@@ -64,10 +68,23 @@ public:
 
 	virtual const char* GetName() const = 0;
 
-	/** Dependency module names (resolved after all RegisterModule calls). */
-	virtual void GetDependencies(std::vector<std::string>& OutNames) const
+	/**
+	 * Modules that must complete Stage before this module runs Stage.
+	 * Empty = no barrier for that stage (registration order only for topo stability).
+	 */
+	virtual void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const
 	{
+		(void)Stage;
 		(void)OutNames;
+	}
+
+	/**
+	 * True = ExecuteStage runs on the app/main thread (window / RHI / ImGui).
+	 * False = may be dispatched to FWorkerPool for that stage.
+	 */
+	[[nodiscard]] virtual bool PreferMainThread() const
+	{
+		return true;
 	}
 
 	/**
@@ -82,13 +99,21 @@ public:
 		return true;
 	}
 
+	/**
+	 * True when this module has no outstanding work (async loads, live objects, GPU, …).
+	 * FApp waits for all modules + WorkerPool before Shutdown.
+	 */
+	[[nodiscard]] virtual bool IsIdle() const
+	{
+		return true;
+	}
+
+	/** Stage currently being executed / last entered on this module. */
+	[[nodiscard]] EModuleStage GetCurrentStage() const { return CurrentStage; }
+
 	[[nodiscard]] FOnExitRequested& GetOnExitRequested() { return OnExitRequested; }
 	[[nodiscard]] const FOnExitRequested& GetOnExitRequested() const { return OnExitRequested; }
 
-	/**
-	 * Enter active lifetime: Broadcast GetOnAttach(), then virtual OnAttach().
-	 * FApp calls after successful Init.
-	 */
 	void Attach()
 	{
 		if (bAttached)
@@ -100,10 +125,6 @@ public:
 		OnAttach();
 	}
 
-	/**
-	 * Leave active lifetime: Broadcast GetOnDetach(), then virtual OnDetach().
-	 * FApp calls after Shutdown stages (once module ExecuteStage teardown has run).
-	 */
 	void Detach()
 	{
 		if (!bAttached)
@@ -123,15 +144,45 @@ public:
 	[[nodiscard]] const FOnDetach& GetOnDetach() const { return DetachEvent; }
 
 protected:
-	/** Subclass hook after AttachEvent. */
 	virtual void OnAttach() {}
-	/** Subclass hook after DetachEvent. */
 	virtual void OnDetach() {}
 
 	FOnExitRequested OnExitRequested;
 
 private:
+	friend class FApp;
+
+	void SetCurrentStage(EModuleStage Stage) { CurrentStage = Stage; }
+
+	void ResetStageFence()
+	{
+		std::lock_guard<std::mutex> Lock(StageMutex);
+		bStageComplete = false;
+	}
+
+	void SignalStageComplete()
+	{
+		{
+			std::lock_guard<std::mutex> Lock(StageMutex);
+			bStageComplete = true;
+		}
+		StageCv.notify_all();
+	}
+
+	void WaitStageComplete()
+	{
+		std::unique_lock<std::mutex> Lock(StageMutex);
+		StageCv.wait(Lock, [this]()
+		{
+			return bStageComplete;
+		});
+	}
+
 	bool bAttached = false;
+	bool bStageComplete = true;
+	EModuleStage CurrentStage = EModuleStage::NumMaxStage;
+	mutable std::mutex StageMutex;
+	std::condition_variable StageCv;
 	FOnAttach AttachEvent;
 	FOnDetach DetachEvent;
 };

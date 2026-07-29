@@ -10,6 +10,7 @@
 #include <Core/WorkerPool.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <memory>
@@ -138,7 +139,16 @@ void FApp::PreShutdown()
 
 void FApp::OnRequestExit()
 {
-	bRunning = false;
+	if (AppState != EAppState::Running)
+	{
+		return;
+	}
+
+	CATTY_CORE_INFO("FApp: exit requested — entering WaitForExit (drain pipeline)");
+	AppState = EAppState::WaitForExit;
+
+	// Drop layer-owned refs so GC can collect once modules finish draining.
+	ClearLayers();
 }
 
 void FApp::OnAttachModule(IModule& /*Module*/)
@@ -237,7 +247,7 @@ bool FApp::Initialize()
 	// Game PostInitialize pushes content layers (World / Editor / Script / …).
 	AttachModules();
 
-	bRunning = true;
+	AppState = EAppState::Running;
 	LastFrameTimeSeconds = std::chrono::duration<double>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -246,11 +256,12 @@ bool FApp::Initialize()
 
 void FApp::Shutdown()
 {
+	AppState = EAppState::ShuttingDown;
+
 	FStageContext Ctx{};
 	Ctx.FrameIndex = FrameIndex;
 
 	// Stages while modules are still attached (and layers may still exist).
-	ExecuteStage(EModuleStage::PreShutdown, Ctx);
 	ExecuteStage(EModuleStage::Shutdown, Ctx);
 
 	// Tear down content, then leave module active lifetime.
@@ -262,12 +273,12 @@ void FApp::Shutdown()
 		WorkerPool.Shutdown();
 	}
 
-	bRunning = false;
+	AppState = EAppState::Stopped;
 }
 
 void FApp::RunMainLoop()
 {
-	while (bRunning)
+	while (AppState == EAppState::Running || AppState == EAppState::WaitForExit)
 	{
 		CATTY_SCOPED_TIMER("Engine", "FApp::Tick");
 
@@ -278,16 +289,32 @@ void FApp::RunMainLoop()
 		Ctx.FixedDeltaSeconds = GCVarFixedDeltaSeconds.GetValue();
 		Ctx.FrameIndex = FrameIndex;
 
-		ExecuteStage(EModuleStage::BeginFrame, Ctx);
-		if (!bRunning)
+		if (AppState == EAppState::WaitForExit)
 		{
-			break;
+			// Drain-only lockstep: no new input / simulation / render intake.
+			ExecuteStage(EModuleStage::BeginFrame, Ctx);
+			ExecuteStage(EModuleStage::PrepareExit, Ctx);
+			ExecuteStage(EModuleStage::Update, Ctx);
+			ExecuteStage(EModuleStage::EndFrame, Ctx);
+
+			if (AreAllModulesIdle() && WorkerPool.IsIdle())
+			{
+				CATTY_CORE_INFO("FApp: all modules idle — leaving WaitForExit");
+				break;
+			}
+			continue;
+		}
+
+		ExecuteStage(EModuleStage::BeginFrame, Ctx);
+		if (AppState != EAppState::Running)
+		{
+			continue;
 		}
 
 		ExecuteStage(EModuleStage::ProcessInput, Ctx);
-		if (!bRunning)
+		if (AppState != EAppState::Running)
 		{
-			break;
+			continue;
 		}
 
 		const float FixedDelta = GCVarFixedDeltaSeconds.GetValue();
@@ -296,7 +323,8 @@ void FApp::RunMainLoop()
 		{
 			FixedUpdateAccumulator += DeltaSeconds;
 			int Steps = 0;
-			while (FixedUpdateAccumulator >= FixedDelta && Steps < MaxFixed)
+			while (FixedUpdateAccumulator >= FixedDelta && Steps < MaxFixed
+				&& AppState == EAppState::Running)
 			{
 				FStageContext FixedCtx = Ctx;
 				FixedCtx.DeltaSeconds = FixedDelta;
@@ -309,6 +337,11 @@ void FApp::RunMainLoop()
 			{
 				FixedUpdateAccumulator = 0.0f;
 			}
+		}
+
+		if (AppState != EAppState::Running)
+		{
+			continue;
 		}
 
 		ExecuteStage(EModuleStage::Update, Ctx);
@@ -339,7 +372,7 @@ void FApp::Run()
 
 void FApp::AttachModules()
 {
-	for (IModule* Module : StartupOrder)
+	for (IModule* Module : GetOrderForStage(EModuleStage::Init))
 	{
 		if (!Module)
 		{
@@ -351,7 +384,7 @@ void FApp::AttachModules()
 
 void FApp::DetachModules()
 {
-	for (IModule* Module : ShutdownOrder)
+	for (IModule* Module : GetOrderForStage(EModuleStage::Shutdown))
 	{
 		if (!Module)
 		{
@@ -394,16 +427,9 @@ const IModule* FApp::GetModuleByName(const char* Name) const
 	return const_cast<FApp*>(this)->GetModuleByName(Name);
 }
 
-bool FApp::RebuildModuleOrder()
+bool FApp::BuildStageOrder(EModuleStage Stage, std::vector<IModule*>& OutOrder)
 {
-	StartupOrder.clear();
-	ShutdownOrder.clear();
-	ModulesByName.clear();
-
-	for (const auto& Module : Modules)
-	{
-		ModulesByName[Module->GetName()] = Module.get();
-	}
+	OutOrder.clear();
 
 	std::unordered_map<std::string, int> InDegree;
 	std::unordered_map<std::string, std::vector<std::string>> Adj;
@@ -419,12 +445,16 @@ bool FApp::RebuildModuleOrder()
 	{
 		const std::string Name = Module->GetName();
 		std::vector<std::string> Deps;
-		Module->GetDependencies(Deps);
+		Module->GetDependencies(Stage, Deps);
 		for (const std::string& Dep : Deps)
 		{
 			if (ModulesByName.find(Dep) == ModulesByName.end())
 			{
-				CATTY_CORE_ERROR("Module '{}' depends on missing '{}'", Name, Dep);
+				CATTY_CORE_ERROR(
+					"Module '{}' stage {} depends on missing '{}'",
+					Name,
+					static_cast<int>(Stage),
+					Dep);
 				return false;
 			}
 			Adj[Dep].push_back(Name);
@@ -446,7 +476,7 @@ bool FApp::RebuildModuleOrder()
 	{
 		const std::string Name = ReadyList.front();
 		ReadyList.erase(ReadyList.begin());
-		StartupOrder.push_back(ModulesByName[Name]);
+		OutOrder.push_back(ModulesByName[Name]);
 		for (const std::string& Next : Adj[Name])
 		{
 			if (--InDegree[Next] == 0)
@@ -456,7 +486,7 @@ bool FApp::RebuildModuleOrder()
 		}
 	}
 
-	if (StartupOrder.size() != Modules.size())
+	if (OutOrder.size() != Modules.size())
 	{
 		std::string Remaining;
 		for (const auto& Module : Modules)
@@ -472,18 +502,64 @@ bool FApp::RebuildModuleOrder()
 			}
 		}
 		CATTY_CORE_ERROR(
-			"FATAL: Module dependency cycle involving: {}",
+			"FATAL: Module dependency cycle at stage {} involving: {}",
+			static_cast<int>(Stage),
 			Remaining.empty() ? "(unknown)" : Remaining);
 		return false;
 	}
 
-	ShutdownOrder.assign(StartupOrder.rbegin(), StartupOrder.rend());
+	return true;
+}
+
+bool FApp::RebuildModuleOrder()
+{
+	ModulesByName.clear();
+	for (auto& Order : StageOrders)
+	{
+		Order.clear();
+	}
+
+	for (const auto& Module : Modules)
+	{
+		ModulesByName[Module->GetName()] = Module.get();
+	}
+
+	for (std::size_t Index = 0; Index < StageCount; ++Index)
+	{
+		const EModuleStage Stage = static_cast<EModuleStage>(Index);
+		if (!BuildStageOrder(Stage, StageOrders[Index]))
+		{
+			return false;
+		}
+	}
+
 	return true;
 }
 
 const std::vector<IModule*>& FApp::GetOrderForStage(EModuleStage Stage) const
 {
-	return IsShutdownFamily(Stage) ? ShutdownOrder : StartupOrder;
+	return StageOrders[StageIndex(Stage)];
+}
+
+bool FApp::WaitModuleDependencies(IModule& Module, EModuleStage Stage)
+{
+	std::vector<std::string> Deps;
+	Module.GetDependencies(Stage, Deps);
+	for (const std::string& DepName : Deps)
+	{
+		IModule* Dep = GetModuleByName(DepName.c_str());
+		if (!Dep)
+		{
+			CATTY_CORE_ERROR(
+				"Module '{}' missing dependency '{}' at stage {}",
+				Module.GetName(),
+				DepName,
+				static_cast<int>(Stage));
+			return false;
+		}
+		Dep->WaitStageComplete();
+	}
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -558,8 +634,7 @@ bool FApp::IsInitFamily(EModuleStage Stage)
 
 bool FApp::IsShutdownFamily(EModuleStage Stage)
 {
-	return Stage == EModuleStage::PreShutdown
-		|| Stage == EModuleStage::Shutdown;
+	return Stage == EModuleStage::Shutdown;
 }
 
 FApp::FStageMulticast& FApp::GetPostStageDelegate(EModuleStage Stage)
@@ -569,22 +644,95 @@ FApp::FStageMulticast& FApp::GetPostStageDelegate(EModuleStage Stage)
 
 bool FApp::ExecuteStage(EModuleStage Stage, FStageContext& Ctx)
 {
+	std::atomic<bool> bStageFailed{false};
+
 	for (IModule* Module : GetOrderForStage(Stage))
 	{
+		if (Module)
+		{
+			Module->ResetStageFence();
+		}
+	}
+
+	const std::vector<IModule*>& Order = GetOrderForStage(Stage);
+
+	for (IModule* Module : Order)
+	{
+		if (!Module || Module->PreferMainThread())
+		{
+			continue;
+		}
+
+		WorkerPool.Push([this, Module, Stage, &Ctx, &bStageFailed]()
+		{
+			if (!WaitModuleDependencies(*Module, Stage))
+			{
+				bStageFailed = true;
+				Module->SignalStageComplete();
+				return;
+			}
+
+			Module->SetCurrentStage(Stage);
+			if (!Module->ExecuteStage(Stage, *this, Ctx))
+			{
+				bStageFailed = true;
+			}
+			Module->SignalStageComplete();
+		});
+	}
+
+	for (IModule* Module : Order)
+	{
+		if (!Module || !Module->PreferMainThread())
+		{
+			continue;
+		}
+
+		if (!WaitModuleDependencies(*Module, Stage))
+		{
+			bStageFailed = true;
+			Module->SignalStageComplete();
+			continue;
+		}
+
+		Module->SetCurrentStage(Stage);
 		if (!Module->ExecuteStage(Stage, *this, Ctx))
 		{
+			bStageFailed = true;
 			if (IsInitFamily(Stage))
 			{
 				CATTY_CORE_ERROR(
 					"Module '{}' failed at stage {}",
 					Module->GetName(),
 					static_cast<int>(Stage));
+				Module->SignalStageComplete();
+				WorkerPool.Flush();
 				return false;
 			}
 		}
+		Module->SignalStageComplete();
+	}
+
+	WorkerPool.Flush();
+
+	if (bStageFailed && IsInitFamily(Stage))
+	{
+		return false;
 	}
 
 	PostStageDelegates[StageIndex(Stage)].Broadcast(Stage, *this, Ctx);
+	return true;
+}
+
+bool FApp::AreAllModulesIdle() const
+{
+	for (const auto& Module : Modules)
+	{
+		if (Module && !Module->IsIdle())
+		{
+			return false;
+		}
+	}
 	return true;
 }
 

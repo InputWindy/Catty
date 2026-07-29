@@ -55,17 +55,18 @@ void FGC::Shutdown()
 		return;
 	}
 
-	// Drop root pins so unreferenced objects can reach PendingKill.
 	RootMap.clear();
-
 	CollectGarbage();
 	PurgePendingKill();
 
-	if (!LiveObjects.empty())
+	if (!LiveObjects.empty() || !PendingKill.empty())
 	{
-		CATTY_CORE_WARN(
-			"FGC::Shutdown: {} live object(s) remain — holders still own FObjectRef(s)",
-			LiveObjects.size());
+		CATTY_CORE_ERROR(
+			"FGC::Shutdown: refuse — {} live / {} pending-kill object(s); "
+			"FApp must WaitForExit until GC IsIdle before unloading GC module",
+			LiveObjects.size(),
+			PendingKill.size());
+		return;
 	}
 
 	LiveObjects.clear();
@@ -188,6 +189,11 @@ void FGC::FinalizeDeadObject(FObject* Object)
 			"FGC::FinalizeDeadObject: no pooled type claimed Free for '{}'",
 			Object->GetPathName());
 	}
+}
+
+bool FGC::IsIdle() const
+{
+	return LiveObjects.empty() && PendingKill.empty();
 }
 
 bool FGC::TearDownPooledObject(FObject* Object)

@@ -150,13 +150,21 @@ constexpr const char* GPackageExtension = ".pkg.json";
 		return fs::weakly_canonical(Sibling, ErrorCode);
 	}
 
-	const fs::path BesideExe = FPaths::GetExecutableDir() / "Engine";
-	if (fs::is_directory(BesideExe, ErrorCode) && !ErrorCode)
+	const fs::path ExeDir = FPaths::GetExecutableDir();
+	if (LooksLikeEngineRoot(ExeDir))
 	{
-		return fs::weakly_canonical(BesideExe.parent_path(), ErrorCode);
+		return fs::weakly_canonical(ExeDir, ErrorCode);
 	}
 
-	return ProjectRoot;
+	// Packaged install: <ExeDir>/Engine/Content — EngineDir is the install root (ExeDir).
+	const fs::path PackagedEngineContent = ExeDir / "Engine" / "Content";
+	if (fs::is_directory(PackagedEngineContent, ErrorCode) && !ErrorCode)
+	{
+		return fs::weakly_canonical(ExeDir, ErrorCode);
+	}
+
+	// Do not fall back to ProjectRoot — that mounts engine content under the game tree.
+	return {};
 }
 
 [[nodiscard]] std::string AbsolutizeUnder(const fs::path& Root, const std::string& RelOrAbs)
@@ -296,6 +304,12 @@ void FPaths::Initialize(FEngineConfig& InOutConfig)
 	EngineDir = EngineRoot.string();
 	InOutConfig.ProjectDir = ProjectDir;
 	InOutConfig.EngineDir = EngineDir;
+
+	if (EngineRoot.empty())
+	{
+		CATTY_CORE_WARN(
+			"FPaths::Initialize: EngineDir not detected — shaders/content fall back under executable");
+	}
 
 	InOutConfig.ProjectConfigDir = AbsolutizeUnder(ProjectRoot, InOutConfig.ProjectConfigDir.empty()
 		? "Config"

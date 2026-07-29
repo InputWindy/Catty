@@ -151,4 +151,17 @@ void FResourceServer::Release(FResourceId Id)
 	LoadCv.notify_all();
 }
 
+bool FResourceServer::HasPendingLoads() const
+{
+	std::lock_guard<std::mutex> Lock(RegistryMutex);
+	for (const auto& Pair : Registry)
+	{
+		if (Pair.second.State == EResourceLoadState::Pending)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 } // namespace Catty

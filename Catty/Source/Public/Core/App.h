@@ -24,6 +24,18 @@
 namespace Catty
 {
 
+enum class EAppState : std::uint8_t
+{
+	/** Before / after Run — not in main loop. */
+	Stopped = 0,
+	/** Main loop accepting normal work. */
+	Running,
+	/** Exit requested: PrepareExit drain until all modules idle, then Shutdown. */
+	WaitForExit,
+	/** Shutdown stages in progress. */
+	ShuttingDown,
+};
+
 /**
  * Empty stage pipeline. Game subclasses assemble Modules / Layers:
  *   RegisterModules() → Init stages → PostInitialize (PushLayer) → AttachModules → loop.
@@ -54,7 +66,8 @@ public:
 	/** Sole public lifecycle entry. */
 	void Run();
 
-	[[nodiscard]] bool IsRunning() const { return bRunning; }
+	[[nodiscard]] bool IsRunning() const { return AppState == EAppState::Running; }
+	[[nodiscard]] EAppState GetState() const { return AppState; }
 
 	/**
 	 * Bound to Module / Layer multicasts (RegisterModule / PushLayer|Overlay).
@@ -109,7 +122,7 @@ private:
 
 	// ---------------------------------------------------------------------------
 	// Modules
-	// Fixed pipeline stage bodies (DAG). Register → topo order → ExecuteStage / Attach.
+	// Per-stage dependency DAGs (barrier). Register → RebuildModuleOrder → ExecuteStage.
 	// ---------------------------------------------------------------------------
 public:
 	void RegisterModule(std::unique_ptr<IModule> Module);
@@ -133,7 +146,9 @@ public:
 
 private:
 	bool RebuildModuleOrder();
+	[[nodiscard]] bool BuildStageOrder(EModuleStage Stage, std::vector<IModule*>& OutOrder);
 	[[nodiscard]] const std::vector<IModule*>& GetOrderForStage(EModuleStage Stage) const;
+	[[nodiscard]] bool WaitModuleDependencies(IModule& Module, EModuleStage Stage);
 
 	void AttachModules();
 	void DetachModules();
@@ -141,8 +156,8 @@ private:
 	std::vector<std::unique_ptr<IModule>> Modules;
 	std::unordered_map<std::type_index, IModule*> ModulesByType;
 	std::unordered_map<std::string, IModule*> ModulesByName;
-	std::vector<IModule*> StartupOrder;
-	std::vector<IModule*> ShutdownOrder;
+	/** Per-stage topo order (barrier DAG). Rebuilt in RebuildModuleOrder. */
+	std::array<std::vector<IModule*>, static_cast<std::size_t>(EModuleStage::NumMaxStage)> StageOrders{};
 
 	// ---------------------------------------------------------------------------
 	// Layers
@@ -190,8 +205,9 @@ private:
 private:
 	/** Sample clock, write DeltaSeconds, advance FrameIndex / LastFrameTimeSeconds. */
 	void UpdateAppState();
+	[[nodiscard]] bool AreAllModulesIdle() const;
 
-	bool bRunning = false;
+	EAppState AppState = EAppState::Stopped;
 	float DeltaSeconds = 0.0f;
 	float FixedUpdateAccumulator = 0.0f;
 	double LastFrameTimeSeconds = 0.0;
