@@ -81,7 +81,7 @@ void FGC::RegisterObject(FObject& Object)
 		return;
 	}
 
-	Object.GCOwner = this;
+	Object.GC = this;
 	LiveObjects.push_back(&Object);
 }
 
@@ -93,7 +93,7 @@ void FGC::UnregisterObject(FObject& Object)
 	RemoveAllRootRefs(&Object);
 	RemoveFromPendingKill(&Object);
 	RemoveFromImmediate(&Object);
-	Object.GCOwner = nullptr;
+	Object.GC = nullptr;
 }
 
 void FGC::RemoveAllRootRefs(FObject* Object)

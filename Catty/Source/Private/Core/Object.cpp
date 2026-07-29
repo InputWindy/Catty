@@ -182,34 +182,34 @@ std::uint32_t FObject::ReleaseRef()
 
 void FObject::AddToRoot()
 {
-	if (!GCOwner)
+	if (!GC)
 	{
-		CATTY_CORE_ERROR("FObject::AddToRoot: '{}' has no GCOwner", GetPathName());
+		CATTY_CORE_ERROR("FObject::AddToRoot: '{}' has no GC", GetPathName());
 		return;
 	}
-	GCOwner->AddToRoot(*this);
+	GC->AddToRoot(*this);
 }
 
 void FObject::RemoveFromRoot()
 {
-	if (!GCOwner)
+	if (!GC)
 	{
-		CATTY_CORE_ERROR("FObject::RemoveFromRoot: '{}' has no GCOwner", GetPathName());
+		CATTY_CORE_ERROR("FObject::RemoveFromRoot: '{}' has no GC", GetPathName());
 		return;
 	}
-	GCOwner->RemoveFromRoot(*this);
+	GC->RemoveFromRoot(*this);
 }
 
 bool FObject::IsRooted() const
 {
-	return GCOwner && GCOwner->IsInRootSet(*this);
+	return GC && GC->IsInRootSet(*this);
 }
 
 void FObject::MarkPendingKill()
 {
-	if (GCOwner)
+	if (GC)
 	{
-		GCOwner->EnqueuePendingKill(*this);
+		GC->EnqueuePendingKill(*this);
 		return;
 	}
 
@@ -219,9 +219,9 @@ void FObject::MarkPendingKill()
 
 void FObject::MarkForImmediateDestroy()
 {
-	if (GCOwner)
+	if (GC)
 	{
-		GCOwner->EnqueueImmediateDestroy(*this);
+		GC->EnqueueImmediateDestroy(*this);
 		return;
 	}
 

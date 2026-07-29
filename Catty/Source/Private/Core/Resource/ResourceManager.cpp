@@ -171,8 +171,6 @@ bool FResourceManager::Initialize()
 		return false;
 	}
 
-	TransientPackage.Reset();
-
 	CATTY_CORE_INFO("ResourceManager initialized");
 	return true;
 }
@@ -245,14 +243,6 @@ void FResourceManager::ReleaseResourceId(FResourceId Id)
 	}
 }
 
-void FResourceManager::ClearTransientPackageIf(FPackage* Package)
-{
-	if (Package && TransientPackage.Get() == static_cast<FObject*>(Package))
-	{
-		TransientPackage.Reset();
-	}
-}
-
 std::string FResourceManager::MakeResourceCatalogKey(const FResource& Resource)
 {
 	return NormalizeResourceVirtualPath(Resource.GetPathName());
@@ -283,17 +273,6 @@ FObjectRef FResourceManager::FindLoadedPackageByName(const std::string& Name) co
 	if (Key.empty())
 	{
 		return {};
-	}
-
-	if (TransientPackage)
-	{
-		if (FPackage* Transient = TransientPackage.Cast<FPackage>())
-		{
-			if (NormalizePackageName(Transient->GetName()) == Key)
-			{
-				return TransientPackage;
-			}
-		}
 	}
 
 	for (const auto& Pair : Resources)
@@ -368,7 +347,6 @@ void FResourceManager::Shutdown()
 	}
 
 	Resources.clear();
-	TransientPackage.Reset();
 
 	CollectGarbage();
 	PurgePendingKill();
@@ -394,26 +372,6 @@ void FResourceManager::Shutdown()
 	}
 
 	CATTY_CORE_INFO("ResourceManager shut down");
-}
-
-FObjectRef FResourceManager::GetTransientPackage()
-{
-	if (TransientPackage)
-	{
-		return TransientPackage;
-	}
-
-	FObjectRef PackageRef = NewObject<FPackage>(
-		std::string(TransientPackageName),
-		EPackageFlags::Transient);
-	if (!PackageRef)
-	{
-		CATTY_CORE_ERROR("FResourceManager::GetTransientPackage: NewObject failed");
-		return {};
-	}
-
-	TransientPackage = PackageRef;
-	return TransientPackage;
 }
 
 FObjectRef FResourceManager::LoadResourceIntoPackage(
@@ -907,13 +865,6 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	if (PackageName.empty())
 	{
 		PackageName = FilePath;
-	}
-
-	if (PackageName == TransientPackageName)
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: cannot load into transient package name");
-		LoadingFilePaths.erase(NormalizedFile);
-		return {};
 	}
 
 	if (FObjectRef Existing = FindLoadedPackageByName(PackageName))

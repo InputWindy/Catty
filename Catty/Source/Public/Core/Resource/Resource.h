@@ -27,15 +27,16 @@ enum class EResourceType : std::uint8_t
 };
 
 /**
- * External-file asset (png / mesh / ...). Always Outer'd to an FPackage.
- * The FResource object is created synchronously with the package object table;
- * raw bytes are filled later by FResourceManager's internal loader (Pending → Ready/Failed).
+ * External-file asset (png / mesh / ...).
+ * Outer may be an FPackage (saved content) or null (runtime-only; PathName = ObjectName).
+ * The FResource object is created synchronously; raw bytes are filled later by
+ * the ResourceManager loader (Pending → Ready/Failed).
  * Package JSON stores source path only — not binary content.
  *
- * Example:
+ * Example (runtime-only):
  * ```
- *   Catty::FObjectRef Pkg = Catty::GetTransientPackage();
- *   Catty::FObjectRef Hero = Catty::NewObject<Catty::FResource>(...);
+ *   Catty::FObjectRef Hero = Catty::NewObject<Catty::FResource>(
+ *       nullptr, "T_Hero", Id, EResourceType::Texture, "Textures/T_Hero.png");
  *   Catty::RegisterResource(Hero);
  *   Catty::FlushResource(Hero);
  * ```

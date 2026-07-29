@@ -112,7 +112,8 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
  * Abstract base for package objects (UE UObject-lite).
  * Not allocatable by itself — construct only via subclasses (FPackage, FResource, ...).
  * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
- * Outer is FObjectRef (empty for FPackage itself). Cleanup is fully owned by ~FObject.
+ * Outer is FObjectRef (empty for FPackage, or for runtime-only objects with no package).
+ * Cleanup is fully owned by ~FObject.
  *
  * Reflection (editor / blueprint): CATTY_OBJECT + CATTY_PROPERTY / CATTY_FUNCTION.
  */
@@ -249,8 +250,8 @@ private:
 	// ---------------------------------------------------------------------------
 	// Fields
 	// ---------------------------------------------------------------------------
-	FGC* GCOwner = nullptr;
-	/** Pins Outer package. Empty for FPackage itself. */
+	FGC* GC = nullptr;
+	/** Outer package pin. Empty for FPackage, or runtime-only objects. */
 	FObjectRef Outer;
 	std::uint32_t RefCount = 0;
 	std::uint32_t WeakSerial = 0;

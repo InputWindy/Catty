@@ -3,7 +3,6 @@
 #include <Core/GC.h>
 #include <Core/Log.h>
 #include <Core/Resource/Resource.h>
-#include <Core/Resource/ResourceManager.h>
 
 #include <unordered_map>
 #include <vector>
@@ -95,8 +94,6 @@ void FPackage::StaticTearDown(FPackage* Package)
 	{
 		return;
 	}
-
-	ClearTransientPackageIf(Package);
 
 	if (Package->Objects.empty())
 	{

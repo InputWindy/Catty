@@ -29,8 +29,6 @@ class FResourceServer;
 class CATTY_API FResourceManager
 {
 public:
-	static constexpr const char* TransientPackageName = "/Engine/Transient";
-
 	FResourceManager();
 	~FResourceManager();
 
@@ -41,12 +39,6 @@ public:
 	[[nodiscard]] bool Initialize();
 	void Shutdown();
 	[[nodiscard]] bool IsInitialized() const;
-
-	/**
-	 * Convenience package held by one FObjectRef (not a package catalog).
-	 * Created once via NewObject on first use.
-	 */
-	[[nodiscard]] FObjectRef GetTransientPackage();
 
 	// --- Catalog ---
 	[[nodiscard]] bool RegisterResource(const FObjectRef& Resource);
@@ -71,8 +63,6 @@ public:
 
 	/** Release async load Id (FResource TearDown). */
 	void ReleaseResourceId(FResourceId Id);
-	/** Clear transient hold if it points at Package (FPackage TearDown). */
-	void ClearTransientPackageIf(FPackage* Package);
 
 	// --- Load / export ---
 	[[nodiscard]] bool SavePackage(
@@ -119,7 +109,6 @@ private:
 	[[nodiscard]] FObjectRef ResolveObjectPath(const std::string& PathName) const;
 
 	std::unique_ptr<FResourceServer> Server;
-	FObjectRef TransientPackage;
 	std::unordered_map<std::string, FObjectRef> Resources;
 };
 
@@ -130,12 +119,6 @@ private:
 namespace Detail
 {
 [[nodiscard]] CATTY_API FResourceManager* GetResourceManager();
-}
-
-[[nodiscard]] inline FObjectRef GetTransientPackage()
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->GetTransientPackage() : FObjectRef{};
 }
 
 inline bool RegisterResource(const FObjectRef& Resource)
@@ -215,14 +198,6 @@ inline void ReleaseResourceId(FResourceId Id)
 	if (FResourceManager* Manager = Detail::GetResourceManager())
 	{
 		Manager->ReleaseResourceId(Id);
-	}
-}
-
-inline void ClearTransientPackageIf(FPackage* Package)
-{
-	if (FResourceManager* Manager = Detail::GetResourceManager())
-	{
-		Manager->ClearTransientPackageIf(Package);
 	}
 }
 
