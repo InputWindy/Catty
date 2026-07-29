@@ -99,6 +99,7 @@ private:
 
 /**
  * Game-thread GC (refcount scan). Owns per-type pools / TearDown.
+ * Objects die only when RefCount hits 0 → CollectGarbage → PurgePendingKill.
  */
 class CATTY_API FGC
 {
@@ -181,7 +182,6 @@ public:
 
 	void RegisterObject(FObject& Object);
 	void UnregisterObject(FObject& Object);
-	void DestroyObjectImmediate(FObject* Object);
 
 	void CollectGarbage();
 	void PurgePendingKill();
@@ -202,16 +202,15 @@ private:
 	void AddToRoot(FObject& Object);
 	void RemoveFromRoot(FObject& Object);
 	void EnqueuePendingKill(FObject& Object);
-	void EnqueueImmediateDestroy(FObject& Object);
 	[[nodiscard]] bool IsInRootSet(const FObject& Object) const;
 
 	[[nodiscard]] static bool IsKeptAlive(const FObject& Object);
 
 	void QueueUnreferenced();
-	void ProcessImmediateDestroy();
+	/** TearDown + Free a dead (RefCount==0) object. Never call while kept alive. */
+	void FinalizeDeadObject(FObject* Object);
 	void RemoveAllRootRefs(FObject* Object);
 	void RemoveFromPendingKill(FObject* Object);
-	void RemoveFromImmediate(FObject* Object);
 
 	[[nodiscard]] bool TearDownPooledObject(FObject* Object);
 	[[nodiscard]] bool FreePooledObject(FObject* Object);
@@ -223,7 +222,6 @@ private:
 	std::vector<FObject*> LiveObjects;
 	std::unordered_map<FObject*, FRootEntry> RootMap;
 	std::vector<FObject*> PendingKill;
-	std::vector<FObject*> ImmediateDestroy;
 
 	float CollectIntervalSeconds = 1.0f;
 	float CollectAccumulatorSeconds = 0.0f;

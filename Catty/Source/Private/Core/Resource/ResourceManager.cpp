@@ -339,14 +339,12 @@ void FResourceManager::Shutdown()
 		if (FResource* Resource = Ref.Cast<FResource>())
 		{
 			UnregisterResource(Resource);
-			if (Resource->GetRefCount() == 0)
-			{
-				Resource->MarkForImmediateDestroy();
-			}
+			Resource->ClearOuter();
 		}
 	}
 
 	Resources.clear();
+	Snapshot.clear();
 
 	if (FGC* GC = Detail::GetGC())
 	{
@@ -466,13 +464,13 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 
 	if (!PackageObj.RegisterObject(Resource))
 	{
-		GC->DestroyObjectImmediate(Resource);
+		Resource->ClearOuter();
 		return {};
 	}
 
 	if (!RegisterResource(ResourceRef))
 	{
-		GC->DestroyObjectImmediate(Resource);
+		Resource->ClearOuter();
 		return {};
 	}
 
@@ -877,30 +875,11 @@ FObjectRef FResourceManager::LoadPackageInternal(
 
 	if (FObjectRef Existing = FindLoadedPackageByName(PackageName))
 	{
-		UnregisterResourcesInPackage(PackageName);
-		if (FPackage* ExistingPackage = Existing.Cast<FPackage>())
-		{
-			std::vector<FObject*> ObjectSnapshot;
-			ObjectSnapshot.reserve(ExistingPackage->Objects.size());
-			for (const auto& Pair : ExistingPackage->Objects)
-			{
-				ObjectSnapshot.push_back(Pair.second);
-			}
-			for (FObject* Object : ObjectSnapshot)
-			{
-				if (Object)
-				{
-					if (FGC* GC = Detail::GetGC())
-					{
-						GC->DestroyObjectImmediate(Object);
-					}
-				}
-			}
-			if (FGC* GC = Detail::GetGC())
-			{
-				GC->DestroyObjectImmediate(ExistingPackage);
-			}
-		}
+		CATTY_CORE_WARN(
+			"FResourceManager::LoadPackage: '{}' already loaded — returning existing",
+			PackageName);
+		LoadingFilePaths.erase(NormalizedFile);
+		return Existing;
 	}
 
 	FGC* GC = Detail::GetGC();
@@ -918,10 +897,6 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	if (!Raw->Deserialize(Root))
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadPackage: Deserialize failed '{}'", FilePath);
-		if (GC)
-		{
-			GC->DestroyObjectImmediate(Raw);
-		}
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}

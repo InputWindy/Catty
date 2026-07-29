@@ -53,23 +53,21 @@ void FGC::Shutdown()
 		return;
 	}
 
+	// Drop root pins so unreferenced objects can reach PendingKill.
+	RootMap.clear();
+
+	CollectGarbage();
+	PurgePendingKill();
+
 	if (!LiveObjects.empty())
 	{
 		CATTY_CORE_WARN(
-			"FGC::Shutdown: {} live object(s) remain — owners should destroy them first",
+			"FGC::Shutdown: {} live object(s) remain — holders still own FObjectRef(s)",
 			LiveObjects.size());
-
-		std::vector<FObject*> Snapshot = LiveObjects;
-		for (FObject* Object : Snapshot)
-		{
-			DestroyObjectImmediate(Object);
-		}
 	}
 
 	LiveObjects.clear();
-	RootMap.clear();
 	PendingKill.clear();
-	ImmediateDestroy.clear();
 	PooledTypes.clear();
 	bInitialized = false;
 	CATTY_CORE_INFO("GC shut down");
@@ -94,7 +92,6 @@ void FGC::UnregisterObject(FObject& Object)
 		LiveObjects.end());
 	RemoveAllRootRefs(&Object);
 	RemoveFromPendingKill(&Object);
-	RemoveFromImmediate(&Object);
 	Object.GC = nullptr;
 }
 
@@ -113,13 +110,6 @@ void FGC::RemoveFromPendingKill(FObject* Object)
 	PendingKill.erase(std::remove(PendingKill.begin(), PendingKill.end(), Object), PendingKill.end());
 }
 
-void FGC::RemoveFromImmediate(FObject* Object)
-{
-	ImmediateDestroy.erase(
-		std::remove(ImmediateDestroy.begin(), ImmediateDestroy.end(), Object),
-		ImmediateDestroy.end());
-}
-
 bool FGC::IsKeptAlive(const FObject& Object)
 {
 	return Object.GetRefCount() > 0;
@@ -130,17 +120,26 @@ bool FGC::IsInRootSet(const FObject& Object) const
 	return RootMap.find(const_cast<FObject*>(&Object)) != RootMap.end();
 }
 
-void FGC::DestroyObjectImmediate(FObject* Object)
+void FGC::FinalizeDeadObject(FObject* Object)
 {
 	if (!Object)
 	{
 		return;
 	}
 
+	if (IsKeptAlive(*Object))
+	{
+		CATTY_CORE_ERROR(
+			"FGC::FinalizeDeadObject: '{}' still has RefCount {} — refuse finalize",
+			Object->GetPathName(),
+			Object->GetRefCount());
+		return;
+	}
+
 	if (!TearDownPooledObject(Object))
 	{
 		CATTY_CORE_ERROR(
-			"FGC::DestroyObjectImmediate: no pooled type claimed TearDown for '{}'",
+			"FGC::FinalizeDeadObject: no pooled type claimed TearDown for '{}'",
 			Object->GetPathName());
 	}
 
@@ -149,7 +148,7 @@ void FGC::DestroyObjectImmediate(FObject* Object)
 	if (!FreePooledObject(Object))
 	{
 		CATTY_CORE_ERROR(
-			"FGC::DestroyObjectImmediate: no pooled type claimed Free for '{}'",
+			"FGC::FinalizeDeadObject: no pooled type claimed Free for '{}'",
 			Object->GetPathName());
 	}
 }
@@ -208,11 +207,6 @@ void FGC::AddToRoot(FObject& Object)
 		Object.ClearFlags(EObjectFlags::PendingKill);
 		RemoveFromPendingKill(&Object);
 	}
-	if (Object.HasAnyFlags(EObjectFlags::ImmediateDestroy))
-	{
-		Object.ClearFlags(EObjectFlags::ImmediateDestroy);
-		RemoveFromImmediate(&Object);
-	}
 }
 
 void FGC::RemoveFromRoot(FObject& Object)
@@ -235,25 +229,11 @@ void FGC::RemoveFromRoot(FObject& Object)
 
 void FGC::EnqueuePendingKill(FObject& Object)
 {
-	Object.ClearFlags(EObjectFlags::ImmediateDestroy);
 	Object.AddFlags(EObjectFlags::PendingKill);
-	RemoveFromImmediate(&Object);
 
 	if (std::find(PendingKill.begin(), PendingKill.end(), &Object) == PendingKill.end())
 	{
 		PendingKill.push_back(&Object);
-	}
-}
-
-void FGC::EnqueueImmediateDestroy(FObject& Object)
-{
-	Object.ClearFlags(EObjectFlags::PendingKill);
-	Object.AddFlags(EObjectFlags::ImmediateDestroy);
-	RemoveFromPendingKill(&Object);
-
-	if (std::find(ImmediateDestroy.begin(), ImmediateDestroy.end(), &Object) == ImmediateDestroy.end())
-	{
-		ImmediateDestroy.push_back(&Object);
 	}
 }
 
@@ -272,20 +252,6 @@ void FGC::QueueUnreferenced()
 			{
 				Object->ClearFlags(EObjectFlags::PendingKill);
 				RemoveFromPendingKill(Object);
-			}
-			if (Object->HasAnyFlags(EObjectFlags::ImmediateDestroy))
-			{
-				Object->ClearFlags(EObjectFlags::ImmediateDestroy);
-				RemoveFromImmediate(Object);
-			}
-			continue;
-		}
-
-		if (Object->HasAnyFlags(EObjectFlags::ImmediateDestroy))
-		{
-			if (std::find(ImmediateDestroy.begin(), ImmediateDestroy.end(), Object) == ImmediateDestroy.end())
-			{
-				ImmediateDestroy.push_back(Object);
 			}
 			continue;
 		}
@@ -310,35 +276,6 @@ void FGC::CollectGarbage()
 	}
 
 	QueueUnreferenced();
-	ProcessImmediateDestroy();
-}
-
-void FGC::ProcessImmediateDestroy()
-{
-	if (ImmediateDestroy.empty())
-	{
-		return;
-	}
-
-	std::vector<FObject*> ToFree = std::move(ImmediateDestroy);
-	ImmediateDestroy.clear();
-
-	for (FObject* Object : ToFree)
-	{
-		if (!Object)
-		{
-			continue;
-		}
-
-		if (IsKeptAlive(*Object))
-		{
-			Object->ClearFlags(EObjectFlags::ImmediateDestroy);
-			continue;
-		}
-
-		CATTY_CORE_INFO("GC immediate destroy: {}", Object->GetPathName());
-		DestroyObjectImmediate(Object);
-	}
 }
 
 void FGC::PurgePendingKill()
@@ -372,7 +309,7 @@ void FGC::PurgePendingKill()
 	for (FObject* Object : ToFree)
 	{
 		CATTY_CORE_INFO("GC purge pending kill: {}", Object->GetPathName());
-		DestroyObjectImmediate(Object);
+		FinalizeDeadObject(Object);
 	}
 }
 
@@ -386,8 +323,6 @@ void FGC::Tick(float DeltaSeconds)
 	// Allow runtime ini/console changes to take effect.
 	CollectIntervalSeconds = GCVarCollectInterval.GetValue();
 	PurgeIntervalSeconds = GCVarPurgeInterval.GetValue();
-
-	ProcessImmediateDestroy();
 
 	CollectAccumulatorSeconds += DeltaSeconds;
 	if (CollectIntervalSeconds <= 0.0f || CollectAccumulatorSeconds >= CollectIntervalSeconds)

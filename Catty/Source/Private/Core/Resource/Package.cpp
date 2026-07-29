@@ -1,6 +1,5 @@
 ﻿#include <Core/Resource/Package.h>
 
-#include <Core/GC.h>
 #include <Core/Log.h>
 #include <Core/Resource/Resource.h>
 
@@ -100,8 +99,10 @@ void FPackage::StaticTearDown(FPackage* Package)
 		return;
 	}
 
+	// Package should only reach TearDown after Outer pins are gone.
+	// Leftover name-table entries are stale — detach and clear; do not force-free.
 	CATTY_CORE_ERROR(
-		"FPackage::StaticTearDown: '{}' still has {} object(s) — destroying leftovers",
+		"FPackage::StaticTearDown: '{}' still has {} object(s) — clearing name table",
 		Package->GetName(),
 		Package->GetObjectCount());
 
@@ -112,14 +113,15 @@ void FPackage::StaticTearDown(FPackage* Package)
 		Snapshot.push_back(Pair.second);
 	}
 
-	FGC* GC = Detail::GetGC();
 	for (FObject* Object : Snapshot)
 	{
-		if (Object && GC)
+		if (Object)
 		{
-			GC->DestroyObjectImmediate(Object);
+			Object->ClearOuter();
 		}
 	}
+
+	Package->Objects.clear();
 }
 
 bool FPackage::IsPersistent() const

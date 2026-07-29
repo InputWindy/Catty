@@ -213,20 +213,7 @@ void FObject::MarkPendingKill()
 		return;
 	}
 
-	ClearFlags(EObjectFlags::ImmediateDestroy);
 	AddFlags(EObjectFlags::PendingKill);
-}
-
-void FObject::MarkForImmediateDestroy()
-{
-	if (GC)
-	{
-		GC->EnqueueImmediateDestroy(*this);
-		return;
-	}
-
-	ClearFlags(EObjectFlags::PendingKill);
-	AddFlags(EObjectFlags::ImmediateDestroy);
 }
 
 bool FObject::SplitObjectPath(

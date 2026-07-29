@@ -73,7 +73,6 @@ enum class EObjectFlags : std::uint32_t
 {
 	None = 0,
 	PendingKill = 1u << 0,
-	ImmediateDestroy = 1u << 1,
 };
 
 [[nodiscard]] constexpr EObjectFlags operator|(EObjectFlags A, EObjectFlags B)
@@ -215,8 +214,6 @@ public:
 	void RemoveFromRoot();
 	CATTY_FUNCTION()
 	void MarkPendingKill();
-	CATTY_FUNCTION()
-	void MarkForImmediateDestroy();
 
 protected:
 	FObject(FPackage* InOuter, std::string InObjectName);
