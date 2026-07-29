@@ -20,6 +20,8 @@
 /out/
 /cmake-build-*/
 /.vs/
+/.vscode/
+/.cursor/
 CMakeUserPresets.json
 compile_commands.json
 __pycache__/
