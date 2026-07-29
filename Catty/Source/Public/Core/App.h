@@ -2,10 +2,8 @@
 
 #include <Core/AppFrameSequencerTraits.h>
 #include <Core/ConsoleManager.h>
-#include <Core/Delegate.h>
 #include <Core/Engine.h>
 #include <Core/Export.h>
-#include <Core/FrameStage.h>
 #include <Core/Layer.h>
 #include <Core/Log.h>
 #include <Core/Module.h>
@@ -32,7 +30,7 @@ namespace Catty
 using EAppState = ESequenceGraphState;
 
 /**
- * Empty stage pipeline. Game subclasses assemble Modules / Layers:
+ * Application shell: Modules (Init/Shutdown + frame Sequencer A) and Layers (Sequencer B).
  *   RegisterModules() → Init stages → PostInitialize (PushLayer) → AttachModules → Execute().
  */
 class CATTY_API FApp : public TSequenceGraph<FApp, FModuleFrameTraits, FLayerFrameTraits>
@@ -57,29 +55,7 @@ public:
 	}
 
 	void OnRequestExit();
-	void OnAttachLayer(FLayer& Layer);
-	void OnDetachLayer(FLayer& Layer);
-	void OnAttachModule(IModule& Module);
-	void OnDetachModule(IModule& Module);
 
-	/** FixedUpdate remaining steps this frame (SequenceGraph repeat). */
-	[[nodiscard]] int GetFixedStepsRemaining() const { return FixedStepsRemaining; }
-	void SetFixedStepsRemaining(int Steps) { FixedStepsRemaining = Steps; }
-
-protected:
-	virtual void Configure(FEngineConfig& OutConfig);
-	virtual void RegisterModules();
-	virtual bool PostInitialize();
-
-private:
-	bool Initialize();
-	void Shutdown();
-	bool BuildDefaultFrameWiring();
-	void InstallFixedUpdateRepeat();
-	void BootstrapFirstAttach();
-	void OnWorkersStarted() override;
-
-public:
 	[[nodiscard]] FEngineConfig& GetConfig() { return EngineConfig; }
 	[[nodiscard]] const FEngineConfig& GetConfig() const { return EngineConfig; }
 
@@ -99,15 +75,6 @@ public:
 	void UpdateAppState();
 	[[nodiscard]] bool AreAllModulesIdle() const;
 
-private:
-	FEngineConfig EngineConfig;
-	FLog Log;
-	FConsoleManager ConsoleManager;
-	FTimer Timer;
-	FWorkerPool WorkerPool;
-	FScriptSystem ScriptSystem;
-
-public:
 	void RegisterModule(std::unique_ptr<IModule> Module);
 
 	template <typename T>
@@ -127,7 +94,26 @@ public:
 	[[nodiscard]] IModule* GetModuleByName(const char* Name);
 	[[nodiscard]] const IModule* GetModuleByName(const char* Name) const;
 
+protected:
+	virtual void Configure(FEngineConfig& OutConfig);
+	virtual void RegisterModules();
+	virtual bool PostInitialize();
+
+	void PushLayer(std::unique_ptr<FLayer> Layer);
+	void PushOverlay(std::unique_ptr<FLayer> Overlay);
+	void ClearLayers();
+
+	[[nodiscard]] bool BuildGraph() override;
+
 private:
+	bool Initialize();
+	void Shutdown();
+	void InstallFixedUpdateRepeat();
+	void BootstrapFirstAttach();
+	void OnWorkersStarted() override;
+
+	void OnDetachModule(IModule& Module);
+
 	bool RebuildModuleOrder();
 	[[nodiscard]] bool BuildStageOrder(EModuleStage Stage, std::vector<IModule*>& OutOrder);
 	[[nodiscard]] const std::vector<IModule*>& GetOrderForStage(EModuleStage Stage) const;
@@ -136,29 +122,25 @@ private:
 	void AttachModules();
 	void DetachModules();
 
+	bool ExecuteLifecycleStage(EModuleStage Stage, FStageContext& Ctx);
+	static bool IsLifecycleStage(EModuleStage Stage);
+	static bool IsInitFamily(EModuleStage Stage);
+	static std::size_t StageIndex(EModuleStage Stage);
+
+	FEngineConfig EngineConfig;
+	FLog Log;
+	FConsoleManager ConsoleManager;
+	FTimer Timer;
+	FWorkerPool WorkerPool;
+	FScriptSystem ScriptSystem;
+
 	std::vector<std::unique_ptr<IModule>> Modules;
 	std::unordered_map<std::type_index, IModule*> ModulesByType;
 	std::unordered_map<std::string, IModule*> ModulesByName;
 	std::array<std::vector<IModule*>, static_cast<std::size_t>(EModuleStage::NumMaxStage)> StageOrders{};
 
-protected:
-	void PushLayer(std::unique_ptr<FLayer> Layer);
-	void PushOverlay(std::unique_ptr<FLayer> Overlay);
-	void ClearLayers();
-
-private:
-	struct FLayerBinding
-	{
-		std::unique_ptr<FLayer> Layer;
-	};
-
-	std::vector<FLayerBinding> LayerBindings;
+	std::vector<std::unique_ptr<FLayer>> Layers;
 	std::size_t LayerInsertIndex = 0;
-
-	bool ExecuteStage(EModuleStage Stage, FStageContext& Ctx);
-	static bool IsInitFamily(EModuleStage Stage);
-	static bool IsShutdownFamily(EModuleStage Stage);
-	static std::size_t StageIndex(EModuleStage Stage);
 
 	float DeltaSeconds = 0.0f;
 	float FixedDeltaSeconds = 0.0f;

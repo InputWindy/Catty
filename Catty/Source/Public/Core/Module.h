@@ -48,12 +48,15 @@ struct FStageContext
 };
 
 /**
- * Engine / plugin extension of a fixed pipeline stage.
+ * Engine / plugin extension.
  * Game content uses FLayer on the Layer SequenceGraph sequencer.
  *
- * Per-stage dependencies act like barriers: for stage S, a module waits until every
- * named dependency has finished S before running ExecuteStage(S). FApp may run
- * independent modules concurrently via WorkerPool (PreferMainThread() == false).
+ * Lifecycle (PreInit/Init/PostInit/Shutdown): FApp::ExecuteLifecycleStage runs modules
+ * in dependency order (GetDependencies) and may use WorkerPool for PreferMainThread==false.
+ *
+ * Frame: SequenceGraph lockstep calls OnSequencerStage on each module; that invokes
+ * ExecuteStage for the overlapping EModuleStage. Cross-module frame order is the
+ * Sequencer gate graph, not GetDependencies.
  */
 class CATTY_API IModule
 {
@@ -71,7 +74,7 @@ public:
 
 	/**
 	 * Modules that must complete Stage before this module runs Stage.
-	 * Empty = no barrier for that stage (registration order only for topo stability).
+	 * Used by FApp lifecycle ExecuteLifecycleStage barriers only (not frame Sequencer).
 	 */
 	virtual void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const
 	{
@@ -80,8 +83,8 @@ public:
 	}
 
 	/**
-	 * True = stage runs on the app/main thread (window / RHI / ImGui).
-	 * False = Sequencer worker thread for that object.
+	 * True = PreferMainThread Sequencer loop / lifecycle main-thread path.
+	 * False = Sequencer worker thread (and lifecycle WorkerPool jobs).
 	 */
 	[[nodiscard]] virtual bool PreferMainThread() const
 	{
@@ -89,7 +92,7 @@ public:
 	}
 
 	/**
-	 * Fixed stage body for Init/Shutdown (and frame stages when invoked from OnSequencerStage).
+	 * Stage body. Lifecycle: FApp::ExecuteLifecycleStage. Frame: OnSequencerStage.
 	 * Init-family may return false to abort startup.
 	 */
 	virtual bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
@@ -100,7 +103,7 @@ public:
 		return true;
 	}
 
-	/** Frame SequenceGraph stage entry (maps to ExecuteStage for overlapping stages). */
+	/** Frame SequenceGraph entry; maps overlapping stages to ExecuteStage. */
 	virtual void OnSequencerStage(EFrameStage Stage);
 
 	/**

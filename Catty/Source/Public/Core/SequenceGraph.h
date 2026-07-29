@@ -1,22 +1,18 @@
 #pragma once
 
 /**
- * TSequenceGraph: owns up to 10 typed TSequencer slots (A..J) plus one
- * cross-sequencer thread-safe TContext (first template parameter).
- *
- * Unused slots default to void (no sequencer instance).
+ * TSequenceGraph: owns N typed TSequencer slots (variadic Traits pack) plus one
+ * cross-sequencer thread-safe TContext (first template parameter, CRTP).
  *
  * Example:
  * ```
- *   using FGraph = Catty::TSequenceGraph<FMyApp, FModuleTraits, FLayerTraits>; // CRTP: FMyApp : FGraph
- *   FGraph& Graph = MyApp;
+ *   using FGraph = Catty::TSequenceGraph<FMyApp, FModuleTraits, FLayerTraits>;
  *   Graph.WithContext([](FMyApp& App) { App.DoWork(); });
- *   auto Key = Graph.GetA().Register(Module);
- *   Catty::TSequencerDep<FModuleTraits, FLayerTraits> Dep;
- *   Dep.FromTo[FModuleTraits::FStage::BeginFrame] = FLayerTraits::FStage::BeginFrame;
+ *   Graph.GetA().Register(Module);   // Get<0>()
+ *   Graph.GetB().Register(Layer);    // Get<1>()
  *   Graph.BindDep(Graph.GetA(), Graph.GetB(), Dep);
- *   if (!Graph.Build()) { abort on cycle; }
- *   Graph.Execute(); // Running → main/worker loops → Stopped
+ *   if (!Graph.Build()) { ... }
+ *   Graph.Execute();
  * ```
  */
 
@@ -27,6 +23,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -49,153 +46,25 @@ enum class ESequenceGraphState : std::uint8_t
 	ShuttingDown,
 };
 
-namespace Private
-{
-
-template <typename TTraits>
-struct TSequenceGraphSlot
-{
-	static constexpr bool bIsActive = true;
-	using FTraits = TTraits;
-
-	TSequencer<TTraits> Sequencer;
-
-	[[nodiscard]] TSequencer<TTraits>& Get()
-	{
-		return Sequencer;
-	}
-
-	[[nodiscard]] const TSequencer<TTraits>& Get() const
-	{
-		return Sequencer;
-	}
-
-	[[nodiscard]] ISequencerLockstep* AsLockstep()
-	{
-		return &Sequencer;
-	}
-
-	[[nodiscard]] const ISequencerLockstep* AsLockstep() const
-	{
-		return &Sequencer;
-	}
-
-	void StartWorkerLoops()
-	{
-		Sequencer.StartWorkerLoops();
-	}
-
-	void OpenZeroExpectGates()
-	{
-		Sequencer.OpenZeroExpectGates();
-	}
-
-	void RequestStop()
-	{
-		Sequencer.RequestStop();
-	}
-
-	void WaitForStop()
-	{
-		Sequencer.WaitForStop();
-	}
-
-	void RunMainThreadObjectLoops()
-	{
-		Sequencer.RunMainThreadObjectLoops();
-	}
-
-	[[nodiscard]] bool TryPumpMainThreadObjectsOnce()
-	{
-		return Sequencer.TryPumpMainThreadObjectsOnce();
-	}
-
-	void WaitForGateNotify(std::chrono::milliseconds Timeout)
-	{
-		Sequencer.WaitForGateNotify(Timeout);
-	}
-
-	[[nodiscard]] bool IsStopRequested() const
-	{
-		return Sequencer.IsStopRequested();
-	}
-};
-
-template <>
-struct TSequenceGraphSlot<void>
-{
-	static constexpr bool bIsActive = false;
-
-	[[nodiscard]] ISequencerLockstep* AsLockstep()
-	{
-		return nullptr;
-	}
-
-	[[nodiscard]] const ISequencerLockstep* AsLockstep() const
-	{
-		return nullptr;
-	}
-
-	void StartWorkerLoops()
-	{
-	}
-
-	void OpenZeroExpectGates()
-	{
-	}
-
-	void RequestStop()
-	{
-	}
-
-	void WaitForStop()
-	{
-	}
-
-	void RunMainThreadObjectLoops()
-	{
-	}
-
-	[[nodiscard]] bool TryPumpMainThreadObjectsOnce()
-	{
-		return false;
-	}
-
-	void WaitForGateNotify(std::chrono::milliseconds /*Timeout*/)
-	{
-	}
-
-	[[nodiscard]] bool IsStopRequested() const
-	{
-		return true;
-	}
-};
-
-} // namespace Private
-
 /**
  * Graph of sequencers + shared cross-sequence context.
  *
  * Template parameters:
- *   TContext — shared state visible across all sequencers (thread-safe via WithContext / AccessContext)
- *   A..J     — sequencer Traits types (void = empty slot); pin deps use TSequencerDep + BindDep
+ *   TContext      — CRTP context (WithContext / AccessContext)
+ *   TSlotTraits... — one Traits type per sequencer slot (void not allowed)
  */
-template <
-	typename TContext,
-	typename A = void,
-	typename B = void,
-	typename C = void,
-	typename D = void,
-	typename E = void,
-	typename F = void,
-	typename G = void,
-	typename H = void,
-	typename TI = void,
-	typename TJ = void>
+template <typename TContext, typename... TSlotTraits>
 class TSequenceGraph
 {
+	static_assert(sizeof...(TSlotTraits) >= 1, "TSequenceGraph needs at least one slot Traits");
+	static_assert((!std::is_void_v<TSlotTraits> && ...), "void slot Traits are not allowed");
+
 public:
 	using FContext = TContext;
+	static constexpr std::size_t SlotCount = sizeof...(TSlotTraits);
+
+	template <std::size_t I>
+	using FTraitsAt = std::tuple_element_t<I, std::tuple<TSlotTraits...>>;
 
 	TSequenceGraph() = default;
 
@@ -276,157 +145,57 @@ public:
 		return FConstContextAccess{std::unique_lock<std::mutex>(ContextMutex), static_cast<const TContext&>(*this)};
 	}
 
-	// --- Sequencer slots A..J -----------------------------------------------
+	// --- Sequencer slots ----------------------------------------------------
 
-	[[nodiscard]] TSequencer<A>& GetA() requires (!std::is_void_v<A>)
+	template <std::size_t I>
+	[[nodiscard]] TSequencer<FTraitsAt<I>>& Get()
 	{
-		return SlotA.Get();
+		static_assert(I < SlotCount, "Get<I>: slot index out of range");
+		return std::get<I>(Sequencers);
 	}
 
-	[[nodiscard]] const TSequencer<A>& GetA() const requires (!std::is_void_v<A>)
+	template <std::size_t I>
+	[[nodiscard]] const TSequencer<FTraitsAt<I>>& Get() const
 	{
-		return SlotA.Get();
+		static_assert(I < SlotCount, "Get<I>: slot index out of range");
+		return std::get<I>(Sequencers);
 	}
 
-	[[nodiscard]] TSequencer<B>& GetB() requires (!std::is_void_v<B>)
+	/** Compatibility aliases for the first two slots (Module / Layer). */
+	[[nodiscard]] TSequencer<FTraitsAt<0>>& GetA()
 	{
-		return SlotB.Get();
+		return Get<0>();
 	}
 
-	[[nodiscard]] const TSequencer<B>& GetB() const requires (!std::is_void_v<B>)
+	[[nodiscard]] const TSequencer<FTraitsAt<0>>& GetA() const
 	{
-		return SlotB.Get();
+		return Get<0>();
 	}
 
-	[[nodiscard]] TSequencer<C>& GetC() requires (!std::is_void_v<C>)
+	[[nodiscard]] TSequencer<FTraitsAt<1>>& GetB() requires (SlotCount > 1)
 	{
-		return SlotC.Get();
+		return Get<1>();
 	}
 
-	[[nodiscard]] const TSequencer<C>& GetC() const requires (!std::is_void_v<C>)
+	[[nodiscard]] const TSequencer<FTraitsAt<1>>& GetB() const requires (SlotCount > 1)
 	{
-		return SlotC.Get();
+		return Get<1>();
 	}
 
-	[[nodiscard]] TSequencer<D>& GetD() requires (!std::is_void_v<D>)
+	template <std::size_t I>
+	[[nodiscard]] static constexpr bool HasSlot()
 	{
-		return SlotD.Get();
+		return I < SlotCount;
 	}
 
-	[[nodiscard]] const TSequencer<D>& GetD() const requires (!std::is_void_v<D>)
-	{
-		return SlotD.Get();
-	}
-
-	[[nodiscard]] TSequencer<E>& GetE() requires (!std::is_void_v<E>)
-	{
-		return SlotE.Get();
-	}
-
-	[[nodiscard]] const TSequencer<E>& GetE() const requires (!std::is_void_v<E>)
-	{
-		return SlotE.Get();
-	}
-
-	[[nodiscard]] TSequencer<F>& GetF() requires (!std::is_void_v<F>)
-	{
-		return SlotF.Get();
-	}
-
-	[[nodiscard]] const TSequencer<F>& GetF() const requires (!std::is_void_v<F>)
-	{
-		return SlotF.Get();
-	}
-
-	[[nodiscard]] TSequencer<G>& GetG() requires (!std::is_void_v<G>)
-	{
-		return SlotG.Get();
-	}
-
-	[[nodiscard]] const TSequencer<G>& GetG() const requires (!std::is_void_v<G>)
-	{
-		return SlotG.Get();
-	}
-
-	[[nodiscard]] TSequencer<H>& GetH() requires (!std::is_void_v<H>)
-	{
-		return SlotH.Get();
-	}
-
-	[[nodiscard]] const TSequencer<H>& GetH() const requires (!std::is_void_v<H>)
-	{
-		return SlotH.Get();
-	}
-
-	[[nodiscard]] TSequencer<TI>& GetI() requires (!std::is_void_v<TI>)
-	{
-		return SlotI.Get();
-	}
-
-	[[nodiscard]] const TSequencer<TI>& GetI() const requires (!std::is_void_v<TI>)
-	{
-		return SlotI.Get();
-	}
-
-	[[nodiscard]] TSequencer<TJ>& GetJ() requires (!std::is_void_v<TJ>)
-	{
-		return SlotJ.Get();
-	}
-
-	[[nodiscard]] const TSequencer<TJ>& GetJ() const requires (!std::is_void_v<TJ>)
-	{
-		return SlotJ.Get();
-	}
-
-	/** True if the corresponding slot was instantiated with a Traits type. */
 	[[nodiscard]] static constexpr bool HasA()
 	{
-		return !std::is_void_v<A>;
+		return HasSlot<0>();
 	}
 
 	[[nodiscard]] static constexpr bool HasB()
 	{
-		return !std::is_void_v<B>;
-	}
-
-	[[nodiscard]] static constexpr bool HasC()
-	{
-		return !std::is_void_v<C>;
-	}
-
-	[[nodiscard]] static constexpr bool HasD()
-	{
-		return !std::is_void_v<D>;
-	}
-
-	[[nodiscard]] static constexpr bool HasE()
-	{
-		return !std::is_void_v<E>;
-	}
-
-	[[nodiscard]] static constexpr bool HasF()
-	{
-		return !std::is_void_v<F>;
-	}
-
-	[[nodiscard]] static constexpr bool HasG()
-	{
-		return !std::is_void_v<G>;
-	}
-
-	[[nodiscard]] static constexpr bool HasH()
-	{
-		return !std::is_void_v<H>;
-	}
-
-	[[nodiscard]] static constexpr bool HasI()
-	{
-		return !std::is_void_v<TI>;
-	}
-
-	[[nodiscard]] static constexpr bool HasJ()
-	{
-		return !std::is_void_v<TJ>;
+		return HasSlot<1>();
 	}
 
 	// --- Wiring / lifecycle -------------------------------------------------
@@ -567,6 +336,15 @@ public:
 	}
 
 protected:
+	/**
+	 * Subclass fills BindDep edges (and any extra pin listeners), then typically calls Build().
+	 * Default: Build() with no extra edges.
+	 */
+	[[nodiscard]] virtual bool BuildGraph()
+	{
+		return Build();
+	}
+
 	/** Hook after StartWorkerLoopsAll (e.g. bootstrap first Attach gate). */
 	virtual void OnWorkersStarted()
 	{
@@ -576,105 +354,53 @@ public:
 
 	void OpenZeroExpectGatesAll()
 	{
-		SlotA.OpenZeroExpectGates();
-		SlotB.OpenZeroExpectGates();
-		SlotC.OpenZeroExpectGates();
-		SlotD.OpenZeroExpectGates();
-		SlotE.OpenZeroExpectGates();
-		SlotF.OpenZeroExpectGates();
-		SlotG.OpenZeroExpectGates();
-		SlotH.OpenZeroExpectGates();
-		SlotI.OpenZeroExpectGates();
-		SlotJ.OpenZeroExpectGates();
+		ForEachSequencer([](auto& Seq)
+		{
+			Seq.OpenZeroExpectGates();
+		});
 	}
 
 	void StartWorkerLoopsAll()
 	{
-		SlotA.StartWorkerLoops();
-		SlotB.StartWorkerLoops();
-		SlotC.StartWorkerLoops();
-		SlotD.StartWorkerLoops();
-		SlotE.StartWorkerLoops();
-		SlotF.StartWorkerLoops();
-		SlotG.StartWorkerLoops();
-		SlotH.StartWorkerLoops();
-		SlotI.StartWorkerLoops();
-		SlotJ.StartWorkerLoops();
+		ForEachSequencer([](auto& Seq)
+		{
+			Seq.StartWorkerLoops();
+		});
 	}
 
 	void RunMainThreadObjectLoopsAll()
 	{
-		// PreferMainThread objects across Module/Layer (and peers) must interleave
-		// one stage at a time. Calling SlotA.RunMainThreadObjectLoops() then SlotB
-		// deadlocks: Module waits for Layer pins while Layer never pumps.
-		while (!(SlotA.IsStopRequested()
-			&& SlotB.IsStopRequested()
-			&& SlotC.IsStopRequested()
-			&& SlotD.IsStopRequested()
-			&& SlotE.IsStopRequested()
-			&& SlotF.IsStopRequested()
-			&& SlotG.IsStopRequested()
-			&& SlotH.IsStopRequested()
-			&& SlotI.IsStopRequested()
-			&& SlotJ.IsStopRequested()))
+		// PreferMainThread objects across slots must interleave one stage at a time.
+		while (!AreAllStopRequested())
 		{
-			const bool bProgressed =
-				SlotA.TryPumpMainThreadObjectsOnce()
-				|| SlotB.TryPumpMainThreadObjectsOnce()
-				|| SlotC.TryPumpMainThreadObjectsOnce()
-				|| SlotD.TryPumpMainThreadObjectsOnce()
-				|| SlotE.TryPumpMainThreadObjectsOnce()
-				|| SlotF.TryPumpMainThreadObjectsOnce()
-				|| SlotG.TryPumpMainThreadObjectsOnce()
-				|| SlotH.TryPumpMainThreadObjectsOnce()
-				|| SlotI.TryPumpMainThreadObjectsOnce()
-				|| SlotJ.TryPumpMainThreadObjectsOnce();
-			if (!bProgressed)
+			if (!TryPumpMainThreadObjectsOnceAll())
 			{
-				if constexpr (!std::is_void_v<A>)
-				{
-					SlotA.WaitForGateNotify(std::chrono::milliseconds(2));
-				}
-				else if constexpr (!std::is_void_v<B>)
-				{
-					SlotB.WaitForGateNotify(std::chrono::milliseconds(2));
-				}
+				Get<0>().WaitForGateNotify(std::chrono::milliseconds(2));
 			}
 		}
 	}
 
 	void RequestStopAll()
 	{
-		SlotA.RequestStop();
-		SlotB.RequestStop();
-		SlotC.RequestStop();
-		SlotD.RequestStop();
-		SlotE.RequestStop();
-		SlotF.RequestStop();
-		SlotG.RequestStop();
-		SlotH.RequestStop();
-		SlotI.RequestStop();
-		SlotJ.RequestStop();
+		ForEachSequencer([](auto& Seq)
+		{
+			Seq.RequestStop();
+		});
 	}
 
 	void WaitForStopAll()
 	{
-		SlotA.WaitForStop();
-		SlotB.WaitForStop();
-		SlotC.WaitForStop();
-		SlotD.WaitForStop();
-		SlotE.WaitForStop();
-		SlotF.WaitForStop();
-		SlotG.WaitForStop();
-		SlotH.WaitForStop();
-		SlotI.WaitForStop();
-		SlotJ.WaitForStop();
+		ForEachSequencer([](auto& Seq)
+		{
+			Seq.WaitForStop();
+		});
 	}
 
 private:
-	static constexpr std::size_t SlotCount = 10;
 	/** Pack (slot, stage) into one node id; stage index must be < StageIndexStride. */
 	static constexpr std::size_t StageIndexStride = 256;
+
+	using FSequencerTuple = std::tuple<TSequencer<TSlotTraits>...>;
 
 	struct FPendingPinEdge
 	{
@@ -685,6 +411,52 @@ private:
 		ISequencerLockstep* Src = nullptr;
 		ISequencerLockstep* Dst = nullptr;
 	};
+
+	template <typename TFunc>
+	void ForEachSequencer(TFunc&& Func)
+	{
+		ForEachSequencerImpl(std::forward<TFunc>(Func), std::make_index_sequence<SlotCount>{});
+	}
+
+	template <typename TFunc>
+	void ForEachSequencer(TFunc&& Func) const
+	{
+		ForEachSequencerImpl(std::forward<TFunc>(Func), std::make_index_sequence<SlotCount>{});
+	}
+
+	template <typename TFunc, std::size_t... Is>
+	void ForEachSequencerImpl(TFunc&& Func, std::index_sequence<Is...>)
+	{
+		(Func(std::get<Is>(Sequencers)), ...);
+	}
+
+	template <typename TFunc, std::size_t... Is>
+	void ForEachSequencerImpl(TFunc&& Func, std::index_sequence<Is...>) const
+	{
+		(Func(std::get<Is>(Sequencers)), ...);
+	}
+
+	[[nodiscard]] bool AreAllStopRequested() const
+	{
+		return AreAllStopRequestedImpl(std::make_index_sequence<SlotCount>{});
+	}
+
+	template <std::size_t... Is>
+	[[nodiscard]] bool AreAllStopRequestedImpl(std::index_sequence<Is...>) const
+	{
+		return (std::get<Is>(Sequencers).IsStopRequested() && ...);
+	}
+
+	[[nodiscard]] bool TryPumpMainThreadObjectsOnceAll()
+	{
+		return TryPumpMainThreadObjectsOnceAllImpl(std::make_index_sequence<SlotCount>{});
+	}
+
+	template <std::size_t... Is>
+	[[nodiscard]] bool TryPumpMainThreadObjectsOnceAllImpl(std::index_sequence<Is...>)
+	{
+		return (std::get<Is>(Sequencers).TryPumpMainThreadObjectsOnce() || ...);
+	}
 
 	[[nodiscard]] static constexpr std::size_t MakeNodeId(std::size_t Slot, std::size_t StageIndex)
 	{
@@ -697,26 +469,17 @@ private:
 		{
 			return SlotCount;
 		}
-		const std::array<const ISequencerLockstep*, SlotCount> Slots = {
-			SlotA.AsLockstep(),
-			SlotB.AsLockstep(),
-			SlotC.AsLockstep(),
-			SlotD.AsLockstep(),
-			SlotE.AsLockstep(),
-			SlotF.AsLockstep(),
-			SlotG.AsLockstep(),
-			SlotH.AsLockstep(),
-			SlotI.AsLockstep(),
-			SlotJ.AsLockstep(),
-		};
-		for (std::size_t Index = 0; Index < SlotCount; ++Index)
-		{
-			if (Slots[Index] == Ptr)
-			{
-				return Index;
-			}
-		}
-		return SlotCount;
+		return FindSlotIndexImpl(Ptr, std::make_index_sequence<SlotCount>{});
+	}
+
+	template <std::size_t... Is>
+	[[nodiscard]] std::size_t FindSlotIndexImpl(
+		const ISequencerLockstep* Ptr,
+		std::index_sequence<Is...>) const
+	{
+		std::size_t Found = SlotCount;
+		((&std::get<Is>(Sequencers) == Ptr ? (Found = Is, true) : false) || ...);
+		return Found;
 	}
 
 	/** DFS cycle detection on SrcPin → DstGate pin edges. */
@@ -795,17 +558,7 @@ private:
 	ESequenceGraphState GraphState = ESequenceGraphState::Stopped;
 	bool bBuilt = false;
 	std::vector<FPendingPinEdge> PendingEdges;
-
-	Private::TSequenceGraphSlot<A> SlotA;
-	Private::TSequenceGraphSlot<B> SlotB;
-	Private::TSequenceGraphSlot<C> SlotC;
-	Private::TSequenceGraphSlot<D> SlotD;
-	Private::TSequenceGraphSlot<E> SlotE;
-	Private::TSequenceGraphSlot<F> SlotF;
-	Private::TSequenceGraphSlot<G> SlotG;
-	Private::TSequenceGraphSlot<H> SlotH;
-	Private::TSequenceGraphSlot<TI> SlotI;
-	Private::TSequenceGraphSlot<TJ> SlotJ;
+	FSequencerTuple Sequencers{};
 };
 
 } // namespace Catty
