@@ -21,10 +21,11 @@ class FResourceServer;
 /**
  * Resource catalog + package IO (built into Catty.dll).
  * Owns PathName → FObjectRef catalog only. Does not create game resources —
- * callers NewObject<FResource> then RegisterResource. LoadPackage rebuilds
- * objects internally while deserializing.
+ * callers allocate via FGC::NewObject then RegisterResource on this manager.
+ * LoadPackage rebuilds objects internally while deserializing.
  *
- * Access via free helpers (same pattern as FGC / NewObject), not ILuaBindable.
+ * Lua / script shortcuts live in Core/Wrap.h. C++ uses this class via
+ * Detail::GetResourceManager() or GApp Resource module.
  */
 class CATTY_API FResourceManager
 {
@@ -112,137 +113,9 @@ private:
 	std::unordered_map<std::string, FObjectRef> Resources;
 };
 
-// ---------------------------------------------------------------------------
-// Public free helpers (resolve via GApp Resource module), same style as FGC.
-// ---------------------------------------------------------------------------
-
 namespace Detail
 {
 [[nodiscard]] CATTY_API FResourceManager* GetResourceManager();
-}
-
-inline bool RegisterResource(const FObjectRef& Resource)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager && Manager->RegisterResource(Resource);
-}
-
-inline bool UnregisterResource(FObject* Resource)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager && Manager->UnregisterResource(Resource);
-}
-
-inline bool UnregisterResource(const FObjectRef& Resource)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager && Manager->UnregisterResource(Resource);
-}
-
-[[nodiscard]] inline FObjectRef FindObject(const FObjectRef& Package, const std::string& ObjectName)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->FindObject(Package, ObjectName) : FObjectRef{};
-}
-
-[[nodiscard]] inline FObjectRef FindObject(const std::string& PackageName, const std::string& ObjectName)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->FindObject(PackageName, ObjectName) : FObjectRef{};
-}
-
-[[nodiscard]] inline FObjectRef FindResourceByPath(const std::string& VirtualPath)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->FindResourceByPath(VirtualPath) : FObjectRef{};
-}
-
-inline bool UnloadResource(const std::string& VirtualPath)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager && Manager->UnloadResource(VirtualPath);
-}
-
-inline bool UnloadResource(const FObjectRef& Resource)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager && Manager->UnloadResource(Resource);
-}
-
-[[nodiscard]] inline FObjectRef Resolve(const FSoftObjectPath& SoftPath)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->Resolve(SoftPath) : FObjectRef{};
-}
-
-[[nodiscard]] inline FObjectRef Resolve(const std::string& SoftPathString)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->Resolve(SoftPathString) : FObjectRef{};
-}
-
-[[nodiscard]] inline FObjectRef TryLoad(const FSoftObjectPath& SoftPath)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->TryLoad(SoftPath) : FObjectRef{};
-}
-
-[[nodiscard]] inline FObjectRef TryLoad(const std::string& SoftPathString)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->TryLoad(SoftPathString) : FObjectRef{};
-}
-
-inline void ReleaseResourceId(FResourceId Id)
-{
-	if (FResourceManager* Manager = Detail::GetResourceManager())
-	{
-		Manager->ReleaseResourceId(Id);
-	}
-}
-
-[[nodiscard]] inline bool SavePackage(
-	const FObjectRef& Package,
-	const std::string& FilePath = {},
-	bool bPretty = true,
-	bool bSaveDependencies = true)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager && Manager->SavePackage(Package, FilePath, bPretty, bSaveDependencies);
-}
-
-[[nodiscard]] inline FObjectRef LoadPackage(const std::string& FilePath)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->LoadPackage(FilePath) : FObjectRef{};
-}
-
-[[nodiscard]] inline EResourceLoadState GetResourceLoadState(const FObjectRef& Object)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->GetLoadState(Object) : EResourceLoadState::Invalid;
-}
-
-[[nodiscard]] inline bool IsResourceReady(const FObjectRef& Object)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager && Manager->IsReady(Object);
-}
-
-inline void FlushResource(const FObjectRef& Object)
-{
-	if (FResourceManager* Manager = Detail::GetResourceManager())
-	{
-		Manager->Flush(Object);
-	}
-}
-
-inline void FlushAllResources()
-{
-	if (FResourceManager* Manager = Detail::GetResourceManager())
-	{
-		Manager->FlushAll();
-	}
 }
 
 } // namespace Catty

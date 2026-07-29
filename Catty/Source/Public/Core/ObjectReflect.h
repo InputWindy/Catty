@@ -9,6 +9,9 @@
  *   {
  *   	CATTY_GENERATED_BODY()
  *   public:
+ *   	// Optional FGC pool: PoolSize + StaticTearDown (codegen registers).
+ *   	static constexpr int PoolSize = 16;
+ *   	static void StaticTearDown(FMyAsset* Self);
  *   	CATTY_PROPERTY()
  *   	std::string DisplayName;
  *   	CATTY_FUNCTION()

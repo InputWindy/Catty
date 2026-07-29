@@ -249,12 +249,14 @@ bool FSoftObjectPath::operator==(const FSoftObjectPath& Other) const
 
 FObjectRef FSoftObjectPath::Resolve() const
 {
-	return Catty::Resolve(*this);
+	FResourceManager* Manager = Detail::GetResourceManager();
+	return Manager ? Manager->Resolve(*this) : FObjectRef{};
 }
 
 FObjectRef FSoftObjectPath::TryLoad() const
 {
-	return Catty::TryLoad(*this);
+	FResourceManager* Manager = Detail::GetResourceManager();
+	return Manager ? Manager->TryLoad(*this) : FObjectRef{};
 }
 
 } // namespace Catty

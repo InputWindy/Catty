@@ -17,6 +17,11 @@ bool FGCModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 			CATTY_CORE_ERROR("FGCModule: Initialize failed");
 			return false;
 		}
+		if (!GC.IsInitialized())
+		{
+			CATTY_CORE_ERROR("FGCModule: FGC must be initialized");
+			return false;
+		}
 		return true;
 	case EModuleStage::Update:
 		GC.Tick(Ctx.DeltaSeconds);

@@ -27,14 +27,15 @@ void FResource::StaticTearDown(FResource* Resource)
 		return;
 	}
 
-	// Drop catalog while Outer still valid (virtual path needs Package.ObjectName).
-	UnregisterResource(Resource);
-	if (Resource->GetId().IsValid())
+	if (FResourceManager* Manager = Detail::GetResourceManager())
 	{
-		ReleaseResourceId(Resource->GetId());
+		// Drop catalog while Outer still valid (virtual path needs Package.ObjectName).
+		Manager->UnregisterResource(Resource);
+		if (Resource->GetId().IsValid())
+		{
+			Manager->ReleaseResourceId(Resource->GetId());
+		}
 	}
-
-	Resource->ClearOuter();
 }
 
 } // namespace Catty

@@ -231,73 +231,9 @@ private:
 	float PurgeAccumulatorSeconds = 0.0f;
 };
 
-// ---------------------------------------------------------------------------
-// Public free helpers. GetGC / DestroyObjectImmediate are Detail / FGC-only.
-// ---------------------------------------------------------------------------
-
 namespace Detail
 {
 [[nodiscard]] CATTY_API FGC* GetGC();
-}
-
-template <typename TObject, typename... TArgs>
-[[nodiscard]] FObjectRef NewObject(TArgs&&... Args)
-{
-	static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
-	FGC* GC = Detail::GetGC();
-	if (!GC)
-	{
-		return {};
-	}
-	return GC->NewObject<TObject>(std::forward<TArgs>(Args)...);
-}
-
-/**
- * Register TObject pool + TearDown. Construction uses T's ctor via NewObject.
- * Example:
- *   RegisterObjectType<FPackage>(16, &FPackage::StaticTearDown);
- */
-template <typename TObject, typename TDestroyFn>
-void RegisterObjectType(
-	std::size_t InitialChunkSlots,
-	TDestroyFn&& DestroyFn)
-{
-	if (FGC* GC = Detail::GetGC())
-	{
-		GC->RegisterObjectType<TObject>(
-			InitialChunkSlots,
-			std::forward<TDestroyFn>(DestroyFn));
-	}
-}
-
-template <typename TObject>
-[[nodiscard]] bool HasPooledType()
-{
-	FGC* GC = Detail::GetGC();
-	return GC && GC->HasPooledType<TObject>();
-}
-
-template <typename TObject>
-[[nodiscard]] std::size_t GetPooledLiveCount()
-{
-	FGC* GC = Detail::GetGC();
-	return GC ? GC->GetPooledLiveCount<TObject>() : 0;
-}
-
-inline void CollectGarbage()
-{
-	if (FGC* GC = Detail::GetGC())
-	{
-		GC->CollectGarbage();
-	}
-}
-
-inline void PurgePendingKill()
-{
-	if (FGC* GC = Detail::GetGC())
-	{
-		GC->PurgePendingKill();
-	}
 }
 
 } // namespace Catty

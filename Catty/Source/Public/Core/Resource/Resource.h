@@ -35,10 +35,10 @@ enum class EResourceType : std::uint8_t
  *
  * Example (runtime-only):
  * ```
- *   Catty::FObjectRef Hero = Catty::NewObject<Catty::FResource>(
+ *   Catty::FGC* GC = Catty::Detail::GetGC();
+ *   Catty::FObjectRef Hero = GC->NewObject<Catty::FResource>(
  *       nullptr, "T_Hero", Id, EResourceType::Texture, "Textures/T_Hero.png");
- *   Catty::RegisterResource(Hero);
- *   Catty::FlushResource(Hero);
+ *   Catty::Detail::GetResourceManager()->RegisterResource(Hero);
  * ```
  */
 CATTY_OBJECT()
@@ -47,6 +47,9 @@ class CATTY_API FResource : public FObject
 	CATTY_GENERATED_BODY()
 
 public:
+	/** Initial FGC pool chunk slots (codegen RegisterGeneratedGCPooledTypes). */
+	static constexpr int PoolSize = 64;
+
 	FResource(
 		FPackage* InOuter,
 		std::string InObjectName,

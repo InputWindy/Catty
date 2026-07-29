@@ -348,22 +348,25 @@ void FResourceManager::Shutdown()
 
 	Resources.clear();
 
-	CollectGarbage();
-	PurgePendingKill();
+	if (FGC* GC = Detail::GetGC())
+	{
+		GC->CollectGarbage();
+		GC->PurgePendingKill();
 
-	const std::size_t LiveResources = GetPooledLiveCount<FResource>();
-	const std::size_t LivePackages = GetPooledLiveCount<FPackage>();
-	if (LiveResources > 0)
-	{
-		CATTY_CORE_ERROR(
-			"FResourceManager::Shutdown: {} resource slot(s) still live in GC pool",
-			LiveResources);
-	}
-	if (LivePackages > 0)
-	{
-		CATTY_CORE_ERROR(
-			"FResourceManager::Shutdown: {} package slot(s) still live in GC pool",
-			LivePackages);
+		const std::size_t LiveResources = GC->GetPooledLiveCount<FResource>();
+		const std::size_t LivePackages = GC->GetPooledLiveCount<FPackage>();
+		if (LiveResources > 0)
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::Shutdown: {} resource slot(s) still live in GC pool",
+				LiveResources);
+		}
+		if (LivePackages > 0)
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::Shutdown: {} package slot(s) still live in GC pool",
+				LivePackages);
+		}
 	}
 
 	if (Server->IsInitialized())
@@ -433,7 +436,18 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 		return {};
 	}
 
-	FObjectRef ResourceRef = NewObject<FResource>(
+	FGC* GC = Detail::GetGC();
+	if (!GC)
+	{
+		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: GC unavailable");
+		if (Server->IsInitialized() && Id.IsValid())
+		{
+			Server->Release(Id);
+		}
+		return {};
+	}
+
+	FObjectRef ResourceRef = GC->NewObject<FResource>(
 		&PackageObj,
 		ObjectName,
 		Id,
@@ -452,19 +466,13 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 
 	if (!PackageObj.RegisterObject(Resource))
 	{
-		if (FGC* GC = Detail::GetGC())
-		{
-			GC->DestroyObjectImmediate(Resource);
-		}
+		GC->DestroyObjectImmediate(Resource);
 		return {};
 	}
 
 	if (!RegisterResource(ResourceRef))
 	{
-		if (FGC* GC = Detail::GetGC())
-		{
-			GC->DestroyObjectImmediate(Resource);
-		}
+		GC->DestroyObjectImmediate(Resource);
 		return {};
 	}
 
@@ -895,7 +903,10 @@ FObjectRef FResourceManager::LoadPackageInternal(
 		}
 	}
 
-	FObjectRef PackageRef = NewObject<FPackage>(PackageName, EPackageFlags::Persistent);
+	FGC* GC = Detail::GetGC();
+	FObjectRef PackageRef = GC
+		? GC->NewObject<FPackage>(PackageName, EPackageFlags::Persistent)
+		: FObjectRef{};
 	FPackage* Raw = PackageRef.Cast<FPackage>();
 	if (!Raw)
 	{
@@ -907,7 +918,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	if (!Raw->Deserialize(Root))
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadPackage: Deserialize failed '{}'", FilePath);
-		if (FGC* GC = Detail::GetGC())
+		if (GC)
 		{
 			GC->DestroyObjectImmediate(Raw);
 		}

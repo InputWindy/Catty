@@ -13,8 +13,7 @@ namespace Catty
  *
  * Example:
  * ```
- *   Catty::FObjectRef Hero = Catty::FindResourceByPath("/Game/Textures/T_Hero.T_Hero");
- *   Catty::FlushResource(Hero);
+ *   Catty::Detail::GetResourceManager()->FindResourceByPath("/Game/Textures/T_Hero.T_Hero");
  * ```
  */
 CATTY_STRUCT()

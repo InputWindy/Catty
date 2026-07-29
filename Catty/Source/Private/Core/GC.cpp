@@ -4,6 +4,7 @@
 #include <Core/App.h>
 #include <Core/Log.h>
 #include <Core/Modules/GCModule.h>
+#include <ObjectReflectTypes.gen.h>
 
 #include <algorithm>
 
@@ -40,6 +41,7 @@ bool FGC::Initialize()
 	CollectIntervalSeconds = GCVarCollectInterval.GetValue();
 	PurgeIntervalSeconds = GCVarPurgeInterval.GetValue();
 	bInitialized = true;
+	RegisterGeneratedGCPooledTypes(*this);
 	CATTY_CORE_INFO("GC initialized");
 	return true;
 }

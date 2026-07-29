@@ -46,6 +46,7 @@
 #include <Core/Resource/Package.h>
 #include <Core/GC.h>
 #include <Core/Resource/ResourceManager.h>
+#include <Core/Wrap.h>
 #include <Core/Layer/ScriptSystem.h>
 #include <Core/Layer/ScriptLayer.h>
 #if defined(CATTY_WITH_IMGUI)

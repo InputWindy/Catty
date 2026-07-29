@@ -66,10 +66,11 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
  *
  * Example:
  * ```
- *   Catty::FObjectRef PkgRef = Catty::NewObject<Catty::FPackage>(
+ *   Catty::FGC* GC = Catty::Detail::GetGC();
+ *   Catty::FObjectRef PkgRef = GC->NewObject<Catty::FPackage>(
  *       "/Game/Maps/Demo", Catty::EPackageFlags::Persistent);
- *   // NewObject resource + RegisterResource(...); then:
- *   Catty::SavePackage(PkgRef, FPaths::ConvertPackageNameToFilename(
+ *   Catty::FResourceManager* RM = Catty::Detail::GetResourceManager();
+ *   RM->SavePackage(PkgRef, FPaths::ConvertPackageNameToFilename(
  *       PkgRef.Cast<Catty::FPackage>()->GetName()));
  * ```
  */
@@ -79,6 +80,9 @@ class CATTY_API FPackage : public FObject
 	CATTY_GENERATED_BODY()
 
 public:
+	/** Initial FGC pool chunk slots (codegen RegisterGeneratedGCPooledTypes). */
+	static constexpr int PoolSize = 16;
+
 	FPackage(std::string InName, EPackageFlags InFlags = EPackageFlags::Transient);
 	virtual ~FPackage() override;
 
