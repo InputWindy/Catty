@@ -1,4 +1,4 @@
-#include <Core/Modules/ResourceModule.h>
+﻿#include <Core/Modules/ResourceModule.h>
 
 #include <Core/App.h>
 #include <Core/Log.h>
@@ -26,7 +26,7 @@ bool FResourceModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext&
 			CATTY_CORE_ERROR("FResourceModule: GC module missing");
 			return false;
 		}
-		if (!ResourceManager.Initialize(GC->GetGCManager()))
+		if (!ResourceManager.Initialize(GC->GetGC()))
 		{
 			CATTY_CORE_ERROR("FResourceModule: Initialize failed");
 			return false;

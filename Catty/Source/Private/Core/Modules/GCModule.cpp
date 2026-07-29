@@ -12,19 +12,19 @@ bool FGCModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 	switch (Stage)
 	{
 	case EModuleStage::Init:
-		if (!GCManager.Initialize())
+		if (!GC.Initialize())
 		{
 			CATTY_CORE_ERROR("FGCModule: Initialize failed");
 			return false;
 		}
 		return true;
 	case EModuleStage::Update:
-		GCManager.Tick(Ctx.DeltaSeconds);
+		GC.Tick(Ctx.DeltaSeconds);
 		return true;
 	case EModuleStage::Shutdown:
-		if (GCManager.IsInitialized())
+		if (GC.IsInitialized())
 		{
-			GCManager.Shutdown();
+			GC.Shutdown();
 		}
 		return true;
 	default:

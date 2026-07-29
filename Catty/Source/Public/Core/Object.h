@@ -13,7 +13,7 @@ namespace Catty
 {
 
 class FPackage;
-class FGCManager;
+class FGC;
 class FObject;
 
 /**
@@ -56,7 +56,7 @@ public:
 private:
 	friend class FPackage;
 	friend class FResourceManager;
-	friend class FGCManager;
+	friend class FGC;
 	friend class FObject;
 	friend struct FPropertyValue;
 
@@ -236,7 +236,7 @@ private:
 	friend class FObjectRef;
 	friend class FPackage;
 	friend class FResourceManager;
-	friend class FGCManager;
+	friend class FGC;
 	friend struct FPropertyValue;
 
 	// ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ private:
 	// ---------------------------------------------------------------------------
 	// Fields
 	// ---------------------------------------------------------------------------
-	FGCManager* GCOwner = nullptr;
+	FGC* GCOwner = nullptr;
 	/** Pins Outer package. Empty for FPackage itself. */
 	FObjectRef Outer;
 	std::uint32_t RefCount = 0;

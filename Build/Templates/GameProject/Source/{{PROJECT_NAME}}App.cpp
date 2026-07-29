@@ -12,13 +12,16 @@ protected:
 	virtual void Configure(Catty::FEngineConfig& OutConfig) override
 	{
 		OutConfig.ApplicationName = "{{PROJECT_NAME}}";
+		// Relative dirs — FPaths::Initialize turns them into absolute under Project/Engine roots.
 		OutConfig.EngineShadersDir = "Engine/Shaders";
 		OutConfig.ProjectShadersDir = "Project/Shaders";
 		OutConfig.EnginePluginsDir = "Engine/Plugins";
 		OutConfig.ProjectPluginsDir = "Project/Plugins";
+		OutConfig.ProjectContentDir = "Content";
 		OutConfig.CachedDir = "Cached";
 		OutConfig.SavedDir = "Saved";
 		OutConfig.ProjectConfigDir = "Config";
+		OutConfig.ProjectScriptsDir = "Scripts";
 	}
 
 	virtual bool PostInitialize() override

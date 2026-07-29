@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/Export.h>
-#include <Core/PoolAllocator.h>
-#include <Core/GCManager.h>
+#include <Core/GC.h>
 #include <Core/Object.h>
+#include <Core/SoftObjectPath.h>
 #include <Core/Resource/Package.h>
 #include <Core/Resource/Resource.h>
 #include <Core/Resource/ResourceHandle.h>
@@ -22,13 +22,12 @@ class FResourceServer;
 
 /**
  * Package / FResource facade (built into Catty.dll).
- * Owns FResourceServer (private impl), FPackage & FResource pools,
- * and type-specific teardown. Both FPackage and FResource are FObject subclasses
- * registered with FGCManager (Root / RefCount).
+ * Registers FPackage / FResource pools on FGC and TearDown handlers.
+ * Allocation goes through Catty::NewObject<T>() / FGC::NewObject; eviction drops
+ * catalog FObjectRefs so GC can reclaim when live Refs hit 0.
  *
- * UnloadPackage drops the catalog Ref only — package/object Free is GC-driven.
- * Each in-package FObject holds Outer as FObjectRef so the package stays valid.
- * GC ticks via FGCManager (FApp), not through this manager.
+ * Catalogs hold FObjectRef for every loaded FPackage and FResource.
+ * Resource keys are engine virtual paths (PackageName.ObjectName).
  *
  * Lua: implements ILuaBindable; BindLua registers catalog / create / load helpers on `catty.*`.
  */
@@ -47,7 +46,7 @@ public:
 	void BindLua(FScriptSystem& Script) override;
 
 	// --- Lifecycle ---
-	[[nodiscard]] bool Initialize(FGCManager& InGC);
+	[[nodiscard]] bool Initialize(FGC& InGC);
 	void Shutdown();
 	[[nodiscard]] bool IsInitialized() const;
 
@@ -58,8 +57,9 @@ public:
 	[[nodiscard]] FObjectRef GetTransientPackage();
 	[[nodiscard]] FObjectRef FindPackage(const std::string& Name) const;
 	/**
-	 * Remove from catalog and Release catalog Ref.
-	 * Does not destroy in-package objects; GC frees them when RefCounts hit 0.
+	 * Remove from package catalog and Release catalog Ref.
+	 * Also drops catalog Refs for FResources in that package.
+	 * Free is GC-driven when remaining Refs hit 0.
 	 */
 	bool UnloadPackage(const std::string& Name);
 
@@ -75,6 +75,35 @@ public:
 		std::string ObjectName = {});
 	[[nodiscard]] FObjectRef FindObject(const FObjectRef& Package, const std::string& ObjectName) const;
 	[[nodiscard]] FObjectRef FindObject(const std::string& PackageName, const std::string& ObjectName) const;
+
+	/**
+	 * Catalog lookup by engine virtual path (PackageName.ObjectName).
+	 * Accepts SoftObjectPath strings (Class'...' stripped). Miss → empty Ref.
+	 * Named FindResourceByPath — Windows headers #define FindResource → FindResourceA.
+	 */
+	[[nodiscard]] FObjectRef FindResourceByPath(const std::string& VirtualPath) const;
+
+	/**
+	 * Drop the resource's catalog FObjectRef (eviction). Does not Force-destroy;
+	 * GC reclaims when no other live Refs remain.
+	 */
+	bool UnloadResource(const std::string& VirtualPath);
+	bool UnloadResource(const FObjectRef& Resource);
+
+	/**
+	 * Soft path → live FObjectRef among already-loaded packages only.
+	 * Does not LoadPackage. Invalid / missing / unloaded → empty Ref.
+	 * Subobject paths (":Sub") are not walked yet — returns the package asset if present.
+	 */
+	[[nodiscard]] FObjectRef Resolve(const FSoftObjectPath& SoftPath) const;
+	[[nodiscard]] FObjectRef Resolve(const std::string& SoftPathString) const;
+
+	/**
+	 * Resolve; if the package is not loaded, LoadPackage via FPaths then Resolve again.
+	 * Caller-driven load (does not hide load cost inside Resolve).
+	 */
+	[[nodiscard]] FObjectRef TryLoad(const FSoftObjectPath& SoftPath);
+	[[nodiscard]] FObjectRef TryLoad(const std::string& SoftPathString);
 
 	// --- Persistence ---
 	[[nodiscard]] bool SavePackage(
@@ -98,11 +127,14 @@ private:
 	[[nodiscard]] static EResourceType InferTypeFromPath(const std::string& Path);
 	[[nodiscard]] static EResourceType ResourceTypeFromString(const std::string& Name);
 
-	// --- GC destroy handler / pool teardown ---
-	[[nodiscard]] bool TryDestroyManagedObject(FObject* Object);
-	void DestroyResource(FResource* Resource);
-	void DestroyPackage(FPackage* Package);
+	// --- GC destroy prep (no pool Free — FGC::DestroyObjectImmediate Frees) ---
+	void TearDownResource(FResource* Resource);
+	void TearDownPackage(FPackage* Package);
 	void DropPackageFromCatalog(FPackage* Package);
+	void DropResourceFromCatalog(FResource* Resource);
+	void DropPackageResourcesFromCatalog(FPackage& Package);
+	[[nodiscard]] static std::string MakeResourceCatalogKey(const FResource& Resource);
+	[[nodiscard]] static std::string NormalizeResourceVirtualPath(const std::string& VirtualPath);
 	[[nodiscard]] bool DestroyPackageObjects(FPackage& Package, bool bForce);
 
 	// --- Save / Load internals ---
@@ -118,14 +150,15 @@ private:
 	[[nodiscard]] FObjectRef ResolveObjectPath(const std::string& PathName) const;
 
 	std::unique_ptr<FResourceServer> Server;
-	FGCManager* GC = nullptr;
-	FGCManager::FObjectDestroyHandlerId DestroyHandlerId = FGCManager::InvalidDestroyHandlerId;
+	FGC* GC = nullptr;
 	/** Catalog: value holds the catalog FObjectRef (keeps package alive while loaded). */
 	std::unordered_map<std::string, FObjectRef> Packages;
 	FPackage* TransientPackage = nullptr;
-
-	TPoolAllocator<FPackage> PackagePool{16};
-	TPoolAllocator<FResource> ResourcePool{64};
+	/**
+	 * Catalog of loaded FResources keyed by engine virtual path
+	 * (PackageName.ObjectName, e.g. "/Game/Weapons/Sword.Sword").
+	 */
+	std::unordered_map<std::string, FObjectRef> Resources;
 };
 
 } // namespace Catty

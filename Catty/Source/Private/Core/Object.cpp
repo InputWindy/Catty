@@ -1,7 +1,7 @@
 #include <Core/Object.h>
 
 #include <Core/Log.h>
-#include <Core/GCManager.h>
+#include <Core/GC.h>
 #include <Core/Resource/Package.h>
 
 namespace Catty

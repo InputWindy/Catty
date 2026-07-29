@@ -28,6 +28,8 @@
 #include <Core/WorkerPool.h>
 #include <Core/AsyncTask.h>
 #include <Core/Engine.h>
+#include <Core/Paths.h>
+#include <Core/SoftObjectPath.h>
 #include <Core/Module.h>
 #include <Core/Layer.h>
 #include <Core/App.h>
@@ -42,7 +44,7 @@
 #include <Core/Object.h>
 #include <Core/Resource/Resource.h>
 #include <Core/Resource/Package.h>
-#include <Core/GCManager.h>
+#include <Core/GC.h>
 #include <Core/Resource/ResourceManager.h>
 #include <Core/Layer/ScriptSystem.h>
 #include <Core/Layer/ScriptLayer.h>

@@ -1,8 +1,10 @@
-#include <Core/Resource/ResourceManager.h>
+﻿#include <Core/Resource/ResourceManager.h>
 
 #include <Core/ConsoleManager.h>
 #include <Core/Json.h>
 #include <Core/Log.h>
+#include <Core/Paths.h>
+#include <Core/SoftObjectPath.h>
 #include <Core/Layer/ScriptSystem.h>
 #include <LuaReflectBindings.gen.h>
 #include "Core/Resource/ResourceServer.h"
@@ -175,6 +177,31 @@ void FResourceManager::BindLua(FScriptSystem& Script)
 				FindObject(Package.Ref, ObjectName));
 		});
 
+	CattyTable["find_resource"] = [this](sol::this_state L, const std::string& VirtualPath) -> sol::object
+	{
+		return LuaWrapObjectRef(sol::state_view(L), FindResourceByPath(VirtualPath));
+	};
+
+	CattyTable["unload_resource"] = sol::overload(
+		[this](const std::string& VirtualPath)
+		{
+			return UnloadResource(VirtualPath);
+		},
+		[this](FLua_FObject Object)
+		{
+			return UnloadResource(Object.Ref);
+		});
+
+	CattyTable["resolve"] = [this](sol::this_state L, const std::string& SoftPath) -> sol::object
+	{
+		return LuaWrapObjectRef(sol::state_view(L), Resolve(SoftPath));
+	};
+
+	CattyTable["try_load"] = [this](sol::this_state L, const std::string& SoftPath) -> sol::object
+	{
+		return LuaWrapObjectRef(sol::state_view(L), TryLoad(SoftPath));
+	};
+
 	CattyTable["save_package"] = [this](
 		FLua_FPackage Package,
 		sol::optional<std::string> FilePath,
@@ -316,7 +343,7 @@ EResourceType FResourceManager::ResourceTypeFromString(const std::string& Name)
 	return EResourceType::Unknown;
 }
 
-bool FResourceManager::Initialize(FGCManager& InGC)
+bool FResourceManager::Initialize(FGC& InGC)
 {
 	if (IsInitialized())
 	{
@@ -325,7 +352,7 @@ bool FResourceManager::Initialize(FGCManager& InGC)
 
 	if (!InGC.IsInitialized())
 	{
-		CATTY_CORE_ERROR("FResourceManager::Initialize: FGCManager must be initialized first");
+		CATTY_CORE_ERROR("FResourceManager::Initialize: FGC must be initialized first");
 		return false;
 	}
 
@@ -339,39 +366,35 @@ bool FResourceManager::Initialize(FGCManager& InGC)
 	TransientPackage = nullptr;
 	const int PackageSlots = (std::max)(1, GCVarPackagePoolInitial.GetValue());
 	const int ResourceSlots = (std::max)(1, GCVarResourcePoolInitial.GetValue());
-	PackagePool.Reserve(static_cast<std::size_t>(PackageSlots));
-	ResourcePool.Reserve(static_cast<std::size_t>(ResourceSlots));
-	DestroyHandlerId = GC->AddObjectDestroyHandler([this](FObject* Object) -> bool
-	{
-		return TryDestroyManagedObject(Object);
-	});
+
+	InGC.RegisterObjectType<FPackage>(
+		static_cast<std::size_t>(PackageSlots),
+		PoolConstruct,
+		[this](FPackage* Package)
+		{
+			TearDownPackage(Package);
+		});
+	InGC.RegisterObjectType<FResource>(
+		static_cast<std::size_t>(ResourceSlots),
+		PoolConstruct,
+		[this](FResource* Resource)
+		{
+			TearDownResource(Resource);
+		});
+
 	CATTY_CORE_INFO("ResourceManager initialized");
 	return true;
 }
 
-bool FResourceManager::TryDestroyManagedObject(FObject* Object)
-{
-	if (FResource* Resource = dynamic_cast<FResource*>(Object))
-	{
-		DestroyResource(Resource);
-		return true;
-	}
-
-	if (FPackage* Package = dynamic_cast<FPackage*>(Object))
-	{
-		DestroyPackage(Package);
-		return true;
-	}
-
-	return false;
-}
-
-void FResourceManager::DestroyResource(FResource* Resource)
+void FResourceManager::TearDownResource(FResource* Resource)
 {
 	if (!Resource)
 	{
 		return;
 	}
+
+	// Drop catalog while Outer still valid (virtual path needs Package.ObjectName).
+	DropResourceFromCatalog(Resource);
 
 	if (Server->IsInitialized() && Resource->GetId().IsValid())
 	{
@@ -379,16 +402,9 @@ void FResourceManager::DestroyResource(FResource* Resource)
 	}
 
 	Resource->ClearOuter();
-
-	if (GC)
-	{
-		GC->UnregisterObject(*Resource);
-	}
-
-	ResourcePool.Free(Resource);
 }
 
-void FResourceManager::DestroyPackage(FPackage* Package)
+void FResourceManager::TearDownPackage(FPackage* Package)
 {
 	if (!Package)
 	{
@@ -400,18 +416,11 @@ void FResourceManager::DestroyPackage(FPackage* Package)
 	if (!Package->Objects.empty())
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::DestroyPackage: '{}' still has {} object(s) — destroying zero-ref leftovers",
+			"FResourceManager::TearDownPackage: '{}' still has {} object(s) — destroying leftovers",
 			Package->GetName(),
 			Package->GetObjectCount());
 		(void)DestroyPackageObjects(*Package, true);
 	}
-
-	if (GC)
-	{
-		GC->UnregisterObject(*Package);
-	}
-
-	PackagePool.Free(Package);
 }
 
 void FResourceManager::DropPackageFromCatalog(FPackage* Package)
@@ -420,6 +429,8 @@ void FResourceManager::DropPackageFromCatalog(FPackage* Package)
 	{
 		return;
 	}
+
+	DropPackageResourcesFromCatalog(*Package);
 
 	const auto It = Packages.find(NormalizePackageName(Package->GetName()));
 	if (It != Packages.end() && It->second.Get() == static_cast<FObject*>(Package))
@@ -433,28 +444,79 @@ void FResourceManager::DropPackageFromCatalog(FPackage* Package)
 	}
 }
 
-bool FResourceManager::DestroyPackageObjects(FPackage& Package, bool bForce)
+void FResourceManager::DropResourceFromCatalog(FResource* Resource)
 {
-	std::vector<std::string> Names;
-	Names.reserve(Package.Objects.size());
-	for (const auto& Pair : Package.Objects)
+	if (!Resource)
 	{
-		Names.push_back(Pair.first);
+		return;
 	}
 
-	std::vector<FObject*> ToDestroy;
-	ToDestroy.reserve(Names.size());
-
-	for (const std::string& ObjectName : Names)
+	const std::string Key = MakeResourceCatalogKey(*Resource);
+	if (Key.empty())
 	{
-		FObject* Object = nullptr;
-		const auto It = Package.Objects.find(ObjectName);
-		if (It != Package.Objects.end())
+		return;
+	}
+
+	const auto It = Resources.find(Key);
+	if (It != Resources.end() && It->second.Get() == static_cast<FObject*>(Resource))
+	{
+		Resources.erase(It);
+	}
+}
+
+void FResourceManager::DropPackageResourcesFromCatalog(FPackage& Package)
+{
+	for (const auto& Pair : Package.Objects)
+	{
+		if (FResource* Resource = dynamic_cast<FResource*>(Pair.second))
 		{
-			Object = It->second;
+			DropResourceFromCatalog(Resource);
+		}
+	}
+}
+
+std::string FResourceManager::MakeResourceCatalogKey(const FResource& Resource)
+{
+	return NormalizeResourceVirtualPath(Resource.GetPathName());
+}
+
+std::string FResourceManager::NormalizeResourceVirtualPath(const std::string& VirtualPath)
+{
+	FSoftObjectPath SoftPath;
+	if (SoftPath.TrySetPath(VirtualPath) && SoftPath.IsValid())
+	{
+		return SoftPath.GetAssetPathString();
+	}
+
+	// Already Package.ObjectName without Class'...' — normalize separators only.
+	std::string Path = VirtualPath;
+	for (char& Ch : Path)
+	{
+		if (Ch == '\\')
+		{
+			Ch = '/';
+		}
+	}
+	return Path;
+}
+
+bool FResourceManager::DestroyPackageObjects(FPackage& Package, bool bForce)
+{
+	std::vector<FObject*> Snapshot;
+	Snapshot.reserve(Package.Objects.size());
+	for (const auto& Pair : Package.Objects)
+	{
+		Snapshot.push_back(Pair.second);
+	}
+
+	for (FObject* Object : Snapshot)
+	{
+		if (!Object)
+		{
+			continue;
 		}
 
-		if (Object && Object->GetRefCount() > 0)
+		if (Object->GetRefCount() > 0)
 		{
 			if (!bForce)
 			{
@@ -465,32 +527,13 @@ bool FResourceManager::DestroyPackageObjects(FPackage& Package, bool bForce)
 				return false;
 			}
 
-			CATTY_CORE_ERROR(
-				"FResourceManager::DestroyPackageObjects: skipping '{}' (RefCount={})",
+			CATTY_CORE_WARN(
+				"FResourceManager::DestroyPackageObjects: force-destroying '{}' (RefCount={})",
 				Object->GetPathName(),
 				Object->GetRefCount());
-			continue;
 		}
 
-		if (Object)
-		{
-			Object->ClearOuter();
-		}
-		ToDestroy.push_back(Object);
-	}
-
-	for (FObject* Object : ToDestroy)
-	{
-		if (!Object)
-		{
-			continue;
-		}
-
-		if (FResource* Resource = dynamic_cast<FResource*>(Object))
-		{
-			DestroyResource(Resource);
-		}
-		else if (GC)
+		if (GC)
 		{
 			GC->DestroyObjectImmediate(Object);
 		}
@@ -538,47 +581,40 @@ void FResourceManager::Shutdown()
 		}
 	}
 
+	Resources.clear();
+	Packages.clear();
+
 	if (GC)
 	{
 		GC->CollectGarbage();
 		GC->PurgePendingKill();
 	}
 
-	if (GC && DestroyHandlerId != FGCManager::InvalidDestroyHandlerId)
+	if (GC)
 	{
-		GC->RemoveObjectDestroyHandler(DestroyHandlerId);
-		DestroyHandlerId = FGCManager::InvalidDestroyHandlerId;
+		const std::size_t LiveResources = GC->GetPooledLiveCount<FResource>();
+		const std::size_t LivePackages = GC->GetPooledLiveCount<FPackage>();
+		if (LiveResources > 0)
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::Shutdown: {} resource slot(s) still live in GC pool",
+				LiveResources);
+		}
+		if (LivePackages > 0)
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::Shutdown: {} package slot(s) still live in GC pool",
+				LivePackages);
+		}
 	}
-
-	if (ResourcePool.GetNumLive() > 0)
-	{
-		CATTY_CORE_ERROR(
-			"FResourceManager::Shutdown: {} resource slot(s) still live — not Clear()'ing pool",
-			ResourcePool.GetNumLive());
-	}
-	else
-	{
-		ResourcePool.Clear();
-	}
-
-	if (PackagePool.GetNumLive() > 0)
-	{
-		CATTY_CORE_ERROR(
-			"FResourceManager::Shutdown: {} package slot(s) still live — not Clear()'ing pool",
-			PackagePool.GetNumLive());
-	}
-	else
-	{
-		PackagePool.Clear();
-	}
-
-	GC = nullptr;
 
 	if (Server->IsInitialized())
 	{
 		Server->Shutdown();
 	}
 
+	GC = nullptr;
+	TransientPackage = nullptr;
 	CATTY_CORE_INFO("ResourceManager shut down");
 }
 
@@ -603,15 +639,20 @@ FObjectRef FResourceManager::CreatePackage(std::string Name, EPackageFlags Flags
 		return {};
 	}
 
-	FPackage* Package = PackagePool.Allocate(Name, Flags);
-	GC->RegisterObject(*Package);
+	FPackage* Package = NewObject<FPackage>(Name, Flags);
+	if (!Package)
+	{
+		CATTY_CORE_ERROR("FResourceManager::CreatePackage: NewObject<FPackage> failed");
+		return {};
+	}
+
 	FObjectRef CatalogRef = FObjectRef::Wrap(Package);
 	if (Name == TransientPackageName)
 	{
 		TransientPackage = Package;
 	}
-	Packages.emplace(std::move(Name), std::move(CatalogRef));
-	return FObjectRef::Wrap(Package);
+	Packages.emplace(std::move(Name), CatalogRef);
+	return CatalogRef;
 }
 
 FObjectRef FResourceManager::GetTransientPackage()
@@ -719,21 +760,41 @@ FObjectRef FResourceManager::CreateResource(
 		return {};
 	}
 
-	FResource* Resource = ResourcePool.Allocate(
+	FResource* Resource = NewObject<FResource>(
 		&PackageObj,
 		ObjectName,
 		Id,
 		Type,
 		std::move(SourcePath));
-	GC->RegisterObject(*Resource);
-
-	if (!PackageObj.RegisterObject(Resource))
+	if (!Resource)
 	{
-		DestroyResource(Resource);
+		CATTY_CORE_ERROR("FResourceManager::CreateResource: NewObject<FResource> failed");
+		if (Server->IsInitialized() && Id.IsValid())
+		{
+			Server->Release(Id);
+		}
 		return {};
 	}
 
-	return FObjectRef::Wrap(Resource);
+	if (!PackageObj.RegisterObject(Resource))
+	{
+		GC->DestroyObjectImmediate(Resource);
+		return {};
+	}
+
+	FObjectRef CatalogRef = FObjectRef::Wrap(Resource);
+	const std::string CatalogKey = MakeResourceCatalogKey(*Resource);
+	if (CatalogKey.empty())
+	{
+		CATTY_CORE_ERROR(
+			"FResourceManager::CreateResource: empty catalog key for '{}'",
+			ObjectName);
+		GC->DestroyObjectImmediate(Resource);
+		return {};
+	}
+
+	Resources[CatalogKey] = CatalogRef;
+	return CatalogRef;
 }
 
 FObjectRef FResourceManager::CreateResource(
@@ -784,6 +845,131 @@ FObjectRef FResourceManager::FindObject(const std::string& PackageName, const st
 		return {};
 	}
 	return PackagePtr->FindObject(ObjectName);
+}
+
+FObjectRef FResourceManager::FindResourceByPath(const std::string& VirtualPath) const
+{
+	const std::string Key = NormalizeResourceVirtualPath(VirtualPath);
+	if (Key.empty())
+	{
+		return {};
+	}
+
+	const auto It = Resources.find(Key);
+	if (It == Resources.end() || !It->second)
+	{
+		return {};
+	}
+	return It->second;
+}
+
+bool FResourceManager::UnloadResource(const std::string& VirtualPath)
+{
+	const std::string Key = NormalizeResourceVirtualPath(VirtualPath);
+	if (Key.empty())
+	{
+		return false;
+	}
+
+	const auto It = Resources.find(Key);
+	if (It == Resources.end() || !It->second)
+	{
+		return false;
+	}
+
+	DropResourceFromCatalog(It->second.Cast<FResource>());
+	return true;
+}
+
+bool FResourceManager::UnloadResource(const FObjectRef& Resource)
+{
+	FResource* ResourcePtr = Resource.Cast<FResource>();
+	if (!ResourcePtr)
+	{
+		return false;
+	}
+
+	const auto It = Resources.find(MakeResourceCatalogKey(*ResourcePtr));
+	if (It == Resources.end() || It->second.Get() != static_cast<FObject*>(ResourcePtr))
+	{
+		return false;
+	}
+
+	DropResourceFromCatalog(ResourcePtr);
+	return true;
+}
+
+FObjectRef FResourceManager::Resolve(const FSoftObjectPath& SoftPath) const
+{
+	if (!SoftPath.IsValid())
+	{
+		return {};
+	}
+
+	if (SoftPath.HasSubPath())
+	{
+		CATTY_CORE_WARN(
+			"FResourceManager::Resolve: subobject path not implemented yet ('{}') — resolving asset only",
+			SoftPath.ToStringWithoutClass());
+	}
+
+	return FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName());
+}
+
+FObjectRef FResourceManager::Resolve(const std::string& SoftPathString) const
+{
+	FSoftObjectPath SoftPath;
+	if (!SoftPath.TrySetPath(SoftPathString) || !SoftPath.IsValid())
+	{
+		return {};
+	}
+	return Resolve(SoftPath);
+}
+
+FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
+{
+	if (!SoftPath.IsValid())
+	{
+		return {};
+	}
+
+	if (FObjectRef Existing = Resolve(SoftPath))
+	{
+		return Existing;
+	}
+
+	if (!FindPackage(SoftPath.GetPackageName()))
+	{
+		const std::string Filename = FPaths::ConvertPackageNameToFilename(SoftPath.GetPackageName());
+		if (Filename.empty())
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::TryLoad: no mount mapping for '{}'",
+				SoftPath.GetPackageName());
+			return {};
+		}
+
+		if (!LoadPackage(Filename))
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::TryLoad: LoadPackage failed for '{}' ('{}')",
+				SoftPath.GetPackageName(),
+				Filename);
+			return {};
+		}
+	}
+
+	return Resolve(SoftPath);
+}
+
+FObjectRef FResourceManager::TryLoad(const std::string& SoftPathString)
+{
+	FSoftObjectPath SoftPath;
+	if (!SoftPath.TrySetPath(SoftPathString) || !SoftPath.IsValid())
+	{
+		return {};
+	}
+	return TryLoad(SoftPath);
 }
 
 bool FResourceManager::SavePackage(
@@ -949,14 +1135,7 @@ bool FResourceManager::SavePackageInternal(
 
 FObjectRef FResourceManager::ResolveObjectPath(const std::string& PathName) const
 {
-	std::string PackageName;
-	std::string ObjectName;
-	if (!FObject::SplitObjectPath(PathName, PackageName, ObjectName))
-	{
-		return {};
-	}
-
-	return FindObject(PackageName, ObjectName);
+	return Resolve(PathName);
 }
 
 FObjectRef FResourceManager::LoadPackage(const std::string& FilePath)
@@ -1069,11 +1248,18 @@ FObjectRef FResourceManager::LoadPackageInternal(
 		DropPackageFromCatalog(Existing->second.Cast<FPackage>());
 	}
 
-	FPackage* Raw = PackagePool.Allocate(PackageName, EPackageFlags::Persistent);
+	FPackage* Raw = NewObject<FPackage>(PackageName, EPackageFlags::Persistent);
+	if (!Raw)
+	{
+		CATTY_CORE_ERROR("FResourceManager::LoadPackage: NewObject<FPackage> failed");
+		LoadingFilePaths.erase(NormalizedFile);
+		return {};
+	}
+
 	if (!Raw->Deserialize(Root))
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadPackage: Deserialize failed '{}'", FilePath);
-		PackagePool.Free(Raw);
+		GC->DestroyObjectImmediate(Raw);
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}
@@ -1081,7 +1267,6 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	Raw->AddPackageFlags(EPackageFlags::Persistent);
 	Raw->ClearPackageFlags(EPackageFlags::Transient);
 	Raw->SetFilePath(FilePath);
-	GC->RegisterObject(*Raw);
 	Packages.emplace(PackageName, FObjectRef::Wrap(Raw));
 	FObjectRef PackageRef = FObjectRef::Wrap(Raw);
 

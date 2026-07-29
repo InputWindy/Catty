@@ -1,7 +1,9 @@
-﻿#include <Core/GCManager.h>
+﻿#include <Core/GC.h>
 
 #include <Core/ConsoleManager.h>
+#include <Core/App.h>
 #include <Core/Log.h>
+#include <Core/Modules/GCModule.h>
 
 #include <algorithm>
 
@@ -23,12 +25,12 @@ static TAutoConsoleVariable GCVarPurgeInterval(
 
 } // namespace
 
-FGCManager::~FGCManager()
+FGC::~FGC()
 {
 	Shutdown();
 }
 
-bool FGCManager::Initialize()
+bool FGC::Initialize()
 {
 	if (bInitialized)
 	{
@@ -38,11 +40,11 @@ bool FGCManager::Initialize()
 	CollectIntervalSeconds = GCVarCollectInterval.GetValue();
 	PurgeIntervalSeconds = GCVarPurgeInterval.GetValue();
 	bInitialized = true;
-	CATTY_CORE_INFO("GCManager initialized");
+	CATTY_CORE_INFO("GC initialized");
 	return true;
 }
 
-void FGCManager::Shutdown()
+void FGC::Shutdown()
 {
 	if (!bInitialized)
 	{
@@ -52,7 +54,7 @@ void FGCManager::Shutdown()
 	if (!LiveObjects.empty())
 	{
 		CATTY_CORE_WARN(
-			"GCManager::Shutdown: {} live object(s) remain — owners should destroy them first",
+			"FGC::Shutdown: {} live object(s) remain — owners should destroy them first",
 			LiveObjects.size());
 
 		std::vector<FObject*> Snapshot = LiveObjects;
@@ -66,53 +68,16 @@ void FGCManager::Shutdown()
 	RootMap.clear();
 	PendingKill.clear();
 	ImmediateDestroy.clear();
-	DestroyHandlers.clear();
+	PooledTypes.clear();
 	bInitialized = false;
-	CATTY_CORE_INFO("GCManager shut down");
+	CATTY_CORE_INFO("GC shut down");
 }
 
-FGCManager::FObjectDestroyHandlerId FGCManager::AddObjectDestroyHandler(FObjectDestroyHandler Handler)
-{
-	if (!Handler)
-	{
-		return InvalidDestroyHandlerId;
-	}
-
-	const FObjectDestroyHandlerId Id = NextDestroyHandlerId++;
-	if (NextDestroyHandlerId == InvalidDestroyHandlerId)
-	{
-		NextDestroyHandlerId = 1;
-	}
-
-	DestroyHandlers.push_back(FDestroyHandlerEntry{Id, std::move(Handler)});
-	return Id;
-}
-
-bool FGCManager::RemoveObjectDestroyHandler(FObjectDestroyHandlerId Id)
-{
-	if (Id == InvalidDestroyHandlerId)
-	{
-		return false;
-	}
-
-	const auto It = std::remove_if(
-		DestroyHandlers.begin(),
-		DestroyHandlers.end(),
-		[Id](const FDestroyHandlerEntry& Entry) { return Entry.Id == Id; });
-	if (It == DestroyHandlers.end())
-	{
-		return false;
-	}
-
-	DestroyHandlers.erase(It, DestroyHandlers.end());
-	return true;
-}
-
-void FGCManager::RegisterObject(FObject& Object)
+void FGC::RegisterObject(FObject& Object)
 {
 	if (!bInitialized)
 	{
-		CATTY_CORE_ERROR("FGCManager::RegisterObject: not initialized");
+		CATTY_CORE_ERROR("FGC::RegisterObject: not initialized");
 		return;
 	}
 
@@ -120,7 +85,7 @@ void FGCManager::RegisterObject(FObject& Object)
 	LiveObjects.push_back(&Object);
 }
 
-void FGCManager::UnregisterObject(FObject& Object)
+void FGC::UnregisterObject(FObject& Object)
 {
 	LiveObjects.erase(
 		std::remove(LiveObjects.begin(), LiveObjects.end(), &Object),
@@ -131,7 +96,7 @@ void FGCManager::UnregisterObject(FObject& Object)
 	Object.GCOwner = nullptr;
 }
 
-void FGCManager::RemoveAllRootRefs(FObject* Object)
+void FGC::RemoveAllRootRefs(FObject* Object)
 {
 	if (!Object)
 	{
@@ -141,50 +106,87 @@ void FGCManager::RemoveAllRootRefs(FObject* Object)
 	RootMap.erase(Object);
 }
 
-void FGCManager::RemoveFromPendingKill(FObject* Object)
+void FGC::RemoveFromPendingKill(FObject* Object)
 {
 	PendingKill.erase(std::remove(PendingKill.begin(), PendingKill.end(), Object), PendingKill.end());
 }
 
-void FGCManager::RemoveFromImmediate(FObject* Object)
+void FGC::RemoveFromImmediate(FObject* Object)
 {
 	ImmediateDestroy.erase(
 		std::remove(ImmediateDestroy.begin(), ImmediateDestroy.end(), Object),
 		ImmediateDestroy.end());
 }
 
-bool FGCManager::IsKeptAlive(const FObject& Object)
+bool FGC::IsKeptAlive(const FObject& Object)
 {
 	return Object.GetRefCount() > 0;
 }
 
-bool FGCManager::IsInRootSet(const FObject& Object) const
+bool FGC::IsInRootSet(const FObject& Object) const
 {
 	return RootMap.find(const_cast<FObject*>(&Object)) != RootMap.end();
 }
 
-void FGCManager::DestroyObjectImmediate(FObject* Object)
+void FGC::DestroyObjectImmediate(FObject* Object)
 {
 	if (!Object)
 	{
 		return;
 	}
 
-	for (const FDestroyHandlerEntry& Entry : DestroyHandlers)
+	if (!TearDownPooledObject(Object))
 	{
-		if (Entry.Handler && Entry.Handler(Object))
-		{
-			return;
-		}
+		CATTY_CORE_ERROR(
+			"FGC::DestroyObjectImmediate: no pooled type claimed TearDown for '{}'",
+			Object->GetPathName());
 	}
 
-	CATTY_CORE_ERROR(
-		"FGCManager::DestroyObjectImmediate: no destroy handler claimed '{}'",
-		Object->GetPathName());
 	UnregisterObject(*Object);
+
+	if (!FreePooledObject(Object))
+	{
+		CATTY_CORE_ERROR(
+			"FGC::DestroyObjectImmediate: no pooled type claimed Free for '{}'",
+			Object->GetPathName());
+	}
 }
 
-void FGCManager::AddToRoot(FObject& Object)
+bool FGC::TearDownPooledObject(FObject* Object)
+{
+	if (!Object)
+	{
+		return false;
+	}
+
+	for (auto& Pair : PooledTypes)
+	{
+		if (Pair.second && Pair.second->TryTearDown(Object))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FGC::FreePooledObject(FObject* Object)
+{
+	if (!Object)
+	{
+		return false;
+	}
+
+	for (auto& Pair : PooledTypes)
+	{
+		if (Pair.second && Pair.second->TryFree(Object))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void FGC::AddToRoot(FObject& Object)
 {
 	const auto It = RootMap.find(&Object);
 	if (It != RootMap.end())
@@ -211,12 +213,12 @@ void FGCManager::AddToRoot(FObject& Object)
 	}
 }
 
-void FGCManager::RemoveFromRoot(FObject& Object)
+void FGC::RemoveFromRoot(FObject& Object)
 {
 	const auto It = RootMap.find(&Object);
 	if (It == RootMap.end())
 	{
-		CATTY_CORE_WARN("FGCManager::RemoveFromRoot: '{}' is not in the root map", Object.GetPathName());
+		CATTY_CORE_WARN("FGC::RemoveFromRoot: '{}' is not in the root map", Object.GetPathName());
 		return;
 	}
 
@@ -229,7 +231,7 @@ void FGCManager::RemoveFromRoot(FObject& Object)
 	RootMap.erase(It);
 }
 
-void FGCManager::EnqueuePendingKill(FObject& Object)
+void FGC::EnqueuePendingKill(FObject& Object)
 {
 	Object.ClearFlags(EObjectFlags::ImmediateDestroy);
 	Object.AddFlags(EObjectFlags::PendingKill);
@@ -241,7 +243,7 @@ void FGCManager::EnqueuePendingKill(FObject& Object)
 	}
 }
 
-void FGCManager::EnqueueImmediateDestroy(FObject& Object)
+void FGC::EnqueueImmediateDestroy(FObject& Object)
 {
 	Object.ClearFlags(EObjectFlags::PendingKill);
 	Object.AddFlags(EObjectFlags::ImmediateDestroy);
@@ -253,7 +255,7 @@ void FGCManager::EnqueueImmediateDestroy(FObject& Object)
 	}
 }
 
-void FGCManager::QueueUnreferenced()
+void FGC::QueueUnreferenced()
 {
 	for (FObject* Object : LiveObjects)
 	{
@@ -298,7 +300,7 @@ void FGCManager::QueueUnreferenced()
 	}
 }
 
-void FGCManager::CollectGarbage()
+void FGC::CollectGarbage()
 {
 	if (!bInitialized)
 	{
@@ -309,7 +311,7 @@ void FGCManager::CollectGarbage()
 	ProcessImmediateDestroy();
 }
 
-void FGCManager::ProcessImmediateDestroy()
+void FGC::ProcessImmediateDestroy()
 {
 	if (ImmediateDestroy.empty())
 	{
@@ -337,7 +339,7 @@ void FGCManager::ProcessImmediateDestroy()
 	}
 }
 
-void FGCManager::PurgePendingKill()
+void FGC::PurgePendingKill()
 {
 	if (!bInitialized || PendingKill.empty())
 	{
@@ -372,7 +374,7 @@ void FGCManager::PurgePendingKill()
 	}
 }
 
-void FGCManager::Tick(float DeltaSeconds)
+void FGC::Tick(float DeltaSeconds)
 {
 	if (!bInitialized)
 	{
@@ -399,5 +401,20 @@ void FGCManager::Tick(float DeltaSeconds)
 		PurgePendingKill();
 	}
 }
+
+namespace Detail
+{
+
+FGC* GetGC()
+{
+	if (!GApp)
+	{
+		return nullptr;
+	}
+	FGCModule* Module = GApp->GetModule<FGCModule>();
+	return Module ? &Module->GetGC() : nullptr;
+}
+
+} // namespace Detail
 
 } // namespace Catty

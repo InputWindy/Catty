@@ -72,7 +72,10 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
  *   Catty::FObjectRef Pkg = ResourceManager.CreatePackage(
  *       "/Game/Maps/Demo", Catty::EPackageFlags::Persistent);
  *   ResourceManager.CreateResource(Pkg, "T_Hero", "Textures/T_Hero.png");
- *   ResourceManager.SavePackage(Pkg, "Content/Maps/Demo.pkg.json");
+ *   // Disk file via FPaths (UE LongPackageNameToFilename lite):
+ *   //   FPaths::ConvertPackageNameToFilename("/Game/Maps/Demo")
+ *   //   → "<Project>/Content/Maps/Demo.pkg.json"
+ *   ResourceManager.SavePackage(Pkg, FPaths::ConvertPackageNameToFilename(Pkg->GetName()));
  * ```
  */
 CATTY_OBJECT()
