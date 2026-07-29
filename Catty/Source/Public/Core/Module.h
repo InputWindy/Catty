@@ -2,6 +2,7 @@
 
 #include <Core/Delegate.h>
 #include <Core/Export.h>
+#include <Core/FrameStage.h>
 
 #include <condition_variable>
 #include <cstdint>
@@ -48,7 +49,7 @@ struct FStageContext
 
 /**
  * Engine / plugin extension of a fixed pipeline stage.
- * Game content uses FLayer bound to PostStageDelegates instead.
+ * Game content uses FLayer on the Layer SequenceGraph sequencer.
  *
  * Per-stage dependencies act like barriers: for stage S, a module waits until every
  * named dependency has finished S before running ExecuteStage(S). FApp may run
@@ -79,8 +80,8 @@ public:
 	}
 
 	/**
-	 * True = ExecuteStage runs on the app/main thread (window / RHI / ImGui).
-	 * False = may be dispatched to FWorkerPool for that stage.
+	 * True = stage runs on the app/main thread (window / RHI / ImGui).
+	 * False = Sequencer worker thread for that object.
 	 */
 	[[nodiscard]] virtual bool PreferMainThread() const
 	{
@@ -88,7 +89,7 @@ public:
 	}
 
 	/**
-	 * Fixed stage body (before Layers / Post broadcast).
+	 * Fixed stage body for Init/Shutdown (and frame stages when invoked from OnSequencerStage).
 	 * Init-family may return false to abort startup.
 	 */
 	virtual bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
@@ -98,6 +99,9 @@ public:
 		(void)Ctx;
 		return true;
 	}
+
+	/** Frame SequenceGraph stage entry (maps to ExecuteStage for overlapping stages). */
+	virtual void OnSequencerStage(EFrameStage Stage);
 
 	/**
 	 * True when this module has no outstanding work (async loads, live objects, GPU, …).
@@ -186,5 +190,24 @@ private:
 	FOnAttach AttachEvent;
 	FOnDetach DetachEvent;
 };
+
+/** Maps overlapping frame stages to EModuleStage; Attach/Detach → NumMaxStage. */
+[[nodiscard]] inline EModuleStage FrameStageToModuleStage(EFrameStage Stage)
+{
+	switch (Stage)
+	{
+	case EFrameStage::BeginFrame: return EModuleStage::BeginFrame;
+	case EFrameStage::ProcessInput: return EModuleStage::ProcessInput;
+	case EFrameStage::FixedUpdate: return EModuleStage::FixedUpdate;
+	case EFrameStage::Update: return EModuleStage::Update;
+	case EFrameStage::LateUpdate: return EModuleStage::LateUpdate;
+	case EFrameStage::PreRender: return EModuleStage::PreRender;
+	case EFrameStage::Render: return EModuleStage::Render;
+	case EFrameStage::PostRender: return EModuleStage::PostRender;
+	case EFrameStage::EndFrame: return EModuleStage::EndFrame;
+	case EFrameStage::PrepareExit: return EModuleStage::PrepareExit;
+	default: return EModuleStage::NumMaxStage;
+	}
+}
 
 } // namespace Catty

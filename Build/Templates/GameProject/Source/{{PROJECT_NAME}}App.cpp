@@ -36,10 +36,6 @@ protected:
 			GetConfig().ProjectScriptsDir));
 		return true;
 	}
-
-	virtual void PreShutdown() override
-	{
-	}
 };
 
 Catty::FApp* Catty::CreateApplication()

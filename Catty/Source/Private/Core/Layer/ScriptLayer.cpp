@@ -1,5 +1,6 @@
 #include <Core/Layer/ScriptLayer.h>
 
+#include <Core/App.h>
 #include <Core/Log.h>
 
 #include <filesystem>
@@ -42,21 +43,19 @@ void FScriptLayer::OnDetach()
 	}
 }
 
-void FScriptLayer::OnUpdate(EModuleStage Stage, FApp& App, FStageContext& Ctx)
+void FScriptLayer::OnSequencerStage(EFrameStage Stage)
 {
-	(void)Stage;
-	(void)App;
-	if (Script.IsInitialized())
+	if (!Script.IsInitialized() || !GApp)
+	{
+		return;
+	}
+	FStageContext Ctx{};
+	GApp->MakeStageContext(Ctx);
+	if (Stage == EFrameStage::Update)
 	{
 		(void)Script.Call("OnUpdate", Ctx.DeltaSeconds);
 	}
-}
-
-void FScriptLayer::OnFixedUpdate(EModuleStage Stage, FApp& App, FStageContext& Ctx)
-{
-	(void)Stage;
-	(void)App;
-	if (Script.IsInitialized())
+	else if (Stage == EFrameStage::FixedUpdate)
 	{
 		(void)Script.Call("OnFixedUpdate", Ctx.FixedDeltaSeconds);
 	}

@@ -1,17 +1,21 @@
 #pragma once
 
+#include <Core/AppFrameSequencerTraits.h>
 #include <Core/ConsoleManager.h>
 #include <Core/Delegate.h>
 #include <Core/Engine.h>
 #include <Core/Export.h>
+#include <Core/FrameStage.h>
 #include <Core/Layer.h>
 #include <Core/Log.h>
 #include <Core/Module.h>
+#include <Core/SequenceGraph.h>
 #include <Core/Timer.h>
 #include <Core/WorkerPool.h>
 #include <Core/Layer/ScriptSystem.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -24,78 +28,57 @@
 namespace Catty
 {
 
-enum class EAppState : std::uint8_t
-{
-	/** Before / after Run — not in main loop. */
-	Stopped = 0,
-	/** Main loop accepting normal work. */
-	Running,
-	/** Exit requested: PrepareExit drain until all modules idle, then Shutdown. */
-	WaitForExit,
-	/** Shutdown stages in progress. */
-	ShuttingDown,
-};
+/** Alias to SequenceGraph state (same values as former EAppState). */
+using EAppState = ESequenceGraphState;
 
 /**
  * Empty stage pipeline. Game subclasses assemble Modules / Layers:
- *   RegisterModules() → Init stages → PostInitialize (PushLayer) → AttachModules → loop.
+ *   RegisterModules() → Init stages → PostInitialize (PushLayer) → AttachModules → Execute().
  */
-class CATTY_API FApp
+class CATTY_API FApp : public TSequenceGraph<FApp, FModuleFrameTraits, FLayerFrameTraits>
 {
-	// ---------------------------------------------------------------------------
-	// Type aliases & lifetime
-	// ---------------------------------------------------------------------------
 public:
-	CATTY_DECLARE_MULTICAST_DELEGATE_ThreeParams(
-		FStageMulticast,
-		EModuleStage,
-		FApp&,
-		FStageContext&);
-
 	FApp();
-	virtual ~FApp();
+	~FApp() override;
 
 	FApp(const FApp&) = delete;
 	FApp& operator=(const FApp&) = delete;
 
-	// ---------------------------------------------------------------------------
-	// Lifecycle
-	// Run owns Initialize → main loop → Shutdown. Games override the hooks below.
-	// ---------------------------------------------------------------------------
-public:
-	/** Sole public lifecycle entry. */
 	void Run();
 
-	[[nodiscard]] bool IsRunning() const { return AppState == EAppState::Running; }
-	[[nodiscard]] EAppState GetState() const { return AppState; }
+	[[nodiscard]] bool IsRunning() const
+	{
+		return TSequenceGraph::IsRunning();
+	}
 
-	/**
-	 * Bound to Module / Layer multicasts (RegisterModule / PushLayer|Overlay).
-	 * OnAttachLayer / OnDetachLayer also maintain PostStage bindings.
-	 */
+	[[nodiscard]] EAppState GetState() const
+	{
+		return TSequenceGraph::GetState();
+	}
+
 	void OnRequestExit();
 	void OnAttachLayer(FLayer& Layer);
 	void OnDetachLayer(FLayer& Layer);
 	void OnAttachModule(IModule& Module);
 	void OnDetachModule(IModule& Module);
 
+	/** FixedUpdate remaining steps this frame (SequenceGraph repeat). */
+	[[nodiscard]] int GetFixedStepsRemaining() const { return FixedStepsRemaining; }
+	void SetFixedStepsRemaining(int Steps) { FixedStepsRemaining = Steps; }
+
 protected:
 	virtual void Configure(FEngineConfig& OutConfig);
-	/** Registers built-in Platform / Render / GC / Resource. Override and call FApp::RegisterModules() first for extras. */
 	virtual void RegisterModules();
 	virtual bool PostInitialize();
-	virtual void PreShutdown();
 
 private:
 	bool Initialize();
 	void Shutdown();
-	void RunMainLoop();
+	bool BuildDefaultFrameWiring();
+	void InstallFixedUpdateRepeat();
+	void BootstrapFirstAttach();
+	void OnWorkersStarted() override;
 
-	// ---------------------------------------------------------------------------
-	// Core services
-	// Hardcoded engine services (not Modules). Construction order:
-	//   Log → ConsoleManager → Timer → WorkerPool → ScriptSystem.
-	// ---------------------------------------------------------------------------
 public:
 	[[nodiscard]] FEngineConfig& GetConfig() { return EngineConfig; }
 	[[nodiscard]] const FEngineConfig& GetConfig() const { return EngineConfig; }
@@ -108,9 +91,13 @@ public:
 	[[nodiscard]] FScriptSystem& GetScriptSystem() { return ScriptSystem; }
 	[[nodiscard]] const FScriptSystem& GetScriptSystem() const { return ScriptSystem; }
 
-	/** Monotonic frame counter advanced by UpdateAppState each tick. */
 	[[nodiscard]] std::uint64_t GetFrameIndex() const { return FrameIndex; }
 	[[nodiscard]] float GetDeltaSeconds() const { return DeltaSeconds; }
+	[[nodiscard]] float GetFixedDeltaSeconds() const { return FixedDeltaSeconds; }
+
+	void MakeStageContext(FStageContext& Out) const;
+	void UpdateAppState();
+	[[nodiscard]] bool AreAllModulesIdle() const;
 
 private:
 	FEngineConfig EngineConfig;
@@ -120,10 +107,6 @@ private:
 	FWorkerPool WorkerPool;
 	FScriptSystem ScriptSystem;
 
-	// ---------------------------------------------------------------------------
-	// Modules
-	// Per-stage dependency DAGs (barrier). Register → RebuildModuleOrder → ExecuteStage.
-	// ---------------------------------------------------------------------------
 public:
 	void RegisterModule(std::unique_ptr<IModule> Module);
 
@@ -156,13 +139,8 @@ private:
 	std::vector<std::unique_ptr<IModule>> Modules;
 	std::unordered_map<std::type_index, IModule*> ModulesByType;
 	std::unordered_map<std::string, IModule*> ModulesByName;
-	/** Per-stage topo order (barrier DAG). Rebuilt in RebuildModuleOrder. */
 	std::array<std::vector<IModule*>, static_cast<std::size_t>(EModuleStage::NumMaxStage)> StageOrders{};
 
-	// ---------------------------------------------------------------------------
-	// Layers
-	// Programmable content stack (World / Editor / Script). Post-bound on Attach.
-	// ---------------------------------------------------------------------------
 protected:
 	void PushLayer(std::unique_ptr<FLayer> Layer);
 	void PushOverlay(std::unique_ptr<FLayer> Overlay);
@@ -177,44 +155,20 @@ private:
 	std::vector<FLayerBinding> LayerBindings;
 	std::size_t LayerInsertIndex = 0;
 
-	// ---------------------------------------------------------------------------
-	// Stage pipeline
-	// Module ExecuteStage then Layer Post multicast per EModuleStage.
-	// ---------------------------------------------------------------------------
-private:
-	static constexpr std::size_t StageCount =
-		static_cast<std::size_t>(EModuleStage::NumMaxStage);
-
 	bool ExecuteStage(EModuleStage Stage, FStageContext& Ctx);
-	[[nodiscard]] FStageMulticast& GetPostStageDelegate(EModuleStage Stage);
-
-	void RebuildLayerPostBindings();
-	void RemoveLayerPostBindings(FLayer& Layer);
-	void BindLayerPostBindings(FLayer& Layer);
-
 	static bool IsInitFamily(EModuleStage Stage);
 	static bool IsShutdownFamily(EModuleStage Stage);
 	static std::size_t StageIndex(EModuleStage Stage);
 
-	std::array<FStageMulticast, StageCount> PostStageDelegates{};
-
-	// ---------------------------------------------------------------------------
-	// Frame state
-	// Per-frame timing; UpdateAppState() refreshes these each tick.
-	// ---------------------------------------------------------------------------
-private:
-	/** Sample clock, write DeltaSeconds, advance FrameIndex / LastFrameTimeSeconds. */
-	void UpdateAppState();
-	[[nodiscard]] bool AreAllModulesIdle() const;
-
-	EAppState AppState = EAppState::Stopped;
 	float DeltaSeconds = 0.0f;
+	float FixedDeltaSeconds = 0.0f;
 	float FixedUpdateAccumulator = 0.0f;
+	int FixedStepsRemaining = 0;
+	std::atomic<bool> bFrameTickArmed{true};
 	double LastFrameTimeSeconds = 0.0;
 	std::uint64_t FrameIndex = 0;
 };
 
-/** Process-wide App while an FApp exists (set in FApp ctor, cleared in dtor). */
 CATTY_API extern FApp* GApp;
 
 FApp* CreateApplication();

@@ -14,7 +14,7 @@
 #include <cstdio>
 namespace
 {
-	int CattyRunMain(int Argc, char** Argv)
+	int CattyMain(int Argc, char** Argv)
 	{
 		(void)Argc;
 		(void)Argv;
@@ -42,11 +42,11 @@ int WINAPI WinMain(HINSTANCE /*Instance*/, HINSTANCE /*Prev*/, LPSTR /*CmdLine*/
 	// Detach any inherited / debugger console so the OS black box stays hidden.
 	FreeConsole();
 
-	return CattyRunMain(__argc, __argv);
+	return CattyMain(__argc, __argv);
 }
 #endif
 
 int main(int Argc, char** Argv)
 {
-	return CattyRunMain(Argc, Argv);
+	return CattyMain(Argc, Argv);
 }

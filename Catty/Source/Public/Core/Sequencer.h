@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -424,8 +425,143 @@ public:
 		OrderedKeys.erase(
 			std::remove(OrderedKeys.begin(), OrderedKeys.end(), Key),
 			OrderedKeys.end());
+		MainThreadKeys.erase(
+			std::remove(MainThreadKeys.begin(), MainThreadKeys.end(), Key),
+			MainThreadKeys.end());
 		RegisteredObjectCount.store(OrderedKeys.size(), std::memory_order_release);
 	}
+
+	/**
+	 * Queue object for next Attach stage. Thread-safe; Remove wins if both pending.
+	 */
+	void RequestAdd(FObject& Object)
+	{
+		std::lock_guard<std::mutex> Lock(PendingMutex);
+		PendingRemove.erase(
+			std::remove(PendingRemove.begin(), PendingRemove.end(), &Object),
+			PendingRemove.end());
+		for (FObject* Existing : PendingAdd)
+		{
+			if (Existing == &Object)
+			{
+				return;
+			}
+		}
+		PendingAdd.push_back(&Object);
+	}
+
+	/** Queue object for next Detach stage. Thread-safe; Remove wins over PendingAdd. */
+	void RequestRemove(FObject& Object)
+	{
+		std::lock_guard<std::mutex> Lock(PendingMutex);
+		PendingAdd.erase(
+			std::remove(PendingAdd.begin(), PendingAdd.end(), &Object),
+			PendingAdd.end());
+		for (FObject* Existing : PendingRemove)
+		{
+			if (Existing == &Object)
+			{
+				return;
+			}
+		}
+		PendingRemove.push_back(&Object);
+	}
+
+	/** Bootstrap / FixedUpdate reopen: open a gate ignoring unmet external expects. */
+	void ForceOpenGate(FStage Stage)
+	{
+		const std::size_t StageIndex = TTraits::StageToIndex(Stage);
+		if (StageIndex >= NumStages)
+		{
+			return;
+		}
+		bool bRaiseImmediate = false;
+		bool bOpened = false;
+		{
+			std::lock_guard<std::mutex> Lock(GateMutex);
+			FGateState& Gate = GateStates[StageIndex];
+			const std::size_t SavedExpected = Gate.ExpectedExternal;
+			const std::size_t SavedReceived = Gate.ReceivedExternal;
+			Gate.ExpectedExternal = 0;
+			Gate.ReceivedExternal = 0;
+			bOpened = TryOpenGate_NoLock(StageIndex, &bRaiseImmediate);
+			Gate.ExpectedExternal = SavedExpected;
+			Gate.ReceivedExternal = SavedReceived;
+		}
+		if (bOpened)
+		{
+			MaybeFlushPendingForOpenedStage(StageIndex);
+			GateCV.notify_all();
+		}
+		if (bRaiseImmediate)
+		{
+			RaiseStagePin(StageIndex);
+		}
+	}
+
+	void FlushPendingAdds()
+	{
+		std::vector<FObject*> ToAdd;
+		{
+			std::lock_guard<std::mutex> Lock(PendingMutex);
+			ToAdd.swap(PendingAdd);
+		}
+		for (FObject* Object : ToAdd)
+		{
+			if (!Object)
+			{
+				continue;
+			}
+			const FPipelineObjectKey Key = Register(*Object);
+			Object->Attach();
+			if (bLoopsStarted && !Object->PreferMainThread())
+			{
+				WorkerThreads.emplace_back([this, Key, Object]()
+				{
+					RunObjectLoop(Key, *Object);
+				});
+			}
+			else if (bLoopsStarted && Object->PreferMainThread())
+			{
+				std::lock_guard<std::mutex> Lock(RegistryMutex);
+				MainThreadKeys.push_back(Key);
+			}
+		}
+	}
+
+	void FlushPendingRemoves()
+	{
+		std::vector<FObject*> ToRemove;
+		{
+			std::lock_guard<std::mutex> Lock(PendingMutex);
+			ToRemove.swap(PendingRemove);
+		}
+		for (FObject* Object : ToRemove)
+		{
+			if (!Object)
+			{
+				continue;
+			}
+			FPipelineObjectKey Key = 0;
+			{
+				std::lock_guard<std::mutex> Lock(RegistryMutex);
+				for (const auto& Pair : ObjectsByKey)
+				{
+					if (Pair.second.Object == Object)
+					{
+						Key = Pair.first;
+						break;
+					}
+				}
+			}
+			if (Key != 0)
+			{
+				Object->Detach();
+				Unregister(Key);
+			}
+		}
+	}
+
 
 	[[nodiscard]] FObject* Find(FPipelineObjectKey Key) const
 	{
@@ -550,6 +686,7 @@ public:
 		}
 		if (bShouldOpen)
 		{
+			MaybeFlushPendingForOpenedStage(GateStageIndex);
 			GateCV.notify_all();
 		}
 		if (bRaiseImmediate)
@@ -595,6 +732,10 @@ public:
 				}
 			}
 		}
+		for (std::size_t StageIndex : Opened)
+		{
+			MaybeFlushPendingForOpenedStage(StageIndex);
+		}
 		if (!Opened.empty())
 		{
 			GateCV.notify_all();
@@ -632,18 +773,24 @@ public:
 			RaiseStagePin(StageIndex);
 			// Re-arm zero-expect gates for the next frame (N>0; no vacuous spin).
 			bool bReopened = false;
+			bool bRaiseImmediate = false;
 			{
 				std::lock_guard<std::mutex> Lock(GateMutex);
 				FGateState& Gate = GateStates[StageIndex];
 				if (Gate.ExpectedExternal == 0
 					&& RegisteredObjectCount.load(std::memory_order_acquire) > 0)
 				{
-					bReopened = TryOpenGate_NoLock(StageIndex);
+					bReopened = TryOpenGate_NoLock(StageIndex, &bRaiseImmediate);
 				}
 			}
 			if (bReopened)
 			{
+				MaybeFlushPendingForOpenedStage(StageIndex);
 				GateCV.notify_all();
+			}
+			if (bRaiseImmediate)
+			{
+				RaiseStagePin(StageIndex);
 			}
 		}
 	}
@@ -688,6 +835,7 @@ public:
 		std::lock_guard<std::mutex> Lock(RegistryMutex);
 		WorkerThreads.clear();
 		MainThreadKeys.clear();
+		bLoopsStarted = true;
 
 		for (FPipelineObjectKey Key : OrderedKeys)
 		{
@@ -735,41 +883,64 @@ public:
 		}
 	}
 
-	/** Continuous main-thread loops until stop (call from app main thread). */
-	void RunMainThreadObjectLoops()
+	/**
+	 * Non-blocking: for each PreferMainThread object, run at most one stage if its
+	 * StartToken is already open. Required so Module+Layer (and multi-object) can
+	 * interleave on a single OS thread without deadlocking on peer Completes.
+	 */
+	[[nodiscard]] bool TryPumpMainThreadObjectsOnce()
 	{
+		if (IsStopRequested())
+		{
+			return false;
+		}
 		std::vector<FPipelineObjectKey> Keys;
 		{
 			std::lock_guard<std::mutex> Lock(RegistryMutex);
 			Keys = MainThreadKeys;
 		}
-		if (Keys.empty())
+		bool bProgressed = false;
+		for (FPipelineObjectKey Key : Keys)
 		{
-			return;
-		}
-		// Single main-thread object: dedicated loop. Multiple: round-robin one stage-pass each.
-		if (Keys.size() == 1)
-		{
-			FObject* Object = Find(Keys[0]);
-			if (Object)
+			if (IsStopRequested())
 			{
-				RunObjectLoop(Keys[0], *Object);
+				break;
 			}
-			return;
+			FObject* Object = nullptr;
+			{
+				std::lock_guard<std::mutex> Lock(RegistryMutex);
+				const auto It = ObjectsByKey.find(Key);
+				if (It == ObjectsByKey.end() || !It->second.Object)
+				{
+					continue;
+				}
+				Object = It->second.Object;
+			}
+			if (TryAdvanceObjectOneStage(Key, *Object))
+			{
+				bProgressed = true;
+			}
 		}
+		return bProgressed;
+	}
+
+	void WaitForGateNotify(std::chrono::milliseconds Timeout)
+	{
+		std::unique_lock<std::mutex> Lock(GateMutex);
+		GateCV.wait_for(Lock, Timeout, [this]()
+		{
+			return bStopRequested;
+		});
+	}
+
+	/** Continuous main-thread loops until stop (call from app main thread). */
+	void RunMainThreadObjectLoops()
+	{
 		while (!IsStopRequested())
 		{
-			for (FPipelineObjectKey Key : Keys)
+			if (!TryPumpMainThreadObjectsOnce())
 			{
-				if (IsStopRequested())
-				{
-					break;
-				}
-				FObject* Object = Find(Key);
-				if (Object)
-				{
-					RunObjectLoopOnce(Key, *Object);
-				}
+				WaitForGateNotify(std::chrono::milliseconds(2));
 			}
 		}
 	}
@@ -808,6 +979,8 @@ private:
 		std::unique_ptr<std::array<FQueue, NumStages>> Mailboxes;
 		std::unique_ptr<std::array<std::uint64_t, NumStages>> SeenGenerations;
 		bool bPreferMainThread = true;
+		/** Next stage index for PreferMainThread cooperative pump (0..NumStages-1). */
+		std::size_t NextStageIndex = 0;
 	};
 
 	/** Caller holds GateMutex. Returns true if StartToken was issued.
@@ -857,19 +1030,6 @@ private:
 			return;
 		}
 		Queue->Push(std::move(Cmd));
-	}
-
-	void RaiseStagePin(std::size_t StageIndex)
-	{
-		std::vector<std::function<void(std::size_t)>> Listeners;
-		{
-			std::lock_guard<std::mutex> Lock(PinListenerMutex);
-			Listeners = PinListeners;
-		}
-		for (const auto& Listener : Listeners)
-		{
-			Listener(StageIndex);
-		}
 	}
 
 	void CloseAllMailboxes()
@@ -933,8 +1093,99 @@ private:
 			WaitOutstandingListens(Key);
 			Object.OnSequencerStage(Stage);
 			SignalStageComplete(Key, Stage);
+			SetNextStageIndex(Key, StageIndex + 1 >= NumStages ? 0 : StageIndex + 1);
 		}
 		return true;
+	}
+
+	[[nodiscard]] bool TryAdvanceObjectOneStage(FPipelineObjectKey Key, FObject& Object)
+	{
+		std::size_t StageIndex = 0;
+		std::array<std::uint64_t, NumStages>* SeenGen = nullptr;
+		{
+			std::lock_guard<std::mutex> Lock(RegistryMutex);
+			const auto It = ObjectsByKey.find(Key);
+			if (It == ObjectsByKey.end() || !It->second.SeenGenerations)
+			{
+				return false;
+			}
+			StageIndex = It->second.NextStageIndex;
+			SeenGen = It->second.SeenGenerations.get();
+			if (StageIndex >= NumStages)
+			{
+				It->second.NextStageIndex = 0;
+				StageIndex = 0;
+			}
+		}
+		const FStage Stage = TTraits::IndexToStage(StageIndex);
+		{
+			std::lock_guard<std::mutex> Lock(GateMutex);
+			if (bStopRequested)
+			{
+				return false;
+			}
+			FGateState& Gate = GateStates[StageIndex];
+			if (Gate.StartGeneration <= (*SeenGen)[StageIndex])
+			{
+				return false;
+			}
+			(*SeenGen)[StageIndex] = Gate.StartGeneration;
+		}
+		WaitOutstandingListens(Key);
+		Object.OnSequencerStage(Stage);
+		SignalStageComplete(Key, Stage);
+		SetNextStageIndex(Key, StageIndex + 1 >= NumStages ? 0 : StageIndex + 1);
+		return true;
+	}
+
+	void SetNextStageIndex(FPipelineObjectKey Key, std::size_t NextIndex)
+	{
+		std::lock_guard<std::mutex> Lock(RegistryMutex);
+		const auto It = ObjectsByKey.find(Key);
+		if (It != ObjectsByKey.end())
+		{
+			It->second.NextStageIndex = NextIndex;
+		}
+	}
+
+	void MaybeFlushPendingForOpenedStage(std::size_t StageIndex)
+	{
+		if (StageIndex >= NumStages)
+		{
+			return;
+		}
+		const FStage Stage = TTraits::IndexToStage(StageIndex);
+		if constexpr (requires { TTraits::ShouldFlushPendingAdd(Stage); })
+		{
+			if (TTraits::ShouldFlushPendingAdd(Stage))
+			{
+				FlushPendingAdds();
+			}
+		}
+	}
+
+	void RaiseStagePin(std::size_t StageIndex)
+	{
+		std::vector<std::function<void(std::size_t)>> Listeners;
+		{
+			std::lock_guard<std::mutex> Lock(PinListenerMutex);
+			Listeners = PinListeners;
+		}
+		for (const auto& Listener : Listeners)
+		{
+			Listener(StageIndex);
+		}
+		if (StageIndex < NumStages)
+		{
+			const FStage Stage = TTraits::IndexToStage(StageIndex);
+			if constexpr (requires { TTraits::ShouldFlushPendingRemove(Stage); })
+			{
+				if (TTraits::ShouldFlushPendingRemove(Stage))
+				{
+					FlushPendingRemoves();
+				}
+			}
+		}
 	}
 
 	TPipelineContext<FObject> Context;
@@ -945,6 +1196,11 @@ private:
 	std::vector<FPipelineObjectKey> MainThreadKeys;
 	std::vector<std::thread> WorkerThreads;
 	std::atomic<std::size_t> RegisteredObjectCount{0};
+	bool bLoopsStarted = false;
+
+	std::mutex PendingMutex;
+	std::vector<FObject*> PendingAdd;
+	std::vector<FObject*> PendingRemove;
 
 	mutable std::mutex GateMutex;
 	std::condition_variable GateCV;

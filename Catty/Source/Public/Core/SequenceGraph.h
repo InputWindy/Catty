@@ -8,15 +8,14 @@
  *
  * Example:
  * ```
- *   struct FGraphContext { int Frame = 0; };
- *   using FGraph = Catty::TSequenceGraph<FGraphContext, FModuleTraits, FLayerTraits>;
- *   FGraph Graph;
- *   Graph.WithContext([](FGraphContext& Ctx) { Ctx.Frame++; });
+ *   using FGraph = Catty::TSequenceGraph<FMyApp, FModuleTraits, FLayerTraits>; // CRTP: FMyApp : FGraph
+ *   FGraph& Graph = MyApp;
+ *   Graph.WithContext([](FMyApp& App) { App.DoWork(); });
  *   auto Key = Graph.GetA().Register(Module);
  *   Catty::TSequencerDep<FModuleTraits, FLayerTraits> Dep;
  *   Dep.FromTo[FModuleTraits::FStage::BeginFrame] = FLayerTraits::FStage::BeginFrame;
  *   Graph.BindDep(Graph.GetA(), Graph.GetB(), Dep);
- *   if (!Graph.Build()) { /* cycle in pin graph */ }
+ *   if (!Graph.Build()) { abort on cycle; }
  *   Graph.Execute(); // Running → main/worker loops → Stopped
  * ```
  */
@@ -24,6 +23,7 @@
 #include <Core/Sequencer.h>
 
 #include <array>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
@@ -104,6 +104,21 @@ struct TSequenceGraphSlot
 	{
 		Sequencer.RunMainThreadObjectLoops();
 	}
+
+	[[nodiscard]] bool TryPumpMainThreadObjectsOnce()
+	{
+		return Sequencer.TryPumpMainThreadObjectsOnce();
+	}
+
+	void WaitForGateNotify(std::chrono::milliseconds Timeout)
+	{
+		Sequencer.WaitForGateNotify(Timeout);
+	}
+
+	[[nodiscard]] bool IsStopRequested() const
+	{
+		return Sequencer.IsStopRequested();
+	}
 };
 
 template <>
@@ -140,6 +155,20 @@ struct TSequenceGraphSlot<void>
 	void RunMainThreadObjectLoops()
 	{
 	}
+
+	[[nodiscard]] bool TryPumpMainThreadObjectsOnce()
+	{
+		return false;
+	}
+
+	void WaitForGateNotify(std::chrono::milliseconds /*Timeout*/)
+	{
+	}
+
+	[[nodiscard]] bool IsStopRequested() const
+	{
+		return true;
+	}
 };
 
 } // namespace Private
@@ -161,8 +190,8 @@ template <
 	typename F = void,
 	typename G = void,
 	typename H = void,
-	typename I = void,
-	typename J = void>
+	typename TI = void,
+	typename TJ = void>
 class TSequenceGraph
 {
 public:
@@ -173,7 +202,7 @@ public:
 	TSequenceGraph(const TSequenceGraph&) = delete;
 	TSequenceGraph& operator=(const TSequenceGraph&) = delete;
 
-	~TSequenceGraph()
+	virtual ~TSequenceGraph()
 	{
 		if (GraphState == ESequenceGraphState::Running
 			|| GraphState == ESequenceGraphState::WaitForExit)
@@ -206,19 +235,19 @@ public:
 
 	// --- Cross-sequence context (thread-safe) --------------------------------
 
-	/** Run Func(Context) under the graph context mutex. */
+	/** Run Func(*this as TContext) under the graph context mutex (CRTP). */
 	template <typename TFunc>
 	decltype(auto) WithContext(TFunc&& Func)
 	{
 		std::lock_guard<std::mutex> Lock(ContextMutex);
-		return std::forward<TFunc>(Func)(Context);
+		return std::forward<TFunc>(Func)(static_cast<TContext&>(*this));
 	}
 
 	template <typename TFunc>
 	decltype(auto) WithContext(TFunc&& Func) const
 	{
 		std::lock_guard<std::mutex> Lock(ContextMutex);
-		return std::forward<TFunc>(Func)(Context);
+		return std::forward<TFunc>(Func)(static_cast<const TContext&>(*this));
 	}
 
 	/**
@@ -239,12 +268,12 @@ public:
 
 	[[nodiscard]] FContextAccess AccessContext()
 	{
-		return FContextAccess{std::unique_lock<std::mutex>(ContextMutex), Context};
+		return FContextAccess{std::unique_lock<std::mutex>(ContextMutex), static_cast<TContext&>(*this)};
 	}
 
 	[[nodiscard]] FConstContextAccess AccessContext() const
 	{
-		return FConstContextAccess{std::unique_lock<std::mutex>(ContextMutex), Context};
+		return FConstContextAccess{std::unique_lock<std::mutex>(ContextMutex), static_cast<const TContext&>(*this)};
 	}
 
 	// --- Sequencer slots A..J -----------------------------------------------
@@ -329,22 +358,22 @@ public:
 		return SlotH.Get();
 	}
 
-	[[nodiscard]] TSequencer<I>& GetI() requires (!std::is_void_v<I>)
+	[[nodiscard]] TSequencer<TI>& GetI() requires (!std::is_void_v<TI>)
 	{
 		return SlotI.Get();
 	}
 
-	[[nodiscard]] const TSequencer<I>& GetI() const requires (!std::is_void_v<I>)
+	[[nodiscard]] const TSequencer<TI>& GetI() const requires (!std::is_void_v<TI>)
 	{
 		return SlotI.Get();
 	}
 
-	[[nodiscard]] TSequencer<J>& GetJ() requires (!std::is_void_v<J>)
+	[[nodiscard]] TSequencer<TJ>& GetJ() requires (!std::is_void_v<TJ>)
 	{
 		return SlotJ.Get();
 	}
 
-	[[nodiscard]] const TSequencer<J>& GetJ() const requires (!std::is_void_v<J>)
+	[[nodiscard]] const TSequencer<TJ>& GetJ() const requires (!std::is_void_v<TJ>)
 	{
 		return SlotJ.Get();
 	}
@@ -392,12 +421,12 @@ public:
 
 	[[nodiscard]] static constexpr bool HasI()
 	{
-		return !std::is_void_v<I>;
+		return !std::is_void_v<TI>;
 	}
 
 	[[nodiscard]] static constexpr bool HasJ()
 	{
-		return !std::is_void_v<J>;
+		return !std::is_void_v<TJ>;
 	}
 
 	// --- Wiring / lifecycle -------------------------------------------------
@@ -501,6 +530,7 @@ public:
 		}
 		OpenZeroExpectGatesAll();
 		StartWorkerLoopsAll();
+		OnWorkersStarted();
 		RunMainThreadObjectLoopsAll();
 		WaitWhileRunning();
 
@@ -536,6 +566,14 @@ public:
 		StateCV.notify_all();
 	}
 
+protected:
+	/** Hook after StartWorkerLoopsAll (e.g. bootstrap first Attach gate). */
+	virtual void OnWorkersStarted()
+	{
+	}
+
+public:
+
 	void OpenZeroExpectGatesAll()
 	{
 		SlotA.OpenZeroExpectGates();
@@ -566,16 +604,43 @@ public:
 
 	void RunMainThreadObjectLoopsAll()
 	{
-		SlotA.RunMainThreadObjectLoops();
-		SlotB.RunMainThreadObjectLoops();
-		SlotC.RunMainThreadObjectLoops();
-		SlotD.RunMainThreadObjectLoops();
-		SlotE.RunMainThreadObjectLoops();
-		SlotF.RunMainThreadObjectLoops();
-		SlotG.RunMainThreadObjectLoops();
-		SlotH.RunMainThreadObjectLoops();
-		SlotI.RunMainThreadObjectLoops();
-		SlotJ.RunMainThreadObjectLoops();
+		// PreferMainThread objects across Module/Layer (and peers) must interleave
+		// one stage at a time. Calling SlotA.RunMainThreadObjectLoops() then SlotB
+		// deadlocks: Module waits for Layer pins while Layer never pumps.
+		while (!(SlotA.IsStopRequested()
+			&& SlotB.IsStopRequested()
+			&& SlotC.IsStopRequested()
+			&& SlotD.IsStopRequested()
+			&& SlotE.IsStopRequested()
+			&& SlotF.IsStopRequested()
+			&& SlotG.IsStopRequested()
+			&& SlotH.IsStopRequested()
+			&& SlotI.IsStopRequested()
+			&& SlotJ.IsStopRequested()))
+		{
+			const bool bProgressed =
+				SlotA.TryPumpMainThreadObjectsOnce()
+				|| SlotB.TryPumpMainThreadObjectsOnce()
+				|| SlotC.TryPumpMainThreadObjectsOnce()
+				|| SlotD.TryPumpMainThreadObjectsOnce()
+				|| SlotE.TryPumpMainThreadObjectsOnce()
+				|| SlotF.TryPumpMainThreadObjectsOnce()
+				|| SlotG.TryPumpMainThreadObjectsOnce()
+				|| SlotH.TryPumpMainThreadObjectsOnce()
+				|| SlotI.TryPumpMainThreadObjectsOnce()
+				|| SlotJ.TryPumpMainThreadObjectsOnce();
+			if (!bProgressed)
+			{
+				if constexpr (!std::is_void_v<A>)
+				{
+					SlotA.WaitForGateNotify(std::chrono::milliseconds(2));
+				}
+				else if constexpr (!std::is_void_v<B>)
+				{
+					SlotB.WaitForGateNotify(std::chrono::milliseconds(2));
+				}
+			}
+		}
 	}
 
 	void RequestStopAll()
@@ -644,11 +709,11 @@ private:
 			SlotI.AsLockstep(),
 			SlotJ.AsLockstep(),
 		};
-		for (std::size_t I = 0; I < SlotCount; ++I)
+		for (std::size_t Index = 0; Index < SlotCount; ++Index)
 		{
-			if (Slots[I] == Ptr)
+			if (Slots[Index] == Ptr)
 			{
-				return I;
+				return Index;
 			}
 		}
 		return SlotCount;
@@ -727,7 +792,6 @@ private:
 	mutable std::mutex ContextMutex;
 	mutable std::mutex StateMutex;
 	std::condition_variable StateCV;
-	TContext Context{};
 	ESequenceGraphState GraphState = ESequenceGraphState::Stopped;
 	bool bBuilt = false;
 	std::vector<FPendingPinEdge> PendingEdges;
@@ -740,8 +804,8 @@ private:
 	Private::TSequenceGraphSlot<F> SlotF;
 	Private::TSequenceGraphSlot<G> SlotG;
 	Private::TSequenceGraphSlot<H> SlotH;
-	Private::TSequenceGraphSlot<I> SlotI;
-	Private::TSequenceGraphSlot<J> SlotJ;
+	Private::TSequenceGraphSlot<TI> SlotI;
+	Private::TSequenceGraphSlot<TJ> SlotJ;
 };
 
 } // namespace Catty

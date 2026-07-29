@@ -114,7 +114,7 @@ FSoftObjectPath FSoftObjectPath::FromObject(const FObject& Object)
 {
 	FSoftObjectPath Path;
 	const FObjectRef Package = Object.GetPackage();
-	if (!Package || Package.Get() == &Object)
+	if (!Package || &*Package == &Object)
 	{
 		// Package root (or orphan with no outer) — package-only path.
 		Path.PackageName = FPaths::NormalizePackagePath(Object.GetName());

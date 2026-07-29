@@ -46,10 +46,7 @@ public:
 	virtual void OnAttach() override;
 	virtual void OnDetach() override;
 
-	virtual void OnUpdate(
-		EModuleStage Stage,
-		FApp& App,
-		FStageContext& Ctx) override;
+	virtual void OnSequencerStage(EFrameStage Stage) override;
 
 private:
 	void DrawMenuItems(FApp& App, float RowH);

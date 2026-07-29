@@ -274,11 +274,17 @@ void FEditorLayer::OnDetach()
 	}
 }
 
-void FEditorLayer::OnUpdate(
-	EModuleStage /*Stage*/,
-	FApp& App,
-	FStageContext& /*Ctx*/)
+void FEditorLayer::OnSequencerStage(EFrameStage Stage)
 {
+	if (Stage != EFrameStage::Update)
+	{
+		return;
+	}
+	if (!GApp)
+	{
+		return;
+	}
+	FApp& App = *GApp;
 	if (ImGui::GetCurrentContext() == nullptr)
 	{
 		return;
@@ -297,7 +303,7 @@ void FEditorLayer::OnUpdate(
 		}
 	}
 
-	DrawDockSpace(App); // menu + toolbar + placeholder + main dock
+	DrawDockSpace(App);
 	DrawMainViewportPanel();
 	if (bShowContentBrowser)
 	{

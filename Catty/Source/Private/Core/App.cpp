@@ -133,22 +133,15 @@ bool FApp::PostInitialize()
 	return true;
 }
 
-void FApp::PreShutdown()
-{
-}
-
 void FApp::OnRequestExit()
 {
-	if (AppState != EAppState::Running)
+	if (GetState() != EAppState::Running)
 	{
 		return;
 	}
 
 	CATTY_CORE_INFO("FApp: exit requested — entering WaitForExit (drain pipeline)");
-	AppState = EAppState::WaitForExit;
-
-	// Drop layer-owned refs so GC can collect once modules finish draining.
-	ClearLayers();
+	RequestWaitForExit();
 }
 
 void FApp::OnAttachModule(IModule& /*Module*/)
@@ -163,12 +156,10 @@ void FApp::OnDetachModule(IModule& Module)
 
 void FApp::OnAttachLayer(FLayer& /*Layer*/)
 {
-	RebuildLayerPostBindings();
 }
 
-void FApp::OnDetachLayer(FLayer& Layer)
+void FApp::OnDetachLayer(FLayer& /*Layer*/)
 {
-	RemoveLayerPostBindings(Layer);
 }
 
 bool FApp::Initialize()
@@ -247,7 +238,30 @@ bool FApp::Initialize()
 	// Game PostInitialize pushes content layers (World / Editor / Script / …).
 	AttachModules();
 
-	AppState = EAppState::Running;
+	for (const auto& Module : Modules)
+	{
+		if (Module)
+		{
+			(void)GetA().Register(*Module);
+		}
+	}
+	for (FLayerBinding& Entry : LayerBindings)
+	{
+		if (Entry.Layer)
+		{
+			(void)GetB().Register(*Entry.Layer);
+		}
+	}
+
+	if (!BuildDefaultFrameWiring())
+	{
+		CATTY_CORE_ERROR("FApp::Initialize: BuildDefaultFrameWiring / Build failed");
+		Shutdown();
+		ShutdownAppLogging(*this);
+		return false;
+	}
+	InstallFixedUpdateRepeat();
+
 	LastFrameTimeSeconds = std::chrono::duration<double>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -256,100 +270,17 @@ bool FApp::Initialize()
 
 void FApp::Shutdown()
 {
-	AppState = EAppState::ShuttingDown;
-
 	FStageContext Ctx{};
 	Ctx.FrameIndex = FrameIndex;
 
-	// Stages while modules are still attached (and layers may still exist).
 	ExecuteStage(EModuleStage::Shutdown, Ctx);
 
-	// Tear down content, then leave module active lifetime.
 	ClearLayers();
 	DetachModules();
 
 	if (WorkerPool.IsInitialized())
 	{
 		WorkerPool.Shutdown();
-	}
-
-	AppState = EAppState::Stopped;
-}
-
-void FApp::RunMainLoop()
-{
-	while (AppState == EAppState::Running || AppState == EAppState::WaitForExit)
-	{
-		CATTY_SCOPED_TIMER("Engine", "FApp::Tick");
-
-		UpdateAppState();
-
-		FStageContext Ctx{};
-		Ctx.DeltaSeconds = DeltaSeconds;
-		Ctx.FixedDeltaSeconds = GCVarFixedDeltaSeconds.GetValue();
-		Ctx.FrameIndex = FrameIndex;
-
-		if (AppState == EAppState::WaitForExit)
-		{
-			// Drain-only lockstep: no new input / simulation / render intake.
-			ExecuteStage(EModuleStage::BeginFrame, Ctx);
-			ExecuteStage(EModuleStage::PrepareExit, Ctx);
-			ExecuteStage(EModuleStage::Update, Ctx);
-			ExecuteStage(EModuleStage::EndFrame, Ctx);
-
-			if (AreAllModulesIdle() && WorkerPool.IsIdle())
-			{
-				CATTY_CORE_INFO("FApp: all modules idle — leaving WaitForExit");
-				break;
-			}
-			continue;
-		}
-
-		ExecuteStage(EModuleStage::BeginFrame, Ctx);
-		if (AppState != EAppState::Running)
-		{
-			continue;
-		}
-
-		ExecuteStage(EModuleStage::ProcessInput, Ctx);
-		if (AppState != EAppState::Running)
-		{
-			continue;
-		}
-
-		const float FixedDelta = GCVarFixedDeltaSeconds.GetValue();
-		const int MaxFixed = GCVarMaxFixedUpdatesPerFrame.GetValue();
-		if (FixedDelta > 0.0f && MaxFixed > 0)
-		{
-			FixedUpdateAccumulator += DeltaSeconds;
-			int Steps = 0;
-			while (FixedUpdateAccumulator >= FixedDelta && Steps < MaxFixed
-				&& AppState == EAppState::Running)
-			{
-				FStageContext FixedCtx = Ctx;
-				FixedCtx.DeltaSeconds = FixedDelta;
-				FixedCtx.FixedDeltaSeconds = FixedDelta;
-				ExecuteStage(EModuleStage::FixedUpdate, FixedCtx);
-				FixedUpdateAccumulator -= FixedDelta;
-				++Steps;
-			}
-			if (Steps >= MaxFixed)
-			{
-				FixedUpdateAccumulator = 0.0f;
-			}
-		}
-
-		if (AppState != EAppState::Running)
-		{
-			continue;
-		}
-
-		ExecuteStage(EModuleStage::Update, Ctx);
-		ExecuteStage(EModuleStage::LateUpdate, Ctx);
-		ExecuteStage(EModuleStage::PreRender, Ctx);
-		ExecuteStage(EModuleStage::Render, Ctx);
-		ExecuteStage(EModuleStage::PostRender, Ctx);
-		ExecuteStage(EModuleStage::EndFrame, Ctx);
 	}
 }
 
@@ -360,10 +291,123 @@ void FApp::Run()
 		return;
 	}
 
-	RunMainLoop();
-	PreShutdown();
+	if (!Execute())
+	{
+		CATTY_CORE_ERROR("FApp::Execute failed or was not built");
+	}
 	Shutdown();
 	ShutdownAppLogging(*this);
+}
+
+void FApp::OnWorkersStarted()
+{
+	BootstrapFirstAttach();
+}
+
+void FApp::MakeStageContext(FStageContext& Out) const
+{
+	Out.DeltaSeconds = DeltaSeconds;
+	Out.FixedDeltaSeconds = FixedDeltaSeconds;
+	Out.FrameIndex = FrameIndex;
+}
+
+bool FApp::BuildDefaultFrameWiring()
+{
+	TSequencerDep<FModuleFrameTraits, FLayerFrameTraits> ModuleToLayer;
+	TSequencerDep<FLayerFrameTraits, FModuleFrameTraits> LayerToModule;
+
+	const auto WireSame = [&](EFrameStage S)
+	{
+		ModuleToLayer.FromTo[S] = S;
+	};
+	const auto WireNext = [&](EFrameStage FromLayer, EFrameStage ToModule)
+	{
+		LayerToModule.FromTo[FromLayer] = ToModule;
+	};
+
+	WireSame(EFrameStage::Attach);
+	WireNext(EFrameStage::Attach, EFrameStage::BeginFrame);
+	WireSame(EFrameStage::BeginFrame);
+	WireNext(EFrameStage::BeginFrame, EFrameStage::ProcessInput);
+	WireSame(EFrameStage::ProcessInput);
+	// Layer.ProcessInput → Module.FixedUpdate|Update via InstallFixedUpdateRepeat
+	WireSame(EFrameStage::FixedUpdate);
+	// Layer.FixedUpdate → Module.Update / reopen via InstallFixedUpdateRepeat
+	WireSame(EFrameStage::Update);
+	WireNext(EFrameStage::Update, EFrameStage::LateUpdate);
+	WireSame(EFrameStage::LateUpdate);
+	WireNext(EFrameStage::LateUpdate, EFrameStage::PreRender);
+	WireSame(EFrameStage::PreRender);
+	WireNext(EFrameStage::PreRender, EFrameStage::Render);
+	WireSame(EFrameStage::Render);
+	WireNext(EFrameStage::Render, EFrameStage::PostRender);
+	WireSame(EFrameStage::PostRender);
+	WireNext(EFrameStage::PostRender, EFrameStage::EndFrame);
+	WireSame(EFrameStage::EndFrame);
+	WireNext(EFrameStage::EndFrame, EFrameStage::Detach);
+	WireSame(EFrameStage::Detach);
+	WireNext(EFrameStage::Detach, EFrameStage::Attach);
+	WireSame(EFrameStage::PrepareExit);
+	WireNext(EFrameStage::PrepareExit, EFrameStage::Detach);
+
+	if (!BindDep(GetA(), GetB(), ModuleToLayer))
+	{
+		return false;
+	}
+	if (!BindDep(GetB(), GetA(), LayerToModule))
+	{
+		return false;
+	}
+	return Build();
+}
+
+void FApp::InstallFixedUpdateRepeat()
+{
+	const std::size_t PiIndex = FModuleFrameTraits::StageToIndex(EFrameStage::ProcessInput);
+	const std::size_t FuIndex = FModuleFrameTraits::StageToIndex(EFrameStage::FixedUpdate);
+	const std::size_t UpdateIndex = FModuleFrameTraits::StageToIndex(EFrameStage::Update);
+	const std::size_t DetachIndex = FModuleFrameTraits::StageToIndex(EFrameStage::Detach);
+	GetA().BindGateExternalExpect(FuIndex, 1);
+	GetA().BindGateExternalExpect(UpdateIndex, 1);
+	GetB().AddPinRaiseListener([this, PiIndex, FuIndex, UpdateIndex, DetachIndex](std::size_t Raised)
+	{
+		if (Raised == DetachIndex)
+		{
+			bFrameTickArmed.store(true, std::memory_order_release);
+			return;
+		}
+		if (Raised == PiIndex)
+		{
+			if (FixedStepsRemaining <= 0)
+			{
+				GetA().ForceOpenGate(EFrameStage::Update);
+			}
+			else
+			{
+				GetA().NotifyExternalPin(FuIndex);
+			}
+			return;
+		}
+		if (Raised != FuIndex)
+		{
+			return;
+		}
+		if (FixedStepsRemaining > 1)
+		{
+			--FixedStepsRemaining;
+			GetA().ForceOpenGate(EFrameStage::FixedUpdate);
+		}
+		else
+		{
+			FixedStepsRemaining = 0;
+			GetA().NotifyExternalPin(UpdateIndex);
+		}
+	});
+}
+
+void FApp::BootstrapFirstAttach()
+{
+	GetA().ForceOpenGate(EFrameStage::Attach);
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +568,7 @@ bool FApp::RebuildModuleOrder()
 		ModulesByName[Module->GetName()] = Module.get();
 	}
 
-	for (std::size_t Index = 0; Index < StageCount; ++Index)
+	for (std::size_t Index = 0; Index < static_cast<std::size_t>(EModuleStage::NumMaxStage); ++Index)
 	{
 		const EModuleStage Stage = static_cast<EModuleStage>(Index);
 		if (!BuildStageOrder(Stage, StageOrders[Index]))
@@ -582,7 +626,15 @@ void FApp::PushLayer(std::unique_ptr<FLayer> Layer)
 		LayerBindings.begin() + static_cast<std::ptrdiff_t>(LayerInsertIndex),
 		std::move(Entry));
 	++LayerInsertIndex;
-	Raw->Attach();
+
+	if (IsBuilt())
+	{
+		GetB().RequestAdd(*Raw);
+	}
+	else
+	{
+		Raw->Attach();
+	}
 }
 
 void FApp::PushOverlay(std::unique_ptr<FLayer> Overlay)
@@ -598,7 +650,15 @@ void FApp::PushOverlay(std::unique_ptr<FLayer> Overlay)
 	(void)Raw->GetOnAttach().AddRaw(this, &FApp::OnAttachLayer);
 	(void)Raw->GetOnDetach().AddRaw(this, &FApp::OnDetachLayer);
 	LayerBindings.push_back(std::move(Entry));
-	Raw->Attach();
+
+	if (IsBuilt())
+	{
+		GetB().RequestAdd(*Raw);
+	}
+	else
+	{
+		Raw->Attach();
+	}
 }
 
 void FApp::ClearLayers()
@@ -635,11 +695,6 @@ bool FApp::IsInitFamily(EModuleStage Stage)
 bool FApp::IsShutdownFamily(EModuleStage Stage)
 {
 	return Stage == EModuleStage::Shutdown;
-}
-
-FApp::FStageMulticast& FApp::GetPostStageDelegate(EModuleStage Stage)
-{
-	return PostStageDelegates[StageIndex(Stage)];
 }
 
 bool FApp::ExecuteStage(EModuleStage Stage, FStageContext& Ctx)
@@ -720,7 +775,6 @@ bool FApp::ExecuteStage(EModuleStage Stage, FStageContext& Ctx)
 		return false;
 	}
 
-	PostStageDelegates[StageIndex(Stage)].Broadcast(Stage, *this, Ctx);
 	return true;
 }
 
@@ -736,72 +790,13 @@ bool FApp::AreAllModulesIdle() const
 	return true;
 }
 
-void FApp::RemoveLayerPostBindings(FLayer& Layer)
-{
-	for (FStageMulticast& Delegate : PostStageDelegates)
-	{
-		Delegate.RemoveAll(&Layer);
-	}
-}
-
-void FApp::BindLayerPostBindings(FLayer& Layer)
-{
-	(void)GetPostStageDelegate(EModuleStage::BeginFrame).AddRaw(&Layer, &FLayer::OnBeginFrame);
-	(void)GetPostStageDelegate(EModuleStage::FixedUpdate).AddRaw(&Layer, &FLayer::OnFixedUpdate);
-	(void)GetPostStageDelegate(EModuleStage::Update).AddRaw(&Layer, &FLayer::OnUpdate);
-	(void)GetPostStageDelegate(EModuleStage::LateUpdate).AddRaw(&Layer, &FLayer::OnLateUpdate);
-	(void)GetPostStageDelegate(EModuleStage::PreRender).AddRaw(&Layer, &FLayer::OnPreRender);
-	(void)GetPostStageDelegate(EModuleStage::Render).AddRaw(&Layer, &FLayer::OnRender);
-	(void)GetPostStageDelegate(EModuleStage::PostRender).AddRaw(&Layer, &FLayer::OnPostRender);
-	(void)GetPostStageDelegate(EModuleStage::EndFrame).AddRaw(&Layer, &FLayer::OnEndFrame);
-}
-
-void FApp::RebuildLayerPostBindings()
-{
-	// Clear stage posts first — RemoveAll alone is not enough if older AddRaw
-	// bindings lacked RawObject (would leave duplicate Layer callbacks).
-	static constexpr EModuleStage kLayerStages[] = {
-		EModuleStage::BeginFrame,
-		EModuleStage::FixedUpdate,
-		EModuleStage::Update,
-		EModuleStage::LateUpdate,
-		EModuleStage::PreRender,
-		EModuleStage::Render,
-		EModuleStage::PostRender,
-		EModuleStage::EndFrame,
-		EModuleStage::ProcessInput,
-	};
-	for (const EModuleStage Stage : kLayerStages)
-	{
-		GetPostStageDelegate(Stage).Clear();
-	}
-
-	for (FLayerBinding& Entry : LayerBindings)
-	{
-		if (Entry.Layer)
-		{
-			BindLayerPostBindings(*Entry.Layer);
-		}
-	}
-
-	// ProcessInput: overlays first (reverse of stack order).
-	GetPostStageDelegate(EModuleStage::ProcessInput).Clear();
-	for (auto It = LayerBindings.rbegin(); It != LayerBindings.rend(); ++It)
-	{
-		if (It->Layer)
-		{
-			(void)GetPostStageDelegate(EModuleStage::ProcessInput)
-				.AddRaw(It->Layer.get(), &FLayer::OnProcessInput);
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Frame state
-// ---------------------------------------------------------------------------
-
 void FApp::UpdateAppState()
 {
+	if (!bFrameTickArmed.exchange(false, std::memory_order_acq_rel))
+	{
+		return;
+	}
+
 	const double NowSeconds = std::chrono::duration<double>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -821,6 +816,75 @@ void FApp::UpdateAppState()
 
 	DeltaSeconds = NewDelta;
 	++FrameIndex;
+
+	const float FixedDelta = GCVarFixedDeltaSeconds.GetValue();
+	const int MaxFixed = GCVarMaxFixedUpdatesPerFrame.GetValue();
+	FixedDeltaSeconds = FixedDelta;
+	FixedStepsRemaining = 0;
+	if (FixedDelta > 0.0f && MaxFixed > 0)
+	{
+		FixedUpdateAccumulator += DeltaSeconds;
+		int Steps = 0;
+		while (FixedUpdateAccumulator >= FixedDelta && Steps < MaxFixed)
+		{
+			FixedUpdateAccumulator -= FixedDelta;
+			++Steps;
+		}
+		if (Steps >= MaxFixed)
+		{
+			FixedUpdateAccumulator = 0.0f;
+		}
+		FixedStepsRemaining = Steps;
+	}
+}
+
+void IModule::OnSequencerStage(EFrameStage Stage)
+{
+	if (!GApp)
+	{
+		return;
+	}
+
+	if (Stage == EFrameStage::BeginFrame)
+	{
+		GApp->UpdateAppState();
+	}
+
+	if (GApp->GetState() == EAppState::WaitForExit)
+	{
+		const bool bDrain = Stage == EFrameStage::BeginFrame
+			|| Stage == EFrameStage::PrepareExit
+			|| Stage == EFrameStage::Update
+			|| Stage == EFrameStage::EndFrame
+			|| Stage == EFrameStage::Attach
+			|| Stage == EFrameStage::Detach;
+		if (!bDrain)
+		{
+			return;
+		}
+		if (Stage == EFrameStage::PrepareExit || Stage == EFrameStage::EndFrame)
+		{
+			if (GApp->AreAllModulesIdle() && GApp->GetWorkerPool().IsIdle())
+			{
+				GApp->RequestStopAll();
+			}
+		}
+	}
+
+	const EModuleStage ModuleStage = FrameStageToModuleStage(Stage);
+	if (ModuleStage == EModuleStage::NumMaxStage)
+	{
+		return;
+	}
+
+	FStageContext Ctx{};
+	GApp->MakeStageContext(Ctx);
+	if (Stage == EFrameStage::FixedUpdate)
+	{
+		Ctx.DeltaSeconds = Ctx.FixedDeltaSeconds;
+	}
+	SetCurrentStage(ModuleStage);
+	(void)ExecuteStage(ModuleStage, *GApp, Ctx);
 }
 
 } // namespace Catty
