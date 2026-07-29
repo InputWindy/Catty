@@ -1,7 +1,9 @@
 ﻿#include <Core/Layer/EditorLayer.h>
 
 #include <Core/App.h>
+#include <Core/ConfigFile.h>
 #include <Core/ConsoleManager.h>
+#include <Core/Editor/AgentChatClient.h>
 #include <Core/Log.h>
 #include <Render/UI/ImGuiExtensions.h>
 
@@ -16,6 +18,12 @@
 #include <sstream>
 #include <utility>
 
+#if defined(_WIN32)
+#	ifndef NOMINMAX
+#		define NOMINMAX
+#	endif
+#	include <Windows.h>
+#endif
 namespace ed = ax::NodeEditor;
 
 namespace Catty
@@ -58,12 +66,59 @@ namespace
 #endif
 
 // Dock / window titles must stay in sync with DockBuilderDockWindow.
-constexpr const char* kWinDocument = ICON_FA_MAP "  MyGame";
-constexpr const char* kWinViewport = ICON_FA_DISPLAY " Viewport";
+constexpr const char* kWinMainViewport = ICON_FA_MAP "  MyGame";
 constexpr const char* kWinContent = ICON_FA_FOLDER_TREE " Content Browser";
 constexpr const char* kWinOutput = ICON_FA_TERMINAL " Output Log";
+constexpr const char* kWinAgent = ICON_FA_COMMENTS " Agent";
 constexpr const char* kWinBlueprint = ICON_FA_DIAGRAM_PROJECT " Blueprint";
 constexpr const char* kWinPlot = ICON_FA_CHART_LINE " Plot";
+
+[[nodiscard]] ImVec4 OutputColorForLevel(spdlog::level::level_enum Level)
+{
+	switch (Level)
+	{
+	case spdlog::level::trace:
+		return ImVec4(0.50f, 0.52f, 0.56f, 1.0f);
+	case spdlog::level::debug:
+		return ImVec4(0.62f, 0.72f, 0.85f, 1.0f);
+	case spdlog::level::info:
+		return ImVec4(0.88f, 0.90f, 0.92f, 1.0f);
+	case spdlog::level::warn:
+		return ImVec4(0.95f, 0.80f, 0.28f, 1.0f);
+	case spdlog::level::err:
+		return ImVec4(0.95f, 0.42f, 0.38f, 1.0f);
+	case spdlog::level::critical:
+		return ImVec4(1.0f, 0.28f, 0.40f, 1.0f);
+	default:
+		return ImVec4(0.88f, 0.90f, 0.92f, 1.0f);
+	}
+}
+
+[[nodiscard]] ImVec4 AgentColorForRole(EAgentChatRole Role)
+{
+	switch (Role)
+	{
+	case EAgentChatRole::User:
+		return ImVec4(0.55f, 0.82f, 1.0f, 1.0f);
+	case EAgentChatRole::Assistant:
+		return ImVec4(0.88f, 0.90f, 0.92f, 1.0f);
+	default:
+		return ImVec4(0.70f, 0.72f, 0.55f, 1.0f);
+	}
+}
+
+[[nodiscard]] const char* AgentRoleLabel(EAgentChatRole Role)
+{
+	switch (Role)
+	{
+	case EAgentChatRole::User:
+		return "You";
+	case EAgentChatRole::Assistant:
+		return "Agent";
+	default:
+		return "System";
+	}
+}
 
 #if CATTY_EDITOR_DEMO_CONTENT
 struct FContentIcon
@@ -190,17 +245,12 @@ FEditorLayer::~FEditorLayer()
 
 void FEditorLayer::OnAttach()
 {
-#if CATTY_EDITOR_DEMO_CONTENT
-	std::error_code ErrorCode;
-	ContentRoot = std::filesystem::current_path(ErrorCode);
-	if (ErrorCode)
-	{
-		ContentRoot = ".";
-	}
-	CurrentFolder = ContentRoot;
-	RefreshContentListing();
-	AppendOutput("Editor ready. Dock windows freely. CVar: `Name` / `Name Value` / `Dump` / `help`.");
+	EnsureContentMounts();
+	SelectContentFolder("/Game");
+	AppendOutput("Output Log ready. Commands: `Dump` | `<Name>` | `<Name> <Value>` | `help`.");
+	StartAgentChat();
 
+#if CATTY_EDITOR_DEMO_CONTENT
 	ed::Config Config;
 	Config.SettingsFile = "Config/NodeEditor.json";
 	NodeEditorContext = ed::CreateEditor(&Config);
@@ -210,6 +260,11 @@ void FEditorLayer::OnAttach()
 
 void FEditorLayer::OnDetach()
 {
+	if (AgentChat)
+	{
+		AgentChat->Stop();
+		AgentChat.reset();
+	}
 	if (NodeEditorContext)
 	{
 		ed::DestroyEditor(static_cast<ed::EditorContext*>(NodeEditorContext));
@@ -228,14 +283,42 @@ void FEditorLayer::OnUpdate(
 		return;
 	}
 
+	DrainEngineLogs(App);
+
+	if (AgentChat)
+	{
+		AgentChat->Tick();
+		std::vector<FAgentChatBubble> Remote;
+		AgentChat->DrainRemoteBubbles(Remote);
+		for (FAgentChatBubble& Bubble : Remote)
+		{
+			AppendAgentBubble(Bubble.Role, std::move(Bubble.Text));
+		}
+	}
+
 	DrawDockSpace(App); // menu + toolbar + placeholder + main dock
-	DrawDocumentPanel();
-	DrawViewportPanel();
-	DrawContentBrowser();
+	DrawMainViewportPanel();
+	if (bShowContentBrowser)
+	{
+		DrawContentBrowser();
+	}
+	if (bShowOutputPanel)
+	{
+		DrawOutputPanel(App);
+	}
+	if (bShowAgentPanel)
+	{
+		DrawAgentPanel();
+	}
 #if CATTY_EDITOR_EXTRA_PANELS
-	DrawOutputPanel(App);
-	DrawBlueprintPanel();
-	DrawPlotPanel();
+	if (bShowBlueprintPanel)
+	{
+		DrawBlueprintPanel();
+	}
+	if (bShowPlotPanel)
+	{
+		DrawPlotPanel();
+	}
 	DrawFileDialogs();
 #endif
 
@@ -295,13 +378,13 @@ void FEditorLayer::DrawMenuItems(FApp& App, float RowH)
 		if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN "  Open..."))
 		{
 			IGFD::FileDialogConfig Config;
-			Config.path = ContentRoot.string();
+			Config.path = "Content";
 			ImGuiFileDialog::Instance()->OpenDialog("EditorOpenDlg", "Open File", ".*", Config);
 		}
 		if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK "  Save As..."))
 		{
 			IGFD::FileDialogConfig Config;
-			Config.path = ContentRoot.string();
+			Config.path = "Content";
 			ImGuiFileDialog::Instance()->OpenDialog("EditorSaveDlg", "Save File", ".*", Config);
 		}
 		ImGui::Separator();
@@ -320,11 +403,22 @@ void FEditorLayer::DrawMenuItems(FApp& App, float RowH)
 
 	DrawTopLevelMenu("MenuWindow", "Window", [&]()
 	{
-#if CATTY_EDITOR_DEMO_CONTENT
+		ImGui::MenuItem(kWinContent, nullptr, &bShowContentBrowser);
+		ImGui::MenuItem(kWinOutput, nullptr, &bShowOutputPanel);
+		ImGui::MenuItem(kWinAgent, nullptr, &bShowAgentPanel);
+#if CATTY_EDITOR_EXTRA_PANELS
+		ImGui::MenuItem(kWinBlueprint, nullptr, &bShowBlueprintPanel);
+		ImGui::MenuItem(kWinPlot, nullptr, &bShowPlotPanel);
+#endif
+		ImGui::Separator();
 		ImGui::MenuItem(ICON_FA_SCROLL "  Output Auto-Scroll", nullptr, &bAutoScrollOutput);
+		ImGui::MenuItem(ICON_FA_SCROLL "  Agent Auto-Scroll", nullptr, &bAutoScrollAgent);
+#if CATTY_EDITOR_DEMO_CONTENT
+		ImGui::Separator();
 		ImGui::MenuItem(ICON_FA_TABLE_CELLS "  ImGui Demo", nullptr, &bShowDemoWindow);
 		ImGui::MenuItem(ICON_FA_CHART_AREA "  ImPlot Demo", nullptr, &bShowImPlotDemo);
 #endif
+		ImGui::Separator();
 		if (ImGui::MenuItem(ICON_FA_TABLE_CELLS_LARGE "  Reset Dock Layout"))
 		{
 			bBuildDefaultLayout = true;
@@ -524,20 +618,43 @@ void FEditorLayer::EnsureDefaultDockLayout(std::uint32_t DockspaceId)
 	ImGui::DockBuilderAddNode(DockspaceId, ImGuiDockNodeFlags_DockSpace);
 	ImGui::DockBuilderSetNodeSize(DockspaceId, ImGui::GetContentRegionAvail());
 
+	// Central: locked MyGame viewport. Bottom: Content Browser + Output Log tabs.
 	ImGuiID DockMain = DockspaceId;
-	ImGuiID DockLeft = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Left, 0.22f, nullptr, &DockMain);
-	ImGuiID DockCenter = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Left, 0.45f, nullptr, &DockMain);
+	ImGuiID DockBottom = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Down, 0.30f, nullptr, &DockMain);
 
-	ImGui::DockBuilderDockWindow(kWinContent, DockLeft);
-	ImGui::DockBuilderDockWindow(kWinDocument, DockCenter);
-	ImGui::DockBuilderDockWindow(kWinViewport, DockMain);
-#if CATTY_EDITOR_EXTRA_PANELS
-	ImGuiID DockBottom = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Down, 0.28f, nullptr, &DockMain);
-	ImGuiID DockBottomRight = ImGui::DockBuilderSplitNode(DockBottom, ImGuiDir_Right, 0.55f, nullptr, &DockBottom);
-	ImGuiID DockRight = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Right, 0.28f, nullptr, &DockMain);
+	ImGui::DockBuilderDockWindow(kWinMainViewport, DockMain);
+	ImGui::DockBuilderDockWindow(kWinContent, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinOutput, DockBottom);
-	ImGui::DockBuilderDockWindow(kWinPlot, DockBottomRight);
+	ImGui::DockBuilderDockWindow(kWinAgent, DockBottom);
+	if (ImGuiDockNode* Central = ImGui::DockBuilderGetNode(DockMain))
+	{
+		Central->SetLocalFlags(static_cast<ImGuiDockNodeFlags>(
+			static_cast<int>(Central->LocalFlags)
+			| static_cast<int>(ImGuiDockNodeFlags_NoTabBar)
+			| static_cast<int>(ImGuiDockNodeFlags_NoUndocking)));
+	}
+	if (ImGuiDockNode* Bottom = ImGui::DockBuilderGetNode(DockBottom))
+	{
+		Bottom->SetLocalFlags(static_cast<ImGuiDockNodeFlags>(
+			static_cast<int>(Bottom->LocalFlags)
+			| static_cast<int>(ImGuiDockNodeFlags_NoWindowMenuButton)
+			| static_cast<int>(ImGuiDockNodeFlags_NoCloseButton)));
+	}
+#if CATTY_EDITOR_EXTRA_PANELS
+	ImGuiID DockRight = ImGui::DockBuilderSplitNode(DockMain, ImGuiDir_Right, 0.28f, nullptr, &DockMain);
+	ImGuiID DockBottomRight = ImGui::DockBuilderSplitNode(DockBottom, ImGuiDir_Right, 0.45f, nullptr, &DockBottom);
 	ImGui::DockBuilderDockWindow(kWinBlueprint, DockRight);
+	ImGui::DockBuilderDockWindow(kWinPlot, DockBottomRight);
+	ImGui::DockBuilderDockWindow(kWinContent, DockBottom);
+	ImGui::DockBuilderDockWindow(kWinOutput, DockBottom);
+	ImGui::DockBuilderDockWindow(kWinAgent, DockBottom);
+	if (ImGuiDockNode* Central = ImGui::DockBuilderGetNode(DockMain))
+	{
+		Central->SetLocalFlags(static_cast<ImGuiDockNodeFlags>(
+			static_cast<int>(Central->LocalFlags)
+			| static_cast<int>(ImGuiDockNodeFlags_NoTabBar)
+			| static_cast<int>(ImGuiDockNodeFlags_NoUndocking)));
+	}
 #endif
 	ImGui::DockBuilderFinish(DockspaceId);
 }
@@ -687,7 +804,7 @@ void FEditorLayer::DrawDockSpace(FApp& App)
 	const ImVec4 BackupBorder = Style.Colors[ImGuiCol_Border];
 	Style.Colors[ImGuiCol_Border] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-	const ImGuiID DockspaceId = ImGui::GetID("CattyEditorMainDock");
+	const ImGuiID DockspaceId = ImGui::GetID("CattyEditorMainDock_v5");
 	if (bBuildDefaultLayout)
 	{
 		EnsureDefaultDockLayout(DockspaceId);
@@ -703,24 +820,19 @@ void FEditorLayer::DrawDockSpace(FApp& App)
 	ImGui::PopStyleColor();
 }
 
-void FEditorLayer::DrawDocumentPanel()
+void FEditorLayer::DrawMainViewportPanel()
 {
-	ImGui::Begin(kWinDocument);
-	ImGui::End();
-}
+	// Locked into the central dock: no tab bar, cannot undock into a floating window.
+	ImGuiWindowClass ViewportClass;
+	ViewportClass.DockNodeFlagsOverrideSet = static_cast<ImGuiDockNodeFlags>(
+		static_cast<int>(ImGuiDockNodeFlags_NoTabBar) | static_cast<int>(ImGuiDockNodeFlags_NoUndocking));
+	ImGui::SetNextWindowClass(&ViewportClass);
+	ImGui::Begin(kWinMainViewport, nullptr, ImGuiWindowFlags_NoCollapse);
 
-void FEditorLayer::DrawViewportPanel()
-{
-	ImGui::Begin(kWinViewport);
-#if CATTY_EDITOR_DEMO_CONTENT
 	const ImVec2 Canvas = ImGui::GetContentRegionAvail();
 	const ImVec2 Origin = ImGui::GetCursorScreenPos();
 	ImDrawList* DrawList = ImGui::GetWindowDrawList();
 	DrawList->AddRectFilled(Origin, ImVec2(Origin.x + Canvas.x, Origin.y + Canvas.y), IM_COL32(8, 9, 11, 255));
-	DrawList->AddText(
-		ImVec2(Origin.x + 12.0f, Origin.y + 12.0f),
-		IM_COL32(110, 116, 128, 255),
-		ICON_FA_DISPLAY "  Main Viewport + ImGuizmo");
 
 	ImGuizmo::SetOrthographic(false);
 	ImGuizmo::SetDrawlist();
@@ -740,89 +852,434 @@ void FEditorLayer::DrawViewportPanel()
 		}
 	}
 	ImGui::Dummy(Canvas);
-#endif
 	ImGui::End();
 }
 
 void FEditorLayer::DrawContentBrowser()
 {
-	ImGui::Begin(kWinContent);
-#if CATTY_EDITOR_DEMO_CONTENT
-	if (ImGui::Button(ICON_FA_ARROW_UP " Up"))
+	// No trailing dock-bar close (X); show/hide via Window menu.
+	ImGuiWindowClass ContentClass;
+	ContentClass.DockNodeFlagsOverrideSet = static_cast<ImGuiDockNodeFlags>(
+		static_cast<int>(ImGuiDockNodeFlags_NoWindowMenuButton)
+		| static_cast<int>(ImGuiDockNodeFlags_NoCloseButton));
+	ImGui::SetNextWindowClass(&ContentClass);
+	if (!ImGui::Begin(kWinContent, nullptr, ImGuiWindowFlags_NoCollapse))
 	{
-		if (CurrentFolder != ContentRoot)
+		ImGui::End();
+		return;
+	}
+
+	const bool bAtMountRoot =
+		CurrentVirtualPath == "/Game" || CurrentVirtualPath == "/Engine";
+	ImGui::BeginDisabled(bAtMountRoot);
+	if (ImGui::SmallButton(ICON_FA_ARROW_UP "##ContentUp"))
+	{
+		const std::size_t Slash = CurrentVirtualPath.find_last_of('/');
+		if (Slash != std::string::npos && Slash > 0)
 		{
-			std::error_code ErrorCode;
-			std::filesystem::path Parent = CurrentFolder.parent_path();
-			const std::filesystem::path Rel = std::filesystem::relative(Parent, ContentRoot, ErrorCode);
-			bool bUnderRoot = !ErrorCode;
-			if (bUnderRoot)
-			{
-				for (const std::filesystem::path& Part : Rel)
-				{
-					if (Part == "..")
-					{
-						bUnderRoot = false;
-						break;
-					}
-				}
-			}
-			CurrentFolder = bUnderRoot ? Parent : ContentRoot;
-			RefreshContentListing();
+			SelectContentFolder(CurrentVirtualPath.substr(0, Slash));
 		}
 	}
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+	{
+		ImGui::SetTooltip("Up to parent folder");
+	}
+	ImGui::SameLine(0.0f, 6.0f);
+
+	// Clickable breadcrumbs: /Game / Maps / ...
+	{
+		std::string Accumulated;
+		bool bFirst = true;
+		std::size_t Index = 0;
+		while (Index < CurrentVirtualPath.size())
+		{
+			if (CurrentVirtualPath[Index] == '/')
+			{
+				++Index;
+				continue;
+			}
+			const std::size_t Next = CurrentVirtualPath.find('/', Index);
+			const std::string Segment = CurrentVirtualPath.substr(
+				Index,
+				Next == std::string::npos ? std::string::npos : Next - Index);
+			Accumulated += "/";
+			Accumulated += Segment;
+
+			if (!bFirst)
+			{
+				ImGui::SameLine(0.0f, 2.0f);
+				ImGui::TextDisabled("/");
+				ImGui::SameLine(0.0f, 2.0f);
+			}
+			bFirst = false;
+
+			ImGui::PushID(static_cast<int>(Accumulated.size()));
+			const bool bIsCurrent = (Accumulated == CurrentVirtualPath);
+			if (bIsCurrent)
+			{
+				ImGui::TextUnformatted(Segment.c_str());
+			}
+			else if (ImGui::SmallButton(Segment.c_str()))
+			{
+				SelectContentFolder(Accumulated);
+			}
+			ImGui::PopID();
+
+			if (Next == std::string::npos)
+			{
+				break;
+			}
+			Index = Next + 1;
+		}
+	}
+
 	ImGui::SameLine();
-	if (ImGui::Button(ICON_FA_ARROWS_ROTATE " Refresh"))
+	if (ImGui::SmallButton(ICON_FA_ARROWS_ROTATE "##ContentRefresh"))
 	{
 		RefreshContentListing();
 	}
-	ImGui::SameLine();
-	ImGui::TextDisabled(ICON_FA_FOLDER_OPEN);
-	ImGui::SameLine();
-	ImGui::TextWrapped("%s", CurrentFolder.string().c_str());
-	ImGui::Separator();
 
-	// List area uses deepest chassis bg (same as dock gutters), not panel sheet gray.
 	const ImVec4 DeepBg = ImVec4(14.0f / 255.0f, 14.0f / 255.0f, 16.0f / 255.0f, 1.0f);
+	const float TreeWidth = ImMax(180.0f, ImGui::GetContentRegionAvail().x * 0.22f);
+
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, DeepBg);
-	ImGui::BeginChild("##ContentList", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AlwaysUseWindowPadding);
-	for (const std::filesystem::path& Folder : FolderEntries)
-	{
-		const FContentIcon Icon = ContentIconForPath(Folder, true);
-		ImGui::PushStyleColor(ImGuiCol_Text, Icon.Color);
-		const std::string Label = std::string(Icon.Glyph) + "  " + Folder.filename().string();
-		if (ImGui::Selectable(Label.c_str(), SelectedEntry == Folder.string(), ImGuiSelectableFlags_AllowDoubleClick))
-		{
-			SelectedEntry = Folder.string();
-			if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-			{
-				CurrentFolder = Folder;
-				RefreshContentListing();
-			}
-		}
-		ImGui::PopStyleColor();
-	}
-	for (const std::filesystem::path& File : FileEntries)
-	{
-		const FContentIcon Icon = ContentIconForPath(File, false);
-		ImGui::PushStyleColor(ImGuiCol_Text, Icon.Color);
-		const std::string Label = std::string(Icon.Glyph) + "  " + File.filename().string();
-		if (ImGui::Selectable(Label.c_str(), SelectedEntry == File.string()))
-		{
-			SelectedEntry = File.string();
-		}
-		ImGui::PopStyleColor();
-	}
+	ImGui::BeginChild(
+		"##ContentTree",
+		ImVec2(TreeWidth, 0.0f),
+		ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
+		ImGuiWindowFlags_HorizontalScrollbar);
+	DrawContentBrowserTree();
 	ImGui::EndChild();
 	ImGui::PopStyleColor();
-#endif
+
+	ImGui::SameLine(0.0f, 0.0f);
+
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, DeepBg);
+	ImGui::BeginChild(
+		"##ContentTiles",
+		ImVec2(0.0f, 0.0f),
+		ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+	DrawContentBrowserTiles();
+	ImGui::EndChild();
+	ImGui::PopStyleColor();
+
 	ImGui::End();
+}
+
+void FEditorLayer::DrawContentBrowserTree()
+{
+	struct FMount
+	{
+		const char* VirtualRoot = nullptr;
+		const char* DiskRelative = nullptr;
+	};
+	static constexpr FMount Mounts[] = {
+		{"/Game", "Content"},
+		{"/Engine", "Engine/Content"},
+	};
+
+	std::error_code ErrorCode;
+	const std::filesystem::path Cwd = std::filesystem::current_path(ErrorCode);
+	const std::filesystem::path Base = ErrorCode ? std::filesystem::path(".") : Cwd;
+
+	for (const FMount& Mount : Mounts)
+	{
+		const std::filesystem::path DiskRoot = Base / Mount.DiskRelative;
+		ImGuiTreeNodeFlags RootFlags =
+			ImGuiTreeNodeFlags_OpenOnArrow
+			| ImGuiTreeNodeFlags_OpenOnDoubleClick
+			| ImGuiTreeNodeFlags_SpanAvailWidth
+			| ImGuiTreeNodeFlags_DefaultOpen;
+		if (CurrentVirtualPath == Mount.VirtualRoot)
+		{
+			RootFlags |= ImGuiTreeNodeFlags_Selected;
+		}
+
+		ImGui::PushID(Mount.VirtualRoot);
+		const bool bOpen = ImGui::TreeNodeEx(
+			"##Root",
+			RootFlags,
+			ICON_FA_FOLDER_TREE "  %s",
+			Mount.VirtualRoot);
+		if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+		{
+			SelectContentFolder(Mount.VirtualRoot);
+		}
+		if (bOpen)
+		{
+			if (std::filesystem::is_directory(DiskRoot, ErrorCode) && !ErrorCode)
+			{
+				DrawVirtualFolderTree(Mount.VirtualRoot, DiskRoot, 0);
+			}
+			ImGui::TreePop();
+		}
+		ImGui::PopID();
+	}
+}
+
+void FEditorLayer::DrawVirtualFolderTree(
+	const std::string& VirtualPath,
+	const std::filesystem::path& DiskPath,
+	int Depth)
+{
+	(void)Depth;
+	std::error_code ErrorCode;
+	std::vector<std::filesystem::path> Subdirs;
+	for (const std::filesystem::directory_entry& Entry :
+		std::filesystem::directory_iterator(DiskPath, ErrorCode))
+	{
+		if (ErrorCode)
+		{
+			break;
+		}
+		const std::string EntryName = Entry.path().filename().string();
+		if (EntryName.empty() || EntryName[0] == '.')
+		{
+			continue;
+		}
+		if (Entry.is_directory(ErrorCode) && !ErrorCode)
+		{
+			Subdirs.push_back(Entry.path());
+		}
+	}
+	std::sort(Subdirs.begin(), Subdirs.end());
+
+	for (const std::filesystem::path& Sub : Subdirs)
+	{
+		const std::string ChildName = Sub.filename().string();
+		const std::string ChildVirtual = VirtualPath + "/" + ChildName;
+		ImGuiTreeNodeFlags Flags =
+			ImGuiTreeNodeFlags_OpenOnArrow
+			| ImGuiTreeNodeFlags_OpenOnDoubleClick
+			| ImGuiTreeNodeFlags_SpanAvailWidth;
+		if (CurrentVirtualPath == ChildVirtual)
+		{
+			Flags |= ImGuiTreeNodeFlags_Selected;
+		}
+
+		ImGui::PushID(ChildVirtual.c_str());
+		const bool bOpen = ImGui::TreeNodeEx(
+			"##Dir",
+			Flags,
+			ICON_FA_FOLDER "  %s",
+			ChildName.c_str());
+		if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+		{
+			SelectContentFolder(ChildVirtual);
+		}
+		if (bOpen)
+		{
+			DrawVirtualFolderTree(ChildVirtual, Sub, Depth + 1);
+			ImGui::TreePop();
+		}
+		ImGui::PopID();
+	}
+}
+
+void FEditorLayer::DrawContentBrowserTiles()
+{
+	const float Tile = 88.0f;
+	const float Pad = 8.0f;
+	const float LabelGap = 4.0f;
+	const float Cell = Tile + Pad;
+	const float AvailX = ImGui::GetContentRegionAvail().x;
+	int Columns = static_cast<int>(AvailX / Cell);
+	if (Columns < 1)
+	{
+		Columns = 1;
+	}
+
+	auto DrawTile = [&](const std::string& VirtualPath, bool bIsFolder)
+	{
+		const std::size_t Slash = VirtualPath.find_last_of('/');
+		const std::string EntryName =
+			(Slash == std::string::npos) ? VirtualPath : VirtualPath.substr(Slash + 1);
+		const bool bSelected = SelectedVirtualEntry == VirtualPath;
+		const char* Glyph = bIsFolder ? ICON_FA_FOLDER : ICON_FA_FILE;
+		const ImU32 GlyphColor = bIsFolder
+			? IM_COL32(242, 199, 89, 255)
+			: IM_COL32(199, 209, 224, 255);
+		const ImU32 FaceColor = bSelected
+			? IM_COL32(51, 71, 102, 255)
+			: IM_COL32(31, 33, 38, 255);
+		const ImU32 FaceHover = IM_COL32(56, 61, 71, 255);
+
+		ImGui::PushID(VirtualPath.c_str());
+		ImGui::BeginGroup();
+
+		const ImVec2 StartPos = ImGui::GetCursorPos();
+		const ImVec2 Screen0 = ImGui::GetCursorScreenPos();
+		ImGui::InvisibleButton("##Tile", ImVec2(Tile, Tile));
+		const bool bHovered = ImGui::IsItemHovered();
+		if (ImGui::IsItemClicked())
+		{
+			SelectedVirtualEntry = VirtualPath;
+		}
+		if (bIsFolder && bHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		{
+			SelectContentFolder(VirtualPath);
+		}
+
+		ImDrawList* DrawList = ImGui::GetWindowDrawList();
+		DrawList->AddRectFilled(
+			Screen0,
+			ImVec2(Screen0.x + Tile, Screen0.y + Tile),
+			bHovered ? FaceHover : FaceColor,
+			4.0f);
+
+		ImFont* Font = ImGui::GetFont();
+		const float IconPx = Tile * 0.72f;
+		const ImVec2 GlyphSize = Font->CalcTextSizeA(IconPx, FLT_MAX, 0.0f, Glyph);
+		DrawList->AddText(
+			Font,
+			IconPx,
+			ImVec2(
+				Screen0.x + (Tile - GlyphSize.x) * 0.5f,
+				Screen0.y + (Tile - GlyphSize.y) * 0.5f),
+			GlyphColor,
+			Glyph);
+
+		const ImVec2 LabelSize = ImGui::CalcTextSize(EntryName.c_str());
+		ImGui::SetCursorPos(ImVec2(
+			StartPos.x + (Tile - LabelSize.x) * 0.5f,
+			StartPos.y + Tile + LabelGap));
+		ImGui::TextUnformatted(EntryName.c_str());
+
+		// Keep group cell width for SameLine column layout.
+		ImGui::SetCursorPos(ImVec2(StartPos.x, StartPos.y + Tile + LabelGap + LabelSize.y));
+		ImGui::Dummy(ImVec2(Tile, 0.0f));
+
+		ImGui::EndGroup();
+		ImGui::PopID();
+	};
+
+	int Index = 0;
+	for (const std::string& Folder : FolderVirtualEntries)
+	{
+		if (Index > 0 && (Index % Columns) != 0)
+		{
+			ImGui::SameLine(0.0f, Pad);
+		}
+		DrawTile(Folder, true);
+		++Index;
+	}
+	for (const std::string& File : FileVirtualEntries)
+	{
+		if (Index > 0 && (Index % Columns) != 0)
+		{
+			ImGui::SameLine(0.0f, Pad);
+		}
+		DrawTile(File, false);
+		++Index;
+	}
+
+	if (FolderVirtualEntries.empty() && FileVirtualEntries.empty())
+	{
+		ImGui::TextDisabled("Empty  %s", CurrentVirtualPath.c_str());
+	}
+}
+
+void FEditorLayer::EnsureContentMounts()
+{
+	std::error_code ErrorCode;
+	const std::filesystem::path Cwd = std::filesystem::current_path(ErrorCode);
+	const std::filesystem::path Base = ErrorCode ? std::filesystem::path(".") : Cwd;
+	std::filesystem::create_directories(Base / "Content", ErrorCode);
+	std::filesystem::create_directories(Base / "Engine" / "Content", ErrorCode);
+}
+
+void FEditorLayer::SelectContentFolder(const std::string& VirtualPath)
+{
+	CurrentVirtualPath = VirtualPath.empty() ? "/Game" : VirtualPath;
+	SelectedVirtualEntry.clear();
+	RefreshContentListing();
+}
+
+std::filesystem::path FEditorLayer::VirtualPathToDisk(const std::string& VirtualPath) const
+{
+	struct FMount
+	{
+		const char* VirtualRoot = nullptr;
+		const char* DiskRelative = nullptr;
+	};
+	static constexpr FMount Mounts[] = {
+		{"/Game", "Content"},
+		{"/Engine", "Engine/Content"},
+	};
+
+	std::error_code ErrorCode;
+	const std::filesystem::path Cwd = std::filesystem::current_path(ErrorCode);
+	const std::filesystem::path Base = ErrorCode ? std::filesystem::path(".") : Cwd;
+
+	for (const FMount& Mount : Mounts)
+	{
+		const std::string Root = Mount.VirtualRoot;
+		if (VirtualPath == Root)
+		{
+			return Base / Mount.DiskRelative;
+		}
+		const std::string Prefix = Root + "/";
+		if (VirtualPath.rfind(Prefix, 0) == 0)
+		{
+			return Base / Mount.DiskRelative / VirtualPath.substr(Prefix.size());
+		}
+	}
+	return Base / "Content";
+}
+
+void FEditorLayer::RefreshContentListing()
+{
+	FolderVirtualEntries.clear();
+	FileVirtualEntries.clear();
+
+	const std::filesystem::path DiskFolder = VirtualPathToDisk(CurrentVirtualPath);
+	std::error_code ErrorCode;
+	if (!std::filesystem::is_directory(DiskFolder, ErrorCode) || ErrorCode)
+	{
+		return;
+	}
+
+	for (const std::filesystem::directory_entry& Entry :
+		std::filesystem::directory_iterator(DiskFolder, ErrorCode))
+	{
+		if (ErrorCode)
+		{
+			break;
+		}
+		const std::string EntryName = Entry.path().filename().string();
+		if (EntryName.empty() || EntryName[0] == '.')
+		{
+			continue;
+		}
+		const std::string ChildVirtual = CurrentVirtualPath + "/" + EntryName;
+		if (Entry.is_directory(ErrorCode) && !ErrorCode)
+		{
+			FolderVirtualEntries.push_back(ChildVirtual);
+		}
+		else if (Entry.is_regular_file(ErrorCode) && !ErrorCode)
+		{
+			FileVirtualEntries.push_back(ChildVirtual);
+		}
+	}
+
+	std::sort(FolderVirtualEntries.begin(), FolderVirtualEntries.end());
+	std::sort(FileVirtualEntries.begin(), FileVirtualEntries.end());
 }
 
 void FEditorLayer::DrawOutputPanel(FApp& App)
 {
-	ImGui::Begin(kWinOutput);
-#if CATTY_EDITOR_DEMO_CONTENT
+	ImGuiWindowClass OutputClass;
+	OutputClass.DockNodeFlagsOverrideSet = static_cast<ImGuiDockNodeFlags>(
+		static_cast<int>(ImGuiDockNodeFlags_NoWindowMenuButton)
+		| static_cast<int>(ImGuiDockNodeFlags_NoCloseButton));
+	ImGui::SetNextWindowClass(&OutputClass);
+	if (!ImGui::Begin(kWinOutput, nullptr, ImGuiWindowFlags_NoCollapse))
+	{
+		ImGui::End();
+		return;
+	}
+
 	const float Footer = ImGui::GetFrameHeightWithSpacing() + 4.0f;
 	ImGui::BeginChild("##OutputScroll", ImVec2(0.0f, -Footer), ImGuiChildFlags_AlwaysUseWindowPadding);
 	ImGuiListClipper Clipper;
@@ -831,7 +1288,10 @@ void FEditorLayer::DrawOutputPanel(FApp& App)
 	{
 		for (int Index = Clipper.DisplayStart; Index < Clipper.DisplayEnd; ++Index)
 		{
-			ImGui::TextUnformatted(OutputLines[static_cast<std::size_t>(Index)].c_str());
+			const FOutputLine& Line = OutputLines[static_cast<std::size_t>(Index)];
+			ImGui::PushStyleColor(ImGuiCol_Text, OutputColorForLevel(Line.Level));
+			ImGui::TextUnformatted(Line.Text.c_str());
+			ImGui::PopStyleColor();
 		}
 	}
 	if (bAutoScrollOutput && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f)
@@ -852,15 +1312,75 @@ void FEditorLayer::DrawOutputPanel(FApp& App)
 		ExecuteConsoleLine(App, Line);
 		ImGui::SetKeyboardFocusHere(-1);
 	}
-#else
-	(void)App;
-#endif
+	ImGui::End();
+}
+
+void FEditorLayer::DrawAgentPanel()
+{
+	ImGuiWindowClass AgentClass;
+	AgentClass.DockNodeFlagsOverrideSet = static_cast<ImGuiDockNodeFlags>(
+		static_cast<int>(ImGuiDockNodeFlags_NoWindowMenuButton)
+		| static_cast<int>(ImGuiDockNodeFlags_NoCloseButton));
+	ImGui::SetNextWindowClass(&AgentClass);
+	if (!ImGui::Begin(kWinAgent, nullptr, ImGuiWindowFlags_NoCollapse))
+	{
+		ImGui::End();
+		return;
+	}
+
+	const std::string Status = AgentChat ? AgentChat->GetStatusText() : "offline";
+	const bool bConnected = AgentChat && AgentChat->IsConnected();
+	const bool bBusy = AgentChat && AgentChat->IsBusy();
+	const bool bMock = AgentChat && AgentChat->IsMockMode();
+
+	ImGui::TextDisabled("Status: %s%s%s",
+		Status.c_str(),
+		bConnected ? " | connected" : " | disconnected",
+		bMock ? " | mock" : "");
+	ImGui::Separator();
+
+	const float Footer = ImGui::GetFrameHeightWithSpacing() + 4.0f;
+	ImGui::BeginChild("##AgentScroll", ImVec2(0.0f, -Footer), ImGuiChildFlags_AlwaysUseWindowPadding);
+	for (const FAgentBubble& Bubble : AgentBubbles)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Text, AgentColorForRole(Bubble.Role));
+		ImGui::TextUnformatted(AgentRoleLabel(Bubble.Role));
+		ImGui::PopStyleColor();
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextUnformatted(Bubble.Text.c_str());
+		ImGui::PopTextWrapPos();
+		ImGui::Spacing();
+	}
+	if (bBusy)
+	{
+		ImGui::TextDisabled("Agent is thinking...");
+	}
+	if (bAutoScrollAgent && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f)
+	{
+		ImGui::SetScrollHereY(1.0f);
+	}
+	ImGui::EndChild();
+
+	ImGui::BeginDisabled(bBusy || !AgentChat);
+	ImGui::SetNextItemWidth(-1.0f);
+	if (ImGui::InputText(
+			"##AgentInput",
+			AgentInput,
+			IM_ARRAYSIZE(AgentInput),
+			ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_EscapeClearsAll))
+	{
+		const std::string Line = AgentInput;
+		AgentInput[0] = '\0';
+		SendAgentMessage(Line);
+		ImGui::SetKeyboardFocusHere(-1);
+	}
+	ImGui::EndDisabled();
 	ImGui::End();
 }
 
 void FEditorLayer::DrawBlueprintPanel()
 {
-	ImGui::Begin(kWinBlueprint);
+	ImGui::Begin(kWinBlueprint, &bShowBlueprintPanel);
 #if CATTY_EDITOR_DEMO_CONTENT
 	if (!bBlueprintInited || !NodeEditorContext)
 	{
@@ -905,7 +1425,7 @@ void FEditorLayer::DrawBlueprintPanel()
 
 void FEditorLayer::DrawPlotPanel()
 {
-	ImGui::Begin(kWinPlot);
+	ImGui::Begin(kWinPlot, &bShowPlotPanel);
 #if CATTY_EDITOR_DEMO_CONTENT
 	static float Values[90] = {};
 	static int Offset = 0;
@@ -945,50 +1465,148 @@ void FEditorLayer::DrawFileDialogs()
 #endif
 }
 
-void FEditorLayer::RefreshContentListing()
+void FEditorLayer::AppendOutput(std::string Line, spdlog::level::level_enum Level)
 {
-	FolderEntries.clear();
-	FileEntries.clear();
-
-	std::error_code ErrorCode;
-	if (!std::filesystem::exists(CurrentFolder, ErrorCode) || ErrorCode)
-	{
-		CurrentFolder = ContentRoot;
-	}
-
-	for (const std::filesystem::directory_entry& Entry :
-		std::filesystem::directory_iterator(CurrentFolder, ErrorCode))
-	{
-		if (ErrorCode)
-		{
-			break;
-		}
-		const std::filesystem::path& Path = Entry.path();
-		const std::string FileName = Path.filename().string();
-		if (FileName.empty() || FileName[0] == '.')
-		{
-			continue;
-		}
-		if (Entry.is_directory(ErrorCode) && !ErrorCode)
-		{
-			FolderEntries.push_back(Path);
-		}
-		else if (Entry.is_regular_file(ErrorCode) && !ErrorCode)
-		{
-			FileEntries.push_back(Path);
-		}
-	}
-
-	std::sort(FolderEntries.begin(), FolderEntries.end());
-	std::sort(FileEntries.begin(), FileEntries.end());
-}
-
-void FEditorLayer::AppendOutput(std::string Line)
-{
-	OutputLines.push_back(std::move(Line));
+	FOutputLine Entry;
+	Entry.Text = std::move(Line);
+	Entry.Level = Level;
+	OutputLines.push_back(std::move(Entry));
 	while (OutputLines.size() > MaxOutputLines)
 	{
 		OutputLines.pop_front();
+	}
+}
+
+void FEditorLayer::StartAgentChat()
+{
+	namespace fs = std::filesystem;
+
+	FAgentChatStartOptions Options;
+	Options.ProjectCwd = fs::current_path().string();
+	Options.Port = 8765;
+	Options.bSpawnBridge = true;
+
+	bool bAutoConnect = true;
+	FConfigFile EditorIni;
+	std::vector<std::filesystem::path> IniCandidates;
+	IniCandidates.push_back(fs::current_path() / "Config" / "DefaultEditor.ini");
+#if defined(_WIN32)
+	{
+		wchar_t ModulePathW[MAX_PATH] = {};
+		if (GetModuleFileNameW(nullptr, ModulePathW, MAX_PATH) > 0)
+		{
+			IniCandidates.push_back(fs::path(ModulePathW).parent_path() / "Config" / "DefaultEditor.ini");
+		}
+	}
+#endif
+	bool bIniLoaded = false;
+	for (const fs::path& Candidate : IniCandidates)
+	{
+		if (EditorIni.Load(Candidate.string()))
+		{
+			bIniLoaded = true;
+			AppendAgentBubble(
+				EAgentChatRole::System,
+				std::string("Reading editor config: ") + Candidate.string());
+			break;
+		}
+	}
+	if (bIniLoaded)
+	{
+		(void)EditorIni.TryGetString("Agent", "ApiKey", Options.ApiKey);
+		(void)EditorIni.TryGetInt("Agent", "BridgePort", Options.Port);
+		(void)EditorIni.TryGetBool("Agent", "bAutoConnect", bAutoConnect);
+		// Trim whitespace / quotes around the key.
+		while (!Options.ApiKey.empty()
+			&& (Options.ApiKey.front() == ' ' || Options.ApiKey.front() == '"' || Options.ApiKey.front() == '\''))
+		{
+			Options.ApiKey.erase(Options.ApiKey.begin());
+		}
+		while (!Options.ApiKey.empty()
+			&& (Options.ApiKey.back() == ' ' || Options.ApiKey.back() == '"' || Options.ApiKey.back() == '\''))
+		{
+			Options.ApiKey.pop_back();
+		}
+	}
+
+	if (!bAutoConnect)
+	{
+		AppendAgentBubble(
+			EAgentChatRole::System,
+			"Agent auto-connect disabled ([Agent] bAutoConnect=False in DefaultEditor.ini).");
+		return;
+	}
+
+	const fs::path EngineRoot(CATTY_ENGINE_ROOT);
+	const fs::path BridgeA = EngineRoot / "Tools" / "AgentBridge";
+	const fs::path BridgeB = fs::current_path() / "Tools" / "AgentBridge";
+	const fs::path BridgeC = fs::current_path().parent_path() / "Catty" / "Tools" / "AgentBridge";
+	if (fs::exists(BridgeA / "server.mjs"))
+	{
+		Options.BridgeDirectory = BridgeA.string();
+	}
+	else if (fs::exists(BridgeB / "server.mjs"))
+	{
+		Options.BridgeDirectory = BridgeB.string();
+	}
+	else if (fs::exists(BridgeC / "server.mjs"))
+	{
+		Options.BridgeDirectory = BridgeC.string();
+	}
+	else
+	{
+		Options.BridgeDirectory = BridgeA.string();
+	}
+
+	AgentChat = std::make_unique<FAgentChatClient>();
+	AgentChat->Start(Options);
+
+	std::string Hello = "Connecting to Agent bridge...";
+	if (!Options.ApiKey.empty())
+	{
+		Hello += "\nApiKey loaded from Config/DefaultEditor.ini.";
+	}
+	else
+	{
+		Hello += "\nNo ApiKey in Config/DefaultEditor.ini — bridge will use mock mode "
+			"(or CURSOR_API_KEY from the environment).";
+	}
+	AppendAgentBubble(EAgentChatRole::System, std::move(Hello));
+}
+
+void FEditorLayer::AppendAgentBubble(EAgentChatRole Role, std::string Text)
+{
+	FAgentBubble Bubble;
+	Bubble.Role = Role;
+	Bubble.Text = std::move(Text);
+	AgentBubbles.push_back(std::move(Bubble));
+	while (AgentBubbles.size() > MaxAgentBubbles)
+	{
+		AgentBubbles.pop_front();
+	}
+}
+
+void FEditorLayer::SendAgentMessage(std::string Text)
+{
+	while (!Text.empty() && (Text.back() == '\n' || Text.back() == '\r' || Text.back() == ' '))
+	{
+		Text.pop_back();
+	}
+	if (Text.empty() || !AgentChat)
+	{
+		return;
+	}
+	AppendAgentBubble(EAgentChatRole::User, Text);
+	AgentChat->SendUserMessage(std::move(Text));
+}
+
+void FEditorLayer::DrainEngineLogs(FApp& App)
+{
+	std::vector<FCapturedLogLine> Captured;
+	App.GetLog().DrainCapturedLines(Captured);
+	for (FCapturedLogLine& Line : Captured)
+	{
+		AppendOutput(std::move(Line.Text), Line.Level);
 	}
 }
 

@@ -40,8 +40,9 @@ void BootstrapAppLogging(FApp& App)
 	FLogConfig LogConfig;
 	LogConfig.CoreLoggerName = "Catty";
 	LogConfig.ClientLoggerName = "App";
-	LogConfig.bEnableConsole = true;
+	LogConfig.bEnableConsole = false;
 	LogConfig.bEnableFile = false;
+	LogConfig.bEnableEditorCapture = true;
 	App.GetLog().Initialize(LogConfig);
 }
 
@@ -51,8 +52,9 @@ void ApplyAppLoggingFromConfig(FApp& App, const FEngineConfig& Config)
 	LogConfig.CoreLoggerName = "Catty";
 	LogConfig.ClientLoggerName = Config.ApplicationName.empty() ? "App" : Config.ApplicationName;
 	LogConfig.LogDirectory = Config.SavedDir + "/Logs";
-	LogConfig.bEnableConsole = true;
+	LogConfig.bEnableConsole = false;
 	LogConfig.bEnableFile = true;
+	LogConfig.bEnableEditorCapture = true;
 	App.GetLog().Initialize(LogConfig);
 }
 

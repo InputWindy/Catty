@@ -4,10 +4,15 @@
 #include <Core/ConsoleManager.h>
 
 #include <algorithm>
+#include <deque>
 #include <filesystem>
+#include <mutex>
 #include <stdexcept>
 #include <vector>
 
+#include <spdlog/pattern_formatter.h>
+#include <spdlog/sinks/callback_sink.h>
+#include <spdlog/sinks/null_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -18,6 +23,8 @@ namespace
 {
 
 constexpr const char* GLogPattern = "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%l%$] %v";
+constexpr const char* GEditorLogPattern = "[%H:%M:%S.%e] [%n] [%l] %v";
+constexpr std::size_t GMaxCapturedLines = 2000;
 
 static TAutoConsoleVariable GCVarLogMaxFileBytes(
 	"log.MaxFileBytes",
@@ -46,11 +53,32 @@ std::shared_ptr<spdlog::logger> CreateLogger(
 	return Logger;
 }
 
+void StripTrailingNewlines(std::string& Text)
+{
+	while (!Text.empty() && (Text.back() == '\n' || Text.back() == '\r'))
+	{
+		Text.pop_back();
+	}
+}
+
 } // namespace
+
+struct FLog::FCaptureState
+{
+	std::mutex Mutex;
+	std::deque<FCapturedLogLine> Lines;
+	spdlog::pattern_formatter Formatter;
+
+	FCaptureState()
+		: Formatter(std::string(GEditorLogPattern), spdlog::pattern_time_type::local, std::string())
+	{
+	}
+};
 
 FLog::~FLog()
 {
 	Shutdown();
+	Capture.reset();
 }
 
 void FLog::Initialize(const FLogConfig& Config)
@@ -89,10 +117,46 @@ void FLog::Initialize(const FLogConfig& Config)
 		Sinks.push_back(FileSink);
 	}
 
+	if (Config.bEnableEditorCapture)
+	{
+		if (!Capture)
+		{
+			Capture = std::make_shared<FCaptureState>();
+		}
+
+		std::weak_ptr<FCaptureState> WeakCapture = Capture;
+		auto EditorSink = std::make_shared<spdlog::sinks::callback_sink_mt>(
+			[WeakCapture](const spdlog::details::log_msg& Msg)
+			{
+				std::shared_ptr<FCaptureState> State = WeakCapture.lock();
+				if (!State)
+				{
+					return;
+				}
+
+				std::lock_guard<std::mutex> Lock(State->Mutex);
+
+				spdlog::memory_buf_t Formatted;
+				State->Formatter.format(Msg, Formatted);
+
+				FCapturedLogLine Line;
+				Line.Level = Msg.level;
+				Line.Text = SPDLOG_BUF_TO_STRING(Formatted);
+				StripTrailingNewlines(Line.Text);
+
+				State->Lines.push_back(std::move(Line));
+				while (State->Lines.size() > GMaxCapturedLines)
+				{
+					State->Lines.pop_front();
+				}
+			});
+		EditorSink->set_level(spdlog::level::trace);
+		Sinks.push_back(EditorSink);
+	}
+
 	if (Sinks.empty())
 	{
-		auto ConsoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-		Sinks.push_back(ConsoleSink);
+		Sinks.push_back(std::make_shared<spdlog::sinks::null_sink_mt>());
 	}
 
 	CoreLogger = CreateLogger(Config.CoreLoggerName, Sinks);
@@ -101,9 +165,10 @@ void FLog::Initialize(const FLogConfig& Config)
 
 	bInitialized = true;
 	CoreLogger->info(
-		"Logging initialized (console={}, file={})",
+		"Logging initialized (console={}, file={}, editor={})",
 		Config.bEnableConsole,
-		Config.bEnableFile);
+		Config.bEnableFile,
+		Config.bEnableEditorCapture);
 }
 
 void FLog::Shutdown()
@@ -128,6 +193,28 @@ void FLog::Shutdown()
 	}
 
 	bInitialized = false;
+}
+
+void FLog::DrainCapturedLines(std::vector<FCapturedLogLine>& Out)
+{
+	Out.clear();
+	if (!Capture)
+	{
+		return;
+	}
+
+	std::lock_guard<std::mutex> Lock(Capture->Mutex);
+	if (Capture->Lines.empty())
+	{
+		return;
+	}
+
+	Out.reserve(Capture->Lines.size());
+	for (FCapturedLogLine& Line : Capture->Lines)
+	{
+		Out.push_back(std::move(Line));
+	}
+	Capture->Lines.clear();
 }
 
 std::shared_ptr<spdlog::logger>& FLog::GetActiveCoreLogger()

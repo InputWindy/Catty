@@ -165,7 +165,13 @@ target_compile_definitions(Catty
 
 if(WIN32)
 	target_compile_definitions(Catty PRIVATE VK_USE_PLATFORM_WIN32_KHR=1)
+	target_link_libraries(Catty PRIVATE winhttp)
 endif()
+
+# Absolute engine root for locating Tools/AgentBridge at runtime (dev builds).
+file(TO_CMAKE_PATH "${_CATTY_ENGINE_ROOT_FOR_CODEGEN}" _CATTY_ENGINE_ROOT_PATH)
+string(REPLACE "\\" "/" _CATTY_ENGINE_ROOT_FWD "${_CATTY_ENGINE_ROOT_PATH}")
+target_compile_definitions(Catty PRIVATE "CATTY_ENGINE_ROOT=\"${_CATTY_ENGINE_ROOT_FWD}\"")
 
 target_compile_features(Catty PUBLIC cxx_std_20)
 

@@ -1,17 +1,22 @@
 #pragma once
 
+#include <Core/Editor/AgentChatClient.h>
 #include <Core/Export.h>
 #include <Core/Layer.h>
+#include <Core/Log.h>
 #include <Core/Module.h>
 
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace Catty
 {
+
+class FAgentChatClient;
 
 /**
  * Engine editor shell (UE-inspired, ImGui docking + extensions).
@@ -53,35 +58,69 @@ private:
 	void DrawToolbarSecondary();
 	// menu → toolbar1(+brand) → toolbar2 → fixed main dockspace
 	void DrawDockSpace(FApp& App);
-	void DrawDocumentPanel();
-	void DrawViewportPanel();
+	void DrawMainViewportPanel();
 	void DrawContentBrowser();
+	void DrawContentBrowserTree();
+	void DrawContentBrowserTiles();
 	void DrawOutputPanel(FApp& App);
+	void DrawAgentPanel();
 	void DrawBlueprintPanel();
 	void DrawPlotPanel();
 	void DrawFileDialogs();
 
+	void EnsureContentMounts();
+	void SelectContentFolder(const std::string& VirtualPath);
 	void RefreshContentListing();
-	void AppendOutput(std::string Line);
+	[[nodiscard]] std::filesystem::path VirtualPathToDisk(const std::string& VirtualPath) const;
+	void DrawVirtualFolderTree(const std::string& VirtualPath, const std::filesystem::path& DiskPath, int Depth);
+
+	void AppendOutput(std::string Line, spdlog::level::level_enum Level = spdlog::level::info);
+	void DrainEngineLogs(FApp& App);
 	void ExecuteConsoleLine(FApp& App, const std::string& Line);
 	void EnsureDefaultDockLayout(std::uint32_t DockspaceId);
+
+	void StartAgentChat();
+	void AppendAgentBubble(EAgentChatRole Role, std::string Text);
+	void SendAgentMessage(std::string Text);
 
 	EPlayState PlayState = EPlayState::Stopped;
 	bool bShowDemoWindow = false;
 	bool bShowImPlotDemo = false;
+	bool bShowContentBrowser = true;
+	bool bShowOutputPanel = true;
+	bool bShowAgentPanel = true;
+	bool bShowBlueprintPanel = true;
+	bool bShowPlotPanel = true;
 	bool bAutoScrollOutput = true;
+	bool bAutoScrollAgent = true;
 	bool bBuildDefaultLayout = true;
 
-	std::filesystem::path ContentRoot;
-	std::filesystem::path CurrentFolder;
-	std::vector<std::filesystem::path> FolderEntries;
-	std::vector<std::filesystem::path> FileEntries;
-	std::string SelectedEntry;
+	/** UE-style virtual path currently shown on the right (e.g. "/Game" or "/Game/Maps"). */
+	std::string CurrentVirtualPath = "/Game";
+	std::string SelectedVirtualEntry;
+	std::vector<std::string> FolderVirtualEntries;
+	std::vector<std::string> FileVirtualEntries;
 
-	std::deque<std::string> OutputLines;
+	struct FOutputLine
+	{
+		std::string Text;
+		spdlog::level::level_enum Level = spdlog::level::info;
+	};
+
+	std::deque<FOutputLine> OutputLines;
 	char ConsoleInput[512] = {};
 	std::vector<std::string> ConsoleHistory;
-	static constexpr std::size_t MaxOutputLines = 500;
+	static constexpr std::size_t MaxOutputLines = 2000;
+
+	struct FAgentBubble
+	{
+		EAgentChatRole Role = EAgentChatRole::System;
+		std::string Text;
+	};
+	std::deque<FAgentBubble> AgentBubbles;
+	char AgentInput[2048] = {};
+	std::unique_ptr<FAgentChatClient> AgentChat;
+	static constexpr std::size_t MaxAgentBubbles = 500;
 
 	// Viewport / ImGuizmo
 	float ViewMatrix[16] = {};

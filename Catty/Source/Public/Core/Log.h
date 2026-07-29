@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #if defined(_MSC_VER)
 #	pragma warning(push)
@@ -28,8 +29,20 @@ struct FLogConfig
 	/** Directory for log files (UE-style: Saved/Logs). */
 	std::string LogDirectory = "Saved/Logs";
 
-	bool bEnableConsole = true;
+	/** OS console (stdout). Off by default for GUI apps; Output Log captures instead. */
+	bool bEnableConsole = false;
+
 	bool bEnableFile = true;
+
+	/** Ring buffer for the editor Output Log panel. */
+	bool bEnableEditorCapture = true;
+};
+
+/** One captured line for the in-editor Output Log (thread-safe drain). */
+struct FCapturedLogLine
+{
+	spdlog::level::level_enum Level = spdlog::level::info;
+	std::string Text;
 };
 
 /**
@@ -53,13 +66,22 @@ public:
 	[[nodiscard]] std::shared_ptr<spdlog::logger>& GetCoreLogger() { return CoreLogger; }
 	[[nodiscard]] std::shared_ptr<spdlog::logger>& GetClientLogger() { return ClientLogger; }
 
+	/**
+	 * Move pending editor-capture lines into Out (clears the ring).
+	 * Safe to call from the UI thread every frame.
+	 */
+	void DrainCapturedLines(std::vector<FCapturedLogLine>& Out);
+
 	/** Macro helpers — forward to GApp->GetLog(). */
 	[[nodiscard]] static std::shared_ptr<spdlog::logger>& GetActiveCoreLogger();
 	[[nodiscard]] static std::shared_ptr<spdlog::logger>& GetActiveClientLogger();
 
 private:
+	struct FCaptureState;
+
 	std::shared_ptr<spdlog::logger> CoreLogger;
 	std::shared_ptr<spdlog::logger> ClientLogger;
+	std::shared_ptr<FCaptureState> Capture;
 	bool bInitialized = false;
 };
 

@@ -84,6 +84,7 @@ catty_add_lua_scripts({{PROJECT_NAME}} "${GAME_SCRIPTS_DIR}")
 set_target_properties({{PROJECT_NAME}} PROPERTIES
 	FOLDER "Games"
 	VS_DEBUGGER_WORKING_DIRECTORY "${GAME_ROOT}"
+	WIN32_EXECUTABLE $<BOOL:${WIN32}>
 )
 add_dependencies({{PROJECT_NAME}} Catty CattyModules)
 
