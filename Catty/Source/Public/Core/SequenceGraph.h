@@ -29,6 +29,8 @@
 #include <mutex>
 #include <type_traits>
 #include <utility>
+
+#include <Core/Log.h>
 #include <vector>
 
 namespace Catty
@@ -119,6 +121,16 @@ struct TSequenceGraphSlot
 	{
 		return Sequencer.IsStopRequested();
 	}
+
+	void SetDebugTag(const char* Tag)
+	{
+		Sequencer.SetDebugTag(Tag);
+	}
+
+	void DumpDebugState(const char* Reason) const
+	{
+		Sequencer.DumpDebugState(Reason);
+	}
 };
 
 template <>
@@ -168,6 +180,14 @@ struct TSequenceGraphSlot<void>
 	[[nodiscard]] bool IsStopRequested() const
 	{
 		return true;
+	}
+
+	void SetDebugTag(const char* /*Tag*/)
+	{
+	}
+
+	void DumpDebugState(const char* /*Reason*/) const
+	{
 	}
 };
 
@@ -607,6 +627,8 @@ public:
 		// PreferMainThread objects across Module/Layer (and peers) must interleave
 		// one stage at a time. Calling SlotA.RunMainThreadObjectLoops() then SlotB
 		// deadlocks: Module waits for Layer pins while Layer never pumps.
+		CATTY_CORE_WARN("[Graph] RunMainThreadObjectLoopsAll enter");
+		int StallCount = 0;
 		while (!(SlotA.IsStopRequested()
 			&& SlotB.IsStopRequested()
 			&& SlotC.IsStopRequested()
@@ -631,6 +653,13 @@ public:
 				|| SlotJ.TryPumpMainThreadObjectsOnce();
 			if (!bProgressed)
 			{
+				++StallCount;
+				if (StallCount == 1 || StallCount == 50 || StallCount == 250 || (StallCount % 500) == 0)
+				{
+					CATTY_CORE_WARN("[Graph] STALL pumps={} dumping Module/Layer gates", StallCount);
+					SlotA.DumpDebugState("stall-Module");
+					SlotB.DumpDebugState("stall-Layer");
+				}
 				if constexpr (!std::is_void_v<A>)
 				{
 					SlotA.WaitForGateNotify(std::chrono::milliseconds(2));
@@ -640,7 +669,12 @@ public:
 					SlotB.WaitForGateNotify(std::chrono::milliseconds(2));
 				}
 			}
+			else
+			{
+				StallCount = 0;
+			}
 		}
+		CATTY_CORE_WARN("[Graph] RunMainThreadObjectLoopsAll exit");
 	}
 
 	void RequestStopAll()
