@@ -84,6 +84,14 @@ class FTypeEntry:
 	SourceRel: str = ""
 	SourceLine: int = 0
 	IncludePath: str = ""
+	# Initial pool slots from `static constexpr int PoolSize = N;`; None = not GC-pooled.
+	GCPooledSlots: int | None = None
+
+
+_RE_POOL_SIZE = re.compile(
+	r"\bstatic\s+constexpr\s+int\s+PoolSize\s*=\s*(\d+)\s*;"
+)
+_RE_STATIC_TEARDOWN = re.compile(r"\bStaticTearDown\b")
 
 
 @dataclass
@@ -568,6 +576,26 @@ def _scan_reflected_type(
 		if not _RE_GENERATED_STRUCT_BODY.search(body):
 			print(f"[WARN] {rel}: {type_short} missing CATTY_GENERATED_STRUCT_BODY()")
 
+	# FGC pool: class declares `static constexpr int PoolSize = N;` + StaticTearDown.
+	gc_pooled_slots: int | None = None
+	pool_m = _RE_POOL_SIZE.search(body)
+	has_teardown = bool(_RE_STATIC_TEARDOWN.search(body))
+	if pool_m:
+		if not b_object:
+			raise ValueError(f"{rel}: PoolSize only valid on CATTY_OBJECT types")
+		gc_pooled_slots = int(pool_m.group(1))
+		if gc_pooled_slots < 1:
+			raise ValueError(f"{rel}: {type_short}::PoolSize must be >= 1")
+		if not has_teardown:
+			raise ValueError(
+				f"{rel}: {type_short} has PoolSize but missing StaticTearDown"
+			)
+	elif has_teardown and b_object:
+		raise ValueError(
+			f"{rel}: {type_short} has StaticTearDown but missing "
+			f"`static constexpr int PoolSize = N;`"
+		)
+
 	qualified = _qualify_type(type_short)
 	super_q = ""
 	if b_object:
@@ -595,6 +623,7 @@ def _scan_reflected_type(
 		SourceRel=rel,
 		SourceLine=_line_number(text, m.start()),
 		IncludePath=_public_include_path(path, repo_root),
+		GCPooledSlots=gc_pooled_slots,
 	)
 
 
@@ -824,8 +853,13 @@ def render_header() -> str:
 		"namespace Catty",
 		"{",
 		"",
+		"class FGC;",
+		"",
 		"/** Ensure generated object/struct/enum types are registered (idempotent). */",
 		"void EnsureObjectReflectRegistered();",
+		"",
+		"/** Register CATTY_OBJECT types that declare PoolSize onto FGC (FGC::Initialize). */",
+		"void RegisterGeneratedGCPooledTypes(FGC& GC);",
 		"",
 		"} // namespace Catty",
 		"",
@@ -1033,6 +1067,7 @@ def render_cpp(
 		"",
 		'#include <ObjectReflectTypes.gen.h>',
 		"",
+		'#include <Core/GC.h>',
 		'#include <Core/ObjectReflect.h>',
 		"",
 	]
@@ -1264,6 +1299,19 @@ def render_cpp(
 	lines.append("}")
 	lines.append("")
 
+	pooled = [e for e in objects if e.GCPooledSlots is not None]
+	lines.append("void RegisterGeneratedGCPooledTypes(FGC& GC)")
+	lines.append("{")
+	if not pooled:
+		lines.append("\t(void)GC;")
+	for e in pooled:
+		lines.append(
+			f"\tGC.RegisterObjectType<{e.TypeName}>("
+			f"{e.TypeName}::PoolSize, &{e.TypeName}::StaticTearDown);"
+		)
+	lines.append("}")
+	lines.append("")
+
 	lines.append("void EnsureObjectReflectRegistered()")
 	lines.append("{")
 	lines.append("\tFObjectTypeRegistry::RegisterGeneratedTypes();")
@@ -1300,6 +1348,7 @@ def render_json(
 				"type": e.TypeName,
 				"super": e.Super,
 				"source": f"{e.SourceRel}:{e.SourceLine}",
+				"gcPooledSlots": e.GCPooledSlots,
 				"properties": [
 					{"name": m.Name, "cppType": m.CppType, "type": m.PropertyType}
 					for m in e.Members

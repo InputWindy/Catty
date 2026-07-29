@@ -5,6 +5,7 @@
 #include <Core/ConsoleManager.h>
 #include <Core/Editor/AgentChatClient.h>
 #include <Core/Log.h>
+#include <Core/Paths.h>
 #include <Render/UI/ImGuiExtensions.h>
 
 #include <imgui.h>
@@ -969,23 +970,10 @@ void FEditorLayer::DrawContentBrowser()
 
 void FEditorLayer::DrawContentBrowserTree()
 {
-	struct FMount
-	{
-		const char* VirtualRoot = nullptr;
-		const char* DiskRelative = nullptr;
-	};
-	static constexpr FMount Mounts[] = {
-		{"/Game", "Content"},
-		{"/Engine", "Engine/Content"},
-	};
-
 	std::error_code ErrorCode;
-	const std::filesystem::path Cwd = std::filesystem::current_path(ErrorCode);
-	const std::filesystem::path Base = ErrorCode ? std::filesystem::path(".") : Cwd;
-
-	for (const FMount& Mount : Mounts)
+	for (const FPathMount& Mount : FPaths::GetMountPoints())
 	{
-		const std::filesystem::path DiskRoot = Base / Mount.DiskRelative;
+		const std::filesystem::path DiskRoot = Mount.DiskRoot;
 		ImGuiTreeNodeFlags RootFlags =
 			ImGuiTreeNodeFlags_OpenOnArrow
 			| ImGuiTreeNodeFlags_OpenOnDoubleClick
@@ -996,12 +984,12 @@ void FEditorLayer::DrawContentBrowserTree()
 			RootFlags |= ImGuiTreeNodeFlags_Selected;
 		}
 
-		ImGui::PushID(Mount.VirtualRoot);
+		ImGui::PushID(Mount.VirtualRoot.c_str());
 		const bool bOpen = ImGui::TreeNodeEx(
 			"##Root",
 			RootFlags,
 			ICON_FA_FOLDER_TREE "  %s",
-			Mount.VirtualRoot);
+			Mount.VirtualRoot.c_str());
 		if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
 		{
 			SelectContentFolder(Mount.VirtualRoot);
@@ -1182,50 +1170,24 @@ void FEditorLayer::DrawContentBrowserTiles()
 
 void FEditorLayer::EnsureContentMounts()
 {
-	std::error_code ErrorCode;
-	const std::filesystem::path Cwd = std::filesystem::current_path(ErrorCode);
-	const std::filesystem::path Base = ErrorCode ? std::filesystem::path(".") : Cwd;
-	std::filesystem::create_directories(Base / "Content", ErrorCode);
-	std::filesystem::create_directories(Base / "Engine" / "Content", ErrorCode);
+	FPaths::EnsureMountDirectories();
 }
 
 void FEditorLayer::SelectContentFolder(const std::string& VirtualPath)
 {
-	CurrentVirtualPath = VirtualPath.empty() ? "/Game" : VirtualPath;
+	CurrentVirtualPath = VirtualPath.empty() ? "/Game" : FPaths::NormalizePackagePath(VirtualPath);
 	SelectedVirtualEntry.clear();
 	RefreshContentListing();
 }
 
 std::filesystem::path FEditorLayer::VirtualPathToDisk(const std::string& VirtualPath) const
 {
-	struct FMount
+	const std::string Disk = FPaths::ConvertVirtualPathToFilename(VirtualPath);
+	if (!Disk.empty())
 	{
-		const char* VirtualRoot = nullptr;
-		const char* DiskRelative = nullptr;
-	};
-	static constexpr FMount Mounts[] = {
-		{"/Game", "Content"},
-		{"/Engine", "Engine/Content"},
-	};
-
-	std::error_code ErrorCode;
-	const std::filesystem::path Cwd = std::filesystem::current_path(ErrorCode);
-	const std::filesystem::path Base = ErrorCode ? std::filesystem::path(".") : Cwd;
-
-	for (const FMount& Mount : Mounts)
-	{
-		const std::string Root = Mount.VirtualRoot;
-		if (VirtualPath == Root)
-		{
-			return Base / Mount.DiskRelative;
-		}
-		const std::string Prefix = Root + "/";
-		if (VirtualPath.rfind(Prefix, 0) == 0)
-		{
-			return Base / Mount.DiskRelative / VirtualPath.substr(Prefix.size());
-		}
+		return std::filesystem::path(Disk);
 	}
-	return Base / "Content";
+	return std::filesystem::path(FPaths::GetProjectContentDir());
 }
 
 void FEditorLayer::RefreshContentListing()

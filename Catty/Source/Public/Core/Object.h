@@ -13,7 +13,7 @@ namespace Catty
 {
 
 class FPackage;
-class FGCManager;
+class FGC;
 class FObject;
 
 /**
@@ -56,7 +56,7 @@ public:
 private:
 	friend class FPackage;
 	friend class FResourceManager;
-	friend class FGCManager;
+	friend class FGC;
 	friend class FObject;
 	friend struct FPropertyValue;
 
@@ -73,7 +73,6 @@ enum class EObjectFlags : std::uint32_t
 {
 	None = 0,
 	PendingKill = 1u << 0,
-	ImmediateDestroy = 1u << 1,
 };
 
 [[nodiscard]] constexpr EObjectFlags operator|(EObjectFlags A, EObjectFlags B)
@@ -112,7 +111,8 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
  * Abstract base for package objects (UE UObject-lite).
  * Not allocatable by itself — construct only via subclasses (FPackage, FResource, ...).
  * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
- * Outer is FObjectRef (empty for FPackage itself). Cleanup is fully owned by ~FObject.
+ * Outer is FObjectRef (empty for FPackage, or for runtime-only objects with no package).
+ * Cleanup is fully owned by ~FObject.
  *
  * Reflection (editor / blueprint): CATTY_OBJECT + CATTY_PROPERTY / CATTY_FUNCTION.
  */
@@ -214,8 +214,6 @@ public:
 	void RemoveFromRoot();
 	CATTY_FUNCTION()
 	void MarkPendingKill();
-	CATTY_FUNCTION()
-	void MarkForImmediateDestroy();
 
 protected:
 	FObject(FPackage* InOuter, std::string InObjectName);
@@ -236,7 +234,7 @@ private:
 	friend class FObjectRef;
 	friend class FPackage;
 	friend class FResourceManager;
-	friend class FGCManager;
+	friend class FGC;
 	friend struct FPropertyValue;
 
 	// ---------------------------------------------------------------------------
@@ -249,8 +247,8 @@ private:
 	// ---------------------------------------------------------------------------
 	// Fields
 	// ---------------------------------------------------------------------------
-	FGCManager* GCOwner = nullptr;
-	/** Pins Outer package. Empty for FPackage itself. */
+	FGC* GC = nullptr;
+	/** Outer package pin. Empty for FPackage, or runtime-only objects. */
 	FObjectRef Outer;
 	std::uint32_t RefCount = 0;
 	std::uint32_t WeakSerial = 0;

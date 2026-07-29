@@ -61,18 +61,17 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
 
 /**
  * UE UPackage-lite: FObject subclass, pool-allocated, lifetime via FObjectRef + GC.
- * Catalog map holds one FObjectRef while loaded; each in-package FObject
- * holds Outer as FObjectRef so the package stays alive until the last object dies.
- *
- * UnloadPackage only drops the catalog Ref — Free happens when RefCount hits 0 (GC).
+ * Not owned by FResourceManager — kept alive by Outer FObjectRefs from packaged objects.
  * Objects map stores raw FObject* for name lookup only (non-owning).
  *
  * Example:
  * ```
- *   Catty::FObjectRef Pkg = ResourceManager.CreatePackage(
+ *   Catty::FGC* GC = Catty::Detail::GetGC();
+ *   Catty::FObjectRef PkgRef = GC->NewObject<Catty::FPackage>(
  *       "/Game/Maps/Demo", Catty::EPackageFlags::Persistent);
- *   ResourceManager.CreateResource(Pkg, "T_Hero", "Textures/T_Hero.png");
- *   ResourceManager.SavePackage(Pkg, "Content/Maps/Demo.pkg.json");
+ *   Catty::FResourceManager* RM = Catty::Detail::GetResourceManager();
+ *   RM->SavePackage(PkgRef, FPaths::ConvertPackageNameToFilename(
+ *       PkgRef.Cast<Catty::FPackage>()->GetName()));
  * ```
  */
 CATTY_OBJECT()
@@ -81,11 +80,17 @@ class CATTY_API FPackage : public FObject
 	CATTY_GENERATED_BODY()
 
 public:
+	/** Initial FGC pool chunk slots (codegen RegisterGeneratedGCPooledTypes). */
+	static constexpr int PoolSize = 16;
+
 	FPackage(std::string InName, EPackageFlags InFlags = EPackageFlags::Transient);
 	virtual ~FPackage() override;
 
 	FPackage(const FPackage&) = delete;
 	FPackage& operator=(const FPackage&) = delete;
+
+	/** FGC pool TearDown — force-destroy leftover objects; does not use ResourceManager catalog. */
+	static void StaticTearDown(FPackage* Package);
 
 	// ---------------------------------------------------------------------------
 	// Lookup / reflection — CATTY_FUNCTION (game / editor / Lua)
@@ -113,7 +118,7 @@ private:
 	friend class FObject;
 
 	// ---------------------------------------------------------------------------
-	// Catalog / residency (FResourceManager)
+	// Flags / file path (FResourceManager persistence)
 	// ---------------------------------------------------------------------------
 	void AddPackageFlags(EPackageFlags InFlags) { PackageFlags |= InFlags; }
 	void ClearPackageFlags(EPackageFlags InFlags) { PackageFlags &= ~InFlags; }

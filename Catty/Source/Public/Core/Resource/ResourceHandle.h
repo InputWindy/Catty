@@ -9,13 +9,11 @@
 namespace Catty
 {
 
-/** Opaque resource identity for async raw loads (issued by FResourceManager).
+/** Opaque resource identity for async raw loads (issued by ResourceManager server).
  *
  * Example:
  * ```
- *   Catty::FObjectRef Hero = ResourceManager.CreateResource(
- *       Pkg, "T_Hero", "Textures/T_Hero.png");
- *   ResourceManager.Flush(Hero);
+ *   Catty::Detail::GetResourceManager()->FindResourceByPath("/Game/Textures/T_Hero.T_Hero");
  * ```
  */
 CATTY_STRUCT()

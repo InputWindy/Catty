@@ -1,5 +1,7 @@
 #include <Core/Resource/Resource.h>
 
+#include <Core/Resource/ResourceManager.h>
+
 namespace Catty
 {
 
@@ -17,5 +19,23 @@ FResource::FResource(
 }
 
 FResource::~FResource() = default;
+
+void FResource::StaticTearDown(FResource* Resource)
+{
+	if (!Resource)
+	{
+		return;
+	}
+
+	if (FResourceManager* Manager = Detail::GetResourceManager())
+	{
+		// Drop catalog while Outer still valid (virtual path needs Package.ObjectName).
+		Manager->UnregisterResource(Resource);
+		if (Resource->GetId().IsValid())
+		{
+			Manager->ReleaseResourceId(Resource->GetId());
+		}
+	}
+}
 
 } // namespace Catty

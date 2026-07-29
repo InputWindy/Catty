@@ -1,6 +1,7 @@
 #include <Core/App.h>
 #include <Core/ConsoleManager.h>
 #include <Core/Log.h>
+#include <Core/Paths.h>
 #include <Core/Modules/GCModule.h>
 #include <Core/Modules/PlatformModule.h>
 #include <Core/Modules/RenderModule.h>
@@ -162,8 +163,11 @@ void FApp::OnDetachLayer(FLayer& Layer)
 
 bool FApp::Initialize()
 {
-	// Game fills path defaults / ApplicationName first.
+	// Game fills path defaults / ApplicationName first (often relative).
 	Configure(EngineConfig);
+
+	// Resolve project / engine roots and absolutize Config / Saved / Content / …
+	FPaths::Initialize(EngineConfig);
 
 	// Load DefaultEngine.ini CVars, then sync into EngineConfig.
 	const int IniApplied = LoadProjectEngineIni(*this, EngineConfig);
@@ -183,6 +187,18 @@ bool FApp::Initialize()
 
 	// Logging sinks need final SavedDir / ApplicationName from Configure + ini.
 	ApplyAppLoggingFromConfig(*this, EngineConfig);
+
+	CATTY_CORE_INFO("FPaths: ProjectDir = {}", EngineConfig.ProjectDir);
+	CATTY_CORE_INFO("FPaths: EngineDir  = {}", EngineConfig.EngineDir);
+	CATTY_CORE_INFO("FPaths: Config     = {}", EngineConfig.ProjectConfigDir);
+	CATTY_CORE_INFO("FPaths: Content    = {}", EngineConfig.ProjectContentDir);
+	CATTY_CORE_INFO("FPaths: Saved      = {}", EngineConfig.SavedDir);
+	CATTY_CORE_INFO("FPaths: EngShaders = {}", EngineConfig.EngineShadersDir);
+	CATTY_CORE_INFO("FPaths: EngContent = {}", FPaths::GetEngineContentDir());
+	for (const FPathMount& Mount : FPaths::GetMountPoints())
+	{
+		CATTY_CORE_INFO("FPaths: Mount {} -> {}", Mount.VirtualRoot, Mount.DiskRoot);
+	}
 
 	RegisterModules();
 

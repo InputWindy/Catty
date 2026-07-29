@@ -1,13 +1,11 @@
 #pragma once
 
 #include <Core/Export.h>
-#include <Core/PoolAllocator.h>
-#include <Core/GCManager.h>
 #include <Core/Object.h>
+#include <Core/SoftObjectPath.h>
 #include <Core/Resource/Package.h>
 #include <Core/Resource/Resource.h>
 #include <Core/Resource/ResourceHandle.h>
-#include <Core/Layer/ScriptSystem.h>
 
 #include <memory>
 #include <string>
@@ -21,62 +19,53 @@ namespace Catty
 class FResourceServer;
 
 /**
- * Package / FResource facade (built into Catty.dll).
- * Owns FResourceServer (private impl), FPackage & FResource pools,
- * and type-specific teardown. Both FPackage and FResource are FObject subclasses
- * registered with FGCManager (Root / RefCount).
+ * Resource catalog + package IO (built into Catty.dll).
+ * Owns PathName → FObjectRef catalog only. Does not create game resources —
+ * callers allocate via FGC::NewObject then RegisterResource on this manager.
+ * LoadPackage rebuilds objects internally while deserializing.
  *
- * UnloadPackage drops the catalog Ref only — package/object Free is GC-driven.
- * Each in-package FObject holds Outer as FObjectRef so the package stays valid.
- * GC ticks via FGCManager (FApp), not through this manager.
- *
- * Lua: implements ILuaBindable; BindLua registers catalog / create / load helpers on `catty.*`.
+ * Lua / script shortcuts live in Core/Wrap.h. C++ uses this class via
+ * Detail::GetResourceManager() or GApp Resource module.
  */
-class CATTY_API FResourceManager : public ILuaBindable
+class CATTY_API FResourceManager
 {
 public:
-	static constexpr const char* TransientPackageName = "/Engine/Transient";
-
 	FResourceManager();
-	~FResourceManager() override;
+	~FResourceManager();
 
 	FResourceManager(const FResourceManager&) = delete;
 	FResourceManager& operator=(const FResourceManager&) = delete;
 
-	/** Register ResourceManager APIs into Script's `catty` table. */
-	void BindLua(FScriptSystem& Script) override;
-
-	// --- Lifecycle ---
-	[[nodiscard]] bool Initialize(FGCManager& InGC);
+	// --- Lifecycle (module) ---
+	[[nodiscard]] bool Initialize();
 	void Shutdown();
 	[[nodiscard]] bool IsInitialized() const;
 
-	// --- Package ---
-	[[nodiscard]] FObjectRef CreatePackage(
-		std::string Name,
-		EPackageFlags Flags = EPackageFlags::Transient);
-	[[nodiscard]] FObjectRef GetTransientPackage();
-	[[nodiscard]] FObjectRef FindPackage(const std::string& Name) const;
-	/**
-	 * Remove from catalog and Release catalog Ref.
-	 * Does not destroy in-package objects; GC frees them when RefCounts hit 0.
-	 */
-	bool UnloadPackage(const std::string& Name);
+	// --- Catalog ---
+	[[nodiscard]] bool RegisterResource(const FObjectRef& Resource);
+	bool UnregisterResource(FObject* Resource);
+	bool UnregisterResource(const FObjectRef& Resource);
 
-	// --- Object / Resource ---
-	[[nodiscard]] FObjectRef CreateResource(
-		const FObjectRef& Package,
-		std::string ObjectName,
-		std::string SourcePath,
-		EResourceType Type = EResourceType::Unknown);
-	[[nodiscard]] FObjectRef CreateResource(
-		std::string SourcePath,
-		EResourceType Type = EResourceType::Unknown,
-		std::string ObjectName = {});
+	// --- Query ---
 	[[nodiscard]] FObjectRef FindObject(const FObjectRef& Package, const std::string& ObjectName) const;
 	[[nodiscard]] FObjectRef FindObject(const std::string& PackageName, const std::string& ObjectName) const;
+	/**
+	 * Catalog lookup by PathName (PackageName.ObjectName).
+	 * Named FindResourceByPath — Windows headers #define FindResource → FindResourceA.
+	 */
+	[[nodiscard]] FObjectRef FindResourceByPath(const std::string& VirtualPath) const;
+	bool UnloadResource(const std::string& VirtualPath);
+	bool UnloadResource(const FObjectRef& Resource);
 
-	// --- Persistence ---
+	[[nodiscard]] FObjectRef Resolve(const FSoftObjectPath& SoftPath) const;
+	[[nodiscard]] FObjectRef Resolve(const std::string& SoftPathString) const;
+	[[nodiscard]] FObjectRef TryLoad(const FSoftObjectPath& SoftPath);
+	[[nodiscard]] FObjectRef TryLoad(const std::string& SoftPathString);
+
+	/** Release async load Id (FResource TearDown). */
+	void ReleaseResourceId(FResourceId Id);
+
+	// --- Load / export ---
 	[[nodiscard]] bool SavePackage(
 		const FObjectRef& Package,
 		const std::string& FilePath = {},
@@ -84,28 +73,31 @@ public:
 		bool bSaveDependencies = true);
 	[[nodiscard]] FObjectRef LoadPackage(const std::string& FilePath);
 
-	// --- Async raw load ---
+	// --- Async raw bytes ---
 	[[nodiscard]] EResourceLoadState GetLoadState(const FObjectRef& Object) const;
 	[[nodiscard]] bool IsReady(const FObjectRef& Object) const;
 	void Flush(const FObjectRef& Object);
 	void FlushAll();
 
 private:
-	// --- Path / type helpers ---
 	[[nodiscard]] static std::string NormalizePackageName(std::string Name);
 	[[nodiscard]] static std::string NormalizeSourcePath(std::string Path);
 	[[nodiscard]] static std::string MakeObjectNameFromSource(const std::string& SourcePath);
 	[[nodiscard]] static EResourceType InferTypeFromPath(const std::string& Path);
 	[[nodiscard]] static EResourceType ResourceTypeFromString(const std::string& Name);
+	[[nodiscard]] static std::string MakeResourceCatalogKey(const FResource& Resource);
+	[[nodiscard]] static std::string NormalizeResourceVirtualPath(const std::string& VirtualPath);
 
-	// --- GC destroy handler / pool teardown ---
-	[[nodiscard]] bool TryDestroyManagedObject(FObject* Object);
-	void DestroyResource(FResource* Resource);
-	void DestroyPackage(FPackage* Package);
-	void DropPackageFromCatalog(FPackage* Package);
-	[[nodiscard]] bool DestroyPackageObjects(FPackage& Package, bool bForce);
+	[[nodiscard]] FObjectRef FindLoadedPackageByName(const std::string& Name) const;
+	void UnregisterResourcesInPackage(const std::string& PackageName);
 
-	// --- Save / Load internals ---
+	/** Deserialize path only: NewObject + package table + catalog Register. */
+	[[nodiscard]] FObjectRef LoadResourceIntoPackage(
+		const FObjectRef& Package,
+		std::string ObjectName,
+		std::string SourcePath,
+		EResourceType Type);
+
 	[[nodiscard]] bool SavePackageInternal(
 		const FObjectRef& Package,
 		const std::string& FilePath,
@@ -118,14 +110,12 @@ private:
 	[[nodiscard]] FObjectRef ResolveObjectPath(const std::string& PathName) const;
 
 	std::unique_ptr<FResourceServer> Server;
-	FGCManager* GC = nullptr;
-	FGCManager::FObjectDestroyHandlerId DestroyHandlerId = FGCManager::InvalidDestroyHandlerId;
-	/** Catalog: value holds the catalog FObjectRef (keeps package alive while loaded). */
-	std::unordered_map<std::string, FObjectRef> Packages;
-	FPackage* TransientPackage = nullptr;
-
-	TPoolAllocator<FPackage> PackagePool{16};
-	TPoolAllocator<FResource> ResourcePool{64};
+	std::unordered_map<std::string, FObjectRef> Resources;
 };
+
+namespace Detail
+{
+[[nodiscard]] CATTY_API FResourceManager* GetResourceManager();
+}
 
 } // namespace Catty

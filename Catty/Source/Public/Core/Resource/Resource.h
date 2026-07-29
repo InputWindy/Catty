@@ -27,20 +27,18 @@ enum class EResourceType : std::uint8_t
 };
 
 /**
- * External-file asset (png / mesh / ...). Always Outer'd to an FPackage.
- * The FResource object is created synchronously with the package object table;
- * raw bytes are filled later by FResourceManager's internal loader (Pending → Ready/Failed).
+ * External-file asset (png / mesh / ...).
+ * Outer may be an FPackage (saved content) or null (runtime-only; PathName = ObjectName).
+ * The FResource object is created synchronously; raw bytes are filled later by
+ * the ResourceManager loader (Pending → Ready/Failed).
  * Package JSON stores source path only — not binary content.
  *
- * Example:
+ * Example (runtime-only):
  * ```
- *   Catty::FObjectRef Pkg = ResourceManager.GetTransientPackage();
- *   Catty::FObjectRef Hero = ResourceManager.CreateResource(
- *       Pkg, "T_Hero", "Textures/T_Hero.png");
- *   if (Catty::FResource* Res = Hero.Cast<Catty::FResource>())
- *   {
- *       ResourceManager.Flush(Hero);
- *   }
+ *   Catty::FGC* GC = Catty::Detail::GetGC();
+ *   Catty::FObjectRef Hero = GC->NewObject<Catty::FResource>(
+ *       nullptr, "T_Hero", Id, EResourceType::Texture, "Textures/T_Hero.png");
+ *   Catty::Detail::GetResourceManager()->RegisterResource(Hero);
  * ```
  */
 CATTY_OBJECT()
@@ -49,6 +47,9 @@ class CATTY_API FResource : public FObject
 	CATTY_GENERATED_BODY()
 
 public:
+	/** Initial FGC pool chunk slots (codegen RegisterGeneratedGCPooledTypes). */
+	static constexpr int PoolSize = 64;
+
 	FResource(
 		FPackage* InOuter,
 		std::string InObjectName,
@@ -56,6 +57,9 @@ public:
 		EResourceType InType,
 		std::string InSourcePath);
 	virtual ~FResource() override;
+
+	/** FGC pool TearDown — Unregister + ReleaseResourceId via ResourceManager, then ClearOuter. */
+	static void StaticTearDown(FResource* Resource);
 
 	// ---------------------------------------------------------------------------
 	// Queries (C++ typed Id — FResourceId not a CATTY_FUNCTION return kind yet)

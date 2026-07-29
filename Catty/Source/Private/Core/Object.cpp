@@ -1,7 +1,7 @@
 #include <Core/Object.h>
 
 #include <Core/Log.h>
-#include <Core/GCManager.h>
+#include <Core/GC.h>
 #include <Core/Resource/Package.h>
 
 namespace Catty
@@ -139,7 +139,12 @@ FObjectRef FObject::GetOuter() const
 
 FObjectRef FObject::GetPackage() const
 {
-	return Outer;
+	const FObject* Current = this;
+	while (Current->Outer)
+	{
+		Current = Current->Outer.Get();
+	}
+	return FObjectRef::Wrap(const_cast<FObject*>(Current));
 }
 
 std::string FObject::GetPathName() const
@@ -177,51 +182,38 @@ std::uint32_t FObject::ReleaseRef()
 
 void FObject::AddToRoot()
 {
-	if (!GCOwner)
+	if (!GC)
 	{
-		CATTY_CORE_ERROR("FObject::AddToRoot: '{}' has no GCOwner", GetPathName());
+		CATTY_CORE_ERROR("FObject::AddToRoot: '{}' has no GC", GetPathName());
 		return;
 	}
-	GCOwner->AddToRoot(*this);
+	GC->AddToRoot(*this);
 }
 
 void FObject::RemoveFromRoot()
 {
-	if (!GCOwner)
+	if (!GC)
 	{
-		CATTY_CORE_ERROR("FObject::RemoveFromRoot: '{}' has no GCOwner", GetPathName());
+		CATTY_CORE_ERROR("FObject::RemoveFromRoot: '{}' has no GC", GetPathName());
 		return;
 	}
-	GCOwner->RemoveFromRoot(*this);
+	GC->RemoveFromRoot(*this);
 }
 
 bool FObject::IsRooted() const
 {
-	return GCOwner && GCOwner->IsInRootSet(*this);
+	return GC && GC->IsInRootSet(*this);
 }
 
 void FObject::MarkPendingKill()
 {
-	if (GCOwner)
+	if (GC)
 	{
-		GCOwner->EnqueuePendingKill(*this);
+		GC->EnqueuePendingKill(*this);
 		return;
 	}
 
-	ClearFlags(EObjectFlags::ImmediateDestroy);
 	AddFlags(EObjectFlags::PendingKill);
-}
-
-void FObject::MarkForImmediateDestroy()
-{
-	if (GCOwner)
-	{
-		GCOwner->EnqueueImmediateDestroy(*this);
-		return;
-	}
-
-	ClearFlags(EObjectFlags::PendingKill);
-	AddFlags(EObjectFlags::ImmediateDestroy);
 }
 
 bool FObject::SplitObjectPath(

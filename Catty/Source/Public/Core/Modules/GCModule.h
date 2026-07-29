@@ -2,14 +2,14 @@
 
 #include <Core/Export.h>
 #include <Core/Module.h>
-#include <Core/GCManager.h>
+#include <Core/GC.h>
 
 #include <vector>
 
 namespace Catty
 {
 
-/** Built-in GC manager module (always-on in Catty.dll). */
+/** Built-in GC module (always-on in Catty.dll). */
 class CATTY_API FGCModule final : public IModule
 {
 public:
@@ -22,11 +22,11 @@ public:
 
 	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
 
-	[[nodiscard]] FGCManager& GetGCManager() { return GCManager; }
-	[[nodiscard]] const FGCManager& GetGCManager() const { return GCManager; }
+	[[nodiscard]] FGC& GetGC() { return GC; }
+	[[nodiscard]] const FGC& GetGC() const { return GC; }
 
 private:
-	FGCManager GCManager;
+	FGC GC;
 };
 
 } // namespace Catty

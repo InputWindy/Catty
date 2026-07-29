@@ -11,46 +11,37 @@
  */
 
 #include <Core/App.h>
-
 #include <cstdio>
+namespace
+{
+	int CattyRunMain(int Argc, char** Argv)
+	{
+		(void)Argc;
+		(void)Argv;
 
+		Catty::FApp* App = Catty::CreateApplication();
+		if (!App)
+		{
+			std::fprintf(stderr, "CreateApplication returned null\n");
+			return 1;
+		}
+
+		App->Run();
+		delete App;
+		return 0;
+	}
+
+} // namespace
 #if defined(_WIN32)
 #	ifndef NOMINMAX
 #		define NOMINMAX
 #	endif
 #	include <Windows.h>
-#endif
-
-namespace
-{
-
-int CattyRunMain(int Argc, char** Argv)
-{
-	(void)Argc;
-	(void)Argv;
-
-#if defined(_WIN32)
-	// Detach any inherited / debugger console so the OS black box stays hidden.
-	FreeConsole();
-#endif
-
-	Catty::FApp* App = Catty::CreateApplication();
-	if (!App)
-	{
-		std::fprintf(stderr, "CreateApplication returned null\n");
-		return 1;
-	}
-
-	App->Run();
-	delete App;
-	return 0;
-}
-
-} // namespace
-
-#if defined(_WIN32)
 int WINAPI WinMain(HINSTANCE /*Instance*/, HINSTANCE /*Prev*/, LPSTR /*CmdLine*/, int /*Show*/)
 {
+	// Detach any inherited / debugger console so the OS black box stays hidden.
+	FreeConsole();
+
 	return CattyRunMain(__argc, __argv);
 }
 #endif

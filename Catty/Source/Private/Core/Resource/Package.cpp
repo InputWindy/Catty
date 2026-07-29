@@ -87,6 +87,43 @@ FPackage::~FPackage()
 	Objects.clear();
 }
 
+void FPackage::StaticTearDown(FPackage* Package)
+{
+	if (!Package)
+	{
+		return;
+	}
+
+	if (Package->Objects.empty())
+	{
+		return;
+	}
+
+	// Package should only reach TearDown after Outer pins are gone.
+	// Leftover name-table entries are stale — detach and clear; do not force-free.
+	CATTY_CORE_ERROR(
+		"FPackage::StaticTearDown: '{}' still has {} object(s) — clearing name table",
+		Package->GetName(),
+		Package->GetObjectCount());
+
+	std::vector<FObject*> Snapshot;
+	Snapshot.reserve(Package->Objects.size());
+	for (const auto& Pair : Package->Objects)
+	{
+		Snapshot.push_back(Pair.second);
+	}
+
+	for (FObject* Object : Snapshot)
+	{
+		if (Object)
+		{
+			Object->ClearOuter();
+		}
+	}
+
+	Package->Objects.clear();
+}
+
 bool FPackage::IsPersistent() const
 {
 	return HasAnyPackageFlags(PackageFlags, EPackageFlags::Persistent);
