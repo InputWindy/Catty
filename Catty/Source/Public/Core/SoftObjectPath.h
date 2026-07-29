@@ -14,7 +14,7 @@ class FObjectRef;
  * Soft reference string (UE FSoftObjectPath lite).
  * Serialisable object address — not a live FObjectRef wrapper.
  *
- * Game code resolves via Resolve() / TryLoad() (FResourceManager via GApp module).
+ * Game code resolves via Resolve() (FGC LiveObjects) / TryLoad() (FResourceManager load).
  * Lua may use Core/Wrap.h shortcuts (Find / Resolve / TryLoad / SavePackage).
  *
  * Supported forms:

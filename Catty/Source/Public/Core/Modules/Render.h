@@ -11,7 +11,7 @@ namespace Catty
 {
 
 /** Built-in render server + RHI + Dear ImGui module (always-on in Catty.dll). */
-class CATTY_API FRenderModule final : public IModule
+class CATTY_API FRender final : public IModule
 {
 public:
 	const char* GetName() const override { return "Render"; }

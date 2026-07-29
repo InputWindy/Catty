@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
 
-#include <Core/Resource/ResourceHandle.h>
+#include <Core/Modules/Resource.h>
 #include <Core/Server/ThreadedServer.h>
 
 #include <condition_variable>

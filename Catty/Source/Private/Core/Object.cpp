@@ -1,25 +1,14 @@
 #include <Core/Object.h>
 
 #include <Core/Log.h>
-#include <Core/GC.h>
-#include <Core/Resource/Package.h>
+#include <Core/Modules/GC.h>
+#include <Core/Package.h>
 
 namespace Catty
 {
 
 namespace
 {
-
-std::uint32_t AllocateWeakSerial()
-{
-	static std::uint32_t Next = 1;
-	const std::uint32_t Serial = Next++;
-	if (Next == 0)
-	{
-		Next = 1;
-	}
-	return Serial;
-}
 
 [[nodiscard]] bool PropertyTypesCompatible(EPropertyType Expected, EPropertyType Actual)
 {
@@ -59,7 +48,6 @@ std::uint32_t AllocateWeakSerial()
 FObject::FObject(FPackage* InOuter, std::string InObjectName)
 	: Outer(static_cast<FObject*>(InOuter))
 	, ObjectName(std::move(InObjectName))
-	, WeakSerial(AllocateWeakSerial())
 {
 }
 
@@ -180,58 +168,6 @@ std::uint32_t FObject::ReleaseRef()
 	return RefCount;
 }
 
-void FObject::AddToRoot()
-{
-	if (!GC)
-	{
-		CATTY_CORE_ERROR("FObject::AddToRoot: '{}' has no GC", GetPathName());
-		return;
-	}
-	GC->AddToRoot(*this);
-}
-
-void FObject::RemoveFromRoot()
-{
-	if (!GC)
-	{
-		CATTY_CORE_ERROR("FObject::RemoveFromRoot: '{}' has no GC", GetPathName());
-		return;
-	}
-	GC->RemoveFromRoot(*this);
-}
-
-bool FObject::IsRooted() const
-{
-	return GC && GC->IsInRootSet(*this);
-}
-
-void FObject::MarkPendingKill()
-{
-	if (GC)
-	{
-		GC->EnqueuePendingKill(*this);
-		return;
-	}
-
-	AddFlags(EObjectFlags::PendingKill);
-}
-
-bool FObject::SplitObjectPath(
-	const std::string& PathName,
-	std::string& OutPackageName,
-	std::string& OutObjectName)
-{
-	const std::size_t Dot = PathName.find_last_of('.');
-	if (Dot == std::string::npos || Dot == 0 || Dot + 1 >= PathName.size())
-	{
-		return false;
-	}
-
-	OutPackageName = PathName.substr(0, Dot);
-	OutObjectName = PathName.substr(Dot + 1);
-	return !OutPackageName.empty() && !OutObjectName.empty();
-}
-
 void FObject::GetReferencedObjects(std::vector<FObject*>& OutObjects) const
 {
 	(void)OutObjects;
@@ -319,50 +255,6 @@ FObjectRef::FObjectRef(FObject* InObject)
 	{
 		Object->AddRef();
 	}
-}
-
-// --- FObjectWeakRef ---
-
-FObjectWeakRef::FObjectWeakRef(FObject* InObject)
-	: Object(InObject)
-	, Serial(InObject ? InObject->GetWeakSerial() : 0)
-{
-}
-
-FObjectWeakRef::FObjectWeakRef(const FObjectRef& Ref)
-	: Object(Ref ? &*Ref : nullptr)
-	, Serial(Object ? Object->GetWeakSerial() : 0)
-{
-}
-
-bool FObjectWeakRef::IsValid() const
-{
-	return Object != nullptr && Object->GetWeakSerial() == Serial;
-}
-
-FObjectRef FObjectWeakRef::Pin() const
-{
-	if (!IsValid())
-	{
-		return {};
-	}
-	return FObjectRef::Wrap(Object);
-}
-
-void FObjectWeakRef::Reset()
-{
-	Object = nullptr;
-	Serial = 0;
-}
-
-bool FObjectWeakRef::operator==(const FObjectWeakRef& Other) const
-{
-	return Object == Other.Object && Serial == Other.Serial;
-}
-
-bool FObjectWeakRef::operator!=(const FObjectWeakRef& Other) const
-{
-	return !(*this == Other);
 }
 
 } // namespace Catty

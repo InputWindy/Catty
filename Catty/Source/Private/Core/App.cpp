@@ -2,10 +2,10 @@
 #include <Core/ConsoleManager.h>
 #include <Core/Log.h>
 #include <Core/Paths.h>
-#include <Core/Modules/GCModule.h>
-#include <Core/Modules/PlatformModule.h>
-#include <Core/Modules/RenderModule.h>
-#include <Core/Modules/ResourceModule.h>
+#include <Core/Modules/GC.h>
+#include <Core/Modules/Platform.h>
+#include <Core/Modules/Render.h>
+#include <Core/Modules/Resource.h>
 #include <Core/Timer.h>
 #include <Core/WorkerPool.h>
 
@@ -122,10 +122,10 @@ void FApp::Configure(FEngineConfig& /*OutConfig*/)
 
 void FApp::RegisterModules()
 {
-	RegisterModule(std::make_unique<FPlatformModule>());
-	RegisterModule(std::make_unique<FRenderModule>());
-	RegisterModule(std::make_unique<FGCModule>());
-	RegisterModule(std::make_unique<FResourceModule>());
+	RegisterModule(std::make_unique<FPlatform>());
+	RegisterModule(std::make_unique<FRender>());
+	RegisterModule(std::make_unique<FGC>());
+	RegisterModule(std::make_unique<FResourceManager>());
 }
 
 bool FApp::PostInitialize()

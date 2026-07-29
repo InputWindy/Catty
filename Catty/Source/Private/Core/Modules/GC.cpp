@@ -1,11 +1,11 @@
-﻿#include <Core/GC.h>
+﻿#include <Core/Modules/GC.h>
 
 #include <Core/ConsoleManager.h>
 #include <Core/App.h>
 #include <Core/Log.h>
-#include <Core/Modules/GCModule.h>
 #include <Core/Paths.h>
-#include <Core/Resource/Package.h>
+#include <Core/Package.h>
+#include <Core/SoftObjectPath.h>
 #include <ObjectReflectTypes.gen.h>
 
 #include <algorithm>
@@ -55,7 +55,6 @@ void FGC::Shutdown()
 		return;
 	}
 
-	RootMap.clear();
 	CollectGarbage();
 	PurgePendingKill();
 
@@ -123,24 +122,82 @@ FObjectRef FGC::FindPackage(const std::string& PackageName) const
 	return {};
 }
 
+FObjectRef FGC::FindObject(const std::string& PackageName, const std::string& ObjectName) const
+{
+	if (!bInitialized || ObjectName.empty())
+	{
+		return {};
+	}
+
+	const std::string PkgKey = FPaths::NormalizePackagePath(PackageName);
+	if (PkgKey.empty())
+	{
+		return {};
+	}
+
+	if (FObjectRef PackageRef = FindPackage(PkgKey))
+	{
+		if (FPackage* Package = PackageRef.Cast<FPackage>())
+		{
+			if (FObjectRef Found = Package->FindObject(ObjectName))
+			{
+				return Found;
+			}
+		}
+	}
+
+	// Fallback: LiveObjects is authoritative even if package name table missed.
+	for (FObject* Object : LiveObjects)
+	{
+		if (!Object || Object->IsPendingKill())
+		{
+			continue;
+		}
+
+		FSoftObjectPath SoftPath;
+		if (!SoftPath.TrySetPath(Object->GetPathName()) || !SoftPath.IsValid())
+		{
+			continue;
+		}
+		if (FPaths::NormalizePackagePath(SoftPath.GetPackageName()) == PkgKey
+			&& SoftPath.GetAssetName() == ObjectName)
+		{
+			return FObjectRef::Wrap(Object);
+		}
+	}
+
+	return {};
+}
+
+FObjectRef FGC::FindObject(const std::string& PathName) const
+{
+	if (!bInitialized || PathName.empty())
+	{
+		return {};
+	}
+
+	FSoftObjectPath SoftPath;
+	if (SoftPath.TrySetPath(PathName) && SoftPath.IsValid())
+	{
+		if (SoftPath.HasSubPath())
+		{
+			CATTY_CORE_WARN(
+				"FGC::FindObject: subobject path not implemented yet ('{}') — resolving asset only",
+				SoftPath.ToStringWithoutClass());
+		}
+		return FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName());
+	}
+
+	return FindPackage(PathName);
+}
+
 void FGC::UnregisterObject(FObject& Object)
 {
 	LiveObjects.erase(
 		std::remove(LiveObjects.begin(), LiveObjects.end(), &Object),
 		LiveObjects.end());
-	RemoveAllRootRefs(&Object);
 	RemoveFromPendingKill(&Object);
 	Object.GC = nullptr;
-}
-
-void FGC::RemoveAllRootRefs(FObject* Object)
-{
-	if (!Object)
-	{
-		return;
-	}
-
-	RootMap.erase(Object);
 }
 
 void FGC::RemoveFromPendingKill(FObject* Object)
@@ -151,11 +208,6 @@ void FGC::RemoveFromPendingKill(FObject* Object)
 bool FGC::IsKeptAlive(const FObject& Object)
 {
 	return Object.GetRefCount() > 0;
-}
-
-bool FGC::IsInRootSet(const FObject& Object) const
-{
-	return RootMap.find(const_cast<FObject*>(&Object)) != RootMap.end();
 }
 
 void FGC::FinalizeDeadObject(FObject* Object)
@@ -193,7 +245,42 @@ void FGC::FinalizeDeadObject(FObject* Object)
 
 bool FGC::IsIdle() const
 {
-	return LiveObjects.empty() && PendingKill.empty();
+	return !bInitialized || (LiveObjects.empty() && PendingKill.empty());
+}
+
+bool FGC::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
+{
+	(void)App;
+	switch (Stage)
+	{
+	case EModuleStage::Init:
+		if (!Initialize())
+		{
+			CATTY_CORE_ERROR("FGC: Initialize failed");
+			return false;
+		}
+		if (!IsInitialized())
+		{
+			CATTY_CORE_ERROR("FGC: must be initialized after Init");
+			return false;
+		}
+		return true;
+	case EModuleStage::Update:
+		Tick(Ctx.DeltaSeconds);
+		return true;
+	case EModuleStage::PrepareExit:
+		CollectGarbage();
+		PurgePendingKill();
+		return true;
+	case EModuleStage::Shutdown:
+		if (IsInitialized())
+		{
+			Shutdown();
+		}
+		return true;
+	default:
+		return true;
+	}
 }
 
 bool FGC::TearDownPooledObject(FObject* Object)
@@ -228,56 +315,6 @@ bool FGC::FreePooledObject(FObject* Object)
 		}
 	}
 	return false;
-}
-
-void FGC::AddToRoot(FObject& Object)
-{
-	const auto It = RootMap.find(&Object);
-	if (It != RootMap.end())
-	{
-		++It->second.NestCount;
-	}
-	else
-	{
-		FRootEntry Entry;
-		Entry.Ref = FObjectRef::Wrap(&Object);
-		Entry.NestCount = 1;
-		RootMap.emplace(&Object, std::move(Entry));
-	}
-
-	if (Object.IsPendingKill())
-	{
-		Object.ClearFlags(EObjectFlags::PendingKill);
-		RemoveFromPendingKill(&Object);
-	}
-}
-
-void FGC::RemoveFromRoot(FObject& Object)
-{
-	const auto It = RootMap.find(&Object);
-	if (It == RootMap.end())
-	{
-		CATTY_CORE_WARN("FGC::RemoveFromRoot: '{}' is not in the root map", Object.GetPathName());
-		return;
-	}
-
-	if (It->second.NestCount > 1)
-	{
-		--It->second.NestCount;
-		return;
-	}
-
-	RootMap.erase(It);
-}
-
-void FGC::EnqueuePendingKill(FObject& Object)
-{
-	Object.AddFlags(EObjectFlags::PendingKill);
-
-	if (std::find(PendingKill.begin(), PendingKill.end(), &Object) == PendingKill.end())
-	{
-		PendingKill.push_back(&Object);
-	}
 }
 
 void FGC::QueueUnreferenced()
@@ -391,8 +428,7 @@ FGC* GetGC()
 	{
 		return nullptr;
 	}
-	FGCModule* Module = GApp->GetModule<FGCModule>();
-	return Module ? &Module->GetGC() : nullptr;
+	return GApp->GetModule<FGC>();
 }
 
 } // namespace Detail

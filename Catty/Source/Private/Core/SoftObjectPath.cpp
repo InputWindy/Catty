@@ -1,8 +1,10 @@
 #include <Core/SoftObjectPath.h>
 
+#include <Core/Modules/GC.h>
+#include <Core/Log.h>
 #include <Core/Object.h>
 #include <Core/Paths.h>
-#include <Core/Resource/ResourceManager.h>
+#include <Core/Modules/Resource.h>
 
 #include <cctype>
 
@@ -249,8 +251,18 @@ bool FSoftObjectPath::operator==(const FSoftObjectPath& Other) const
 
 FObjectRef FSoftObjectPath::Resolve() const
 {
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->Resolve(*this) : FObjectRef{};
+	FGC* GC = Detail::GetGC();
+	if (!GC || !IsValid())
+	{
+		return {};
+	}
+	if (HasSubPath())
+	{
+		CATTY_CORE_WARN(
+			"FSoftObjectPath::Resolve: subobject path not implemented yet ('{}') — resolving asset only",
+			ToStringWithoutClass());
+	}
+	return GC->FindObject(GetPackageName(), GetAssetName());
 }
 
 FObjectRef FSoftObjectPath::TryLoad() const

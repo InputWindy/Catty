@@ -1,4 +1,4 @@
-# Run via Tools/object_reflect_codegen.bat / catty_python.bat — engine Tools/python only.
+﻿# Run via Tools/object_reflect_codegen.bat / catty_python.bat — engine Tools/python only.
 """
 FObject / struct / enum runtime reflection codegen.
 
@@ -1067,7 +1067,7 @@ def render_cpp(
 		"",
 		'#include <ObjectReflectTypes.gen.h>',
 		"",
-		'#include <Core/GC.h>',
+		'#include <Core/Modules/GC.h>',
 		'#include <Core/ObjectReflect.h>',
 		"",
 	]

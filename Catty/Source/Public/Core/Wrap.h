@@ -6,8 +6,9 @@
  * Detail::GetGC() / Detail::GetResourceManager() (or GApp modules).
  */
 
-#include <Core/GC.h>
-#include <Core/Resource/ResourceManager.h>
+#include <Core/Modules/GC.h>
+#include <Core/Package.h>
+#include <Core/Modules/Resource.h>
 #include <Core/SoftObjectPath.h>
 
 #include <cstddef>
@@ -33,31 +34,6 @@ template <typename TObject, typename... TArgs>
 	return GC->NewObject<TObject>(std::forward<TArgs>(Args)...);
 }
 
-template <typename TObject, typename TDestroyFn>
-void RegisterObjectType(std::size_t InitialChunkSlots, TDestroyFn&& DestroyFn)
-{
-	if (FGC* GC = Detail::GetGC())
-	{
-		GC->RegisterObjectType<TObject>(
-			InitialChunkSlots,
-			std::forward<TDestroyFn>(DestroyFn));
-	}
-}
-
-template <typename TObject>
-[[nodiscard]] bool HasPooledType()
-{
-	FGC* GC = Detail::GetGC();
-	return GC && GC->HasPooledType<TObject>();
-}
-
-template <typename TObject>
-[[nodiscard]] std::size_t GetPooledLiveCount()
-{
-	FGC* GC = Detail::GetGC();
-	return GC ? GC->GetPooledLiveCount<TObject>() : 0;
-}
-
 inline void CollectGarbage()
 {
 	if (FGC* GC = Detail::GetGC())
@@ -81,37 +57,58 @@ inline void PurgePendingKill()
 }
 
 // ---------------------------------------------------------------------------
-// Resource (Lua-facing; Create/Register/Unload/Flush stay on FResourceManager)
+// Object query (FGC LiveObjects — authoritative)
 // ---------------------------------------------------------------------------
-
-[[nodiscard]] inline FObjectRef FindObject(const FObjectRef& Package, const std::string& ObjectName)
-{
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->FindObject(Package, ObjectName) : FObjectRef{};
-}
 
 [[nodiscard]] inline FObjectRef FindObject(const std::string& PackageName, const std::string& ObjectName)
 {
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->FindObject(PackageName, ObjectName) : FObjectRef{};
+	FGC* GC = Detail::GetGC();
+	return GC ? GC->FindObject(PackageName, ObjectName) : FObjectRef{};
+}
+
+[[nodiscard]] inline FObjectRef FindObject(const std::string& PathName)
+{
+	FGC* GC = Detail::GetGC();
+	return GC ? GC->FindObject(PathName) : FObjectRef{};
 }
 
 [[nodiscard]] inline FObjectRef FindResourceByPath(const std::string& VirtualPath)
 {
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->FindResourceByPath(VirtualPath) : FObjectRef{};
+	return FindObject(VirtualPath);
 }
 
 [[nodiscard]] inline FObjectRef Resolve(const FSoftObjectPath& SoftPath)
 {
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->Resolve(SoftPath) : FObjectRef{};
+	FGC* GC = Detail::GetGC();
+	if (!GC || !SoftPath.IsValid())
+	{
+		return {};
+	}
+	return GC->FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName());
 }
 
 [[nodiscard]] inline FObjectRef Resolve(const std::string& SoftPathString)
 {
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->Resolve(SoftPathString) : FObjectRef{};
+	FSoftObjectPath SoftPath;
+	if (!SoftPath.TrySetPath(SoftPathString) || !SoftPath.IsValid())
+	{
+		return {};
+	}
+	return Resolve(SoftPath);
+}
+
+// ---------------------------------------------------------------------------
+// Resource load / save (FResourceManager)
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] inline FObjectRef FindObject(const FObjectRef& Package, const std::string& ObjectName)
+{
+	FPackage* PackagePtr = Package.Cast<FPackage>();
+	if (!PackagePtr)
+	{
+		return {};
+	}
+	return FindObject(PackagePtr->GetName(), ObjectName);
 }
 
 [[nodiscard]] inline FObjectRef TryLoad(const FSoftObjectPath& SoftPath)

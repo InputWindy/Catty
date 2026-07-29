@@ -509,12 +509,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 						<tr><td><code>GetRefCount</code></td><td><code>std::uint32_t()</code></td></tr>
 						<tr><td><code>GetFlags</code></td><td><code>EObjectFlags()</code></td></tr>
 						<tr><td><code>HasAnyFlags</code></td><td><code>bool(EObjectFlags)</code></td></tr>
-						<tr><td><code>GetWeakSerial</code></td><td><code>std::uint32_t()</code></td></tr>
 						<tr><td><code>IsPendingKill</code></td><td><code>bool()</code></td></tr>
-						<tr><td><code>IsRooted</code></td><td><code>bool()</code></td></tr>
-						<tr><td><code>AddToRoot</code></td><td><code>void()</code></td></tr>
-						<tr><td><code>RemoveFromRoot</code></td><td><code>void()</code></td></tr>
-						<tr><td><code>MarkPendingKill</code></td><td><code>void()</code></td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -526,7 +521,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: Catty::FObject · Catty/Source/Public/Core/Resource/Package.h:77</code>
+				<code class="sig">super: Catty::FObject · Catty/Source/Public/Core/Package.h:77</code>
 				<p>无反射属性。</p>
 				<h4>Functions</h4>
 				<table>
@@ -550,7 +545,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: Catty::FObject · Catty/Source/Public/Core/Resource/Resource.h:44</code>
+				<code class="sig">super: Catty::FObject · Catty/Source/Public/Core/Modules/Resource.h:71</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
@@ -578,7 +573,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-struct">struct</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">Catty/Source/Public/Core/Resource/ResourceHandle.h:19</code>
+				<code class="sig">Catty/Source/Public/Core/Modules/Resource.h:27</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
@@ -613,7 +608,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Core/Resource/Package.h:22</code>
+				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Core/Package.h:22</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>
@@ -632,7 +627,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Resource/ResourceHandle.h:33</code>
+				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Modules/Resource.h:41</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>
@@ -652,7 +647,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Resource/Resource.h:16</code>
+				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Modules/Resource.h:51</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>

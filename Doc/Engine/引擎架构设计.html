@@ -437,14 +437,13 @@ sequenceDiagram
 		<h3>GC 保活</h3>
 		<pre class="mermaid">
 flowchart LR
-  Root["AddToRoot"] --> Keep["保活"]
-  Ref["FObjectRef RefCount大于0"] --> Keep
+  Ref["FObjectRef RefCount大于0"] --> Keep["保活"]
   Persist["Persistent Package Object"] -->|"不进 Transient 回收"| Keep
-  Scan["扫 LiveObjects"] -->|"Transient 且未保活"| Pending["PendingKill 约30s Purge"]
+  Scan["扫 LiveObjects"] -->|"RefCount等于0"| Pending["PendingKill 约30s Purge"]
 		</pre>
 		<ul>
-			<li>保活：RootSet 或 RefCount&gt;0；无引用图 Mark。<b>互持 FObjectRef 会泄漏</b> — 用 <code>FObjectWeakRef</code> 破环。</li>
-			<li>默认 Tick：Immediate 每帧；Collect 约 1s；Purge Pending 约 30s（CVar 可调）。</li>
+			<li>保活：仅 RefCount&gt;0（catalog / Outer / 业务 FObjectRef）；无 RootSet、无引用图 Mark。<b>互持 FObjectRef 会泄漏</b> — 一侧用裸指针观察，需要时再 Wrap。</li>
+			<li>默认 Tick：Collect 约 1s；Purge Pending 约 30s（CVar 可调）。</li>
 			<li>Package / CreateResource 同步；raw 填充异步；<code>Flush(Resource)</code> 只等该资源 raw。</li>
 		</ul>
 	</div>
