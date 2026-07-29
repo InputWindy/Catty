@@ -369,14 +369,12 @@ bool FResourceManager::Initialize(FGC& InGC)
 
 	InGC.RegisterObjectType<FPackage>(
 		static_cast<std::size_t>(PackageSlots),
-		PoolConstruct,
 		[this](FPackage* Package)
 		{
 			TearDownPackage(Package);
 		});
 	InGC.RegisterObjectType<FResource>(
 		static_cast<std::size_t>(ResourceSlots),
-		PoolConstruct,
 		[this](FResource* Resource)
 		{
 			TearDownResource(Resource);

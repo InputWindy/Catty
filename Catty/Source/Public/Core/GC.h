@@ -17,16 +17,6 @@ namespace Catty
 {
 
 /**
- * ConstructorFn for RegisterObjectType: NewObject uses TPoolAllocator<T>::Allocate(Args...).
- * This is how GC takes over construction for pooled FObject types.
- */
-struct FPoolConstruct
-{
-};
-
-inline constexpr FPoolConstruct PoolConstruct{};
-
-/**
  * Type-erased pool + TearDown owned by FGC.
  */
 class IPooledObjectType
@@ -124,22 +114,15 @@ public:
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 
 	/**
-	 * Register TObject: pool (constructor) + DestructorFn (TearDown).
-	 *
-	 * ConstructorFn must be PoolConstruct — NewObject<T>(Args...) calls Pool.Allocate(Args...).
-	 * DestructorFn: void(TObject*) TearDown only (no Free).
+	 * Register TObject pool. Construction is NewObject -> Pool.Allocate -> T's ctor.
+	 * DestroyFn: void(TObject*) TearDown only (no Free).
 	 */
-	template <typename TObject, typename TConstructFn, typename TDestroyFn>
+	template <typename TObject, typename TDestroyFn>
 	void RegisterObjectType(
 		std::size_t InitialChunkSlots,
-		TConstructFn&& ConstructFn,
 		TDestroyFn&& DestroyFn)
 	{
 		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
-		static_assert(
-			std::is_same_v<std::decay_t<TConstructFn>, FPoolConstruct>,
-			"ConstructorFn must be PoolConstruct (pooled Allocate). Custom factories can be added later.");
-		(void)ConstructFn;
 
 		typename TPooledObjectType<TObject>::FDestroyFn BoundDestroy =
 			[Destroy = std::decay_t<TDestroyFn>(std::forward<TDestroyFn>(DestroyFn))](TObject* Object)
@@ -269,21 +252,19 @@ template <typename TObject, typename... TArgs>
 }
 
 /**
- * Register TObject: ConstructorFn (PoolConstruct) + DestructorFn (TearDown).
+ * Register TObject pool + TearDown. Construction uses T's ctor via NewObject.
  * Example:
- *   RegisterObjectType<FPackage>(16, PoolConstruct, [](FPackage* P){ TearDown(P); });
+ *   RegisterObjectType<FPackage>(16, [](FPackage* P){ TearDown(P); });
  */
-template <typename TObject, typename TConstructFn, typename TDestroyFn>
+template <typename TObject, typename TDestroyFn>
 void RegisterObjectType(
 	std::size_t InitialChunkSlots,
-	TConstructFn&& ConstructFn,
 	TDestroyFn&& DestroyFn)
 {
 	if (FGC* GC = Detail::GetGC())
 	{
 		GC->RegisterObjectType<TObject>(
 			InitialChunkSlots,
-			std::forward<TConstructFn>(ConstructFn),
 			std::forward<TDestroyFn>(DestroyFn));
 	}
 }
