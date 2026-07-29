@@ -139,7 +139,12 @@ FObjectRef FObject::GetOuter() const
 
 FObjectRef FObject::GetPackage() const
 {
-	return Outer;
+	const FObject* Current = this;
+	while (Current->Outer)
+	{
+		Current = Current->Outer.Get();
+	}
+	return FObjectRef::Wrap(const_cast<FObject*>(Current));
 }
 
 std::string FObject::GetPathName() const

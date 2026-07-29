@@ -154,29 +154,29 @@ public:
 	}
 
 	template <typename TObject, typename... TArgs>
-	[[nodiscard]] TObject* NewObject(TArgs&&... Args)
+	[[nodiscard]] FObjectRef NewObject(TArgs&&... Args)
 	{
 		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
 		if (!bInitialized)
 		{
-			return nullptr;
+			return {};
 		}
 
 		const auto It = PooledTypes.find(std::type_index(typeid(TObject)));
 		if (It == PooledTypes.end() || !It->second)
 		{
-			return nullptr;
+			return {};
 		}
 
 		auto* Entry = static_cast<TPooledObjectType<TObject>*>(It->second.get());
 		TObject* Object = Entry->Allocate(std::forward<TArgs>(Args)...);
 		if (!Object)
 		{
-			return nullptr;
+			return {};
 		}
 
 		RegisterObject(*Object);
-		return Object;
+		return FObjectRef::Wrap(Object);
 	}
 
 	void RegisterObject(FObject& Object);
@@ -241,12 +241,13 @@ namespace Detail
 }
 
 template <typename TObject, typename... TArgs>
-[[nodiscard]] TObject* NewObject(TArgs&&... Args)
+[[nodiscard]] FObjectRef NewObject(TArgs&&... Args)
 {
+	static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
 	FGC* GC = Detail::GetGC();
 	if (!GC)
 	{
-		return nullptr;
+		return {};
 	}
 	return GC->NewObject<TObject>(std::forward<TArgs>(Args)...);
 }
@@ -254,7 +255,7 @@ template <typename TObject, typename... TArgs>
 /**
  * Register TObject pool + TearDown. Construction uses T's ctor via NewObject.
  * Example:
- *   RegisterObjectType<FPackage>(16, [](FPackage* P){ TearDown(P); });
+ *   RegisterObjectType<FPackage>(16, &FPackage::StaticTearDown);
  */
 template <typename TObject, typename TDestroyFn>
 void RegisterObjectType(

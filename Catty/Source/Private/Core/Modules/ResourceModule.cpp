@@ -1,17 +1,32 @@
 ﻿#include <Core/Modules/ResourceModule.h>
 
 #include <Core/App.h>
+#include <Core/ConsoleManager.h>
+#include <Core/GC.h>
 #include <Core/Log.h>
 #include <Core/Modules/GCModule.h>
-#include <Core/Layer/ScriptSystem.h>
+#include <Core/Resource/Package.h>
+#include <Core/Resource/Resource.h>
+
+#include <algorithm>
 
 namespace Catty
 {
 
-void FResourceModule::OnLuaReady(FScriptSystem& Script)
+namespace
 {
-	Script.Bind(ResourceManager);
-}
+
+static TAutoConsoleVariable GCVarPackagePoolInitial(
+	"res.Pool.PackageInitial",
+	16,
+	"Initial FPackage pool slot count");
+
+static TAutoConsoleVariable GCVarResourcePoolInitial(
+	"res.Pool.ResourceInitial",
+	64,
+	"Initial FResource pool slot count");
+
+} // namespace
 
 bool FResourceModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 {
@@ -20,29 +35,31 @@ bool FResourceModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext&
 	{
 	case EModuleStage::Init:
 	{
-		FGCModule* GC = App.GetModule<FGCModule>();
-		if (!GC)
+		FGCModule* GCModule = App.GetModule<FGCModule>();
+		if (!GCModule)
 		{
 			CATTY_CORE_ERROR("FResourceModule: GC module missing");
 			return false;
 		}
-		if (!ResourceManager.Initialize(GC->GetGC()))
+
+		FGC& GC = GCModule->GetGC();
+		const int PackageSlots = (std::max)(1, GCVarPackagePoolInitial.GetValue());
+		const int ResourceSlots = (std::max)(1, GCVarResourcePoolInitial.GetValue());
+		GC.RegisterObjectType<FPackage>(
+			static_cast<std::size_t>(PackageSlots),
+			&FPackage::StaticTearDown);
+		GC.RegisterObjectType<FResource>(
+			static_cast<std::size_t>(ResourceSlots),
+			&FResource::StaticTearDown);
+
+		if (!ResourceManager.Initialize())
 		{
 			CATTY_CORE_ERROR("FResourceModule: Initialize failed");
 			return false;
 		}
-
-		LuaReadyHandle = App.GetScriptSystem().GetOnLuaReady().AddRaw(
-			this,
-			&FResourceModule::OnLuaReady);
 		return true;
 	}
 	case EModuleStage::Shutdown:
-		if (LuaReadyHandle.IsValid())
-		{
-			App.GetScriptSystem().GetOnLuaReady().Remove(LuaReadyHandle);
-			LuaReadyHandle = {};
-		}
 		if (ResourceManager.IsInitialized())
 		{
 			ResourceManager.Shutdown();

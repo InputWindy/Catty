@@ -14,8 +14,8 @@ class FObjectRef;
  * Soft reference string (UE FSoftObjectPath lite).
  * Serialisable object address — not a live FObjectRef wrapper.
  *
- * Game code resolves via Resolve() / TryLoad() (uses GApp Resource module).
- * FResourceManager stays an engine detail — world / gameplay should not see it.
+ * Game code resolves via Resolve() / TryLoad() (free helpers → Resource module).
+ * Prefer soft paths over talking to FResourceManager directly.
  *
  * Supported forms:
  *   /Game/Maps/Demo.Demo

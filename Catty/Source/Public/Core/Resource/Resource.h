@@ -34,13 +34,10 @@ enum class EResourceType : std::uint8_t
  *
  * Example:
  * ```
- *   Catty::FObjectRef Pkg = ResourceManager.GetTransientPackage();
- *   Catty::FObjectRef Hero = ResourceManager.CreateResource(
- *       Pkg, "T_Hero", "Textures/T_Hero.png");
- *   if (Catty::FResource* Res = Hero.Cast<Catty::FResource>())
- *   {
- *       ResourceManager.Flush(Hero);
- *   }
+ *   Catty::FObjectRef Pkg = Catty::GetTransientPackage();
+ *   Catty::FObjectRef Hero = Catty::NewObject<Catty::FResource>(...);
+ *   Catty::RegisterResource(Hero);
+ *   Catty::FlushResource(Hero);
  * ```
  */
 CATTY_OBJECT()
@@ -56,6 +53,9 @@ public:
 		EResourceType InType,
 		std::string InSourcePath);
 	virtual ~FResource() override;
+
+	/** FGC pool TearDown — Unregister + ReleaseResourceId via ResourceManager, then ClearOuter. */
+	static void StaticTearDown(FResource* Resource);
 
 	// ---------------------------------------------------------------------------
 	// Queries (C++ typed Id — FResourceId not a CATTY_FUNCTION return kind yet)

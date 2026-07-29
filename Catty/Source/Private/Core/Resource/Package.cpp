@@ -1,7 +1,9 @@
 ﻿#include <Core/Resource/Package.h>
 
+#include <Core/GC.h>
 #include <Core/Log.h>
 #include <Core/Resource/Resource.h>
+#include <Core/Resource/ResourceManager.h>
 
 #include <unordered_map>
 #include <vector>
@@ -85,6 +87,42 @@ FPackage::~FPackage()
 	}
 
 	Objects.clear();
+}
+
+void FPackage::StaticTearDown(FPackage* Package)
+{
+	if (!Package)
+	{
+		return;
+	}
+
+	ClearTransientPackageIf(Package);
+
+	if (Package->Objects.empty())
+	{
+		return;
+	}
+
+	CATTY_CORE_ERROR(
+		"FPackage::StaticTearDown: '{}' still has {} object(s) — destroying leftovers",
+		Package->GetName(),
+		Package->GetObjectCount());
+
+	std::vector<FObject*> Snapshot;
+	Snapshot.reserve(Package->Objects.size());
+	for (const auto& Pair : Package->Objects)
+	{
+		Snapshot.push_back(Pair.second);
+	}
+
+	FGC* GC = Detail::GetGC();
+	for (FObject* Object : Snapshot)
+	{
+		if (Object && GC)
+		{
+			GC->DestroyObjectImmediate(Object);
+		}
+	}
 }
 
 bool FPackage::IsPersistent() const

@@ -1,7 +1,5 @@
 #include <Core/SoftObjectPath.h>
 
-#include <Core/App.h>
-#include <Core/Modules/ResourceModule.h>
 #include <Core/Object.h>
 #include <Core/Paths.h>
 #include <Core/Resource/ResourceManager.h>
@@ -249,43 +247,14 @@ bool FSoftObjectPath::operator==(const FSoftObjectPath& Other) const
 		&& SubPath == Other.SubPath;
 }
 
-namespace
-{
-
-[[nodiscard]] FResourceManager* GetAppResourceManager()
-{
-	if (!GApp)
-	{
-		return nullptr;
-	}
-	FResourceModule* Module = GApp->GetModule<FResourceModule>();
-	if (!Module)
-	{
-		return nullptr;
-	}
-	return &Module->GetResourceManager();
-}
-
-} // namespace
-
 FObjectRef FSoftObjectPath::Resolve() const
 {
-	const FResourceManager* Manager = GetAppResourceManager();
-	if (!Manager)
-	{
-		return {};
-	}
-	return Manager->Resolve(*this);
+	return Catty::Resolve(*this);
 }
 
 FObjectRef FSoftObjectPath::TryLoad() const
 {
-	FResourceManager* Manager = GetAppResourceManager();
-	if (!Manager)
-	{
-		return {};
-	}
-	return Manager->TryLoad(*this);
+	return Catty::TryLoad(*this);
 }
 
 } // namespace Catty
