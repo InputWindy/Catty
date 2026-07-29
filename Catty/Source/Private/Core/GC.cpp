@@ -4,6 +4,8 @@
 #include <Core/App.h>
 #include <Core/Log.h>
 #include <Core/Modules/GCModule.h>
+#include <Core/Paths.h>
+#include <Core/Resource/Package.h>
 #include <ObjectReflectTypes.gen.h>
 
 #include <algorithm>
@@ -83,6 +85,41 @@ void FGC::RegisterObject(FObject& Object)
 
 	Object.GC = this;
 	LiveObjects.push_back(&Object);
+}
+
+FObjectRef FGC::FindPackage(const std::string& PackageName) const
+{
+	if (!bInitialized)
+	{
+		return {};
+	}
+
+	const std::string Key = FPaths::NormalizePackagePath(PackageName);
+	if (Key.empty())
+	{
+		return {};
+	}
+
+	for (FObject* Object : LiveObjects)
+	{
+		if (!Object || Object->IsPendingKill())
+		{
+			continue;
+		}
+
+		auto* Package = dynamic_cast<FPackage*>(Object);
+		if (!Package)
+		{
+			continue;
+		}
+
+		if (FPaths::NormalizePackagePath(Package->GetName()) == Key)
+		{
+			return FObjectRef::Wrap(Package);
+		}
+	}
+
+	return {};
 }
 
 void FGC::UnregisterObject(FObject& Object)

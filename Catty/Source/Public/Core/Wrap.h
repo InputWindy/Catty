@@ -74,6 +74,12 @@ inline void PurgePendingKill()
 	}
 }
 
+[[nodiscard]] inline FObjectRef FindPackage(const std::string& PackageName)
+{
+	FGC* GC = Detail::GetGC();
+	return GC ? GC->FindPackage(PackageName) : FObjectRef{};
+}
+
 // ---------------------------------------------------------------------------
 // Resource (Lua-facing; Create/Register/Unload/Flush stay on FResourceManager)
 // ---------------------------------------------------------------------------

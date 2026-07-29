@@ -23,6 +23,7 @@ class FResourceServer;
  * Owns PathName → FObjectRef catalog only. Does not create game resources —
  * callers allocate via FGC::NewObject then RegisterResource on this manager.
  * LoadPackage rebuilds objects internally while deserializing.
+ * Package residency is answered by FGC::FindPackage — not this manager.
  *
  * Lua / script shortcuts live in Core/Wrap.h. C++ uses this class via
  * Detail::GetResourceManager() or GApp Resource module.
@@ -88,7 +89,6 @@ private:
 	[[nodiscard]] static std::string MakeResourceCatalogKey(const FResource& Resource);
 	[[nodiscard]] static std::string NormalizeResourceVirtualPath(const std::string& VirtualPath);
 
-	[[nodiscard]] FObjectRef FindLoadedPackageByName(const std::string& Name) const;
 	void UnregisterResourcesInPackage(const std::string& PackageName);
 
 	/** Deserialize path only: NewObject + package table + catalog Register. */

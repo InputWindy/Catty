@@ -267,33 +267,6 @@ std::string FResourceManager::NormalizeResourceVirtualPath(const std::string& Vi
 	return Path;
 }
 
-FObjectRef FResourceManager::FindLoadedPackageByName(const std::string& Name) const
-{
-	const std::string Key = NormalizePackageName(Name);
-	if (Key.empty())
-	{
-		return {};
-	}
-
-	for (const auto& Pair : Resources)
-	{
-		FResource* Resource = Pair.second.Cast<FResource>();
-		if (!Resource)
-		{
-			continue;
-		}
-
-		FObjectRef PackageRef = Resource->GetPackage();
-		FPackage* Package = PackageRef.Cast<FPackage>();
-		if (Package && NormalizePackageName(Package->GetName()) == Key)
-		{
-			return PackageRef;
-		}
-	}
-
-	return {};
-}
-
 void FResourceManager::UnregisterResourcesInPackage(const std::string& PackageName)
 {
 	const std::string Key = NormalizePackageName(PackageName);
@@ -575,7 +548,8 @@ FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
 		return Existing;
 	}
 
-	if (!FindLoadedPackageByName(SoftPath.GetPackageName()))
+	FGC* GC = Detail::GetGC();
+	if (!GC || !GC->FindPackage(SoftPath.GetPackageName()))
 	{
 		const std::string Filename = FPaths::ConvertPackageNameToFilename(SoftPath.GetPackageName());
 		if (Filename.empty())
@@ -706,7 +680,8 @@ bool FResourceManager::SavePackageInternal(
 					continue;
 				}
 
-				FObjectRef DepPackage = FindLoadedPackageByName(DepName);
+				FGC* GC = Detail::GetGC();
+				FObjectRef DepPackage = GC ? GC->FindPackage(DepName) : FObjectRef{};
 				FPackage* DepPtr = DepPackage.Cast<FPackage>();
 				if (!DepPtr)
 				{
@@ -841,7 +816,8 @@ FObjectRef FResourceManager::LoadPackageInternal(
 
 			if (!DepName.empty())
 			{
-				if (FindLoadedPackageByName(DepName))
+				FGC* GC = Detail::GetGC();
+				if (GC && GC->FindPackage(DepName))
 				{
 					continue;
 				}
@@ -873,7 +849,8 @@ FObjectRef FResourceManager::LoadPackageInternal(
 		PackageName = FilePath;
 	}
 
-	if (FObjectRef Existing = FindLoadedPackageByName(PackageName))
+	FGC* GC = Detail::GetGC();
+	if (FObjectRef Existing = GC ? GC->FindPackage(PackageName) : FObjectRef{})
 	{
 		CATTY_CORE_WARN(
 			"FResourceManager::LoadPackage: '{}' already loaded — returning existing",
@@ -882,7 +859,6 @@ FObjectRef FResourceManager::LoadPackageInternal(
 		return Existing;
 	}
 
-	FGC* GC = Detail::GetGC();
 	FObjectRef PackageRef = GC
 		? GC->NewObject<FPackage>(PackageName, EPackageFlags::Persistent)
 		: FObjectRef{};

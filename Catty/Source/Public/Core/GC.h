@@ -180,6 +180,12 @@ public:
 		return FObjectRef::Wrap(Object);
 	}
 
+	/**
+	 * Look up a live FPackage by name among GC LiveObjects.
+	 * ResourceManager does not track packages — ask FGC.
+	 */
+	[[nodiscard]] FObjectRef FindPackage(const std::string& PackageName) const;
+
 	void RegisterObject(FObject& Object);
 	void UnregisterObject(FObject& Object);
 
