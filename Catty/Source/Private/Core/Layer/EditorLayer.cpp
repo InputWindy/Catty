@@ -1,4 +1,4 @@
-#include "Editor/EditorLayer.h"
+﻿#include <Core/Layer/EditorLayer.h>
 
 #include <Core/App.h>
 #include <Core/ConsoleManager.h>
@@ -17,6 +17,9 @@
 #include <utility>
 
 namespace ed = ax::NodeEditor;
+
+namespace Catty
+{
 
 // Set to 1 to restore previous demo widgets inside editor panels.
 #define CATTY_EDITOR_DEMO_CONTENT 0
@@ -169,7 +172,7 @@ void PerspectiveRH(float* Out, float FovYRadians, float Aspect, float ZNear, flo
 } // namespace
 
 FEditorLayer::FEditorLayer()
-	: Catty::FLayer("EditorLayer")
+	: FLayer("EditorLayer")
 {
 	IdentityMatrix(ObjectMatrix);
 	ObjectMatrix[12] = 0.0f;
@@ -216,9 +219,9 @@ void FEditorLayer::OnDetach()
 }
 
 void FEditorLayer::OnUpdate(
-	Catty::EModuleStage /*Stage*/,
-	Catty::FApp& App,
-	Catty::FStageContext& /*Ctx*/)
+	EModuleStage /*Stage*/,
+	FApp& App,
+	FStageContext& /*Ctx*/)
 {
 	if (ImGui::GetCurrentContext() == nullptr)
 	{
@@ -248,7 +251,7 @@ void FEditorLayer::OnUpdate(
 #endif
 }
 
-void FEditorLayer::DrawMenuItems(Catty::FApp& App, float RowH)
+void FEditorLayer::DrawMenuItems(FApp& App, float RowH)
 {
 	// Full-row-height menu buttons (BeginMenu in a MenuBar only hits on text height).
 	auto DrawTopLevelMenu = [&](const char* Id, const char* Label, auto&& FillMenu)
@@ -539,7 +542,7 @@ void FEditorLayer::EnsureDefaultDockLayout(std::uint32_t DockspaceId)
 	ImGui::DockBuilderFinish(DockspaceId);
 }
 
-void FEditorLayer::DrawDockSpace(Catty::FApp& App)
+void FEditorLayer::DrawDockSpace(FApp& App)
 {
 	ImGuiViewport* Viewport = ImGui::GetMainViewport();
 	ImGui::SetNextWindowPos(Viewport->WorkPos);
@@ -816,7 +819,7 @@ void FEditorLayer::DrawContentBrowser()
 	ImGui::End();
 }
 
-void FEditorLayer::DrawOutputPanel(Catty::FApp& App)
+void FEditorLayer::DrawOutputPanel(FApp& App)
 {
 	ImGui::Begin(kWinOutput);
 #if CATTY_EDITOR_DEMO_CONTENT
@@ -989,7 +992,7 @@ void FEditorLayer::AppendOutput(std::string Line)
 	}
 }
 
-void FEditorLayer::ExecuteConsoleLine(Catty::FApp& App, const std::string& RawLine)
+void FEditorLayer::ExecuteConsoleLine(FApp& App, const std::string& RawLine)
 {
 	const std::string Line = TrimAscii(RawLine);
 	if (Line.empty())
@@ -1012,7 +1015,7 @@ void FEditorLayer::ExecuteConsoleLine(Catty::FApp& App, const std::string& RawLi
 
 	if (Lower == "dump")
 	{
-		Catty::FConsoleManager& Console = App.GetConsoleManager();
+		FConsoleManager& Console = App.GetConsoleManager();
 		const std::vector<std::string> Names = Console.GetNames();
 		AppendOutput("Registered CVars (" + std::to_string(Names.size()) + "):");
 		for (const std::string& CVarName : Names)
@@ -1040,8 +1043,8 @@ void FEditorLayer::ExecuteConsoleLine(Catty::FApp& App, const std::string& RawLi
 		Value = TrimAscii(Value);
 	}
 
-	Catty::FConsoleManager& Console = App.GetConsoleManager();
-	Catty::IConsoleVariable* Variable = Console.Find(CVarName.c_str());
+	FConsoleManager& Console = App.GetConsoleManager();
+	IConsoleVariable* Variable = Console.Find(CVarName.c_str());
 	if (!Variable)
 	{
 		AppendOutput("Unknown CVar: " + CVarName);
@@ -1059,3 +1062,5 @@ void FEditorLayer::ExecuteConsoleLine(Catty::FApp& App, const std::string& RawLi
 	}
 	AppendOutput(CVarName + " = " + Variable->GetString());
 }
+
+} // namespace Catty

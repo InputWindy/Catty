@@ -2,7 +2,6 @@
 #include <EntryPoint.h>
 #include <Core/Layer/ScriptLayer.h>
 
-#include "Editor/EditorLayer.h"
 #include "World/WorldLayer.h"
 
 #include <memory>
@@ -26,8 +25,8 @@ protected:
 	{
 		PushLayer(std::make_unique<FWorldLayer>("MainWorld"));
 
-#if defined(GAME_WITH_EDITOR)
-		PushOverlay(std::make_unique<FEditorLayer>());
+#if defined(GAME_WITH_EDITOR) && defined(CATTY_WITH_IMGUI)
+		PushOverlay(std::make_unique<Catty::FEditorLayer>());
 #endif
 		PushOverlay(std::make_unique<Catty::FScriptLayer>(
 			GetScriptSystem(),

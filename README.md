@@ -68,7 +68,7 @@ Catty/                          # 引擎仓库根
 │   └── object_reflect_codegen.bat  # FObject 反射表生成
 │   └── package.bat             # 打包 GUI
 │   └── generateProject.bat     # .cproject / 工作区 → .sln
-├── ThirdParty/                 # 第三方依赖
+├── Catty/ThirdParty/           # 引擎第三方依赖（fonts / nlohmann / …）
 ├── Doc/                        # 文档（HTML）
 │   ├── Engine/                 # 引擎 API / 架构
 │   └── …                       # UE 源码学习书（Nanite / Lumen / …）

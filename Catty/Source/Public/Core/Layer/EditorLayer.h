@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Export.h>
 #include <Core/Layer.h>
 #include <Core/Module.h>
 
@@ -9,10 +10,14 @@
 #include <string>
 #include <vector>
 
+namespace Catty
+{
+
 /**
- * Project-side editor shell (UE-inspired, ImGui docking + extensions).
+ * Engine editor shell (UE-inspired, ImGui docking + extensions).
+ * Games PushOverlay this when GAME_WITH_EDITOR is enabled.
  */
-class FEditorLayer final : public Catty::FLayer
+class CATTY_API FEditorLayer final : public FLayer
 {
 public:
 	enum class EPlayState : std::uint8_t
@@ -37,28 +42,28 @@ public:
 	virtual void OnDetach() override;
 
 	virtual void OnUpdate(
-		Catty::EModuleStage Stage,
-		Catty::FApp& App,
-		Catty::FStageContext& Ctx) override;
+		EModuleStage Stage,
+		FApp& App,
+		FStageContext& Ctx) override;
 
 private:
-	void DrawMenuItems(Catty::FApp& App, float RowH);
+	void DrawMenuItems(FApp& App, float RowH);
 	void DrawBrandBlock(float Size);
 	void DrawToolbarPrimary();
 	void DrawToolbarSecondary();
 	// menu → toolbar1(+brand) → toolbar2 → fixed main dockspace
-	void DrawDockSpace(Catty::FApp& App);
+	void DrawDockSpace(FApp& App);
 	void DrawDocumentPanel();
 	void DrawViewportPanel();
 	void DrawContentBrowser();
-	void DrawOutputPanel(Catty::FApp& App);
+	void DrawOutputPanel(FApp& App);
 	void DrawBlueprintPanel();
 	void DrawPlotPanel();
 	void DrawFileDialogs();
 
 	void RefreshContentListing();
 	void AppendOutput(std::string Line);
-	void ExecuteConsoleLine(Catty::FApp& App, const std::string& Line);
+	void ExecuteConsoleLine(FApp& App, const std::string& Line);
 	void EnsureDefaultDockLayout(std::uint32_t DockspaceId);
 
 	EPlayState PlayState = EPlayState::Stopped;
@@ -89,3 +94,5 @@ private:
 	void* NodeEditorContext = nullptr;
 	bool bBlueprintInited = false;
 };
+
+} // namespace Catty

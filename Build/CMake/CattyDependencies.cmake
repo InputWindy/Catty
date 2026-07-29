@@ -2,6 +2,41 @@
 
 include(FetchContent)
 
+# VS rebuilds re-run CMake when this file changes. Skip git "update" so offline /
+# flaky GitHub access does not break an already-populated Intermediate/_deps tree.
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL
+	"Skip FetchContent git update when already populated" FORCE)
+
+# If a previous populate left sources but lost CMake stamps, reuse the tree
+# instead of calling FetchContent_Populate (which may still hit the network).
+# Markers: relative paths that must exist under ${FETCHCONTENT_BASE_DIR}/<name>-src.
+macro(catty_fetchcontent_populate_or_reuse _name)
+	FetchContent_GetProperties(${_name})
+	if(NOT ${_name}_POPULATED)
+		string(TOLOWER "${_name}" _catty_fc_lower)
+		set(_catty_fc_src "${FETCHCONTENT_BASE_DIR}/${_catty_fc_lower}-src")
+		set(_catty_fc_ok FALSE)
+		foreach(_catty_fc_marker IN ITEMS ${ARGN})
+			if(EXISTS "${_catty_fc_src}/${_catty_fc_marker}")
+				set(_catty_fc_ok TRUE)
+				break()
+			endif()
+		endforeach()
+		if(_catty_fc_ok)
+			set(${_name}_SOURCE_DIR "${_catty_fc_src}")
+			set(${_name}_BINARY_DIR "${FETCHCONTENT_BASE_DIR}/${_catty_fc_lower}-build")
+			set(${_name}_POPULATED TRUE)
+			message(STATUS "Catty: reusing FetchContent ${_name} at ${${_name}_SOURCE_DIR}")
+		else()
+			FetchContent_Populate(${_name})
+		endif()
+		unset(_catty_fc_src)
+		unset(_catty_fc_ok)
+		unset(_catty_fc_lower)
+		unset(_catty_fc_marker)
+	endif()
+endmacro()
+
 set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
@@ -61,10 +96,10 @@ find_package(Threads REQUIRED)
 get_filename_component(_CATTY_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 get_filename_component(_CATTY_PUBLIC_HEADERS "${_CATTY_REPO_ROOT}/Catty/Source/Public" ABSOLUTE)
 
-# Include as <nlohmann/json.hpp> (vendored single-header under ThirdParty/nlohmann).
-set(_CATTY_VENDORED_NLOHMANN_JSON "${_CATTY_REPO_ROOT}/ThirdParty/nlohmann")
+# Include as <nlohmann/json.hpp> (vendored single-header under Catty/ThirdParty/nlohmann).
+set(_CATTY_VENDORED_NLOHMANN_JSON "${_CATTY_REPO_ROOT}/Catty/ThirdParty/nlohmann")
 if(EXISTS "${_CATTY_VENDORED_NLOHMANN_JSON}/json.hpp")
-	set(CATTY_NLOHMANN_JSON_INCLUDE_DIR "${_CATTY_REPO_ROOT}/ThirdParty" CACHE INTERNAL "nlohmann/json include root")
+	set(CATTY_NLOHMANN_JSON_INCLUDE_DIR "${_CATTY_REPO_ROOT}/Catty/ThirdParty" CACHE INTERNAL "nlohmann/json include root")
 	message(STATUS "Catty: nlohmann/json (vendored) at ${_CATTY_VENDORED_NLOHMANN_JSON}")
 else()
 	FetchContent_Declare(
@@ -80,9 +115,6 @@ else()
 endif()
 unset(_CATTY_VENDORED_NLOHMANN_JSON)
 
-# Prefer cached clones; avoid VS rebuilds re-running git populate.
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Skip FetchContent update steps when already populated")
-
 # ---------------------------------------------------------------------------
 # Dear ImGui + extensions via FetchContent (do not vendor these trees in git).
 # ---------------------------------------------------------------------------
@@ -92,10 +124,7 @@ FetchContent_Declare(
 	GIT_TAG v1.91.9-docking
 	GIT_SHALLOW TRUE
 )
-FetchContent_GetProperties(imgui)
-if(NOT imgui_POPULATED)
-	FetchContent_Populate(imgui)
-endif()
+catty_fetchcontent_populate_or_reuse(imgui imgui.cpp)
 set(CATTY_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}" CACHE INTERNAL "Dear ImGui source directory" FORCE)
 message(STATUS "Catty: ImGui (FetchContent) at ${CATTY_IMGUI_SOURCE_DIR}")
 
@@ -141,10 +170,7 @@ FetchContent_Declare(
 	GIT_TAG master
 	GIT_SHALLOW TRUE
 )
-FetchContent_GetProperties(imguizmo)
-if(NOT imguizmo_POPULATED)
-	FetchContent_Populate(imguizmo)
-endif()
+catty_fetchcontent_populate_or_reuse(imguizmo src/ImGuizmo.cpp ImGuizmo.cpp)
 if(EXISTS "${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp")
 	set(CATTY_IMGUIZMO_SOURCE_DIR "${imguizmo_SOURCE_DIR}/src" CACHE INTERNAL "ImGuizmo source directory" FORCE)
 elseif(EXISTS "${imguizmo_SOURCE_DIR}/ImGuizmo.cpp")
@@ -160,10 +186,7 @@ FetchContent_Declare(
 	GIT_TAG develop
 	GIT_SHALLOW TRUE
 )
-FetchContent_GetProperties(imgui_node_editor)
-if(NOT imgui_node_editor_POPULATED)
-	FetchContent_Populate(imgui_node_editor)
-endif()
+catty_fetchcontent_populate_or_reuse(imgui_node_editor imgui_node_editor.cpp)
 set(CATTY_IMGUI_NODE_EDITOR_SOURCE_DIR "${imgui_node_editor_SOURCE_DIR}" CACHE INTERNAL "imgui-node-editor source directory" FORCE)
 
 FetchContent_Declare(
@@ -172,10 +195,7 @@ FetchContent_Declare(
 	GIT_TAG v0.16
 	GIT_SHALLOW TRUE
 )
-FetchContent_GetProperties(implot)
-if(NOT implot_POPULATED)
-	FetchContent_Populate(implot)
-endif()
+catty_fetchcontent_populate_or_reuse(implot implot.cpp)
 set(CATTY_IMPLOT_SOURCE_DIR "${implot_SOURCE_DIR}" CACHE INTERNAL "ImPlot source directory" FORCE)
 
 FetchContent_Declare(
@@ -184,10 +204,7 @@ FetchContent_Declare(
 	GIT_TAG v0.6.7
 	GIT_SHALLOW TRUE
 )
-FetchContent_GetProperties(imgui_file_dialog)
-if(NOT imgui_file_dialog_POPULATED)
-	FetchContent_Populate(imgui_file_dialog)
-endif()
+catty_fetchcontent_populate_or_reuse(imgui_file_dialog ImGuiFileDialog.cpp)
 set(CATTY_IMGUI_FILE_DIALOG_SOURCE_DIR "${imgui_file_dialog_SOURCE_DIR}" CACHE INTERNAL "ImGuiFileDialog source directory" FORCE)
 
 FetchContent_Declare(
@@ -196,10 +213,7 @@ FetchContent_Declare(
 	GIT_TAG main
 	GIT_SHALLOW TRUE
 )
-FetchContent_GetProperties(icon_font_cpp_headers)
-if(NOT icon_font_cpp_headers_POPULATED)
-	FetchContent_Populate(icon_font_cpp_headers)
-endif()
+catty_fetchcontent_populate_or_reuse(icon_font_cpp_headers IconsFontAwesome6.h)
 set(CATTY_ICON_FONT_HEADERS_DIR "${icon_font_cpp_headers_SOURCE_DIR}" CACHE INTERNAL "IconFontCppHeaders include directory" FORCE)
 
 message(STATUS "Catty: ImGuizmo            ${CATTY_IMGUIZMO_SOURCE_DIR}")
@@ -288,13 +302,13 @@ message(STATUS "Catty: ImGui extensions: ${_CATTY_IMGUI_EXT_COUNT} source file(s
 unset(_CATTY_IMGUI_EXT_COUNT)
 
 # Engine fonts stay in-repo (binary assets copied next to the binary at build).
-set(_CATTY_TP "${_CATTY_REPO_ROOT}/ThirdParty")
+set(_CATTY_TP "${_CATTY_REPO_ROOT}/Catty/ThirdParty")
 set(CATTY_ENGINE_FONTS_DIR "${_CATTY_TP}/fonts" CACHE INTERNAL "Engine icon/UI fonts")
 
 # ---------------------------------------------------------------------------
 # Lua 5.4 (static) + sol2 (header-only bindings)
 # ---------------------------------------------------------------------------
-set(_CATTY_VENDORED_LUA "${_CATTY_REPO_ROOT}/ThirdParty/lua")
+set(_CATTY_VENDORED_LUA "${_CATTY_REPO_ROOT}/Catty/ThirdParty/lua")
 if(EXISTS "${_CATTY_VENDORED_LUA}/lua.h")
 	set(CATTY_LUA_SOURCE_DIR "${_CATTY_VENDORED_LUA}" CACHE INTERNAL "Lua source directory")
 	message(STATUS "Catty: Lua (vendored) at ${CATTY_LUA_SOURCE_DIR}")
@@ -308,10 +322,7 @@ else()
 		GIT_TAG v5.4.7
 		GIT_SHALLOW TRUE
 	)
-	FetchContent_GetProperties(lua_src)
-	if(NOT lua_src_POPULATED)
-		FetchContent_Populate(lua_src)
-	endif()
+	catty_fetchcontent_populate_or_reuse(lua_src lua.h)
 	# Upstream lua.git keeps sources in the repo root (not src/).
 	set(CATTY_LUA_SOURCE_DIR "${lua_src_SOURCE_DIR}" CACHE INTERNAL "Lua source directory")
 	message(STATUS "Catty: Lua (FetchContent) at ${CATTY_LUA_SOURCE_DIR}")
@@ -364,7 +375,7 @@ if(MSVC)
 	target_compile_definitions(lua PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
-set(_CATTY_VENDORED_SOL2 "${_CATTY_REPO_ROOT}/ThirdParty/sol2")
+set(_CATTY_VENDORED_SOL2 "${_CATTY_REPO_ROOT}/Catty/ThirdParty/sol2")
 if(EXISTS "${_CATTY_VENDORED_SOL2}/include/sol/sol.hpp")
 	set(CATTY_SOL2_INCLUDE_DIR "${_CATTY_VENDORED_SOL2}/include" CACHE INTERNAL "sol2 include directory")
 	message(STATUS "Catty: sol2 (vendored) at ${CATTY_SOL2_INCLUDE_DIR}")
@@ -375,10 +386,7 @@ else()
 		GIT_TAG v3.3.1
 		GIT_SHALLOW TRUE
 	)
-	FetchContent_GetProperties(sol2)
-	if(NOT sol2_POPULATED)
-		FetchContent_Populate(sol2)
-	endif()
+	catty_fetchcontent_populate_or_reuse(sol2 include/sol/sol.hpp)
 	set(CATTY_SOL2_INCLUDE_DIR "${sol2_SOURCE_DIR}/include" CACHE INTERNAL "sol2 include directory")
 	message(STATUS "Catty: sol2 (FetchContent) at ${CATTY_SOL2_INCLUDE_DIR}")
 endif()
@@ -389,7 +397,7 @@ unset(_CATTY_VENDORED_SOL2)
 # ---------------------------------------------------------------------------
 # refl-cpp (header-only) — optional / legacy; FObject reflection uses ObjectReflect.h + codegen.
 # ---------------------------------------------------------------------------
-set(_CATTY_VENDORED_REFL "${_CATTY_REPO_ROOT}/ThirdParty/refl-cpp")
+set(_CATTY_VENDORED_REFL "${_CATTY_REPO_ROOT}/Catty/ThirdParty/refl-cpp")
 if(EXISTS "${_CATTY_VENDORED_REFL}/include/refl.hpp")
 	set(CATTY_REFL_INCLUDE_DIR "${_CATTY_VENDORED_REFL}/include" CACHE INTERNAL "refl-cpp include directory")
 	message(STATUS "Catty: refl-cpp (vendored) at ${CATTY_REFL_INCLUDE_DIR}")
@@ -403,10 +411,7 @@ else()
 		GIT_TAG v0.12.4
 		GIT_SHALLOW TRUE
 	)
-	FetchContent_GetProperties(refl_cpp)
-	if(NOT refl_cpp_POPULATED)
-		FetchContent_Populate(refl_cpp)
-	endif()
+	catty_fetchcontent_populate_or_reuse(refl_cpp include/refl.hpp)
 	set(CATTY_REFL_INCLUDE_DIR "${refl_cpp_SOURCE_DIR}/include" CACHE INTERNAL "refl-cpp include directory")
 	message(STATUS "Catty: refl-cpp (FetchContent) at ${CATTY_REFL_INCLUDE_DIR}")
 endif()

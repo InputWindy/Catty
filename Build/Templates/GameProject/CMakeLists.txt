@@ -33,8 +33,8 @@ catty_ensure_workspace_dirs()
 catty_warn_if_not_intermediate_binary_dir()
 
 option(CATTY_BUILD_SHARED "Build Catty engine as a shared library (DLL)" ON)
-# Project-owned: push FEditorLayer from the game App. Engine does not know about editors.
-option(GAME_WITH_EDITOR "Enable project EditorLayer (disable for shipping)" ON)
+# Push Catty::FEditorLayer from the game App (layer lives in Catty.dll under Core/Layer).
+option(GAME_WITH_EDITOR "Enable Catty::FEditorLayer overlay (disable for shipping)" ON)
 
 # Enabled plugins come from the sibling .cproject (or -DCATTY_CPROJECT=...).
 if(NOT CATTY_CPROJECT)
@@ -62,10 +62,6 @@ set(GAME_SCRIPTS_DIR "${GAME_ROOT}/Scripts")
 catty_collect_sources(GAME_SOURCES "${GAME_SOURCE_DIR}")
 if(GAME_SOURCES STREQUAL "")
 	message(FATAL_ERROR "{{PROJECT_NAME}}: no sources under Source/")
-endif()
-
-if(NOT GAME_WITH_EDITOR)
-	list(FILTER GAME_SOURCES EXCLUDE REGEX "[\\\\/]Editor[\\\\/]")
 endif()
 
 add_executable({{PROJECT_NAME}} ${GAME_SOURCES})

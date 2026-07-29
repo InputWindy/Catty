@@ -46,6 +46,9 @@
 #include <Core/Resource/ResourceManager.h>
 #include <Core/Layer/ScriptSystem.h>
 #include <Core/Layer/ScriptLayer.h>
+#if defined(CATTY_WITH_IMGUI)
+#	include <Core/Layer/EditorLayer.h>
+#endif
 #include <Core/Server/ThreadedServer.h>
 #include <Core/Server/ServerTask.h>
 #include <Core/Server/TaskContext.h>

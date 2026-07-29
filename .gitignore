@@ -64,9 +64,9 @@ __pycache__/
 /Catty/Source/Generated/
 
 # Large UI libs are FetchContent'd — do not re-vendor into git.
-/ThirdParty/imgui/
-/ThirdParty/ImGuizmo/
-/ThirdParty/imgui-node-editor/
-/ThirdParty/implot/
-/ThirdParty/ImGuiFileDialog/
-/ThirdParty/IconFontCppHeaders/
+/Catty/ThirdParty/imgui/
+/Catty/ThirdParty/ImGuizmo/
+/Catty/ThirdParty/imgui-node-editor/
+/Catty/ThirdParty/implot/
+/Catty/ThirdParty/ImGuiFileDialog/
+/Catty/ThirdParty/IconFontCppHeaders/
