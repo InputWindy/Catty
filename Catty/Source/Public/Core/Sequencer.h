@@ -35,14 +35,13 @@
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <string>
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <Core/Log.h>
+#include <Core/FrameStage.h>
 
 namespace Catty
 {
@@ -393,91 +392,6 @@ public:
 	TSequencer(const TSequencer&) = delete;
 	TSequencer& operator=(const TSequencer&) = delete;
 
-	void SetDebugTag(const char* Tag)
-	{
-		DebugTag = Tag ? Tag : "Seq";
-	}
-
-	[[nodiscard]] const char* GetDebugTag() const
-	{
-		return DebugTag.c_str();
-	}
-
-	/** Dump gate + PreferMainThread object cursors (stall diagnostics). */
-	void DumpDebugState(const char* Reason) const
-	{
-		std::array<FGateState, NumStages> GateCopy{};
-		std::size_t ObjectCount = 0;
-		bool bStop = false;
-		{
-			std::lock_guard<std::mutex> Lock(GateMutex);
-			GateCopy = GateStates;
-			bStop = bStopRequested;
-			ObjectCount = RegisteredObjectCount.load(std::memory_order_relaxed);
-		}
-		struct FObjCursor
-		{
-			FPipelineObjectKey Key = 0;
-			std::size_t Next = 0;
-			std::uint64_t Seen = 0;
-		};
-		std::vector<FObjCursor> Cursors;
-		{
-			std::lock_guard<std::mutex> Lock(RegistryMutex);
-			Cursors.reserve(MainThreadKeys.size());
-			for (FPipelineObjectKey Key : MainThreadKeys)
-			{
-				const auto It = ObjectsByKey.find(Key);
-				if (It == ObjectsByKey.end() || !It->second.SeenGenerations)
-				{
-					continue;
-				}
-				FObjCursor Cursor;
-				Cursor.Key = Key;
-				Cursor.Next = It->second.NextStageIndex;
-				if (Cursor.Next < NumStages)
-				{
-					Cursor.Seen = (*It->second.SeenGenerations)[Cursor.Next];
-				}
-				Cursors.push_back(Cursor);
-			}
-		}
-		CATTY_CORE_WARN(
-			"[Seq:{}] DUMP {} stop={} objects={} mainKeys={}",
-			DebugTag,
-			Reason ? Reason : "",
-			bStop ? 1 : 0,
-			ObjectCount,
-			Cursors.size());
-		for (std::size_t I = 0; I < NumStages; ++I)
-		{
-			const FGateState& Gate = GateCopy[I];
-			CATTY_CORE_WARN(
-				"[Seq:{}]  gate[{}] gen={} done={}/{} ext={}/{} pinRaised={}",
-				DebugTag,
-				I,
-				Gate.StartGeneration,
-				Gate.CompleteCount,
-				ObjectCount,
-				Gate.ReceivedExternal,
-				Gate.ExpectedExternal,
-				Gate.bPinRaisedThisRound ? 1 : 0);
-		}
-		for (const FObjCursor& Cursor : Cursors)
-		{
-			const std::uint64_t Gen =
-				(Cursor.Next < NumStages) ? GateCopy[Cursor.Next].StartGeneration : 0;
-			CATTY_CORE_WARN(
-				"[Seq:{}]  obj key={} nextStage={} seen={} gateGen={} waiting={}",
-				DebugTag,
-				Cursor.Key,
-				Cursor.Next,
-				Cursor.Seen,
-				Gen,
-				(Cursor.Next < NumStages && Gen <= Cursor.Seen) ? 1 : 0);
-		}
-	}
-
 	[[nodiscard]] TPipelineContext<FObject>& GetContext()
 	{
 		return Context;
@@ -578,8 +492,7 @@ public:
 		}
 		if (bOpened)
 		{
-			DebugLogEvent("ForceOpen", StageIndex);
-			MaybeFlushPendingForOpenedStage(StageIndex);
+			OnStageGateOpened(StageIndex);
 			GateCV.notify_all();
 		}
 		if (bRaiseImmediate)
@@ -775,7 +688,7 @@ public:
 		}
 		if (bShouldOpen)
 		{
-			MaybeFlushPendingForOpenedStage(GateStageIndex);
+			OnStageGateOpened(GateStageIndex);
 			GateCV.notify_all();
 		}
 		if (bRaiseImmediate)
@@ -823,7 +736,7 @@ public:
 		}
 		for (std::size_t StageIndex : Opened)
 		{
-			MaybeFlushPendingForOpenedStage(StageIndex);
+			OnStageGateOpened(StageIndex);
 		}
 		if (!Opened.empty())
 		{
@@ -874,7 +787,7 @@ public:
 			}
 			if (bReopened)
 			{
-				MaybeFlushPendingForOpenedStage(StageIndex);
+				OnStageGateOpened(StageIndex);
 				GateCV.notify_all();
 			}
 			if (bRaiseImmediate)
@@ -1104,18 +1017,7 @@ private:
 				*OutRaisePinImmediate = true;
 			}
 		}
-		DebugLogEvent("OpenGate", GateStageIndex);
 		return true;
-	}
-
-	void DebugLogEvent(const char* Event, std::size_t StageIndex) const
-	{
-		const int Left = DebugLogBudget.fetch_sub(1, std::memory_order_relaxed);
-		if (Left <= 0)
-		{
-			return;
-		}
-		CATTY_CORE_WARN("[Seq:{}] {} stageIndex={}", DebugTag, Event, StageIndex);
 	}
 
 	void PushCommand(FPipelineObjectKey TargetKey, FStage TargetStage, FCommand Cmd)
@@ -1193,7 +1095,7 @@ private:
 			WaitOutstandingListens(Key);
 			Object.OnSequencerStage(Stage);
 			SignalStageComplete(Key, Stage);
-			SetNextStageIndex(Key, StageIndex + 1 >= NumStages ? 0 : StageIndex + 1);
+			SetNextStageIndex(Key, NextIndexAfterStage(StageIndex, Stage));
 		}
 		return true;
 	}
@@ -1234,20 +1136,60 @@ private:
 		WaitOutstandingListens(Key);
 		Object.OnSequencerStage(Stage);
 		SignalStageComplete(Key, Stage);
-		SetNextStageIndex(Key, StageIndex + 1 >= NumStages ? 0 : StageIndex + 1);
+		const std::size_t NextIndex = NextIndexAfterStage(StageIndex, Stage);
+		SetNextStageIndex(Key, NextIndex);
+		return true;
+	}
+
+	[[nodiscard]] static constexpr bool IsAccumulatedFixedStage(FStage Stage)
+	{
+		if constexpr (requires { TTraits::GetStageRepeatPolicy(Stage); })
 		{
-			const int Left = DebugLogBudget.fetch_sub(1, std::memory_order_relaxed);
-			if (Left > 0)
+			return TTraits::GetStageRepeatPolicy(Stage) == EStageRepeatPolicy::AccumulatedFixed;
+		}
+		return false;
+	}
+
+	/** After AccumulatedFixed, stay so ForceOpen can re-enter; else advance. */
+	[[nodiscard]] std::size_t NextIndexAfterStage(std::size_t StageIndex, FStage Stage) const
+	{
+		if (IsAccumulatedFixedStage(Stage))
+		{
+			return StageIndex;
+		}
+		return StageIndex + 1 >= NumStages ? 0 : StageIndex + 1;
+	}
+
+	/**
+	 * When a later gate opens (e.g. Update), release objects held on AccumulatedFixed
+	 * stages before it (completed FU, waiting reopen or Update).
+	 */
+	void AdvanceHeldRepeatObjectsTo(std::size_t OpenedStageIndex)
+	{
+		if (OpenedStageIndex == 0 || OpenedStageIndex >= NumStages)
+		{
+			return;
+		}
+		std::lock_guard<std::mutex> Lock(RegistryMutex);
+		for (auto& Pair : ObjectsByKey)
+		{
+			std::size_t& Next = Pair.second.NextStageIndex;
+			if (Next >= OpenedStageIndex || Next >= NumStages)
 			{
-				CATTY_CORE_WARN(
-					"[Seq:{}] Pump key={} stage={} -> next={}",
-					DebugTag,
-					Key,
-					StageIndex,
-					StageIndex + 1 >= NumStages ? 0 : StageIndex + 1);
+				continue;
+			}
+			const FStage Cur = TTraits::IndexToStage(Next);
+			if (IsAccumulatedFixedStage(Cur))
+			{
+				Next = OpenedStageIndex;
 			}
 		}
-		return true;
+	}
+
+	void OnStageGateOpened(std::size_t StageIndex)
+	{
+		MaybeFlushPendingForOpenedStage(StageIndex);
+		AdvanceHeldRepeatObjectsTo(StageIndex);
 	}
 
 	void SetNextStageIndex(FPipelineObjectKey Key, std::size_t NextIndex)
@@ -1278,7 +1220,6 @@ private:
 
 	void RaiseStagePin(std::size_t StageIndex)
 	{
-		DebugLogEvent("RaisePin", StageIndex);
 		std::vector<std::function<void(std::size_t)>> Listeners;
 		{
 			std::lock_guard<std::mutex> Lock(PinListenerMutex);
@@ -1310,8 +1251,6 @@ private:
 	std::vector<std::thread> WorkerThreads;
 	std::atomic<std::size_t> RegisteredObjectCount{0};
 	bool bLoopsStarted = false;
-	std::string DebugTag = "Seq";
-	mutable std::atomic<int> DebugLogBudget{80};
 
 	std::mutex PendingMutex;
 	std::vector<FObject*> PendingAdd;

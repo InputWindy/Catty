@@ -1,7 +1,4 @@
 #include <Core/Layer.h>
-#include <Core/Log.h>
-
-#include <atomic>
 
 namespace Catty
 {
@@ -42,13 +39,7 @@ void FLayer::OnSequencerStage(EFrameStage Stage)
 {
 	// Attach/Detach frame stages are lockstep sync points only.
 	// Stack enter/leave is Attach()/Detach() (PushLayer / FlushPendingRemoves).
-	static std::atomic<int> LayerLogBudget{40};
-	const int Left = LayerLogBudget.fetch_sub(1, std::memory_order_relaxed);
-	if (Left > 0)
-	{
-		CATTY_CORE_WARN("[Layer] {} OnSequencerStage {}", Name, FrameStageName(Stage));
-	}
+	(void)Stage;
 }
-
 
 } // namespace Catty

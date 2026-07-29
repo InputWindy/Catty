@@ -30,24 +30,4 @@ enum class EStageRepeatPolicy : std::uint8_t
 	AccumulatedFixed
 };
 
-[[nodiscard]] inline const char* FrameStageName(EFrameStage Stage)
-{
-	switch (Stage)
-	{
-	case EFrameStage::Attach: return "Attach";
-	case EFrameStage::BeginFrame: return "BeginFrame";
-	case EFrameStage::ProcessInput: return "ProcessInput";
-	case EFrameStage::FixedUpdate: return "FixedUpdate";
-	case EFrameStage::Update: return "Update";
-	case EFrameStage::LateUpdate: return "LateUpdate";
-	case EFrameStage::PreRender: return "PreRender";
-	case EFrameStage::Render: return "Render";
-	case EFrameStage::PostRender: return "PostRender";
-	case EFrameStage::EndFrame: return "EndFrame";
-	case EFrameStage::Detach: return "Detach";
-	case EFrameStage::PrepareExit: return "PrepareExit";
-	default: return "?";
-	}
-}
-
 } // namespace Catty

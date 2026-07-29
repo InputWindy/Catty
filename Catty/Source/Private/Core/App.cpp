@@ -260,13 +260,7 @@ bool FApp::Initialize()
 		ShutdownAppLogging(*this);
 		return false;
 	}
-	GetA().SetDebugTag("Module");
-	GetB().SetDebugTag("Layer");
 	InstallFixedUpdateRepeat();
-	CATTY_CORE_WARN(
-		"[App] Frame graph built: modules={} layers={}",
-		Modules.size(),
-		LayerBindings.size());
 
 	LastFrameTimeSeconds = std::chrono::duration<double>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -307,7 +301,6 @@ void FApp::Run()
 
 void FApp::OnWorkersStarted()
 {
-	CATTY_CORE_WARN("[App] OnWorkersStarted → BootstrapFirstAttach");
 	BootstrapFirstAttach();
 }
 
@@ -355,7 +348,7 @@ bool FApp::BuildDefaultFrameWiring()
 	WireSame(EFrameStage::Detach);
 	WireNext(EFrameStage::Detach, EFrameStage::Attach);
 	WireSame(EFrameStage::PrepareExit);
-	WireNext(EFrameStage::PrepareExit, EFrameStage::Detach);
+	// PrepareExit is an exit-drain slot; do not also feed Module.Detach (EndFrame already does).
 
 	if (!BindDep(GetA(), GetB(), ModuleToLayer))
 	{
@@ -378,14 +371,8 @@ void FApp::InstallFixedUpdateRepeat()
 	GetA().BindGateExternalExpect(UpdateIndex, 1);
 	GetB().AddPinRaiseListener([this, PiIndex, FuIndex, UpdateIndex, DetachIndex](std::size_t Raised)
 	{
-		static std::atomic<int> FuLogBudget{40};
-		const int LogLeft = FuLogBudget.fetch_sub(1, std::memory_order_relaxed);
 		if (Raised == DetachIndex)
 		{
-			if (LogLeft > 0)
-			{
-				CATTY_CORE_WARN("[App] Layer pin Detach → arm frame tick");
-			}
 			bFrameTickArmed.store(true, std::memory_order_release);
 			return;
 		}
@@ -393,20 +380,10 @@ void FApp::InstallFixedUpdateRepeat()
 		{
 			if (FixedStepsRemaining <= 0)
 			{
-				if (LogLeft > 0)
-				{
-					CATTY_CORE_WARN("[App] Layer pin PI → ForceOpen Module.Update (no FU)");
-				}
 				GetA().ForceOpenGate(EFrameStage::Update);
 			}
 			else
 			{
-				if (LogLeft > 0)
-				{
-					CATTY_CORE_WARN(
-						"[App] Layer pin PI → Notify Module.FU (steps={})",
-						FixedStepsRemaining);
-				}
 				GetA().NotifyExternalPin(FuIndex);
 			}
 			return;
@@ -418,21 +395,11 @@ void FApp::InstallFixedUpdateRepeat()
 		if (FixedStepsRemaining > 1)
 		{
 			--FixedStepsRemaining;
-			if (LogLeft > 0)
-			{
-				CATTY_CORE_WARN(
-					"[App] Layer pin FU → ForceOpen Module.FU again (left={})",
-					FixedStepsRemaining);
-			}
 			GetA().ForceOpenGate(EFrameStage::FixedUpdate);
 		}
 		else
 		{
 			FixedStepsRemaining = 0;
-			if (LogLeft > 0)
-			{
-				CATTY_CORE_WARN("[App] Layer pin FU → Notify Module.Update");
-			}
 			GetA().NotifyExternalPin(UpdateIndex);
 		}
 	});
@@ -440,7 +407,6 @@ void FApp::InstallFixedUpdateRepeat()
 
 void FApp::BootstrapFirstAttach()
 {
-	CATTY_CORE_WARN("[App] BootstrapFirstAttach ForceOpen Module.Attach");
 	GetA().ForceOpenGate(EFrameStage::Attach);
 }
 
@@ -877,18 +843,6 @@ void IModule::OnSequencerStage(EFrameStage Stage)
 	if (!GApp)
 	{
 		return;
-	}
-
-	{
-		static std::atomic<int> StageLogBudget{60};
-		const int Left = StageLogBudget.fetch_sub(1, std::memory_order_relaxed);
-		if (Left > 0)
-		{
-			CATTY_CORE_WARN(
-				"[Module] {} OnSequencerStage {}",
-				GetName(),
-				FrameStageName(Stage));
-		}
 	}
 
 	if (Stage == EFrameStage::BeginFrame)
