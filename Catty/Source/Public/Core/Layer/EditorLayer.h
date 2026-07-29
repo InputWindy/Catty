@@ -62,8 +62,10 @@ private:
 	void DrawOutputPanel(FApp& App);
 	void DrawAgentPanel();
 	void DrawBlueprintPanel();
+	void DrawSequenceGraphPanel(FApp& App);
 	void DrawPlotPanel();
 	void DrawFileDialogs();
+	void EnsureSequenceGraphNodeLayout();
 
 	void EnsureContentMounts();
 	void SelectContentFolder(const std::string& VirtualPath);
@@ -87,10 +89,13 @@ private:
 	bool bShowOutputPanel = true;
 	bool bShowAgentPanel = true;
 	bool bShowBlueprintPanel = true;
+	bool bShowSequenceGraphPanel = true;
 	bool bShowPlotPanel = true;
 	bool bAutoScrollOutput = true;
 	bool bAutoScrollAgent = true;
 	bool bBuildDefaultLayout = true;
+	/** 0 = Frame lockstep (BuildGraph), 1 = FApp::Run lifecycle. */
+	int SequenceGraphViewMode = 0;
 
 	/** UE-style virtual path currently shown on the right (e.g. "/Game" or "/Game/Maps"). */
 	std::string CurrentVirtualPath = "/Game";
@@ -126,9 +131,14 @@ private:
 	EViewportTool ViewportTool = EViewportTool::Select;
 	int GizmoOperation = 7; // ImGuizmo::TRANSLATE (kept in sync with ViewportTool)
 
-	// Blueprint node editor
+	// Blueprint node editor (demo panel)
 	void* NodeEditorContext = nullptr;
 	bool bBlueprintInited = false;
+
+	// SequenceGraph / FApp flow visualizer
+	void* SequenceGraphEditorContext = nullptr;
+	bool bSequenceGraphEditorInited = false;
+	bool bSequenceGraphLayoutApplied = false;
 };
 
 } // namespace Catty

@@ -72,7 +72,57 @@ constexpr const char* kWinContent = ICON_FA_FOLDER_TREE " Content Browser";
 constexpr const char* kWinOutput = ICON_FA_TERMINAL " Output Log";
 constexpr const char* kWinAgent = ICON_FA_COMMENTS " Agent";
 constexpr const char* kWinBlueprint = ICON_FA_DIAGRAM_PROJECT " Blueprint";
+constexpr const char* kWinSequenceGraph = ICON_FA_SHARE_NODES " Sequence Graph";
 constexpr const char* kWinPlot = ICON_FA_CHART_LINE " Plot";
+
+[[nodiscard]] const char* FrameStageLabel(EFrameStage Stage)
+{
+	switch (Stage)
+	{
+	case EFrameStage::Attach: return "Attach";
+	case EFrameStage::BeginFrame: return "BeginFrame";
+	case EFrameStage::ProcessInput: return "ProcessInput";
+	case EFrameStage::FixedUpdate: return "FixedUpdate";
+	case EFrameStage::Update: return "Update";
+	case EFrameStage::LateUpdate: return "LateUpdate";
+	case EFrameStage::PreRender: return "PreRender";
+	case EFrameStage::Render: return "Render";
+	case EFrameStage::PostRender: return "PostRender";
+	case EFrameStage::EndFrame: return "EndFrame";
+	case EFrameStage::Detach: return "Detach";
+	case EFrameStage::PrepareExit: return "PrepareExit";
+	default: return "?";
+	}
+}
+
+[[nodiscard]] const char* AppStateLabel(EAppState State)
+{
+	switch (State)
+	{
+	case EAppState::Stopped: return "Stopped";
+	case EAppState::Running: return "Running";
+	case EAppState::WaitForExit: return "WaitForExit";
+	case EAppState::ShuttingDown: return "ShuttingDown";
+	default: return "?";
+	}
+}
+
+// Stable IDs for Sequence Graph canvas (must not collide across modes).
+namespace SeqGraphIds
+{
+	constexpr int ModuleNodeBase = 1000;
+	constexpr int LayerNodeBase = 2000;
+	constexpr int ModuleInPinBase = 11000;
+	constexpr int ModuleOutPinBase = 12000;
+	constexpr int LayerInPinBase = 21000;
+	constexpr int LayerOutPinBase = 22000;
+	constexpr int BootstrapNode = 900;
+	constexpr int BootstrapOutPin = 901;
+	constexpr int FixedPolicyNode = 910;
+	constexpr int LifeNodeBase = 5000;
+	constexpr int LifeOutPinBase = 5100;
+	constexpr int LifeInPinBase = 5200;
+}
 
 [[nodiscard]] ImVec4 OutputColorForLevel(spdlog::level::level_enum Level)
 {
@@ -251,6 +301,14 @@ void FEditorLayer::OnAttach()
 	AppendOutput("Output Log ready. Commands: `Dump` | `<Name>` | `<Name> <Value>` | `help`.");
 	StartAgentChat();
 
+	{
+		ed::Config Config;
+		Config.SettingsFile = "Config/SequenceGraphNodeEditor.json";
+		SequenceGraphEditorContext = ed::CreateEditor(&Config);
+		bSequenceGraphEditorInited = SequenceGraphEditorContext != nullptr;
+		bSequenceGraphLayoutApplied = false;
+	}
+
 #if CATTY_EDITOR_DEMO_CONTENT
 	ed::Config Config;
 	Config.SettingsFile = "Config/NodeEditor.json";
@@ -265,6 +323,13 @@ void FEditorLayer::OnDetach()
 	{
 		AgentChat->Stop();
 		AgentChat.reset();
+	}
+	if (SequenceGraphEditorContext)
+	{
+		ed::DestroyEditor(static_cast<ed::EditorContext*>(SequenceGraphEditorContext));
+		SequenceGraphEditorContext = nullptr;
+		bSequenceGraphEditorInited = false;
+		bSequenceGraphLayoutApplied = false;
 	}
 	if (NodeEditorContext)
 	{
@@ -316,6 +381,10 @@ void FEditorLayer::OnSequencerStage(EFrameStage Stage)
 	if (bShowAgentPanel)
 	{
 		DrawAgentPanel();
+	}
+	if (bShowSequenceGraphPanel)
+	{
+		DrawSequenceGraphPanel(App);
 	}
 #if CATTY_EDITOR_EXTRA_PANELS
 	if (bShowBlueprintPanel)
@@ -413,6 +482,7 @@ void FEditorLayer::DrawMenuItems(FApp& App, float RowH)
 		ImGui::MenuItem(kWinContent, nullptr, &bShowContentBrowser);
 		ImGui::MenuItem(kWinOutput, nullptr, &bShowOutputPanel);
 		ImGui::MenuItem(kWinAgent, nullptr, &bShowAgentPanel);
+		ImGui::MenuItem(kWinSequenceGraph, nullptr, &bShowSequenceGraphPanel);
 #if CATTY_EDITOR_EXTRA_PANELS
 		ImGui::MenuItem(kWinBlueprint, nullptr, &bShowBlueprintPanel);
 		ImGui::MenuItem(kWinPlot, nullptr, &bShowPlotPanel);
@@ -633,6 +703,7 @@ void FEditorLayer::EnsureDefaultDockLayout(std::uint32_t DockspaceId)
 	ImGui::DockBuilderDockWindow(kWinContent, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinOutput, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinAgent, DockBottom);
+	ImGui::DockBuilderDockWindow(kWinSequenceGraph, DockBottom);
 	if (ImGuiDockNode* Central = ImGui::DockBuilderGetNode(DockMain))
 	{
 		Central->SetLocalFlags(static_cast<ImGuiDockNodeFlags>(
@@ -655,6 +726,7 @@ void FEditorLayer::EnsureDefaultDockLayout(std::uint32_t DockspaceId)
 	ImGui::DockBuilderDockWindow(kWinContent, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinOutput, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinAgent, DockBottom);
+	ImGui::DockBuilderDockWindow(kWinSequenceGraph, DockBottom);
 	if (ImGuiDockNode* Central = ImGui::DockBuilderGetNode(DockMain))
 	{
 		Central->SetLocalFlags(static_cast<ImGuiDockNodeFlags>(
@@ -1343,6 +1415,333 @@ void FEditorLayer::DrawAgentPanel()
 		ImGui::SetKeyboardFocusHere(-1);
 	}
 	ImGui::EndDisabled();
+	ImGui::End();
+}
+
+void FEditorLayer::EnsureSequenceGraphNodeLayout()
+{
+	if (bSequenceGraphLayoutApplied || !SequenceGraphEditorContext)
+	{
+		return;
+	}
+
+	ed::SetCurrentEditor(static_cast<ed::EditorContext*>(SequenceGraphEditorContext));
+
+	if (SequenceGraphViewMode == 0)
+	{
+		// Diagonal cascade: Module[i] → Layer[i] (horizontal WireSame),
+		// then Layer[i] → Module[i+1] (diagonal WireNext). Each pair steps
+		// down-right so the lockstep read order matches the frame pipeline.
+		const float OriginX = 0.0f;
+		const float OriginY = 0.0f;
+		const float StepX = 150.0f;
+		const float StepY = 95.0f;
+		const float PairGapX = 210.0f;
+		const int StageCount = static_cast<int>(EFrameStage::COUNT);
+		for (int Stage = 0; Stage < StageCount; ++Stage)
+		{
+			const float BaseX = OriginX + static_cast<float>(Stage) * StepX;
+			const float BaseY = OriginY + static_cast<float>(Stage) * StepY;
+			ed::SetNodePosition(
+				ed::NodeId(SeqGraphIds::ModuleNodeBase + Stage),
+				ImVec2(BaseX, BaseY));
+			ed::SetNodePosition(
+				ed::NodeId(SeqGraphIds::LayerNodeBase + Stage),
+				ImVec2(BaseX + PairGapX, BaseY));
+		}
+
+		const int Attach = static_cast<int>(EFrameStage::Attach);
+		const int FixedUpdate = static_cast<int>(EFrameStage::FixedUpdate);
+		ed::SetNodePosition(
+			ed::NodeId(SeqGraphIds::BootstrapNode),
+			ImVec2(OriginX - 230.0f, OriginY + static_cast<float>(Attach) * StepY));
+		ed::SetNodePosition(
+			ed::NodeId(SeqGraphIds::FixedPolicyNode),
+			ImVec2(
+				OriginX + static_cast<float>(FixedUpdate) * StepX + PairGapX + 230.0f,
+				OriginY + static_cast<float>(FixedUpdate) * StepY));
+	}
+	else
+	{
+		const float X = 0.0f;
+		const float RowH = 80.0f;
+		for (int i = 0; i < 12; ++i)
+		{
+			ed::SetNodePosition(
+				ed::NodeId(SeqGraphIds::LifeNodeBase + i),
+				ImVec2(X, static_cast<float>(i) * RowH));
+		}
+	}
+
+	ed::NavigateToContent(0.15f);
+	ed::SetCurrentEditor(nullptr);
+	bSequenceGraphLayoutApplied = true;
+}
+
+void FEditorLayer::DrawSequenceGraphPanel(FApp& App)
+{
+	ImGui::Begin(kWinSequenceGraph, &bShowSequenceGraphPanel);
+
+	if (!bSequenceGraphEditorInited || !SequenceGraphEditorContext)
+	{
+		ImGui::TextDisabled("Sequence Graph node editor context unavailable.");
+		ImGui::End();
+		return;
+	}
+
+	ImGui::TextDisabled(
+		"State %s | Frame %llu | dt %.3f | fixedDt %.3f | built %s",
+		AppStateLabel(App.GetState()),
+		static_cast<unsigned long long>(App.GetFrameIndex()),
+		App.GetDeltaSeconds(),
+		App.GetFixedDeltaSeconds(),
+		App.IsBuilt() ? "yes" : "no");
+	ImGui::SameLine();
+	ImGui::Dummy(ImVec2(12.0f, 0.0f));
+	ImGui::SameLine();
+	if (ImGui::RadioButton("Frame lockstep (BuildGraph)", SequenceGraphViewMode == 0))
+	{
+		SequenceGraphViewMode = 0;
+		bSequenceGraphLayoutApplied = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::RadioButton("FApp::Run lifecycle", SequenceGraphViewMode == 1))
+	{
+		SequenceGraphViewMode = 1;
+		bSequenceGraphLayoutApplied = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Reset Layout"))
+	{
+		bSequenceGraphLayoutApplied = false;
+	}
+
+	ImGui::Separator();
+	ImGui::TextColored(ImVec4(0.45f, 0.82f, 1.0f, 1.0f), "WireSame");
+	ImGui::SameLine();
+	ImGui::TextDisabled("Module pin → Layer gate");
+	ImGui::SameLine(0.0f, 16.0f);
+	ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.35f, 1.0f), "WireNext");
+	ImGui::SameLine();
+	ImGui::TextDisabled("Layer pin → Module next gate");
+	ImGui::SameLine(0.0f, 16.0f);
+	ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.85f, 1.0f), "FixedUpdate");
+	ImGui::SameLine();
+	ImGui::TextDisabled("InstallFixedUpdateRepeat policy");
+
+	ed::SetCurrentEditor(static_cast<ed::EditorContext*>(SequenceGraphEditorContext));
+	{
+		ed::Style& NodeStyle = ed::GetStyle();
+		const ImVec4 PanelBg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+		NodeStyle.Colors[ed::StyleColor_Bg] = PanelBg;
+		NodeStyle.Colors[ed::StyleColor_Grid] = ImVec4(1.0f, 1.0f, 1.0f, 0.04f);
+	}
+
+	ed::Begin("SequenceGraphCanvas");
+
+	int LinkSerial = 30000;
+
+	if (SequenceGraphViewMode == 0)
+	{
+		using FModuleStage = FModuleFrameTraits::FStage;
+		using FLayerStage = FLayerFrameTraits::FStage;
+		const int StageCount = static_cast<int>(EFrameStage::COUNT);
+
+		// Bootstrap entry — ForceOpen Module.Attach after workers start.
+		ed::BeginNode(ed::NodeId(SeqGraphIds::BootstrapNode));
+		ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.65f, 1.0f), "Bootstrap");
+		ImGui::TextDisabled("OnWorkersStarted");
+		ed::BeginPin(ed::PinId(SeqGraphIds::BootstrapOutPin), ed::PinKind::Output);
+		ImGui::Text("ForceOpen " ICON_FA_ARROW_RIGHT);
+		ed::EndPin();
+		ed::EndNode();
+
+		for (int Stage = 0; Stage < StageCount; ++Stage)
+		{
+			const EFrameStage FrameStage = static_cast<EFrameStage>(Stage);
+			const char* Label = FrameStageLabel(FrameStage);
+
+			ed::BeginNode(ed::NodeId(SeqGraphIds::ModuleNodeBase + Stage));
+			ImGui::TextColored(ImVec4(0.55f, 0.78f, 1.0f, 1.0f), "Module");
+			ImGui::TextUnformatted(Label);
+			ed::BeginPin(ed::PinId(SeqGraphIds::ModuleInPinBase + Stage), ed::PinKind::Input);
+			ImGui::Text(ICON_FA_ARROW_LEFT " gate");
+			ed::EndPin();
+			ed::BeginPin(ed::PinId(SeqGraphIds::ModuleOutPinBase + Stage), ed::PinKind::Output);
+			ImGui::Text("pin " ICON_FA_ARROW_RIGHT);
+			ed::EndPin();
+			ed::EndNode();
+
+			ed::BeginNode(ed::NodeId(SeqGraphIds::LayerNodeBase + Stage));
+			ImGui::TextColored(ImVec4(0.70f, 0.95f, 0.55f, 1.0f), "Layer");
+			ImGui::TextUnformatted(Label);
+			ed::BeginPin(ed::PinId(SeqGraphIds::LayerInPinBase + Stage), ed::PinKind::Input);
+			ImGui::Text(ICON_FA_ARROW_LEFT " gate");
+			ed::EndPin();
+			ed::BeginPin(ed::PinId(SeqGraphIds::LayerOutPinBase + Stage), ed::PinKind::Output);
+			ImGui::Text("pin " ICON_FA_ARROW_RIGHT);
+			ed::EndPin();
+			ed::EndNode();
+		}
+
+		ed::BeginNode(ed::NodeId(SeqGraphIds::FixedPolicyNode));
+		ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.85f, 1.0f), "FixedUpdate policy");
+		ImGui::TextDisabled("Layer.ProcessInput →");
+		ImGui::TextDisabled("  Module.FU | Update");
+		ImGui::TextDisabled("Layer.FU → reopen FU");
+		ImGui::TextDisabled("  or open Update");
+		ImGui::TextDisabled("Layer.Detach → arm tick");
+		ed::EndNode();
+
+		// WireSame: Module pin → Layer gate (mirrors FApp::BuildGraph).
+		const FModuleStage WireSameStages[] = {
+			FModuleStage::Attach,
+			FModuleStage::BeginFrame,
+			FModuleStage::ProcessInput,
+			FModuleStage::FixedUpdate,
+			FModuleStage::Update,
+			FModuleStage::LateUpdate,
+			FModuleStage::PreRender,
+			FModuleStage::Render,
+			FModuleStage::PostRender,
+			FModuleStage::EndFrame,
+			FModuleStage::Detach,
+			FModuleStage::PrepareExit,
+		};
+		const ImVec4 WireSameColor(0.35f, 0.75f, 1.0f, 0.95f);
+		for (FModuleStage ModuleStage : WireSameStages)
+		{
+			const int S = static_cast<int>(ModuleStage);
+			ed::Link(
+				ed::LinkId(LinkSerial++),
+				ed::PinId(SeqGraphIds::ModuleOutPinBase + S),
+				ed::PinId(SeqGraphIds::LayerInPinBase + S),
+				WireSameColor,
+				2.0f);
+		}
+
+		// WireNext: Layer pin → Module next gate.
+		struct FWireNextEdge
+		{
+			FLayerStage From;
+			FModuleStage To;
+		};
+		const FWireNextEdge WireNextEdges[] = {
+			{FLayerStage::Attach, FModuleStage::BeginFrame},
+			{FLayerStage::BeginFrame, FModuleStage::ProcessInput},
+			{FLayerStage::Update, FModuleStage::LateUpdate},
+			{FLayerStage::LateUpdate, FModuleStage::PreRender},
+			{FLayerStage::PreRender, FModuleStage::Render},
+			{FLayerStage::Render, FModuleStage::PostRender},
+			{FLayerStage::PostRender, FModuleStage::EndFrame},
+			{FLayerStage::EndFrame, FModuleStage::Detach},
+			{FLayerStage::Detach, FModuleStage::Attach},
+		};
+		const ImVec4 WireNextColor(1.0f, 0.70f, 0.30f, 0.95f);
+		for (const FWireNextEdge& Edge : WireNextEdges)
+		{
+			ed::Link(
+				ed::LinkId(LinkSerial++),
+				ed::PinId(SeqGraphIds::LayerOutPinBase + static_cast<int>(Edge.From)),
+				ed::PinId(SeqGraphIds::ModuleInPinBase + static_cast<int>(Edge.To)),
+				WireNextColor,
+				2.0f);
+		}
+
+		// Bootstrap → Module.Attach gate.
+		ed::Link(
+			ed::LinkId(LinkSerial++),
+			ed::PinId(SeqGraphIds::BootstrapOutPin),
+			ed::PinId(SeqGraphIds::ModuleInPinBase + static_cast<int>(FModuleStage::Attach)),
+			ImVec4(0.45f, 0.95f, 0.55f, 0.95f),
+			2.5f);
+
+		// InstallFixedUpdateRepeat — Layer pins drive Module FU/Update.
+		const ImVec4 FixedColor(0.95f, 0.40f, 0.85f, 0.90f);
+		ed::Link(
+			ed::LinkId(LinkSerial++),
+			ed::PinId(SeqGraphIds::LayerOutPinBase + static_cast<int>(FLayerStage::ProcessInput)),
+			ed::PinId(SeqGraphIds::ModuleInPinBase + static_cast<int>(FModuleStage::FixedUpdate)),
+			FixedColor,
+			2.0f);
+		ed::Link(
+			ed::LinkId(LinkSerial++),
+			ed::PinId(SeqGraphIds::LayerOutPinBase + static_cast<int>(FLayerStage::ProcessInput)),
+			ed::PinId(SeqGraphIds::ModuleInPinBase + static_cast<int>(FModuleStage::Update)),
+			FixedColor,
+			2.0f);
+		ed::Link(
+			ed::LinkId(LinkSerial++),
+			ed::PinId(SeqGraphIds::LayerOutPinBase + static_cast<int>(FLayerStage::FixedUpdate)),
+			ed::PinId(SeqGraphIds::ModuleInPinBase + static_cast<int>(FModuleStage::FixedUpdate)),
+			FixedColor,
+			2.0f);
+		ed::Link(
+			ed::LinkId(LinkSerial++),
+			ed::PinId(SeqGraphIds::LayerOutPinBase + static_cast<int>(FLayerStage::FixedUpdate)),
+			ed::PinId(SeqGraphIds::ModuleInPinBase + static_cast<int>(FModuleStage::Update)),
+			FixedColor,
+			2.0f);
+	}
+	else
+	{
+		struct FLifeStep
+		{
+			const char* Title;
+			const char* Detail;
+		};
+		const FLifeStep Steps[] = {
+			{"Configure", "Game fills FEngineConfig"},
+			{"FPaths + Ini", "Roots / DefaultEngine.ini"},
+			{"RegisterModules", "Game registers IModules"},
+			{"RebuildModuleOrder", "Lifecycle stage orders"},
+			{"WorkerPool.Init", "Thread pool ready"},
+			{"PreInit / Init / PostInit", "ExecuteLifecycleStage"},
+			{"PostInitialize", "PushLayer / overlays"},
+			{"AttachModules", "Module Attach callbacks"},
+			{"Register A/B", "GetA/GetB().Register"},
+			{"BuildGraph", "BindDep + Build + FU"},
+			{"Execute", "TSequenceGraph main loops"},
+			{"Shutdown", "Lifecycle Shutdown + detach"},
+		};
+		const int StepCount = static_cast<int>(sizeof(Steps) / sizeof(Steps[0]));
+
+		for (int i = 0; i < StepCount; ++i)
+		{
+			ed::BeginNode(ed::NodeId(SeqGraphIds::LifeNodeBase + i));
+			ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.40f, 1.0f), "%s", Steps[i].Title);
+			ImGui::TextDisabled("%s", Steps[i].Detail);
+			if (i > 0)
+			{
+				ed::BeginPin(ed::PinId(SeqGraphIds::LifeInPinBase + i), ed::PinKind::Input);
+				ImGui::Text(ICON_FA_ARROW_LEFT " in");
+				ed::EndPin();
+			}
+			if (i + 1 < StepCount)
+			{
+				ed::BeginPin(ed::PinId(SeqGraphIds::LifeOutPinBase + i), ed::PinKind::Output);
+				ImGui::Text("out " ICON_FA_ARROW_RIGHT);
+				ed::EndPin();
+			}
+			ed::EndNode();
+		}
+
+		for (int i = 0; i + 1 < StepCount; ++i)
+		{
+			ed::Link(
+				ed::LinkId(LinkSerial++),
+				ed::PinId(SeqGraphIds::LifeOutPinBase + i),
+				ed::PinId(SeqGraphIds::LifeInPinBase + i + 1),
+				ImVec4(1.0f, 0.82f, 0.35f, 0.95f),
+				2.0f);
+		}
+	}
+
+	ed::End();
+	ed::SetCurrentEditor(nullptr);
+
+	EnsureSequenceGraphNodeLayout();
+
 	ImGui::End();
 }
 
