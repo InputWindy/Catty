@@ -42,7 +42,6 @@
 #include <Render/RenderServer.h>
 #include <Core/Object.h>
 #include <Core/Package.h>
-#include <Core/Wrap.h>
 #include <Core/Layer/ScriptSystem.h>
 #include <Core/Layer/ScriptLayer.h>
 #if defined(CATTY_WITH_IMGUI)

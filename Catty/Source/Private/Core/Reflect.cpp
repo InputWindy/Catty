@@ -35,15 +35,15 @@ void SelfTestObjectReflect()
 
 
 
-	const FObjectType& ObjectType = FObject::StaticType();
+	const FObjectType& ObjectType = UObject::StaticType();
 
-	const FObjectType& PackageType = FPackage::StaticType();
+	const FObjectType& PackageType = UPackage::StaticType();
 
-	const FObjectType& ResourceType = FResource::StaticType();
+	const FObjectType& ResourceType = UResource::StaticType();
 
 
 
-	assert(std::strcmp(ObjectType.Name, "Catty::FObject") == 0);
+	assert(std::strcmp(ObjectType.Name, "Catty::UObject") == 0);
 
 	assert(PackageType.Super == &ObjectType);
 
@@ -55,11 +55,11 @@ void SelfTestObjectReflect()
 
 	assert(ResourceType.FindProperty("SourcePath") != nullptr);
 
-	assert(FObjectTypeRegistry::Get().FindType("Catty::FResource") != nullptr);
+	assert(FObjectTypeRegistry::Get().FindType("Catty::UResource") != nullptr);
 
 
 
-	FPackage TransientPkg("/Temp/ObjectReflectSelfTest", EPackageFlags::Transient);
+	UPackage TransientPkg("/Temp/ObjectReflectSelfTest", EPackageFlags::Transient);
 
 
 
@@ -97,38 +97,6 @@ void SelfTestObjectReflect()
 	assert(TransientPkg.CallFunction("GetName", nullptr, 0, &NameRet));
 	assert(NameRet.Type == EPropertyType::String);
 	assert(NameRet.StringValue == "Renamed");
-
-
-
-	// Struct reflection
-
-	const FStructType& ResourceIdType = FResourceId::StaticType();
-
-	assert(std::strcmp(ResourceIdType.Name, "Catty::FResourceId") == 0);
-
-	assert(ResourceIdType.FindProperty("Value") != nullptr);
-
-	assert(FStructTypeRegistry::Get().FindType("Catty::FResourceId") != nullptr);
-
-
-
-	FResourceId Id{};
-
-	Id.Value = 42;
-
-	FPropertyValue IdValue;
-
-	assert(GetStructPropertyValue(ResourceIdType, &Id, "Value", IdValue));
-
-	assert(IdValue.Type == EPropertyType::UInt64);
-
-	assert(IdValue.UIntValue == 42);
-
-	assert(SetStructPropertyValue(ResourceIdType, &Id, "Value", FPropertyValue::FromUInt(99)));
-
-	assert(Id.Value == 99);
-
-
 
 	// Enum reflection
 

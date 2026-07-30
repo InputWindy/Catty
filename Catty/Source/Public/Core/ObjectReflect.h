@@ -1,11 +1,11 @@
 #pragma once
 
 /**
- * FObject / struct / enum runtime reflection (editor properties / blueprint call).
+ * UObject / struct / enum runtime reflection (editor properties / blueprint call).
  *
  * Object:
  *   CATTY_OBJECT()
- *   class FMyAsset : public FObject
+ *   class FMyAsset : public UObject
  *   {
  *   	CATTY_GENERATED_BODY()
  *   public:
@@ -53,7 +53,7 @@
 namespace Catty
 {
 
-class FObject;
+class UObject;
 
 /** Supported property / CallFunction value types. */
 enum class EPropertyType : std::uint8_t
@@ -67,7 +67,7 @@ enum class EPropertyType : std::uint8_t
 	Double,
 	String,
 	EnumInt32,
-	/** FObjectRef (refcounted). Stored as FObject* with AddRef/ReleaseRef. */
+	/** FObjectRef (refcounted). Stored as UObject* with AddRef/ReleaseRef. */
 	ObjectRef,
 };
 
@@ -101,7 +101,7 @@ struct CATTY_API FPropertyValue
 	std::uint64_t UIntValue = 0;
 	double FloatValue = 0.0;
 	std::string StringValue;
-	FObject* ObjectValue = nullptr;
+	UObject* ObjectValue = nullptr;
 
 	FPropertyValue() = default;
 	FPropertyValue(const FPropertyValue& Other);
@@ -117,9 +117,9 @@ struct CATTY_API FPropertyValue
 	[[nodiscard]] static FPropertyValue FromFloat(double V);
 	[[nodiscard]] static FPropertyValue FromString(std::string V);
 	/** AddRefs InObject when non-null. */
-	[[nodiscard]] static FPropertyValue FromObject(FObject* InObject);
+	[[nodiscard]] static FPropertyValue FromObject(UObject* InObject);
 
-	[[nodiscard]] FObject* GetObjectPtr() const
+	[[nodiscard]] UObject* GetObjectPtr() const
 	{
 		return Type == EPropertyType::ObjectRef ? ObjectValue : nullptr;
 	}
@@ -189,11 +189,11 @@ template <typename TEnum>
 	return Out;
 }
 
-using FPropertyGetterFn = bool (*)(const FObject* Object, FPropertyValue& OutValue);
-using FPropertySetterFn = bool (*)(FObject* Object, const FPropertyValue& Value);
+using FPropertyGetterFn = bool (*)(const UObject* Object, FPropertyValue& OutValue);
+using FPropertySetterFn = bool (*)(UObject* Object, const FPropertyValue& Value);
 /** Args may be null when ArgCount == 0. OutReturn may be null (ignored for void). */
 using FFunctionInvokeFn = bool (*)(
-	FObject* Object,
+	UObject* Object,
 	const FPropertyValue* Args,
 	std::size_t ArgCount,
 	FPropertyValue* OutReturn);

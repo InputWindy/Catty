@@ -29,7 +29,7 @@ struct FPathMount
  *   /Engine/EngineMaterials/Default  → Engine Content/.../Default.pkg.json
  * Soft object path (object identity): see FSoftObjectPath
  *   /Game/Maps/Demo.Demo             → same disk file as /Game/Maps/Demo
- *   FResource'/Game/Maps/Demo.Demo'  → class-qualified soft ref (parse-only)
+ *   UResource'/Game/Maps/Demo.Demo'  → class-qualified soft ref (parse-only)
  *
  * Call Initialize after FApp::Configure. Default mounts: /Game, /Engine.
  */

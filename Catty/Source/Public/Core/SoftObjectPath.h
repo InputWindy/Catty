@@ -7,21 +7,20 @@
 namespace Catty
 {
 
-class FObject;
+class UObject;
 class FObjectRef;
 
 /**
  * Soft reference string (UE FSoftObjectPath lite).
  * Serialisable object address — not a live FObjectRef wrapper.
  *
- * Game code resolves via Resolve() (FGC LiveObjects) / TryLoad() (FResourceManager load).
- * Lua may use Core/Wrap.h shortcuts (Find / Resolve / TryLoad / SavePackage).
+ * Game code resolves via Resolve() / TryLoad() against FGC LiveObjects and the private Resource module.
  *
  * Supported forms:
  *   /Game/Maps/Demo.Demo
  *   /Game/Maps/Demo.Demo:Subobject
- *   FResource'/Game/Maps/Demo.Demo'
- *   FResource'/Game/Maps/Demo.Demo:Subobject'
+ *   UResource'/Game/Maps/Demo.Demo'
+ *   UResource'/Game/Maps/Demo.Demo:Subobject'
  *
  * Segments:
  *   AssetClass  — optional type name outside the quotes
@@ -46,7 +45,7 @@ public:
 		std::string InAssetClass = {});
 
 	/** Build from a live object: OuterPackage.ObjectName (no class / subpath). */
-	[[nodiscard]] static FSoftObjectPath FromObject(const FObject& Object);
+	[[nodiscard]] static FSoftObjectPath FromObject(const UObject& Object);
 
 	/** Parse PathString; returns false and Reset() on failure. */
 	[[nodiscard]] bool TrySetPath(const std::string& PathString);

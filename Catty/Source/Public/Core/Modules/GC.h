@@ -26,8 +26,8 @@ public:
 	virtual ~IPooledObjectType() = default;
 
 	/** Business TearDown before pool Free. @return true if this type claimed the object. */
-	[[nodiscard]] virtual bool TryTearDown(FObject* Object) = 0;
-	[[nodiscard]] virtual bool TryFree(FObject* Object) = 0;
+	[[nodiscard]] virtual bool TryTearDown(UObject* Object) = 0;
+	[[nodiscard]] virtual bool TryFree(UObject* Object) = 0;
 	[[nodiscard]] virtual std::size_t GetNumLive() const = 0;
 	[[nodiscard]] virtual const std::type_info& GetType() const = 0;
 	virtual void Clear() = 0;
@@ -37,7 +37,7 @@ template <typename TObject>
 class TPooledObjectType final : public IPooledObjectType
 {
 public:
-	static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
+	static_assert(std::is_base_of_v<UObject, TObject>, "TObject must derive from UObject");
 
 	using FDestroyFn = std::function<void(TObject*)>;
 
@@ -53,7 +53,7 @@ public:
 		return Pool.Allocate(std::forward<TArgs>(Args)...);
 	}
 
-	bool TryTearDown(FObject* Object) override
+	bool TryTearDown(UObject* Object) override
 	{
 		TObject* Typed = dynamic_cast<TObject*>(Object);
 		if (!Typed)
@@ -67,7 +67,7 @@ public:
 		return true;
 	}
 
-	bool TryFree(FObject* Object) override
+	bool TryFree(UObject* Object) override
 	{
 		TObject* Typed = dynamic_cast<TObject*>(Object);
 		if (!Typed)
@@ -148,7 +148,7 @@ public:
 		std::size_t InitialChunkSlots,
 		TDestroyFn&& DestroyFn)
 	{
-		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
+		static_assert(std::is_base_of_v<UObject, TObject>, "TObject must derive from UObject");
 
 		typename TPooledObjectType<TObject>::FDestroyFn BoundDestroy =
 			[Destroy = std::decay_t<TDestroyFn>(std::forward<TDestroyFn>(DestroyFn))](TObject* Object)
@@ -165,7 +165,7 @@ public:
 	template <typename TObject, typename... TArgs>
 	[[nodiscard]] FObjectRef NewObject(TArgs&&... Args)
 	{
-		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
+		static_assert(std::is_base_of_v<UObject, TObject>, "TObject must derive from UObject");
 		if (!bInitialized)
 		{
 			return {};
@@ -200,24 +200,24 @@ public:
 	void Tick(float DeltaSeconds);
 
 private:
-	void RegisterObject(FObject& Object);
-	void UnregisterObject(FObject& Object);
+	void RegisterObject(UObject& Object);
+	void UnregisterObject(UObject& Object);
 
-	[[nodiscard]] static bool IsKeptAlive(const FObject& Object);
+	[[nodiscard]] static bool IsKeptAlive(const UObject& Object);
 
 	void QueueUnreferenced();
-	void FinalizeDeadObject(FObject* Object);
-	void RemoveFromPendingKill(FObject* Object);
+	void FinalizeDeadObject(UObject* Object);
+	void RemoveFromPendingKill(UObject* Object);
 
-	[[nodiscard]] bool TearDownPooledObject(FObject* Object);
-	[[nodiscard]] bool FreePooledObject(FObject* Object);
+	[[nodiscard]] bool TearDownPooledObject(UObject* Object);
+	[[nodiscard]] bool FreePooledObject(UObject* Object);
 
 	bool bInitialized = false;
 
 	std::unordered_map<std::type_index, std::unique_ptr<IPooledObjectType>> PooledTypes;
 
-	std::vector<FObject*> LiveObjects;
-	std::vector<FObject*> PendingKill;
+	std::vector<UObject*> LiveObjects;
+	std::vector<UObject*> PendingKill;
 
 	float CollectIntervalSeconds = 1.0f;
 	float CollectAccumulatorSeconds = 0.0f;

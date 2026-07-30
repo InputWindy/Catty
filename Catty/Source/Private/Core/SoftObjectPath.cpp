@@ -4,7 +4,7 @@
 #include <Core/Log.h>
 #include <Core/Object.h>
 #include <Core/Paths.h>
-#include <Core/Modules/Resource.h>
+#include "Modules/ResourceManager.h"
 
 #include <cctype>
 
@@ -112,7 +112,7 @@ FSoftObjectPath::FSoftObjectPath(
 {
 }
 
-FSoftObjectPath FSoftObjectPath::FromObject(const FObject& Object)
+FSoftObjectPath FSoftObjectPath::FromObject(const UObject& Object)
 {
 	FSoftObjectPath Path;
 	const FObjectRef Package = Object.GetPackage();

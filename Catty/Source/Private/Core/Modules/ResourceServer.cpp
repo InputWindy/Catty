@@ -2,6 +2,9 @@
 
 #include <Core/Log.h>
 
+#include <filesystem>
+#include <fstream>
+
 namespace Catty
 {
 
@@ -50,23 +53,73 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 
 	Enqueue([this, Id, Path = std::move(Path)](FThreadedServer& /*Server*/)
 	{
-		// Placeholder loader: path identity only until real asset IO exists.
-		const bool bSuccess = !Path.empty();
-		if (bSuccess)
+		std::vector<std::uint8_t> Bytes;
+		bool bSuccess = false;
+
+		namespace fs = std::filesystem;
+		std::error_code ErrorCode;
+		if (!fs::is_regular_file(Path, ErrorCode) || ErrorCode)
 		{
-			CATTY_CORE_INFO("Resource ready: id={} path=\"{}\"", Id.Value, Path);
+			CATTY_CORE_ERROR(
+				"Resource BulkData failed: id={} path=\"{}\" (not a regular file)",
+				Id.Value,
+				Path);
 		}
 		else
 		{
-			CATTY_CORE_ERROR("Resource failed: id={} path=\"{}\"", Id.Value, Path);
+			std::ifstream File(Path, std::ios::binary | std::ios::ate);
+			if (!File)
+			{
+				CATTY_CORE_ERROR(
+					"Resource BulkData failed: id={} path=\"{}\" (open failed)",
+					Id.Value,
+					Path);
+			}
+			else
+			{
+				const std::streamoff Size = File.tellg();
+				if (Size < 0)
+				{
+					CATTY_CORE_ERROR(
+						"Resource BulkData failed: id={} path=\"{}\" (size failed)",
+						Id.Value,
+						Path);
+				}
+				else
+				{
+					File.seekg(0, std::ios::beg);
+					Bytes.resize(static_cast<std::size_t>(Size));
+					if (Size > 0 && !File.read(reinterpret_cast<char*>(Bytes.data()), Size))
+					{
+						Bytes.clear();
+						CATTY_CORE_ERROR(
+							"Resource BulkData failed: id={} path=\"{}\" (read failed)",
+							Id.Value,
+							Path);
+					}
+					else
+					{
+						bSuccess = true;
+						CATTY_CORE_INFO(
+							"Resource BulkData ready: id={} path=\"{}\" bytes={}",
+							Id.Value,
+							Path,
+							Bytes.size());
+					}
+				}
+			}
 		}
-		CompleteLoad(Id, bSuccess);
+
+		CompleteLoad(Id, bSuccess, std::move(Bytes));
 	});
 
 	return Id;
 }
 
-void FResourceServer::CompleteLoad(FResourceId Id, bool bSuccess)
+void FResourceServer::CompleteLoad(
+	FResourceId Id,
+	bool bSuccess,
+	std::vector<std::uint8_t> BulkBytes)
 {
 	{
 		std::lock_guard<std::mutex> Lock(RegistryMutex);
@@ -76,6 +129,8 @@ void FResourceServer::CompleteLoad(FResourceId Id, bool bSuccess)
 			return;
 		}
 		It->second.State = bSuccess ? EResourceLoadState::Ready : EResourceLoadState::Failed;
+		It->second.BulkBytes = std::move(BulkBytes);
+		It->second.bBulkTaken = false;
 	}
 	LoadCv.notify_all();
 }
@@ -101,7 +156,7 @@ bool FResourceServer::IsReady(FResourceId Id) const
 	return GetLoadState(Id) == EResourceLoadState::Ready;
 }
 
-bool FResourceServer::TryGetPath(FResourceId Id, std::string& OutPath) const
+bool FResourceServer::TryTakeBulkData(FResourceId Id, FResourceBulkData& OutBulk)
 {
 	if (!Id.IsValid())
 	{
@@ -114,7 +169,15 @@ bool FResourceServer::TryGetPath(FResourceId Id, std::string& OutPath) const
 	{
 		return false;
 	}
-	OutPath = It->second.Path;
+
+	if (It->second.State != EResourceLoadState::Ready || It->second.bBulkTaken)
+	{
+		return false;
+	}
+
+	OutBulk.SourcePath = It->second.Path;
+	OutBulk.Bytes = std::move(It->second.BulkBytes);
+	It->second.bBulkTaken = true;
 	return true;
 }
 

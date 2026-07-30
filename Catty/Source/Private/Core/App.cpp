@@ -5,7 +5,7 @@
 #include <Core/Modules/GC.h>
 #include <Core/Modules/Platform.h>
 #include <Core/Modules/Render.h>
-#include <Core/Modules/Resource.h>
+#include "Modules/ResourceManager.h"
 #include <Core/Timer.h>
 #include <Core/WorkerPool.h>
 

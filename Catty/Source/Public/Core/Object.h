@@ -12,13 +12,13 @@
 namespace Catty
 {
 
-class FPackage;
+class UPackage;
 class FGC;
-class FObject;
+class UObject;
 
 /**
- * Intrusive refcounted handle for any FObject subclass.
- * Sole caller of FObject::AddRef / ReleaseRef (with FPropertyValue). Use Cast<T>() for typed access.
+ * Intrusive refcounted handle for any UObject subclass.
+ * Sole caller of UObject::AddRef / ReleaseRef (with FPropertyValue). Use Cast<T>() for typed access.
  */
 class CATTY_API FObjectRef
 {
@@ -34,37 +34,37 @@ public:
 
 	[[nodiscard]] bool IsValid() const { return Object != nullptr; }
 	[[nodiscard]] explicit operator bool() const { return Object != nullptr; }
-	[[nodiscard]] FObject& operator*() const { return *Object; }
-	[[nodiscard]] FObject* operator->() const { return Object; }
+	[[nodiscard]] UObject& operator*() const { return *Object; }
+	[[nodiscard]] UObject* operator->() const { return Object; }
 
 	[[nodiscard]] std::uint32_t GetRefCount() const;
 
 	template <typename TObject>
 	[[nodiscard]] TObject* Cast() const
 	{
-		static_assert(std::is_base_of_v<FObject, TObject>, "TObject must derive from FObject");
+		static_assert(std::is_base_of_v<UObject, TObject>, "TObject must derive from UObject");
 		return dynamic_cast<TObject*>(Object);
 	}
 
 	[[nodiscard]] bool operator==(const FObjectRef& Other) const { return Object == Other.Object; }
 	[[nodiscard]] bool operator!=(const FObjectRef& Other) const { return Object != Other.Object; }
 
-	[[nodiscard]] static FObjectRef Wrap(FObject* InObject);
+	[[nodiscard]] static FObjectRef Wrap(UObject* InObject);
 
 	void Reset();
 
 private:
-	friend class FPackage;
+	friend class UPackage;
 	friend class FResourceManager;
 	friend class FGC;
-	friend class FObject;
+	friend class UObject;
 	friend struct FPropertyValue;
 
-	explicit FObjectRef(FObject* InObject);
+	explicit FObjectRef(UObject* InObject);
 
-	[[nodiscard]] FObject* Get() const { return Object; }
+	[[nodiscard]] UObject* Get() const { return Object; }
 
-	FObject* Object = nullptr;
+	UObject* Object = nullptr;
 };
 
 /** Object GC / lifetime flags. */
@@ -109,23 +109,23 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
 
 /**
  * Abstract base for package objects (UE UObject-lite).
- * Not allocatable by itself — construct only via subclasses (FPackage, FResource, ...).
+ * Not allocatable by itself — construct only via subclasses (UPackage, UResource, ...).
  * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
- * Outer is FObjectRef (empty for FPackage, or for runtime-only objects with no package).
- * Cleanup is fully owned by ~FObject.
+ * Outer is FObjectRef (empty for UPackage, or for runtime-only objects with no package).
+ * Cleanup is fully owned by ~UObject.
  *
  * Reflection (editor / blueprint): CATTY_OBJECT + CATTY_PROPERTY / CATTY_FUNCTION.
  */
 CATTY_OBJECT()
-class CATTY_API FObject
+class CATTY_API UObject
 {
 	CATTY_GENERATED_BODY()
 
 public:
-	virtual ~FObject();
+	virtual ~UObject();
 
-	FObject(const FObject&) = delete;
-	FObject& operator=(const FObject&) = delete;
+	UObject(const UObject&) = delete;
+	UObject& operator=(const UObject&) = delete;
 
 	// ---------------------------------------------------------------------------
 	// Runtime reflect invoke (by name; not CATTY_FUNCTION markers)
@@ -174,8 +174,8 @@ public:
 	// ---------------------------------------------------------------------------
 	// Package serialize hooks (not a GC mark graph)
 	// ---------------------------------------------------------------------------
-	virtual void GetReferencedObjects(std::vector<FObject*>& OutObjects) const;
-	virtual void SetReferencedObjects(const std::vector<FObject*>& InObjects);
+	virtual void GetReferencedObjects(std::vector<UObject*>& OutObjects) const;
+	virtual void SetReferencedObjects(const std::vector<UObject*>& InObjects);
 
 	// ---------------------------------------------------------------------------
 	// Reflection — CATTY_FUNCTION / CATTY_PROPERTY (game / editor / Lua)
@@ -198,7 +198,7 @@ public:
 	[[nodiscard]] bool IsPendingKill() const;
 
 protected:
-	FObject(FPackage* InOuter, std::string InObjectName);
+	UObject(UPackage* InOuter, std::string InObjectName);
 
 	// ---------------------------------------------------------------------------
 	// Flags (subclass / package helpers — engine-only)
@@ -214,7 +214,7 @@ protected:
 
 private:
 	friend class FObjectRef;
-	friend class FPackage;
+	friend class UPackage;
 	friend class FResourceManager;
 	friend class FGC;
 	friend struct FPropertyValue;
@@ -230,7 +230,7 @@ private:
 	// Fields
 	// ---------------------------------------------------------------------------
 	FGC* GC = nullptr;
-	/** Outer package pin. Empty for FPackage, or runtime-only objects. */
+	/** Outer package pin. Empty for UPackage, or runtime-only objects. */
 	FObjectRef Outer;
 	std::uint32_t RefCount = 0;
 	EObjectFlags ObjectFlags = EObjectFlags::None;

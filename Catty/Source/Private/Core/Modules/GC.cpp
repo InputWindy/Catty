@@ -75,7 +75,7 @@ void FGC::Shutdown()
 	CATTY_CORE_INFO("GC shut down");
 }
 
-void FGC::RegisterObject(FObject& Object)
+void FGC::RegisterObject(UObject& Object)
 {
 	if (!bInitialized)
 	{
@@ -100,14 +100,14 @@ FObjectRef FGC::FindPackage(const std::string& PackageName) const
 		return {};
 	}
 
-	for (FObject* Object : LiveObjects)
+	for (UObject* Object : LiveObjects)
 	{
 		if (!Object || Object->IsPendingKill())
 		{
 			continue;
 		}
 
-		auto* Package = dynamic_cast<FPackage*>(Object);
+		auto* Package = dynamic_cast<UPackage*>(Object);
 		if (!Package)
 		{
 			continue;
@@ -137,7 +137,7 @@ FObjectRef FGC::FindObject(const std::string& PackageName, const std::string& Ob
 
 	if (FObjectRef PackageRef = FindPackage(PkgKey))
 	{
-		if (FPackage* Package = PackageRef.Cast<FPackage>())
+		if (UPackage* Package = PackageRef.Cast<UPackage>())
 		{
 			if (FObjectRef Found = Package->FindObject(ObjectName))
 			{
@@ -147,7 +147,7 @@ FObjectRef FGC::FindObject(const std::string& PackageName, const std::string& Ob
 	}
 
 	// Fallback: LiveObjects is authoritative even if package name table missed.
-	for (FObject* Object : LiveObjects)
+	for (UObject* Object : LiveObjects)
 	{
 		if (!Object || Object->IsPendingKill())
 		{
@@ -191,7 +191,7 @@ FObjectRef FGC::FindObject(const std::string& PathName) const
 	return FindPackage(PathName);
 }
 
-void FGC::UnregisterObject(FObject& Object)
+void FGC::UnregisterObject(UObject& Object)
 {
 	LiveObjects.erase(
 		std::remove(LiveObjects.begin(), LiveObjects.end(), &Object),
@@ -200,17 +200,17 @@ void FGC::UnregisterObject(FObject& Object)
 	Object.GC = nullptr;
 }
 
-void FGC::RemoveFromPendingKill(FObject* Object)
+void FGC::RemoveFromPendingKill(UObject* Object)
 {
 	PendingKill.erase(std::remove(PendingKill.begin(), PendingKill.end(), Object), PendingKill.end());
 }
 
-bool FGC::IsKeptAlive(const FObject& Object)
+bool FGC::IsKeptAlive(const UObject& Object)
 {
 	return Object.GetRefCount() > 0;
 }
 
-void FGC::FinalizeDeadObject(FObject* Object)
+void FGC::FinalizeDeadObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -283,7 +283,7 @@ bool FGC::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 	}
 }
 
-bool FGC::TearDownPooledObject(FObject* Object)
+bool FGC::TearDownPooledObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -300,7 +300,7 @@ bool FGC::TearDownPooledObject(FObject* Object)
 	return false;
 }
 
-bool FGC::FreePooledObject(FObject* Object)
+bool FGC::FreePooledObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -319,7 +319,7 @@ bool FGC::FreePooledObject(FObject* Object)
 
 void FGC::QueueUnreferenced()
 {
-	for (FObject* Object : LiveObjects)
+	for (UObject* Object : LiveObjects)
 	{
 		if (!Object)
 		{
@@ -365,10 +365,10 @@ void FGC::PurgePendingKill()
 		return;
 	}
 
-	std::vector<FObject*> ToFree;
+	std::vector<UObject*> ToFree;
 	ToFree.reserve(PendingKill.size());
 
-	for (FObject* Object : PendingKill)
+	for (UObject* Object : PendingKill)
 	{
 		if (!Object)
 		{
@@ -386,7 +386,7 @@ void FGC::PurgePendingKill()
 
 	PendingKill.clear();
 
-	for (FObject* Object : ToFree)
+	for (UObject* Object : ToFree)
 	{
 		CATTY_CORE_INFO("GC purge pending kill: {}", Object->GetPathName());
 		FinalizeDeadObject(Object);

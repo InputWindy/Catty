@@ -25,6 +25,8 @@ set(_CATTY_GEN_OBJECT_H "${CATTY_GENERATED_DIR}/ObjectReflectTypes.gen.h")
 set(_CATTY_GEN_OBJECT_CPP "${CATTY_GENERATED_DIR}/ObjectReflectTypes.gen.cpp")
 set(_CATTY_GEN_LUA_H "${CATTY_GENERATED_DIR}/LuaReflectBindings.gen.h")
 set(_CATTY_GEN_LUA_CPP "${CATTY_GENERATED_DIR}/LuaReflectBindings.gen.cpp")
+set(_CATTY_GEN_RESOURCE_H "${CATTY_GENERATED_DIR}/ResourceTypes.gen.h")
+set(_CATTY_GEN_RESOURCE_CPP "${CATTY_GENERATED_DIR}/ResourceTypes.gen.cpp")
 
 # Build-time FObject reflection codegen.
 if(NOT EXISTS "${_CATTY_LOCAL_PYTHON}")
@@ -68,6 +70,8 @@ list(APPEND CATTY_SOURCES
 	"${_CATTY_GEN_OBJECT_H}"
 	"${_CATTY_GEN_LUA_CPP}"
 	"${_CATTY_GEN_LUA_H}"
+	"${_CATTY_GEN_RESOURCE_CPP}"
+	"${_CATTY_GEN_RESOURCE_H}"
 )
 list(REMOVE_DUPLICATES CATTY_SOURCES)
 

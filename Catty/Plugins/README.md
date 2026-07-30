@@ -10,7 +10,7 @@ Built-in always-on modules ship inside the engine core instead (each **is** an `
 | `FPlatform` | `Platform` | `Source/Public/Core/Modules/Platform.h` |
 | `FRender` | `Render` | `Source/Public/Core/Modules/Render.h` |
 | `FGC` | `GC` | `Source/Public/Core/Modules/GC.h` |
-| `FResourceManager` | `Resource` | `Source/Public/Core/Modules/Resource.h` |
+| `FResourceManager` | `Resource` | Private `Source/Private/Core/Modules/ResourceManager.h` |
 
 `FApp::RegisterModules()` registers those four. Game apps only need extra
 `RegisterModule` calls for optional / project plugins.

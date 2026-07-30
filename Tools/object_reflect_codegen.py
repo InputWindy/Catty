@@ -1,6 +1,6 @@
 ﻿# Run via Tools/object_reflect_codegen.bat / catty_python.bat — engine Tools/python only.
 """
-FObject / struct / enum runtime reflection codegen.
+UObject / struct / enum runtime reflection codegen.
 
 Scans CATTY_OBJECT / CATTY_STRUCT / CATTY_ENUM (+ CATTY_PROPERTY / CATTY_FUNCTION)
 and emits:
@@ -36,6 +36,8 @@ _DEFAULT_OUT_HTML = ENGINE_ROOT / "Doc" / "Engine" / "ObjectReflectAPI.html"
 _DEFAULT_OUT_LUA_H = _DEFAULT_GEN_DIR / "LuaReflectBindings.gen.h"
 _DEFAULT_OUT_LUA_CPP = _DEFAULT_GEN_DIR / "LuaReflectBindings.gen.cpp"
 _DEFAULT_OUT_LUA_HTML = ENGINE_ROOT / "Doc" / "Engine" / "LuaAPI.html"
+_DEFAULT_OUT_RESOURCE_H = _DEFAULT_GEN_DIR / "ResourceTypes.gen.h"
+_DEFAULT_OUT_RESOURCE_CPP = _DEFAULT_GEN_DIR / "ResourceTypes.gen.cpp"
 
 _HTML_TOC_BEGIN = "<!-- @@CATTY_OBJECT_REFLECT_TOC_BEGIN@@ -->"
 _HTML_TOC_END = "<!-- @@CATTY_OBJECT_REFLECT_TOC_END@@ -->"
@@ -76,10 +78,10 @@ class FMember:
 
 @dataclass
 class FTypeEntry:
-	TypeName: str  # Catty::FObject
+	TypeName: str  # Catty::UObject
 	ShortName: str
 	Bases: list[str] = field(default_factory=list)
-	Super: str = ""  # qualified FObject subclass super, or ""
+	Super: str = ""  # qualified UObject subclass super, or ""
 	Members: list[FMember] = field(default_factory=list)
 	SourceRel: str = ""
 	SourceLine: int = 0
@@ -601,12 +603,12 @@ def _scan_reflected_type(
 	if b_object:
 		for b in bases:
 			bq = _qualify_type(b)
-			if bq == "Catty::FObject" or _short_name(bq).startswith("F"):
+			if bq == "Catty::UObject" or _short_name(bq).startswith("U"):
 				super_q = bq
 				break
 		if not super_q and bases:
 			super_q = _qualify_type(bases[0])
-		if type_short == "FObject":
+		if type_short == "UObject":
 			super_q = ""
 
 	members = _scan_class_body(body, b_allow_functions=b_object)
@@ -618,7 +620,7 @@ def _scan_reflected_type(
 		TypeName=qualified,
 		ShortName=type_short,
 		Bases=[_qualify_type(b) for b in bases],
-		Super=super_q if (b_object and type_short != "FObject") else "",
+		Super=super_q if (b_object and type_short != "UObject") else "",
 		Members=members,
 		SourceRel=rel,
 		SourceLine=_line_number(text, m.start()),
@@ -819,15 +821,15 @@ def scan_roots(
 
 	names = {e.TypeName for e in objects}
 	for e in objects:
-		if e.Super and e.Super not in names and e.Super != "Catty::FObject":
-			if e.Super.endswith("FObject") and "Catty::FObject" in names:
-				e.Super = "Catty::FObject"
+		if e.Super and e.Super not in names and e.Super != "Catty::UObject":
+			if e.Super.endswith("UObject") and "Catty::UObject" in names:
+				e.Super = "Catty::UObject"
 			elif e.Super not in names:
 				print(f"[WARN] {e.TypeName}: Super {e.Super} not a CATTY_OBJECT type")
-	if objects and "Catty::FObject" not in names:
-		raise ValueError("CATTY_OBJECT subclasses require Catty::FObject to be annotated")
+	if objects and "Catty::UObject" not in names:
+		raise ValueError("CATTY_OBJECT subclasses require Catty::UObject to be annotated")
 
-	objects.sort(key=lambda e: (0 if e.TypeName == "Catty::FObject" else 1, e.TypeName))
+	objects.sort(key=lambda e: (0 if e.TypeName == "Catty::UObject" else 1, e.TypeName))
 	structs.sort(key=lambda e: e.TypeName)
 	enums.sort(key=lambda e: e.TypeName)
 	return objects, structs, enums
@@ -933,14 +935,14 @@ def _getter_setter_fns(e: FTypeEntry, mem: FMember) -> tuple[str, str, str]:
 	sname = f"Set_{mangled}_{mem.Name}"
 	kind = mem.PropertyType
 	lines: list[str] = []
-	lines.append(f"bool FObjectReflectDetail::{gname}(const FObject* Object, FPropertyValue& OutValue)")
+	lines.append(f"bool FObjectReflectDetail::{gname}(const UObject* Object, FPropertyValue& OutValue)")
 	lines.append("{")
 	lines.append(f"\tconst auto* Self = static_cast<const {e.TypeName}*>(Object);")
 	_emit_prop_read(lines, kind, f"Self->{mem.Name}")
 	lines.append("\treturn true;")
 	lines.append("}")
 	lines.append("")
-	lines.append(f"bool FObjectReflectDetail::{sname}(FObject* Object, const FPropertyValue& Value)")
+	lines.append(f"bool FObjectReflectDetail::{sname}(UObject* Object, const FPropertyValue& Value)")
 	lines.append("{")
 	lines.append(f"\tauto* Self = static_cast<{e.TypeName}*>(Object);")
 	_emit_prop_write(lines, kind, mem.CppType, f"Self->{mem.Name}")
@@ -977,7 +979,7 @@ def _invoke_fn(e: FTypeEntry, mem: FMember) -> tuple[str, str]:
 	mangled = _mangled(e.TypeName)
 	iname = f"Invoke_{mangled}_{mem.Name}"
 	lines = [
-		f"bool FObjectReflectDetail::{iname}(FObject* Object, const FPropertyValue* Args, std::size_t ArgCount, FPropertyValue* OutReturn)",
+		f"bool FObjectReflectDetail::{iname}(UObject* Object, const FPropertyValue* Args, std::size_t ArgCount, FPropertyValue* OutReturn)",
 		"{",
 		"\t(void)Args;",
 		"\t(void)ArgCount;",
@@ -1091,15 +1093,15 @@ def render_cpp(
 			if mem.Kind == "property" and mem.bSupported:
 				mangled = _mangled(e.TypeName)
 				lines.append(
-					f"\tstatic bool Get_{mangled}_{mem.Name}(const FObject* Object, FPropertyValue& OutValue);"
+					f"\tstatic bool Get_{mangled}_{mem.Name}(const UObject* Object, FPropertyValue& OutValue);"
 				)
 				lines.append(
-					f"\tstatic bool Set_{mangled}_{mem.Name}(FObject* Object, const FPropertyValue& Value);"
+					f"\tstatic bool Set_{mangled}_{mem.Name}(UObject* Object, const FPropertyValue& Value);"
 				)
 			elif mem.Kind == "function" and mem.bSupported:
 				mangled = _mangled(e.TypeName)
 				lines.append(
-					f"\tstatic bool Invoke_{mangled}_{mem.Name}(FObject* Object, const FPropertyValue* Args, std::size_t ArgCount, FPropertyValue* OutReturn);"
+					f"\tstatic bool Invoke_{mangled}_{mem.Name}(UObject* Object, const FPropertyValue* Args, std::size_t ArgCount, FPropertyValue* OutReturn);"
 				)
 	lines.append("};")
 	lines.append("")
@@ -1591,8 +1593,8 @@ def pascal_to_snake(name: str) -> str:
 
 
 def _lua_usertype_name(short: str) -> str:
-	"""FObject -> object, FPackage -> package."""
-	if short.startswith("F") and len(short) > 1 and short[1].isupper():
+	"""UObject -> object, UPackage -> package (UE-style U/F prefix strip)."""
+	if len(short) > 1 and short[0] in "UF" and short[1].isupper():
 		return pascal_to_snake(short[1:])
 	return pascal_to_snake(short)
 
@@ -1612,7 +1614,7 @@ def _cpp_lua_arg_type(kind: str) -> str:
 		"Double": "double",
 		"String": "std::string",
 		"EnumInt32": "std::int64_t",
-		"ObjectRef": "FLua_FObject",
+		"ObjectRef": "FLua_UObject",
 	}.get(kind, "std::int64_t")
 
 
@@ -1669,21 +1671,21 @@ def render_lua_header(objects: list[FTypeEntry]) -> str:
 		"namespace Catty",
 		"{",
 		"",
-		"/** Lua userdata handle for reflected FObject instances. */",
-		"struct FLua_FObject",
+		"/** Lua userdata handle for reflected UObject instances. */",
+		"struct FLua_UObject",
 		"{",
 		"\tFObjectRef Ref;",
 		"",
 		"\t[[nodiscard]] bool IsValid() const { return Ref.IsValid(); }",
-		"\t[[nodiscard]] FObject* GetRaw() const { return Ref ? Ref.operator->() : nullptr; }",
+		"\t[[nodiscard]] UObject* GetRaw() const { return Ref ? Ref.operator->() : nullptr; }",
 		"};",
 		"",
 	]
 	for e in objects:
-		if e.ShortName == "FObject":
+		if e.ShortName == "UObject":
 			continue
 		w = _lua_wrapper_name(e.ShortName)
-		lines.append(f"struct {w} : FLua_FObject")
+		lines.append(f"struct {w} : FLua_UObject")
 		lines.append("{")
 		lines.append("};")
 		lines.append("")
@@ -1694,10 +1696,10 @@ def render_lua_header(objects: list[FTypeEntry]) -> str:
 		"/** Push the most-derived Lua usertype for an FObjectRef (never pushes FObjectRef itself). */",
 		"CATTY_API [[nodiscard]] sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref);",
 		"",
-		"CATTY_API [[nodiscard]] FLua_FObject MakeLuaObject(FObjectRef Ref);",
+		"CATTY_API [[nodiscard]] FLua_UObject MakeLuaObject(FObjectRef Ref);",
 	]
 	for e in objects:
-		if e.ShortName == "FObject":
+		if e.ShortName == "UObject":
 			continue
 		w = _lua_wrapper_name(e.ShortName)
 		lines.append(f"CATTY_API [[nodiscard]] {w} MakeLua_{e.ShortName}(FObjectRef Ref);")
@@ -1740,14 +1742,14 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		"namespace Catty",
 		"{",
 		"",
-		"CATTY_API FLua_FObject MakeLuaObject(FObjectRef Ref)",
+		"CATTY_API FLua_UObject MakeLuaObject(FObjectRef Ref)",
 		"{",
-		"\treturn FLua_FObject{ std::move(Ref) };",
+		"\treturn FLua_UObject{ std::move(Ref) };",
 		"}",
 		"",
 	]
 	for e in objects:
-		if e.ShortName == "FObject":
+		if e.ShortName == "UObject":
 			continue
 		w = _lua_wrapper_name(e.ShortName)
 		lines.append(f"CATTY_API {w} MakeLua_{e.ShortName}(FObjectRef Ref)")
@@ -1775,7 +1777,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 			cur = names[cur.Super]
 		return d
 
-	by_depth = sorted([e for e in objects if e.ShortName != "FObject"], key=depth, reverse=True)
+	by_depth = sorted([e for e in objects if e.ShortName != "UObject"], key=depth, reverse=True)
 	for e in by_depth:
 		lines.append(f"\tif (Ref.Cast<{e.TypeName}>())")
 		lines.append("\t{")
@@ -1800,14 +1802,14 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		funcs = [m for m in e.Members if m.Kind == "function" and m.bSupported]
 
 		lines.append(f"\t// --- {e.TypeName} => catty.{uname} ---")
-		if e.ShortName == "FObject" or not e.Super:
+		if e.ShortName == "UObject" or not e.Super:
 			lines.append(f"\tsol::usertype<{w}> UT_{e.ShortName} = Lua.new_usertype<{w}>(")
 			lines.append(f'\t\t"{uname}",')
 			lines.append("\t\tsol::no_constructor,")
-			lines.append('\t\t"is_valid", &FLua_FObject::IsValid,')
-			lines.append('\t\t"get_type", [](const FLua_FObject& Self) -> std::string')
+			lines.append('\t\t"is_valid", &FLua_UObject::IsValid,')
+			lines.append('\t\t"get_type", [](const FLua_UObject& Self) -> std::string')
 			lines.append("\t\t{")
-			lines.append("\t\t\tFObject* Obj = Self.GetRaw();")
+			lines.append("\t\t\tUObject* Obj = Self.GetRaw();")
 			lines.append("\t\t\tif (!Obj || !Obj->GetObjectType().Name) { return {}; }")
 			lines.append("\t\t\treturn Obj->GetObjectType().Name;")
 			lines.append("\t\t}")
@@ -1828,7 +1830,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 			lines.append(f"\tUT_{e.ShortName}[\"{snake}\"] = sol::property(")
 			lines.append(f"\t\t[](const {w}& Self) -> sol::optional<{ret_cpp}>")
 			lines.append("\t\t{")
-			lines.append("\t\t\tFObject* Obj = Self.GetRaw();")
+			lines.append("\t\t\tUObject* Obj = Self.GetRaw();")
 			lines.append("\t\t\tif (!Obj) { return sol::nullopt; }")
 			lines.append("\t\t\tFPropertyValue Value;")
 			lines.append(f'\t\t\tif (!Obj->GetPropertyValue("{mem.Name}", Value)) {{ return sol::nullopt; }}')
@@ -1836,7 +1838,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 			lines.append("\t\t},")
 			lines.append(f"\t\t[]({w}& Self, {ret_cpp} InValue)")
 			lines.append("\t\t{")
-			lines.append("\t\t\tFObject* Obj = Self.GetRaw();")
+			lines.append("\t\t\tUObject* Obj = Self.GetRaw();")
 			lines.append("\t\t\tif (!Obj) { return; }")
 			lines.append("\t\t\tFPropertyValue Packed;")
 			_emit_pack_from_lua_arg(lines, "\t\t\t", "Packed", kind, "InValue")
@@ -1872,7 +1874,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 					+ (f" -> {ret_sig}" if mem.bHasReturn else "")
 				)
 			lines.append("\t{")
-			lines.append("\t\tFObject* Obj = Self.GetRaw();")
+			lines.append("\t\tUObject* Obj = Self.GetRaw();")
 			if b_obj_ret:
 				lines.append("\t\tif (!Obj) { return sol::lua_nil; }")
 			elif mem.bHasReturn:
@@ -1915,7 +1917,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		lines.append(f'\tCattyTable["{uname}"] = UT_{e.ShortName};')
 		lines.append("")
 
-	lines.append('\tCattyTable["wrap_object"] = [](sol::this_state L, FLua_FObject Handle) -> sol::object')
+	lines.append('\tCattyTable["wrap_object"] = [](sol::this_state L, FLua_UObject Handle) -> sol::object')
 	lines.append("\t{")
 	lines.append("\t\treturn LuaWrapObjectRef(sol::state_view(L), std::move(Handle.Ref));")
 	lines.append("\t};")
@@ -2065,6 +2067,8 @@ def main(argv: list[str]) -> int:
 	parser.add_argument("--out-lua-h", type=Path, default=_DEFAULT_OUT_LUA_H)
 	parser.add_argument("--out-lua-cpp", type=Path, default=_DEFAULT_OUT_LUA_CPP)
 	parser.add_argument("--out-lua-html", type=Path, default=_DEFAULT_OUT_LUA_HTML)
+	parser.add_argument("--out-resource-h", type=Path, default=_DEFAULT_OUT_RESOURCE_H)
+	parser.add_argument("--out-resource-cpp", type=Path, default=_DEFAULT_OUT_RESOURCE_CPP)
 	parser.add_argument("--no-html", action="store_true", help="Do not sync ObjectReflectAPI.html / LuaAPI.html")
 	parser.add_argument("--repo-root", type=Path, default=ENGINE_ROOT)
 	parser.add_argument("--check", action="store_true")
@@ -2075,6 +2079,7 @@ def main(argv: list[str]) -> int:
 
 	try:
 		objects, structs, enums = scan_roots(roots, args.repo_root)
+		resource_types = scan_resource_types(roots, args.repo_root, objects)
 	except ValueError as ex:
 		print(f"[ERROR] {ex}", file=sys.stderr)
 		return 1
@@ -2084,11 +2089,14 @@ def main(argv: list[str]) -> int:
 	js = render_json(objects, structs, enums)
 	lua_h = render_lua_header(objects)
 	lua_cpp = render_lua_cpp(objects)
+	resource_h = render_resource_header()
+	resource_cpp = render_resource_cpp(resource_types)
 
 	print(
 		f"[Catty] reflect scan: {len(objects)} object(s), {len(structs)} struct(s), "
 		f"{len(enums)} enum(s) from {len(roots)} root(s)"
 	)
+	print(f"[Catty] resource scan: {len(resource_types)} TResourceIOTraits specialization(s)")
 
 	outputs = (
 		(args.out_h, header),
@@ -2096,6 +2104,8 @@ def main(argv: list[str]) -> int:
 		(args.out_json, js),
 		(args.out_lua_h, lua_h),
 		(args.out_lua_cpp, lua_cpp),
+		(args.out_resource_h, resource_h),
+		(args.out_resource_cpp, resource_cpp),
 	)
 
 	if args.check:
@@ -2135,6 +2145,307 @@ def main(argv: list[str]) -> int:
 	if not changed:
 		print("[Catty] object reflect codegen: nothing changed")
 	return 0
+
+
+# ---------------------------------------------------------------------------
+# Resource module registration (UResource subclasses + TResourceIOTraits)
+# ---------------------------------------------------------------------------
+
+_RE_RESOURCE_TRAITS = re.compile(
+	r"template\s*<>\s*struct\s+TResourceIOTraits\s*<\s*((?:Catty::)?[A-Za-z_]\w*)\s*>"
+)
+_RE_GET_TYPE = re.compile(r"return\s+EResourceType::(\w+)\s*;")
+_RE_TYPE_NAMES = re.compile(
+	r"static\s+constexpr\s+const\s+char\s*\*\s*TypeNames\s*\[\s*\]\s*=\s*\{([^}]*)\}",
+	re.DOTALL,
+)
+_RE_CLASS_POOL = re.compile(
+	r"\bclass\s+(?:CATTY_API\s+)?(\w+)\s*(?:final\s*)?(?::[^{]+)?\{",
+	re.DOTALL,
+)
+
+
+@dataclass
+class FResourceTypeEntry:
+	TypeName: str  # Catty::UTextureResource
+	ShortName: str
+	EnumName: str  # Texture / Raw
+	TypeNames: list[str] = field(default_factory=list)
+	GCPooledSlots: int | None = None
+	bAlreadyObjectPooled: bool = False
+	IncludePath: str = ""
+
+
+def _extract_brace_body(text: str, open_brace: int) -> str:
+	depth = 0
+	i = open_brace
+	while i < len(text):
+		ch = text[i]
+		if ch == "{":
+			depth += 1
+		elif ch == "}":
+			depth -= 1
+			if depth == 0:
+				return text[open_brace + 1 : i]
+		i += 1
+	return ""
+
+
+def _parse_type_names_list(inner: str) -> list[str]:
+	names: list[str] = []
+	for m in re.finditer(r'"([^"]*)"', inner):
+		names.append(m.group(1))
+	return names
+
+
+def _find_class_pool_size(text: str, short_name: str) -> int | None:
+	for m in _RE_CLASS_POOL.finditer(text):
+		if m.group(1) != short_name:
+			continue
+		brace = text.find("{", m.start())
+		if brace < 0:
+			continue
+		body = _extract_brace_body(text, brace)
+		pm = _RE_POOL_SIZE.search(body)
+		if pm:
+			return int(pm.group(1))
+	return None
+
+
+def scan_resource_types(
+	roots: list[Path],
+	repo_root: Path,
+	objects: list[FTypeEntry],
+) -> list[FResourceTypeEntry]:
+	object_pooled = {e.TypeName for e in objects if e.GCPooledSlots is not None}
+	found: dict[str, FResourceTypeEntry] = {}
+
+	for root in roots:
+		if not root.is_dir():
+			continue
+		for path in sorted(root.rglob("*")):
+			if not path.is_file() or path.suffix.lower() not in _SOURCE_SUFFIXES:
+				continue
+			if any(part in _SKIP_DIR_NAMES for part in path.parts):
+				continue
+			raw = path.read_text(encoding="utf-8")
+			text = _strip_comments(raw)
+			try:
+				rel = str(path.relative_to(repo_root)).replace("\\", "/")
+			except ValueError:
+				rel = path.name
+
+			for m in _RE_RESOURCE_TRAITS.finditer(text):
+				type_tok = m.group(1)
+				short = _short_name(type_tok)
+				qualified = type_tok if "::" in type_tok else f"Catty::{short}"
+
+				brace = text.find("{", m.end())
+				if brace < 0:
+					raise ValueError(f"{rel}: TResourceIOTraits<{short}> missing body")
+				body = _extract_brace_body(text, brace)
+
+				gm = _RE_GET_TYPE.search(body)
+				if not gm:
+					raise ValueError(f"{rel}: TResourceIOTraits<{short}> missing GetType return")
+				enum_name = gm.group(1)
+
+				nm = _RE_TYPE_NAMES.search(body)
+				if not nm:
+					raise ValueError(f"{rel}: TResourceIOTraits<{short}> missing TypeNames[]")
+				type_names = _parse_type_names_list(nm.group(1))
+				if not type_names:
+					raise ValueError(f"{rel}: TResourceIOTraits<{short}> TypeNames empty")
+
+				pool = _find_class_pool_size(text, short)
+				# Class may live in another header (e.g. Resource.h); search all later if needed.
+				include_path = ""
+				if "Public/" in rel.replace("\\", "/"):
+					# Catty/Source/Public/Core/... → Core/...
+					idx = rel.replace("\\", "/").find("/Public/")
+					if idx >= 0:
+						include_path = rel.replace("\\", "/")[idx + len("/Public/") :]
+				elif "Private/" in rel.replace("\\", "/"):
+					idx = rel.replace("\\", "/").find("/Private/")
+					if idx >= 0:
+						include_path = rel.replace("\\", "/")[idx + len("/Private/") :]
+
+				entry = FResourceTypeEntry(
+					TypeName=qualified,
+					ShortName=short,
+					EnumName=enum_name,
+					TypeNames=type_names,
+					GCPooledSlots=pool,
+					bAlreadyObjectPooled=qualified in object_pooled,
+					IncludePath=include_path,
+				)
+				if short in found:
+					# Merge pool size from class definition file if traits file had none.
+					prev = found[short]
+					if prev.GCPooledSlots is None and pool is not None:
+						prev.GCPooledSlots = pool
+					if not prev.TypeNames:
+						prev.TypeNames = type_names
+					continue
+				found[short] = entry
+
+	# Second pass: fill PoolSize from class headers when traits were in ResourceIO.h
+	for root in roots:
+		if not root.is_dir():
+			continue
+		for path in sorted(root.rglob("*")):
+			if not path.is_file() or path.suffix.lower() not in _SOURCE_SUFFIXES:
+				continue
+			if any(part in _SKIP_DIR_NAMES for part in path.parts):
+				continue
+			text = _strip_comments(path.read_text(encoding="utf-8"))
+			for short, entry in found.items():
+				if entry.GCPooledSlots is not None:
+					continue
+				pool = _find_class_pool_size(text, short)
+				if pool is not None:
+					entry.GCPooledSlots = pool
+
+	# Ensure UResource / known object pooled flags
+	for entry in found.values():
+		if entry.TypeName in object_pooled:
+			entry.bAlreadyObjectPooled = True
+
+	entries = list(found.values())
+	# Non-Raw first, Raw last (importer fallback order).
+	entries.sort(key=lambda e: (0 if e.EnumName == "Raw" else 1, e.TypeName), reverse=True)
+	# Want Raw last: sort key Raw=0 others=1 then reverse → Raw last? 
+	# reverse=True with Raw=0 → Raw comes last among zeros... Actually:
+	# key (is_raw, name): is_raw True for Raw → sort False first then True last
+	entries.sort(key=lambda e: (e.EnumName == "Raw", e.TypeName))
+	return entries
+
+
+def render_resource_header() -> str:
+	return "\n".join(
+		[
+			"//*****************************************************************************",
+			"// ResourceTypes.gen.h — GENERATED by Tools/object_reflect_codegen.py.",
+			"//*****************************************************************************",
+			"#pragma once",
+			"",
+			"#include <Core/Modules/Resource.h>",
+			"",
+			"#include <string>",
+			"",
+			"namespace Catty",
+			"{",
+			"",
+			"class FGC;",
+			"class FResourceManager;",
+			"",
+			"/** Register UResource IO + any non-CATTY_OBJECT pools onto Manager/GC. */",
+			"void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);",
+			"",
+			"[[nodiscard]] EResourceType ResourceTypeFromString(const std::string& Name);",
+			"[[nodiscard]] bool TryResourceTypeFromClassName(const std::string& ClassName, EResourceType& OutType);",
+			"",
+			"} // namespace Catty",
+			"",
+		]
+	)
+
+
+def render_resource_cpp(entries: list[FResourceTypeEntry]) -> str:
+	lines = [
+		"//*****************************************************************************",
+		"// ResourceTypes.gen.cpp — GENERATED by Tools/object_reflect_codegen.py.",
+		"//*****************************************************************************",
+		"",
+		'#include <ResourceTypes.gen.h>',
+		"",
+		'#include "Core/Modules/ResourceIO.h"',
+		'#include "Core/Modules/ResourceManager.h"',
+		'#include <Core/Modules/GC.h>',
+		"",
+		"#include <cstring>",
+		"#include <memory>",
+		"",
+		"namespace Catty",
+		"{",
+		"",
+		"void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC)",
+		"{",
+	]
+	if not entries:
+		lines.append("\t(void)Manager;")
+		lines.append("\t(void)GC;")
+	else:
+		# Replace any prior registration (Initialize is once, but keep idempotent).
+		lines.append("\tManager.ClearImportersAndExporters();")
+		for e in entries:
+			if e.GCPooledSlots is not None and not e.bAlreadyObjectPooled:
+				lines.append(
+					f"\tGC.RegisterObjectType<{e.TypeName}>("
+					f"{e.TypeName}::PoolSize, &{e.TypeName}::StaticTearDown);"
+				)
+		for e in entries:
+			lines.append(
+				f"\tManager.RegisterImporter(std::make_unique<TResourceImporter<{e.TypeName}>>());"
+			)
+			lines.append(
+				f"\tManager.RegisterExporter(std::make_unique<TResourceExporter<{e.TypeName}>>());"
+			)
+	lines.append("}")
+	lines.append("")
+
+	lines.append("namespace")
+	lines.append("{")
+	lines.append("[[nodiscard]] bool MatchTypeName(const char* const* Names, std::size_t Count, const std::string& Name)")
+	lines.append("{")
+	lines.append("\tfor (std::size_t Index = 0; Index < Count; ++Index)")
+	lines.append("\t{")
+	lines.append("\t\tif (Name == Names[Index])")
+	lines.append("\t\t{")
+	lines.append("\t\t\treturn true;")
+	lines.append("\t\t}")
+	lines.append("\t}")
+	lines.append("\treturn false;")
+	lines.append("}")
+	lines.append("} // namespace")
+	lines.append("")
+
+	lines.append("EResourceType ResourceTypeFromString(const std::string& Name)")
+	lines.append("{")
+	lines.append("\tEResourceType Type = EResourceType::Unknown;")
+	lines.append("\tif (TryResourceTypeFromClassName(Name, Type))")
+	lines.append("\t{")
+	lines.append("\t\treturn Type;")
+	lines.append("\t}")
+	lines.append("\treturn EResourceType::Unknown;")
+	lines.append("}")
+	lines.append("")
+
+	lines.append("bool TryResourceTypeFromClassName(const std::string& ClassName, EResourceType& OutType)")
+	lines.append("{")
+	if not entries:
+		lines.append("\t(void)ClassName;")
+		lines.append("\t(void)OutType;")
+		lines.append("\treturn false;")
+	else:
+		for e in entries:
+			lines.append(f"\t{{")
+			lines.append(f"\t\tusing FTraits = TResourceIOTraits<{e.TypeName}>;")
+			lines.append(
+				"\t\tconstexpr std::size_t Count = sizeof(FTraits::TypeNames) / sizeof(FTraits::TypeNames[0]);"
+			)
+			lines.append("\t\tif (MatchTypeName(FTraits::TypeNames, Count, ClassName))")
+			lines.append("\t\t{")
+			lines.append(f"\t\t\tOutType = EResourceType::{e.EnumName};")
+			lines.append("\t\t\treturn true;")
+			lines.append("\t\t}")
+			lines.append("\t}")
+		lines.append("\treturn false;")
+	lines.append("}")
+	lines.append("")
+	lines.append("} // namespace Catty")
+	lines.append("")
+	return "\n".join(lines)
 
 
 if __name__ == "__main__":

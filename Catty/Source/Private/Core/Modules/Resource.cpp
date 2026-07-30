@@ -1,4 +1,4 @@
-﻿#include <Core/Modules/Resource.h>
+﻿#include "ResourceIO.h"
 
 #include <Core/App.h>
 #include <Core/Modules/GC.h>
@@ -9,35 +9,13 @@
 #include <Core/SoftObjectPath.h>
 #include "ResourceServer.h"
 
-#include <algorithm>
+#include <ResourceTypes.gen.h>
+
 #include <cctype>
 #include <utility>
 
 namespace Catty
 {
-
-namespace
-{
-
-[[nodiscard]] std::string GetExtensionLower(const std::string& Path)
-{
-	const std::size_t Slash = Path.find_last_of("/\\");
-	const std::size_t Start = (Slash == std::string::npos) ? 0 : Slash + 1;
-	const std::size_t Dot = Path.find_last_of('.');
-	if (Dot == std::string::npos || Dot < Start)
-	{
-		return {};
-	}
-
-	std::string Ext = Path.substr(Dot + 1);
-	for (char& Ch : Ext)
-	{
-		Ch = static_cast<char>(std::tolower(static_cast<unsigned char>(Ch)));
-	}
-	return Ext;
-}
-
-} // namespace
 
 FResourceManager::FResourceManager()
 	: Server(std::make_unique<FResourceServer>())
@@ -104,53 +82,6 @@ std::string FResourceManager::MakeObjectNameFromSource(const std::string& Source
 	return Stem.empty() ? std::string("Resource") : Stem;
 }
 
-EResourceType FResourceManager::InferTypeFromPath(const std::string& Path)
-{
-	const std::string Ext = GetExtensionLower(Path);
-	if (Ext == "png" || Ext == "jpg" || Ext == "jpeg" || Ext == "tga" || Ext == "bmp"
-		|| Ext == "ktx" || Ext == "ktx2" || Ext == "dds")
-	{
-		return EResourceType::Texture;
-	}
-	if (Ext == "mesh" || Ext == "obj" || Ext == "fbx" || Ext == "gltf" || Ext == "glb")
-	{
-		return EResourceType::Mesh;
-	}
-	if (Ext == "mat" || Ext == "material")
-	{
-		return EResourceType::Material;
-	}
-	if (Ext == "spv" || Ext == "vert" || Ext == "frag" || Ext == "hlsl" || Ext == "glsl")
-	{
-		return EResourceType::Shader;
-	}
-	if (Ext == "wav" || Ext == "ogg" || Ext == "mp3" || Ext == "flac")
-	{
-		return EResourceType::Audio;
-	}
-	if (Ext == "json" || Ext == "bin" || Ext == "dat")
-	{
-		return EResourceType::Data;
-	}
-	if (!Ext.empty())
-	{
-		return EResourceType::Raw;
-	}
-	return EResourceType::Unknown;
-}
-
-EResourceType FResourceManager::ResourceTypeFromString(const std::string& Name)
-{
-	if (Name == "Raw") return EResourceType::Raw;
-	if (Name == "Texture") return EResourceType::Texture;
-	if (Name == "Mesh") return EResourceType::Mesh;
-	if (Name == "Material") return EResourceType::Material;
-	if (Name == "Shader") return EResourceType::Shader;
-	if (Name == "Audio") return EResourceType::Audio;
-	if (Name == "Data") return EResourceType::Data;
-	return EResourceType::Unknown;
-}
-
 bool FResourceManager::Initialize()
 {
 	if (IsInitialized())
@@ -171,6 +102,8 @@ bool FResourceManager::Initialize()
 		return false;
 	}
 
+	RegisterGeneratedResourceTypes(*this, *GC);
+
 	bAcceptingNewWork = true;
 	CATTY_CORE_INFO("ResourceManager initialized");
 	return true;
@@ -184,10 +117,10 @@ bool FResourceManager::RegisterResource(const FObjectRef& Resource)
 		return false;
 	}
 
-	FResource* ResourcePtr = Resource.Cast<FResource>();
+	UResource* ResourcePtr = Resource.Cast<UResource>();
 	if (!ResourcePtr)
 	{
-		CATTY_CORE_ERROR("FResourceManager::RegisterResource: Ref is not an FResource");
+		CATTY_CORE_ERROR("FResourceManager::RegisterResource: Ref is not an UResource");
 		return false;
 	}
 
@@ -213,13 +146,15 @@ bool FResourceManager::RegisterResource(const FObjectRef& Resource)
 	return true;
 }
 
-bool FResourceManager::UnregisterResource(FObject* Resource)
+bool FResourceManager::UnregisterResource(UObject* Resource)
 {
-	FResource* ResourcePtr = dynamic_cast<FResource*>(Resource);
+	UResource* ResourcePtr = dynamic_cast<UResource*>(Resource);
 	if (!ResourcePtr)
 	{
 		return false;
 	}
+
+	CancelPendingImport(ResourcePtr);
 
 	const std::string Key = MakeResourceCatalogKey(*ResourcePtr);
 	if (Key.empty())
@@ -228,7 +163,7 @@ bool FResourceManager::UnregisterResource(FObject* Resource)
 	}
 
 	const auto It = Resources.find(Key);
-	if (It == Resources.end() || It->second.Get() != static_cast<FObject*>(ResourcePtr))
+	if (It == Resources.end() || It->second.Get() != static_cast<UObject*>(ResourcePtr))
 	{
 		return false;
 	}
@@ -242,15 +177,7 @@ bool FResourceManager::UnregisterResource(const FObjectRef& Resource)
 	return UnregisterResource(Resource.Get());
 }
 
-void FResourceManager::ReleaseResourceId(FResourceId Id)
-{
-	if (Server && Server->IsInitialized() && Id.IsValid())
-	{
-		Server->Release(Id);
-	}
-}
-
-std::string FResourceManager::MakeResourceCatalogKey(const FResource& Resource)
+std::string FResourceManager::MakeResourceCatalogKey(const UResource& Resource)
 {
 	return NormalizeResourceVirtualPath(Resource.GetPathName());
 }
@@ -277,24 +204,24 @@ std::string FResourceManager::NormalizeResourceVirtualPath(const std::string& Vi
 void FResourceManager::UnregisterResourcesInPackage(const std::string& PackageName)
 {
 	const std::string Key = NormalizePackageName(PackageName);
-	std::vector<FObject*> Snapshot;
+	std::vector<UObject*> Snapshot;
 	for (const auto& Pair : Resources)
 	{
-		FResource* Resource = Pair.second.Cast<FResource>();
+		UResource* Resource = Pair.second.Cast<UResource>();
 		if (!Resource)
 		{
 			continue;
 		}
 
 		FObjectRef PackageRef = Resource->GetPackage();
-		FPackage* Package = PackageRef.Cast<FPackage>();
+		UPackage* Package = PackageRef.Cast<UPackage>();
 		if (Package && NormalizePackageName(Package->GetName()) == Key)
 		{
 			Snapshot.push_back(Resource);
 		}
 	}
 
-	for (FObject* Resource : Snapshot)
+	for (UObject* Resource : Snapshot)
 	{
 		UnregisterResource(Resource);
 	}
@@ -319,7 +246,7 @@ void FResourceManager::PrepareForExit()
 
 	for (FObjectRef& Ref : Snapshot)
 	{
-		if (FResource* Resource = Ref.Cast<FResource>())
+		if (UResource* Resource = Ref.Cast<UResource>())
 		{
 			UnregisterResource(Resource);
 			Resource->ClearOuter();
@@ -338,6 +265,7 @@ bool FResourceManager::IsIdle() const
 	}
 	return !bAcceptingNewWork
 		&& Resources.empty()
+		&& PendingImports.empty()
 		&& !Server->HasPendingLoads();
 }
 
@@ -353,6 +281,10 @@ bool FResourceManager::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext
 			CATTY_CORE_ERROR("FResourceManager: Initialize failed");
 			return false;
 		}
+		return true;
+	case EModuleStage::BeginFrame:
+	case EModuleStage::Update:
+		ProcessReadyImports();
 		return true;
 	case EModuleStage::PrepareExit:
 		PrepareForExit();
@@ -377,6 +309,9 @@ void FResourceManager::Shutdown()
 
 	PrepareForExit();
 
+	Importers.clear();
+	Exporters.clear();
+
 	if (Server->IsInitialized())
 	{
 		Server->Shutdown();
@@ -385,127 +320,256 @@ void FResourceManager::Shutdown()
 	CATTY_CORE_INFO("ResourceManager shut down");
 }
 
+void FResourceManager::CancelPendingImport(UObject* Resource)
+{
+	if (!Resource)
+	{
+		return;
+	}
+
+	for (auto It = PendingImports.begin(); It != PendingImports.end();)
+	{
+		if (It->second.Resource.Get() == Resource)
+		{
+			ReleaseLoadId(It->second.LoadId);
+			It = PendingImports.erase(It);
+		}
+		else
+		{
+			++It;
+		}
+	}
+}
+
+void FResourceManager::ProcessReadyImports()
+{
+	if (!HasActiveServer() || PendingImports.empty())
+	{
+		return;
+	}
+
+	std::vector<std::uint64_t> ReadyIds;
+	ReadyIds.reserve(PendingImports.size());
+	for (const auto& Pair : PendingImports)
+	{
+		const FResourceId Id{Pair.second.LoadId};
+		const EResourceLoadState State = Server->GetLoadState(Id);
+		if (State != EResourceLoadState::Pending)
+		{
+			ReadyIds.push_back(Pair.first);
+		}
+	}
+
+	for (const std::uint64_t IdValue : ReadyIds)
+	{
+		const auto It = PendingImports.find(IdValue);
+		if (It == PendingImports.end())
+		{
+			continue;
+		}
+
+		FPendingImport Pending = std::move(It->second);
+		PendingImports.erase(It);
+
+		UResource* Resource = Pending.Resource.Cast<UResource>();
+		const FResourceId Id{Pending.LoadId};
+		const EResourceLoadState BulkState = Server->GetLoadState(Id);
+
+		if (!Resource)
+		{
+			ReleaseLoadId(Pending.LoadId);
+			continue;
+		}
+
+		if (BulkState == EResourceLoadState::Failed || BulkState == EResourceLoadState::Invalid)
+		{
+			Resource->SetLoadState(EResourceLoadState::Failed);
+			ReleaseLoadId(Pending.LoadId);
+			continue;
+		}
+
+		FResourceBulkData Bulk;
+		if (!TakeBulkData(Pending.LoadId, Bulk))
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::ProcessReadyImports: TakeBulkData failed for '{}'",
+				Resource->GetSourcePath());
+			Resource->SetLoadState(EResourceLoadState::Failed);
+			ReleaseLoadId(Pending.LoadId);
+			continue;
+		}
+
+		const bool bOk = Pending.Importer
+			&& Pending.Importer->ApplyBulkData(Pending.Config, Bulk, Pending.Resource);
+		Resource->SetLoadState(bOk ? EResourceLoadState::Ready : EResourceLoadState::Failed);
+		ReleaseLoadId(Pending.LoadId);
+
+		if (!bOk)
+		{
+			CATTY_CORE_ERROR(
+				"FResourceManager::ProcessReadyImports: Importer failed for '{}'",
+				Resource->GetSourcePath());
+		}
+	}
+}
+
+void FResourceManager::RegisterImporter(std::unique_ptr<IResourceImporter> Importer)
+{
+	if (Importer)
+	{
+		Importers.push_back(std::move(Importer));
+	}
+}
+
+void FResourceManager::RegisterExporter(std::unique_ptr<IResourceExporter> Exporter)
+{
+	if (Exporter)
+	{
+		Exporters.push_back(std::move(Exporter));
+	}
+}
+
+void FResourceManager::ClearImportersAndExporters()
+{
+	Importers.clear();
+	Exporters.clear();
+}
+
+IResourceImporter* FResourceManager::FindImporter(const FResourceImportConfig& Config) const
+{
+	if (Config.TypeHint != EResourceType::Unknown)
+	{
+		for (const auto& Importer : Importers)
+		{
+			if (Importer && Importer->GetType() == Config.TypeHint)
+			{
+				return Importer.get();
+			}
+		}
+	}
+
+	IResourceImporter* Fallback = nullptr;
+	for (const auto& Importer : Importers)
+	{
+		if (!Importer)
+		{
+			continue;
+		}
+
+		if (Importer->GetType() == EResourceType::Raw)
+		{
+			Fallback = Importer.get();
+			continue;
+		}
+
+		if (Importer->MatchesSourcePath(Config.SourcePath))
+		{
+			return Importer.get();
+		}
+	}
+
+	return Fallback;
+}
+
+IResourceExporter* FResourceManager::FindExporter(const FObjectRef& Resource) const
+{
+	IResourceExporter* Fallback = nullptr;
+	for (const auto& Exporter : Exporters)
+	{
+		if (!Exporter || !Exporter->CanExport(Resource))
+		{
+			continue;
+		}
+
+		if (Exporter->GetType() == EResourceType::Raw)
+		{
+			Fallback = Exporter.get();
+			continue;
+		}
+
+		return Exporter.get();
+	}
+
+	return Fallback;
+}
+
+bool FResourceManager::HasActiveServer() const
+{
+	return Server && Server->IsInitialized();
+}
+
+std::uint64_t FResourceManager::RequestLoadId(const std::string& SourcePath)
+{
+	if (!HasActiveServer())
+	{
+		return 0;
+	}
+	return Server->RequestLoad(SourcePath).Value;
+}
+
+void FResourceManager::ReleaseLoadId(std::uint64_t LoadId)
+{
+	if (HasActiveServer() && LoadId != 0)
+	{
+		Server->Release(FResourceId{LoadId});
+	}
+}
+
+bool FResourceManager::TakeBulkData(std::uint64_t LoadId, FResourceBulkData& OutBulk)
+{
+	if (!HasActiveServer() || LoadId == 0)
+	{
+		return false;
+	}
+	return Server->TryTakeBulkData(FResourceId{LoadId}, OutBulk);
+}
+
+FObjectRef FResourceManager::KickImport(FResourceImportConfig Config)
+{
+	IResourceImporter* Importer = FindImporter(Config);
+	if (!Importer)
+	{
+		CATTY_CORE_ERROR(
+			"FResourceManager::KickImport: no importer for '{}' (type hint {})",
+			Config.SourcePath,
+			static_cast<int>(Config.TypeHint));
+		return {};
+	}
+
+	return Importer->Import(*this, std::move(Config));
+}
+
+bool FResourceManager::KickExport(FResourceExportConfig Config, const FObjectRef& Resource)
+{
+	IResourceExporter* Exporter = FindExporter(Resource);
+	if (!Exporter)
+	{
+		CATTY_CORE_ERROR("FResourceManager::KickExport: no exporter for resource");
+		return false;
+	}
+
+	return Exporter->Export(std::move(Config), Resource);
+}
+
 FObjectRef FResourceManager::LoadResourceIntoPackage(
 	const FObjectRef& Package,
 	std::string ObjectName,
 	std::string SourcePath,
 	EResourceType Type)
 {
-	if (!IsInitialized())
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: not initialized");
-		return {};
-	}
-
-	if (!bAcceptingNewWork)
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: refused during exit");
-		return {};
-	}
-
-	if (!Package)
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: invalid Package");
-		return {};
-	}
-
-	FPackage* PackagePtr = Package.Cast<FPackage>();
-	if (!PackagePtr)
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: Ref is not an FPackage");
-		return {};
-	}
-
-	FPackage& PackageObj = *PackagePtr;
-
-	if (ObjectName.empty())
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: empty ObjectName");
-		return {};
-	}
-
-	if (SourcePath.empty())
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: empty SourcePath");
-		return {};
-	}
-
-	if (PackageObj.FindObject(ObjectName))
-	{
-		CATTY_CORE_ERROR(
-			"FResourceManager::LoadResourceIntoPackage: '{}' already exists in '{}'",
-			ObjectName,
-			PackageObj.GetName());
-		return {};
-	}
-
-	if (Type == EResourceType::Unknown)
-	{
-		Type = InferTypeFromPath(SourcePath);
-	}
-
-	const FResourceId Id = Server->RequestLoad(SourcePath);
-	if (!Id.IsValid())
-	{
-		return {};
-	}
-
-	FGC* GC = Detail::GetGC();
-	if (!GC)
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: GC unavailable");
-		if (Server->IsInitialized() && Id.IsValid())
-		{
-			Server->Release(Id);
-		}
-		return {};
-	}
-
-	FObjectRef ResourceRef = GC->NewObject<FResource>(
-		&PackageObj,
-		ObjectName,
-		Id,
-		Type,
-		std::move(SourcePath));
-	FResource* Resource = ResourceRef.Cast<FResource>();
-	if (!Resource)
-	{
-		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: NewObject<FResource> failed");
-		if (Server->IsInitialized() && Id.IsValid())
-		{
-			Server->Release(Id);
-		}
-		return {};
-	}
-
-	if (!PackageObj.RegisterObject(Resource))
-	{
-		if (Server->IsInitialized() && Id.IsValid())
-		{
-			Server->Release(Id);
-		}
-		Resource->ClearOuter();
-		return {};
-	}
-
-	if (!RegisterResource(ResourceRef))
-	{
-		if (Server->IsInitialized() && Id.IsValid())
-		{
-			Server->Release(Id);
-		}
-		Resource->ClearOuter();
-		return {};
-	}
-
-	return ResourceRef;
+	FResourceImportConfig Config;
+	Config.Package = Package;
+	Config.ObjectName = std::move(ObjectName);
+	Config.SourcePath = std::move(SourcePath);
+	Config.TypeHint = Type;
+	return KickImport(std::move(Config));
 }
 
 bool FResourceManager::UnloadResource(const std::string& VirtualPath)
 {
 	FGC* GC = Detail::GetGC();
 	FObjectRef Found = GC ? GC->FindObject(VirtualPath) : FObjectRef{};
-	FResource* ResourcePtr = Found.Cast<FResource>();
+	UResource* ResourcePtr = Found.Cast<UResource>();
 	if (!ResourcePtr)
 	{
 		return false;
@@ -516,7 +580,7 @@ bool FResourceManager::UnloadResource(const std::string& VirtualPath)
 
 bool FResourceManager::UnloadResource(const FObjectRef& Resource)
 {
-	FResource* ResourcePtr = Resource.Cast<FResource>();
+	UResource* ResourcePtr = Resource.Cast<UResource>();
 	if (!ResourcePtr)
 	{
 		return false;
@@ -605,14 +669,14 @@ bool FResourceManager::SavePackageInternal(
 		return false;
 	}
 
-	FPackage* PackagePtr = Package.Cast<FPackage>();
+	UPackage* PackagePtr = Package.Cast<UPackage>();
 	if (!PackagePtr)
 	{
-		CATTY_CORE_ERROR("FResourceManager::SavePackage: Ref is not an FPackage");
+		CATTY_CORE_ERROR("FResourceManager::SavePackage: Ref is not an UPackage");
 		return false;
 	}
 
-	FPackage& PackageObj = *PackagePtr;
+	UPackage& PackageObj = *PackagePtr;
 
 	const std::string PackageKey = NormalizePackageName(PackageObj.GetName());
 	if (SavingPackageNames.find(PackageKey) != SavingPackageNames.end())
@@ -675,7 +739,7 @@ bool FResourceManager::SavePackageInternal(
 
 				FGC* GC = Detail::GetGC();
 				FObjectRef DepPackage = GC ? GC->FindPackage(DepName) : FObjectRef{};
-				FPackage* DepPtr = DepPackage.Cast<FPackage>();
+				UPackage* DepPtr = DepPackage.Cast<UPackage>();
 				if (!DepPtr)
 				{
 					CATTY_CORE_ERROR(
@@ -860,12 +924,12 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	}
 
 	FObjectRef PackageRef = GC
-		? GC->NewObject<FPackage>(PackageName, EPackageFlags::Persistent)
+		? GC->NewObject<UPackage>(PackageName, EPackageFlags::Persistent)
 		: FObjectRef{};
-	FPackage* Raw = PackageRef.Cast<FPackage>();
+	UPackage* Raw = PackageRef.Cast<UPackage>();
 	if (!Raw)
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: NewObject<FPackage> failed");
+		CATTY_CORE_ERROR("FResourceManager::LoadPackage: NewObject<UPackage> failed");
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}
@@ -874,6 +938,10 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadPackage: Deserialize failed '{}'", FilePath);
 		LoadingFilePaths.erase(NormalizedFile);
+		// Drop the only Ref so GC can finalize; otherwise FindPackage keeps returning this shell.
+		PackageRef = {};
+		GC->CollectGarbage();
+		GC->PurgePendingKill();
 		return {};
 	}
 
@@ -925,33 +993,14 @@ FObjectRef FResourceManager::LoadPackageInternal(
 
 			FObjectRef Created;
 			const std::string ClassName = Entry.GetField("class").AsString("Resource");
-			if (ClassName == "Resource" || ClassName == "Object" || ClassName.empty())
+
+			EResourceType Type = EResourceType::Unknown;
+			if (Entry.HasField("type"))
 			{
-				if (SourcePath.empty())
-				{
-					CATTY_CORE_WARN(
-						"FResourceManager::LoadPackage: object '{}' has no source — skip",
-						ObjectName);
-					continue;
-				}
-
-				EResourceType Type = EResourceType::Unknown;
-				if (Entry.HasField("type"))
-				{
-					Type = ResourceTypeFromString(Entry.GetField("type").AsString());
-				}
-
-				if (ClassName != "Resource" && ClassName != "Object" && !ClassName.empty())
-				{
-					CATTY_CORE_WARN(
-						"FResourceManager::LoadPackage: unknown class '{}' for '{}' — treating as Resource",
-						ClassName,
-						ObjectName);
-				}
-
-				Created = LoadResourceIntoPackage(PackageRef, ObjectName, SourcePath, Type);
+				Type = ResourceTypeFromString(Entry.GetField("type").AsString());
 			}
-			else
+			if (Type == EResourceType::Unknown
+				&& !TryResourceTypeFromClassName(ClassName.empty() ? "Resource" : ClassName, Type))
 			{
 				CATTY_CORE_WARN(
 					"FResourceManager::LoadPackage: unsupported class '{}' for '{}' — skip",
@@ -959,6 +1008,16 @@ FObjectRef FResourceManager::LoadPackageInternal(
 					ObjectName);
 				continue;
 			}
+
+			if (SourcePath.empty())
+			{
+				CATTY_CORE_WARN(
+					"FResourceManager::LoadPackage: object '{}' has no source — skip",
+					ObjectName);
+				continue;
+			}
+
+			Created = LoadResourceIntoPackage(PackageRef, ObjectName, SourcePath, Type);
 
 			if (!Created)
 			{
@@ -992,7 +1051,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 			continue;
 		}
 
-		std::vector<FObject*> Resolved;
+		std::vector<UObject*> Resolved;
 		Resolved.reserve(Links.SoftPaths.size());
 		for (const std::string& SoftPath : Links.SoftPaths)
 		{
@@ -1029,18 +1088,13 @@ FObjectRef FResourceManager::LoadPackageInternal(
 
 EResourceLoadState FResourceManager::GetLoadState(const FObjectRef& Object) const
 {
-	if (!IsInitialized())
-	{
-		return EResourceLoadState::Invalid;
-	}
-
-	const FResource* Resource = Object.Cast<FResource>();
+	const UResource* Resource = Object.Cast<UResource>();
 	if (!Resource)
 	{
 		return EResourceLoadState::Invalid;
 	}
 
-	return Server->GetLoadState(Resource->GetId());
+	return Resource->GetLoadState();
 }
 
 bool FResourceManager::IsReady(const FObjectRef& Object) const
@@ -1055,18 +1109,38 @@ void FResourceManager::Flush(const FObjectRef& Object)
 		return;
 	}
 
-	if (const FResource* Resource = Object.Cast<FResource>())
+	UObject* ObjectPtr = Object.Get();
+	if (!ObjectPtr)
 	{
-		Server->Flush(Resource->GetId());
+		return;
 	}
+
+	for (const auto& Pair : PendingImports)
+	{
+		if (Pair.second.Resource.Get() == ObjectPtr)
+		{
+			Server->Flush(FResourceId{Pair.second.LoadId});
+			break;
+		}
+	}
+
+	ProcessReadyImports();
 }
 
 void FResourceManager::FlushAll()
 {
-	if (IsInitialized())
+	if (!IsInitialized())
 	{
-		Server->FThreadedServer::Flush();
+		return;
 	}
+
+	for (const auto& Pair : PendingImports)
+	{
+		Server->Flush(FResourceId{Pair.second.LoadId});
+	}
+
+	Server->FThreadedServer::Flush();
+	ProcessReadyImports();
 }
 
 namespace Detail

@@ -43,20 +43,20 @@ namespace
 
 } // namespace
 
-// --- FObject ---
+// --- UObject ---
 
-FObject::FObject(FPackage* InOuter, std::string InObjectName)
-	: Outer(static_cast<FObject*>(InOuter))
+UObject::UObject(UPackage* InOuter, std::string InObjectName)
+	: Outer(static_cast<UObject*>(InOuter))
 	, ObjectName(std::move(InObjectName))
 {
 }
 
-FObject::~FObject()
+UObject::~UObject()
 {
 	ClearOuter();
 }
 
-bool FObject::GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const
+bool UObject::GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const
 {
 	const FProperty* Prop = GetObjectType().FindPropertyInHierarchy(Name);
 	if (!Prop || !Prop->Getter)
@@ -66,7 +66,7 @@ bool FObject::GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) 
 	return Prop->Getter(this, OutValue);
 }
 
-bool FObject::SetPropertyValue(std::string_view Name, const FPropertyValue& Value)
+bool UObject::SetPropertyValue(std::string_view Name, const FPropertyValue& Value)
 {
 	const FProperty* Prop = GetObjectType().FindPropertyInHierarchy(Name);
 	if (!Prop || !Prop->Setter)
@@ -76,7 +76,7 @@ bool FObject::SetPropertyValue(std::string_view Name, const FPropertyValue& Valu
 	return Prop->Setter(this, Value);
 }
 
-bool FObject::CallFunction(
+bool UObject::CallFunction(
 	std::string_view Name,
 	const FPropertyValue* Args,
 	std::size_t ArgCount,
@@ -105,7 +105,7 @@ bool FObject::CallFunction(
 	return Func->Invoke(this, Args, ArgCount, OutReturn);
 }
 
-void FObject::ClearOuter()
+void UObject::ClearOuter()
 {
 	if (!Outer)
 	{
@@ -113,29 +113,29 @@ void FObject::ClearOuter()
 	}
 
 	// Detach while Outer Ref still pins the package, then drop the pin.
-	if (FPackage* Package = Outer.Cast<FPackage>())
+	if (UPackage* Package = Outer.Cast<UPackage>())
 	{
 		Package->DetachObject(this);
 	}
 	Outer.Reset();
 }
 
-FObjectRef FObject::GetOuter() const
+FObjectRef UObject::GetOuter() const
 {
 	return Outer;
 }
 
-FObjectRef FObject::GetPackage() const
+FObjectRef UObject::GetPackage() const
 {
-	const FObject* Current = this;
+	const UObject* Current = this;
 	while (Current->Outer)
 	{
 		Current = Current->Outer.Get();
 	}
-	return FObjectRef::Wrap(const_cast<FObject*>(Current));
+	return FObjectRef::Wrap(const_cast<UObject*>(Current));
 }
 
-std::string FObject::GetPathName() const
+std::string UObject::GetPathName() const
 {
 	if (!Outer)
 	{
@@ -144,22 +144,22 @@ std::string FObject::GetPathName() const
 	return Outer->GetName() + "." + ObjectName;
 }
 
-bool FObject::HasAnyFlags(EObjectFlags Test) const
+bool UObject::HasAnyFlags(EObjectFlags Test) const
 {
 	return HasAnyObjectFlags(ObjectFlags, Test);
 }
 
-bool FObject::IsPendingKill() const
+bool UObject::IsPendingKill() const
 {
 	return HasAnyFlags(EObjectFlags::PendingKill);
 }
 
-std::uint32_t FObject::AddRef()
+std::uint32_t UObject::AddRef()
 {
 	return ++RefCount;
 }
 
-std::uint32_t FObject::ReleaseRef()
+std::uint32_t UObject::ReleaseRef()
 {
 	if (RefCount > 0)
 	{
@@ -168,12 +168,12 @@ std::uint32_t FObject::ReleaseRef()
 	return RefCount;
 }
 
-void FObject::GetReferencedObjects(std::vector<FObject*>& OutObjects) const
+void UObject::GetReferencedObjects(std::vector<UObject*>& OutObjects) const
 {
 	(void)OutObjects;
 }
 
-void FObject::SetReferencedObjects(const std::vector<FObject*>& InObjects)
+void UObject::SetReferencedObjects(const std::vector<UObject*>& InObjects)
 {
 	(void)InObjects;
 }
@@ -234,7 +234,7 @@ std::uint32_t FObjectRef::GetRefCount() const
 	return Object ? Object->GetRefCount() : 0;
 }
 
-FObjectRef FObjectRef::Wrap(FObject* InObject)
+FObjectRef FObjectRef::Wrap(UObject* InObject)
 {
 	return FObjectRef(InObject);
 }
@@ -248,7 +248,7 @@ void FObjectRef::Reset()
 	}
 }
 
-FObjectRef::FObjectRef(FObject* InObject)
+FObjectRef::FObjectRef(UObject* InObject)
 	: Object(InObject)
 {
 	if (Object)

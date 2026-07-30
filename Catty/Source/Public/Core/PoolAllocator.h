@@ -17,8 +17,8 @@ namespace Catty
  *
  * Example:
  * ```
- *   Catty::TPoolAllocator<Catty::FResource> Pool(64);
- *   Catty::FResource* Res = Pool.Allocate(Outer, "T_Hero", Id, Type, Path);
+ *   Catty::TPoolAllocator<Catty::UResource> Pool(64);
+ *   Catty::UResource* Res = Pool.Allocate(Outer, "T_Hero", Type, Path);
  *   Pool.Free(Res); // returns slot to free list
  * ```
  */

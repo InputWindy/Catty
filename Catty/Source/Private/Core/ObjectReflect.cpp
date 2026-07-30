@@ -120,7 +120,7 @@ FPropertyValue& FPropertyValue::operator=(FPropertyValue&& Other) noexcept
 	return *this;
 }
 
-FPropertyValue FPropertyValue::FromObject(FObject* InObject)
+FPropertyValue FPropertyValue::FromObject(UObject* InObject)
 {
 	FPropertyValue Out;
 	Out.Type = EPropertyType::ObjectRef;
