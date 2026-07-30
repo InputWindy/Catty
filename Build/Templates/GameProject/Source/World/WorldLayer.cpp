@@ -24,10 +24,13 @@ void FWorldLayer::OnDetach()
 	World.Shutdown();
 }
 
-void FWorldLayer::OnUpdate(
-	Catty::EModuleStage /*Stage*/,
-	Catty::FApp& /*App*/,
-	Catty::FStageContext& Ctx)
+void FWorldLayer::OnSequencerStage(Catty::EFrameStage Stage)
 {
+	if (Stage != Catty::EFrameStage::Update || !Catty::GApp)
+	{
+		return;
+	}
+	Catty::FStageContext Ctx{};
+	Catty::GApp->MakeStageContext(Ctx);
 	World.Tick(Ctx.DeltaSeconds);
 }

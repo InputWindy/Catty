@@ -35,4 +35,11 @@ void FLayer::Detach()
 	OnDetach();
 }
 
+void FLayer::OnSequencerStage(EFrameStage Stage)
+{
+	// Attach/Detach frame stages are lockstep sync points only.
+	// Stack enter/leave is Attach()/Detach() (PushLayer / FlushPendingRemoves).
+	(void)Stage;
+}
+
 } // namespace Catty

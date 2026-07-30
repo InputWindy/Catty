@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
 
-#include <Core/Resource/ResourceHandle.h>
+#include <Core/Modules/Resource.h>
 #include <Core/Server/ThreadedServer.h>
 
 #include <condition_variable>
@@ -39,6 +39,8 @@ public:
 
 	/** Drop a handle from the registry (safe if already invalid). */
 	void Release(FResourceId Id);
+
+	[[nodiscard]] bool HasPendingLoads() const;
 
 protected:
 	[[nodiscard]] virtual const char* GetServerThreadName() const override { return "CattyResourceThread"; }

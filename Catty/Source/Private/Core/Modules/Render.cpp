@@ -1,13 +1,13 @@
-#include <Core/Modules/RenderModule.h>
+﻿#include <Core/Modules/Render.h>
 
 #include <Core/App.h>
 #include <Core/Log.h>
-#include <Core/Modules/PlatformModule.h>
+#include <Core/Modules/Platform.h>
 
 namespace Catty
 {
 
-void FRenderModule::Flush()
+void FRender::Flush()
 {
 	if (RenderServer.IsInitialized())
 	{
@@ -15,7 +15,7 @@ void FRenderModule::Flush()
 	}
 }
 
-void FRenderModule::ClearPresentAndFlush(FApp& App)
+void FRender::ClearPresentAndFlush(FApp& App)
 {
 	if (RenderServer.HasRHI())
 	{
@@ -29,9 +29,9 @@ void FRenderModule::ClearPresentAndFlush(FApp& App)
 	Flush();
 }
 
-void FRenderModule::SyncFramebufferSize(FApp& App)
+void FRender::SyncFramebufferSize(FApp& App)
 {
-	FPlatformModule* Platform = App.GetModule<FPlatformModule>();
+	FPlatform* Platform = App.GetModule<FPlatform>();
 	if (!Platform)
 	{
 		return;
@@ -59,30 +59,30 @@ void FRenderModule::SyncFramebufferSize(FApp& App)
 	}
 }
 
-bool FRenderModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
+bool FRender::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 {
 	(void)Ctx;
 	switch (Stage)
 	{
 	case EModuleStage::Init:
 	{
-		FPlatformModule* Platform = App.GetModule<FPlatformModule>();
+		FPlatform* Platform = App.GetModule<FPlatform>();
 		if (!Platform || !Platform->GetWindow())
 		{
-			CATTY_CORE_ERROR("FRenderModule: Platform window missing");
+			CATTY_CORE_ERROR("FRender: Platform window missing");
 			return false;
 		}
 
 		FPlatformWindow& Window = *Platform->GetWindow();
 		if (!RenderServer.Initialize())
 		{
-			CATTY_CORE_ERROR("FRenderModule: RenderServer Initialize failed");
+			CATTY_CORE_ERROR("FRender: RenderServer Initialize failed");
 			return false;
 		}
 
 		if (!RenderServer.InitializeRHI(Window))
 		{
-			CATTY_CORE_ERROR("FRenderModule: RHI Initialize failed");
+			CATTY_CORE_ERROR("FRender: RHI Initialize failed");
 			RenderServer.Shutdown();
 			return false;
 		}
@@ -92,7 +92,7 @@ bool FRenderModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& C
 			Window.GetFramebufferSize(LastFramebufferWidth, LastFramebufferHeight);
 			if (!ImGui.Initialize(Window, RenderServer, App.GetConfig().ProjectConfigDir))
 			{
-				CATTY_CORE_ERROR("FRenderModule: ImGui Initialize failed");
+				CATTY_CORE_ERROR("FRender: ImGui Initialize failed");
 				RenderServer.Shutdown();
 				return false;
 			}
@@ -116,10 +116,8 @@ bool FRenderModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& C
 		}
 		ClearPresentAndFlush(App);
 		return true;
-	case EModuleStage::PreShutdown:
-		Flush();
-		return true;
 	case EModuleStage::Shutdown:
+		Flush();
 		if (ImGui.IsInitialized())
 		{
 			ImGui.Shutdown(RenderServer);

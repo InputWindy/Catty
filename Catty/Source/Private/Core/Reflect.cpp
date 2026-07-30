@@ -2,11 +2,8 @@
 
 #include <Core/Object.h>
 
-#include <Core/Resource/Package.h>
-
-#include <Core/Resource/Resource.h>
-
-#include <Core/Resource/ResourceHandle.h>
+#include <Core/Package.h>
+#include <Core/Modules/Resource.h>
 
 #include <ObjectReflectTypes.gen.h>
 
@@ -52,7 +49,7 @@ void SelfTestObjectReflect()
 
 	assert(ResourceType.Super == &ObjectType);
 
-	assert(ObjectType.FindFunction("MarkPendingKill") != nullptr);
+	assert(ObjectType.FindFunction("IsPendingKill") != nullptr);
 
 	assert(ObjectType.FindProperty("ObjectName") != nullptr);
 

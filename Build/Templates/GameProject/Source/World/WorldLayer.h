@@ -2,6 +2,7 @@
 
 #include "World/World.h"
 
+#include <Core/FrameStage.h>
 #include <Core/Layer.h>
 #include <Core/Module.h>
 
@@ -17,10 +18,7 @@ public:
 
 	virtual void OnAttach() override;
 	virtual void OnDetach() override;
-	virtual void OnUpdate(
-		Catty::EModuleStage Stage,
-		Catty::FApp& App,
-		Catty::FStageContext& Ctx) override;
+	virtual void OnSequencerStage(Catty::EFrameStage Stage) override;
 
 	[[nodiscard]] FWorld& GetWorld() { return World; }
 	[[nodiscard]] const FWorld& GetWorld() const { return World; }

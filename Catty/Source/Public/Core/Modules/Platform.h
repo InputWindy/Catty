@@ -11,12 +11,12 @@ namespace Catty
 {
 
 /** Built-in platform window / headless clock module (always-on in Catty.dll). */
-class CATTY_API FPlatformModule final : public IModule
+class CATTY_API FPlatform final : public IModule
 {
 public:
 	const char* GetName() const override { return "Platform"; }
 
-	void GetDependencies(std::vector<std::string>& /*OutNames*/) const override
+	void GetDependencies(EModuleStage /*Stage*/, std::vector<std::string>& /*OutNames*/) const override
 	{
 	}
 

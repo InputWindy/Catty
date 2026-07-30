@@ -1,13 +1,13 @@
-﻿#include <Core/Resource/ResourceManager.h>
+﻿#include <Core/Modules/Resource.h>
 
 #include <Core/App.h>
-#include <Core/GC.h>
+#include <Core/Modules/GC.h>
 #include <Core/Json.h>
 #include <Core/Log.h>
-#include <Core/Modules/ResourceModule.h>
 #include <Core/Paths.h>
+#include <Core/Package.h>
 #include <Core/SoftObjectPath.h>
-#include "Core/Resource/ResourceServer.h"
+#include "ResourceServer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -171,12 +171,19 @@ bool FResourceManager::Initialize()
 		return false;
 	}
 
+	bAcceptingNewWork = true;
 	CATTY_CORE_INFO("ResourceManager initialized");
 	return true;
 }
 
 bool FResourceManager::RegisterResource(const FObjectRef& Resource)
 {
+	if (!bAcceptingNewWork)
+	{
+		CATTY_CORE_ERROR("FResourceManager::RegisterResource: refused during exit");
+		return false;
+	}
+
 	FResource* ResourcePtr = Resource.Cast<FResource>();
 	if (!ResourcePtr)
 	{
@@ -267,33 +274,6 @@ std::string FResourceManager::NormalizeResourceVirtualPath(const std::string& Vi
 	return Path;
 }
 
-FObjectRef FResourceManager::FindLoadedPackageByName(const std::string& Name) const
-{
-	const std::string Key = NormalizePackageName(Name);
-	if (Key.empty())
-	{
-		return {};
-	}
-
-	for (const auto& Pair : Resources)
-	{
-		FResource* Resource = Pair.second.Cast<FResource>();
-		if (!Resource)
-		{
-			continue;
-		}
-
-		FObjectRef PackageRef = Resource->GetPackage();
-		FPackage* Package = PackageRef.Cast<FPackage>();
-		if (Package && NormalizePackageName(Package->GetName()) == Key)
-		{
-			return PackageRef;
-		}
-	}
-
-	return {};
-}
-
 void FResourceManager::UnregisterResourcesInPackage(const std::string& PackageName)
 {
 	const std::string Key = NormalizePackageName(PackageName);
@@ -320,12 +300,15 @@ void FResourceManager::UnregisterResourcesInPackage(const std::string& PackageNa
 	}
 }
 
-void FResourceManager::Shutdown()
+void FResourceManager::PrepareForExit()
 {
 	if (!IsInitialized())
 	{
 		return;
 	}
+
+	bAcceptingNewWork = false;
+	FlushAll();
 
 	std::vector<FObjectRef> Snapshot;
 	Snapshot.reserve(Resources.size());
@@ -345,27 +328,54 @@ void FResourceManager::Shutdown()
 
 	Resources.clear();
 	Snapshot.clear();
+}
 
-	if (FGC* GC = Detail::GetGC())
+bool FResourceManager::IsIdle() const
+{
+	if (!IsInitialized())
 	{
-		GC->CollectGarbage();
-		GC->PurgePendingKill();
-
-		const std::size_t LiveResources = GC->GetPooledLiveCount<FResource>();
-		const std::size_t LivePackages = GC->GetPooledLiveCount<FPackage>();
-		if (LiveResources > 0)
-		{
-			CATTY_CORE_ERROR(
-				"FResourceManager::Shutdown: {} resource slot(s) still live in GC pool",
-				LiveResources);
-		}
-		if (LivePackages > 0)
-		{
-			CATTY_CORE_ERROR(
-				"FResourceManager::Shutdown: {} package slot(s) still live in GC pool",
-				LivePackages);
-		}
+		return true;
 	}
+	return !bAcceptingNewWork
+		&& Resources.empty()
+		&& !Server->HasPendingLoads();
+}
+
+bool FResourceManager::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
+{
+	(void)App;
+	(void)Ctx;
+	switch (Stage)
+	{
+	case EModuleStage::Init:
+		if (!Initialize())
+		{
+			CATTY_CORE_ERROR("FResourceManager: Initialize failed");
+			return false;
+		}
+		return true;
+	case EModuleStage::PrepareExit:
+		PrepareForExit();
+		return true;
+	case EModuleStage::Shutdown:
+		if (IsInitialized())
+		{
+			Shutdown();
+		}
+		return true;
+	default:
+		return true;
+	}
+}
+
+void FResourceManager::Shutdown()
+{
+	if (!IsInitialized())
+	{
+		return;
+	}
+
+	PrepareForExit();
 
 	if (Server->IsInitialized())
 	{
@@ -384,6 +394,12 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 	if (!IsInitialized())
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: not initialized");
+		return {};
+	}
+
+	if (!bAcceptingNewWork)
+	{
+		CATTY_CORE_ERROR("FResourceManager::LoadResourceIntoPackage: refused during exit");
 		return {};
 	}
 
@@ -464,12 +480,20 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 
 	if (!PackageObj.RegisterObject(Resource))
 	{
+		if (Server->IsInitialized() && Id.IsValid())
+		{
+			Server->Release(Id);
+		}
 		Resource->ClearOuter();
 		return {};
 	}
 
 	if (!RegisterResource(ResourceRef))
 	{
+		if (Server->IsInitialized() && Id.IsValid())
+		{
+			Server->Release(Id);
+		}
 		Resource->ClearOuter();
 		return {};
 	}
@@ -477,52 +501,17 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 	return ResourceRef;
 }
 
-FObjectRef FResourceManager::FindObject(const FObjectRef& Package, const std::string& ObjectName) const
-{
-	FPackage* PackagePtr = Package.Cast<FPackage>();
-	if (!PackagePtr)
-	{
-		return {};
-	}
-	return PackagePtr->FindObject(ObjectName);
-}
-
-FObjectRef FResourceManager::FindObject(const std::string& PackageName, const std::string& ObjectName) const
-{
-	return FindResourceByPath(NormalizePackageName(PackageName) + "." + ObjectName);
-}
-
-FObjectRef FResourceManager::FindResourceByPath(const std::string& VirtualPath) const
-{
-	const std::string Key = NormalizeResourceVirtualPath(VirtualPath);
-	if (Key.empty())
-	{
-		return {};
-	}
-
-	const auto It = Resources.find(Key);
-	if (It == Resources.end() || !It->second)
-	{
-		return {};
-	}
-	return It->second;
-}
-
 bool FResourceManager::UnloadResource(const std::string& VirtualPath)
 {
-	const std::string Key = NormalizeResourceVirtualPath(VirtualPath);
-	if (Key.empty())
+	FGC* GC = Detail::GetGC();
+	FObjectRef Found = GC ? GC->FindObject(VirtualPath) : FObjectRef{};
+	FResource* ResourcePtr = Found.Cast<FResource>();
+	if (!ResourcePtr)
 	{
 		return false;
 	}
 
-	const auto It = Resources.find(Key);
-	if (It == Resources.end() || !It->second)
-	{
-		return false;
-	}
-
-	return UnregisterResource(It->second.Cast<FResource>());
+	return UnregisterResource(ResourcePtr);
 }
 
 bool FResourceManager::UnloadResource(const FObjectRef& Resource)
@@ -536,33 +525,6 @@ bool FResourceManager::UnloadResource(const FObjectRef& Resource)
 	return UnregisterResource(ResourcePtr);
 }
 
-FObjectRef FResourceManager::Resolve(const FSoftObjectPath& SoftPath) const
-{
-	if (!SoftPath.IsValid())
-	{
-		return {};
-	}
-
-	if (SoftPath.HasSubPath())
-	{
-		CATTY_CORE_WARN(
-			"FResourceManager::Resolve: subobject path not implemented yet ('{}') — resolving asset only",
-			SoftPath.ToStringWithoutClass());
-	}
-
-	return FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName());
-}
-
-FObjectRef FResourceManager::Resolve(const std::string& SoftPathString) const
-{
-	FSoftObjectPath SoftPath;
-	if (!SoftPath.TrySetPath(SoftPathString) || !SoftPath.IsValid())
-	{
-		return {};
-	}
-	return Resolve(SoftPath);
-}
-
 FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
 {
 	if (!SoftPath.IsValid())
@@ -570,12 +532,16 @@ FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
 		return {};
 	}
 
-	if (FObjectRef Existing = Resolve(SoftPath))
+	FGC* GC = Detail::GetGC();
+	if (GC)
 	{
-		return Existing;
+		if (FObjectRef Existing = GC->FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName()))
+		{
+			return Existing;
+		}
 	}
 
-	if (!FindLoadedPackageByName(SoftPath.GetPackageName()))
+	if (!GC || !GC->FindPackage(SoftPath.GetPackageName()))
 	{
 		const std::string Filename = FPaths::ConvertPackageNameToFilename(SoftPath.GetPackageName());
 		if (Filename.empty())
@@ -596,7 +562,8 @@ FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
 		}
 	}
 
-	return Resolve(SoftPath);
+	GC = Detail::GetGC();
+	return GC ? GC->FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName()) : FObjectRef{};
 }
 
 FObjectRef FResourceManager::TryLoad(const std::string& SoftPathString)
@@ -706,7 +673,8 @@ bool FResourceManager::SavePackageInternal(
 					continue;
 				}
 
-				FObjectRef DepPackage = FindLoadedPackageByName(DepName);
+				FGC* GC = Detail::GetGC();
+				FObjectRef DepPackage = GC ? GC->FindPackage(DepName) : FObjectRef{};
 				FPackage* DepPtr = DepPackage.Cast<FPackage>();
 				if (!DepPtr)
 				{
@@ -772,7 +740,8 @@ bool FResourceManager::SavePackageInternal(
 
 FObjectRef FResourceManager::ResolveObjectPath(const std::string& PathName) const
 {
-	return Resolve(PathName);
+	FGC* GC = Detail::GetGC();
+	return GC ? GC->FindObject(PathName) : FObjectRef{};
 }
 
 FObjectRef FResourceManager::LoadPackage(const std::string& FilePath)
@@ -788,6 +757,12 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	if (!IsInitialized())
 	{
 		CATTY_CORE_ERROR("FResourceManager::LoadPackage: not initialized");
+		return {};
+	}
+
+	if (!bAcceptingNewWork)
+	{
+		CATTY_CORE_ERROR("FResourceManager::LoadPackage: refused during exit");
 		return {};
 	}
 
@@ -841,7 +816,8 @@ FObjectRef FResourceManager::LoadPackageInternal(
 
 			if (!DepName.empty())
 			{
-				if (FindLoadedPackageByName(DepName))
+				FGC* GC = Detail::GetGC();
+				if (GC && GC->FindPackage(DepName))
 				{
 					continue;
 				}
@@ -873,7 +849,8 @@ FObjectRef FResourceManager::LoadPackageInternal(
 		PackageName = FilePath;
 	}
 
-	if (FObjectRef Existing = FindLoadedPackageByName(PackageName))
+	FGC* GC = Detail::GetGC();
+	if (FObjectRef Existing = GC ? GC->FindPackage(PackageName) : FObjectRef{})
 	{
 		CATTY_CORE_WARN(
 			"FResourceManager::LoadPackage: '{}' already loaded — returning existing",
@@ -882,7 +859,6 @@ FObjectRef FResourceManager::LoadPackageInternal(
 		return Existing;
 	}
 
-	FGC* GC = Detail::GetGC();
 	FObjectRef PackageRef = GC
 		? GC->NewObject<FPackage>(PackageName, EPackageFlags::Persistent)
 		: FObjectRef{};
@@ -1102,8 +1078,7 @@ FResourceManager* GetResourceManager()
 	{
 		return nullptr;
 	}
-	FResourceModule* Module = GApp->GetModule<FResourceModule>();
-	return Module ? &Module->GetResourceManager() : nullptr;
+	return GApp->GetModule<FResourceManager>();
 }
 
 } // namespace Detail

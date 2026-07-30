@@ -22,8 +22,7 @@ public:
 	void OnAttach() override;
 	void OnDetach() override;
 
-	void OnUpdate(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
-	void OnFixedUpdate(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
+	void OnSequencerStage(EFrameStage Stage) override;
 
 	[[nodiscard]] FScriptSystem& GetScriptSystem() { return Script; }
 	[[nodiscard]] const FScriptSystem& GetScriptSystem() const { return Script; }

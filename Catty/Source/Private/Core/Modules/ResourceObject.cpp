@@ -1,6 +1,4 @@
-#include <Core/Resource/Resource.h>
-
-#include <Core/Resource/ResourceManager.h>
+﻿#include <Core/Modules/Resource.h>
 
 namespace Catty
 {

@@ -1,8 +1,10 @@
 #include <Core/SoftObjectPath.h>
 
+#include <Core/Modules/GC.h>
+#include <Core/Log.h>
 #include <Core/Object.h>
 #include <Core/Paths.h>
-#include <Core/Resource/ResourceManager.h>
+#include <Core/Modules/Resource.h>
 
 #include <cctype>
 
@@ -113,15 +115,15 @@ FSoftObjectPath::FSoftObjectPath(
 FSoftObjectPath FSoftObjectPath::FromObject(const FObject& Object)
 {
 	FSoftObjectPath Path;
-	const FObjectRef Outer = Object.GetOuter();
-	if (!Outer)
+	const FObjectRef Package = Object.GetPackage();
+	if (!Package || &*Package == &Object)
 	{
-		// Package root or orphan — treat name as package-only if it looks mounted.
+		// Package root (or orphan with no outer) — package-only path.
 		Path.PackageName = FPaths::NormalizePackagePath(Object.GetName());
 		return Path;
 	}
 
-	Path.PackageName = FPaths::NormalizePackagePath(Outer->GetName());
+	Path.PackageName = FPaths::NormalizePackagePath(Package->GetName());
 	Path.AssetName = Object.GetName();
 	return Path;
 }
@@ -249,8 +251,18 @@ bool FSoftObjectPath::operator==(const FSoftObjectPath& Other) const
 
 FObjectRef FSoftObjectPath::Resolve() const
 {
-	FResourceManager* Manager = Detail::GetResourceManager();
-	return Manager ? Manager->Resolve(*this) : FObjectRef{};
+	FGC* GC = Detail::GetGC();
+	if (!GC || !IsValid())
+	{
+		return {};
+	}
+	if (HasSubPath())
+	{
+		CATTY_CORE_WARN(
+			"FSoftObjectPath::Resolve: subobject path not implemented yet ('{}') — resolving asset only",
+			ToStringWithoutClass());
+	}
+	return GC->FindObject(GetPackageName(), GetAssetName());
 }
 
 FObjectRef FSoftObjectPath::TryLoad() const

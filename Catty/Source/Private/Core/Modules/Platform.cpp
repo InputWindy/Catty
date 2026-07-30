@@ -1,4 +1,4 @@
-#include <Core/Modules/PlatformModule.h>
+﻿#include <Core/Modules/Platform.h>
 
 #include <Core/App.h>
 #include <Core/ConsoleManager.h>
@@ -19,7 +19,7 @@ static TAutoConsoleVariable GCVarHeadlessAutoExitFrames(
 
 } // namespace
 
-bool FPlatformModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
+bool FPlatform::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx)
 {
 	(void)Ctx;
 	switch (Stage)
@@ -38,7 +38,7 @@ bool FPlatformModule::ExecuteStage(EModuleStage Stage, FApp& App, FStageContext&
 		PlatformWindow = FPlatformWindowFactory::Create(PlatformDesc);
 		if (!PlatformWindow)
 		{
-			CATTY_CORE_ERROR("FPlatformModule: failed to create platform window");
+			CATTY_CORE_ERROR("FPlatform: failed to create platform window");
 			return false;
 		}
 

@@ -18,7 +18,7 @@ class FObject;
 
 /**
  * Intrusive refcounted handle for any FObject subclass.
- * Sole caller of FObject::AddRef / ReleaseRef. Use Cast<T>() for typed access.
+ * Sole caller of FObject::AddRef / ReleaseRef (with FPropertyValue). Use Cast<T>() for typed access.
  */
 class CATTY_API FObjectRef
 {
@@ -128,14 +128,6 @@ public:
 	FObject& operator=(const FObject&) = delete;
 
 	// ---------------------------------------------------------------------------
-	// Identity / hierarchy helpers (static path split — out-params, not reflectable)
-	// ---------------------------------------------------------------------------
-	[[nodiscard]] static bool SplitObjectPath(
-		const std::string& PathName,
-		std::string& OutPackageName,
-		std::string& OutObjectName);
-
-	// ---------------------------------------------------------------------------
 	// Runtime reflect invoke (by name; not CATTY_FUNCTION markers)
 	// ---------------------------------------------------------------------------
 	/**
@@ -180,7 +172,7 @@ public:
 	[[nodiscard]] bool SetPropertyValue(std::string_view Name, const FPropertyValue& Value);
 
 	// ---------------------------------------------------------------------------
-	// GC references (package serialize hooks — not game script API)
+	// Package serialize hooks (not a GC mark graph)
 	// ---------------------------------------------------------------------------
 	virtual void GetReferencedObjects(std::vector<FObject*>& OutObjects) const;
 	virtual void SetReferencedObjects(const std::vector<FObject*>& InObjects);
@@ -203,17 +195,7 @@ public:
 	CATTY_FUNCTION()
 	[[nodiscard]] bool HasAnyFlags(EObjectFlags Test) const;
 	CATTY_FUNCTION()
-	[[nodiscard]] std::uint32_t GetWeakSerial() const { return WeakSerial; }
-	CATTY_FUNCTION()
 	[[nodiscard]] bool IsPendingKill() const;
-	CATTY_FUNCTION()
-	[[nodiscard]] bool IsRooted() const;
-	CATTY_FUNCTION()
-	void AddToRoot();
-	CATTY_FUNCTION()
-	void RemoveFromRoot();
-	CATTY_FUNCTION()
-	void MarkPendingKill();
 
 protected:
 	FObject(FPackage* InOuter, std::string InObjectName);
@@ -238,7 +220,7 @@ private:
 	friend struct FPropertyValue;
 
 	// ---------------------------------------------------------------------------
-	// RefCount (FObjectRef only)
+	// RefCount (FObjectRef / FPropertyValue only)
 	// ---------------------------------------------------------------------------
 	std::uint32_t AddRef();
 	std::uint32_t ReleaseRef();
@@ -251,32 +233,7 @@ private:
 	/** Outer package pin. Empty for FPackage, or runtime-only objects. */
 	FObjectRef Outer;
 	std::uint32_t RefCount = 0;
-	std::uint32_t WeakSerial = 0;
 	EObjectFlags ObjectFlags = EObjectFlags::None;
-};
-
-/** Non-owning handle; invalid after target destroy (WeakSerial mismatch). */
-class FObjectWeakRef
-{
-public:
-	FObjectWeakRef() = default;
-
-	explicit FObjectWeakRef(FObject* InObject);
-	explicit FObjectWeakRef(const FObjectRef& Ref);
-
-	[[nodiscard]] bool IsValid() const;
-	[[nodiscard]] explicit operator bool() const { return IsValid(); }
-
-	[[nodiscard]] FObjectRef Pin() const;
-
-	void Reset();
-
-	[[nodiscard]] bool operator==(const FObjectWeakRef& Other) const;
-	[[nodiscard]] bool operator!=(const FObjectWeakRef& Other) const;
-
-private:
-	FObject* Object = nullptr;
-	std::uint32_t Serial = 0;
 };
 
 template <typename TObject>
