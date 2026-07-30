@@ -155,7 +155,12 @@ export class AgentService {
       return result;
     }
 
-    const execution = this.#runProviderAndTools(request, world, started_at);
+    const execution = this.#runProviderAndTools(
+      request,
+      session,
+      world,
+      started_at
+    );
     session.agent_request_promises.set(request.request_id, execution);
     try {
       const result = await execution;
@@ -169,7 +174,7 @@ export class AgentService {
     }
   }
 
-  async #runProviderAndTools(request, world, started_at) {
+  async #runProviderAndTools(request, session, world, started_at) {
     let provider_output;
     try {
       provider_output = validateProviderOutput(
@@ -177,6 +182,7 @@ export class AgentService {
           message: request.message.trim(),
           world_snapshot: world.snapshot(),
           tool_definitions: this.tool_registry.listDefinitions(),
+          session_context: structuredClone(session.entity_context),
         })
       );
     } catch (error) {
