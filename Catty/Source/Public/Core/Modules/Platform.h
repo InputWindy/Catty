@@ -10,10 +10,20 @@
 namespace Catty
 {
 
-/** Built-in platform window / headless clock module (always-on in Catty.dll). */
+/**
+ * Built-in platform window / headless clock module (always-on in Catty.dll).
+ * Public surface is window / auto-exit queries; IModule hooks are private.
+ */
 class CATTY_API FPlatform final : public IModule
 {
 public:
+	[[nodiscard]] FPlatformWindow* GetWindow() { return PlatformWindow.get(); }
+	[[nodiscard]] const FPlatformWindow* GetWindow() const { return PlatformWindow.get(); }
+
+	[[nodiscard]] bool IsHeadlessAutoExit() const { return bAutoExitAfterFrames; }
+	[[nodiscard]] std::uint64_t GetAutoExitFrameCount() const { return AutoExitFrameCount; }
+
+private:
 	const char* GetName() const override { return "Platform"; }
 
 	void GetDependencies(EModuleStage /*Stage*/, std::vector<std::string>& /*OutNames*/) const override
@@ -22,13 +32,6 @@ public:
 
 	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
 
-	[[nodiscard]] FPlatformWindow* GetWindow() { return PlatformWindow.get(); }
-	[[nodiscard]] const FPlatformWindow* GetWindow() const { return PlatformWindow.get(); }
-
-	[[nodiscard]] bool IsHeadlessAutoExit() const { return bAutoExitAfterFrames; }
-	[[nodiscard]] std::uint64_t GetAutoExitFrameCount() const { return AutoExitFrameCount; }
-
-private:
 	FPlatformWindowPtr PlatformWindow;
 	bool bAutoExitAfterFrames = false;
 	std::uint64_t AutoExitFrameCount = 3;

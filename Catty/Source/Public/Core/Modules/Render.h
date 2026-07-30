@@ -10,10 +10,20 @@
 namespace Catty
 {
 
-/** Built-in render server + RHI + Dear ImGui module (always-on in Catty.dll). */
+/**
+ * Built-in render server + RHI + Dear ImGui module (always-on in Catty.dll).
+ * Public surface is GetServer / GetImGui; IModule hooks are private.
+ */
 class CATTY_API FRender final : public IModule
 {
 public:
+	[[nodiscard]] FRenderServer& GetServer() { return RenderServer; }
+	[[nodiscard]] const FRenderServer& GetServer() const { return RenderServer; }
+
+	[[nodiscard]] FImGuiSystem& GetImGui() { return ImGui; }
+	[[nodiscard]] const FImGuiSystem& GetImGui() const { return ImGui; }
+
+private:
 	const char* GetName() const override { return "Render"; }
 
 	void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const override
@@ -43,13 +53,6 @@ public:
 
 	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
 
-	[[nodiscard]] FRenderServer& GetServer() { return RenderServer; }
-	[[nodiscard]] const FRenderServer& GetServer() const { return RenderServer; }
-
-	[[nodiscard]] FImGuiSystem& GetImGui() { return ImGui; }
-	[[nodiscard]] const FImGuiSystem& GetImGui() const { return ImGui; }
-
-private:
 	void SyncFramebufferSize(FApp& App);
 	void Flush();
 	void ClearPresentAndFlush(FApp& App);

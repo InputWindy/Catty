@@ -56,7 +56,7 @@ public:
 		std::string InSourcePath);
 	virtual ~UResource() override;
 
-	static void StaticTearDown(UResource* Resource);
+	void OnPoolTearDown() override;
 
 	CATTY_FUNCTION()
 	[[nodiscard]] EResourceType GetType() const { return Type; }
@@ -96,8 +96,6 @@ public:
 		EResourceType InType,
 		std::string InSourcePath);
 	virtual ~UTextureResource() override;
-
-	static void StaticTearDown(UTextureResource* Resource);
 };
 
 } // namespace Catty

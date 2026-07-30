@@ -93,8 +93,6 @@ class FTypeEntry:
 _RE_POOL_SIZE = re.compile(
 	r"\bstatic\s+constexpr\s+int\s+PoolSize\s*=\s*(\d+)\s*;"
 )
-_RE_STATIC_TEARDOWN = re.compile(r"\bStaticTearDown\b")
-
 
 @dataclass
 class FEnumMember:
@@ -578,25 +576,16 @@ def _scan_reflected_type(
 		if not _RE_GENERATED_STRUCT_BODY.search(body):
 			print(f"[WARN] {rel}: {type_short} missing CATTY_GENERATED_STRUCT_BODY()")
 
-	# FGC pool: class declares `static constexpr int PoolSize = N;` + StaticTearDown.
+	# FGC pool: class declares `static constexpr int PoolSize = N;`
+	# TearDown is virtual UObject::OnPoolTearDown (codegen registers that path).
 	gc_pooled_slots: int | None = None
 	pool_m = _RE_POOL_SIZE.search(body)
-	has_teardown = bool(_RE_STATIC_TEARDOWN.search(body))
 	if pool_m:
 		if not b_object:
 			raise ValueError(f"{rel}: PoolSize only valid on CATTY_OBJECT types")
 		gc_pooled_slots = int(pool_m.group(1))
 		if gc_pooled_slots < 1:
 			raise ValueError(f"{rel}: {type_short}::PoolSize must be >= 1")
-		if not has_teardown:
-			raise ValueError(
-				f"{rel}: {type_short} has PoolSize but missing StaticTearDown"
-			)
-	elif has_teardown and b_object:
-		raise ValueError(
-			f"{rel}: {type_short} has StaticTearDown but missing "
-			f"`static constexpr int PoolSize = N;`"
-		)
 
 	qualified = _qualify_type(type_short)
 	super_q = ""
@@ -1308,8 +1297,7 @@ def render_cpp(
 		lines.append("\t(void)GC;")
 	for e in pooled:
 		lines.append(
-			f"\tGC.RegisterObjectType<{e.TypeName}>("
-			f"{e.TypeName}::PoolSize, &{e.TypeName}::StaticTearDown);"
+			f"\tGC.RegisterObjectType<{e.TypeName}>({e.TypeName}::PoolSize);"
 		)
 	lines.append("}")
 	lines.append("")
@@ -2381,8 +2369,7 @@ def render_resource_cpp(entries: list[FResourceTypeEntry]) -> str:
 		for e in entries:
 			if e.GCPooledSlots is not None and not e.bAlreadyObjectPooled:
 				lines.append(
-					f"\tGC.RegisterObjectType<{e.TypeName}>("
-					f"{e.TypeName}::PoolSize, &{e.TypeName}::StaticTearDown);"
+					f"\tGC.RegisterObjectType<{e.TypeName}>({e.TypeName}::PoolSize);"
 				)
 		for e in entries:
 			lines.append(

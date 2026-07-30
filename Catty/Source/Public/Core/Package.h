@@ -86,8 +86,7 @@ public:
 	UPackage(const UPackage&) = delete;
 	UPackage& operator=(const UPackage&) = delete;
 
-	/** FGC pool TearDown — force-destroy leftover objects; does not use ResourceManager catalog. */
-	static void StaticTearDown(UPackage* Package);
+	void OnPoolTearDown() override;
 
 	// ---------------------------------------------------------------------------
 	// Lookup / reflection — CATTY_FUNCTION (game / editor / Lua)

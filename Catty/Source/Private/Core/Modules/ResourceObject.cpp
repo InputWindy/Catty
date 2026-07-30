@@ -18,16 +18,11 @@ UResource::UResource(
 
 UResource::~UResource() = default;
 
-void UResource::StaticTearDown(UResource* Resource)
+void UResource::OnPoolTearDown()
 {
-	if (!Resource)
-	{
-		return;
-	}
-
 	if (FResourceManager* Manager = Detail::GetResourceManager())
 	{
-		Manager->UnregisterResource(Resource);
+		Manager->UnregisterResource(this);
 	}
 }
 
@@ -45,10 +40,5 @@ UTextureResource::UTextureResource(
 }
 
 UTextureResource::~UTextureResource() = default;
-
-void UTextureResource::StaticTearDown(UTextureResource* Resource)
-{
-	UResource::StaticTearDown(Resource);
-}
 
 } // namespace Catty

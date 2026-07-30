@@ -56,6 +56,10 @@ UObject::~UObject()
 	ClearOuter();
 }
 
+void UObject::OnPoolTearDown()
+{
+}
+
 bool UObject::GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const
 {
 	const FProperty* Prop = GetObjectType().FindPropertyInHierarchy(Name);

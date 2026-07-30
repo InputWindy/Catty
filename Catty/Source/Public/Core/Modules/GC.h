@@ -17,6 +17,11 @@
 namespace Catty
 {
 
+class FGC;
+class FResourceManager;
+void RegisterGeneratedGCPooledTypes(FGC& GC);
+void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
+
 /**
  * Type-erased pool + TearDown owned by FGC.
  */
@@ -101,6 +106,9 @@ private:
 /**
  * Built-in GC module: game-thread refcount reclaim + per-type pools.
  * Objects die only when RefCount hits 0 → CollectGarbage → PurgePendingKill.
+ *
+ * Public surface is application services only. IModule / pool registration are private
+ * (FApp drives lifecycle via IModule*; codegen friends RegisterGenerated*).
  */
 class CATTY_API FGC final : public IModule
 {
@@ -110,57 +118,6 @@ public:
 
 	FGC(const FGC&) = delete;
 	FGC& operator=(const FGC&) = delete;
-
-	const char* GetName() const override { return "GC"; }
-
-	void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const override
-	{
-		switch (Stage)
-		{
-		case EModuleStage::PreInit:
-		case EModuleStage::Init:
-		case EModuleStage::PostInit:
-			OutNames.push_back("Render");
-			break;
-		case EModuleStage::PrepareExit:
-		case EModuleStage::Shutdown:
-			// Wait for Resource to drop catalog refs before GC purge / pool tear-down.
-			OutNames.push_back("Resource");
-			break;
-		default:
-			break;
-		}
-	}
-
-	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
-	[[nodiscard]] bool IsIdle() const override;
-
-	[[nodiscard]] bool Initialize();
-	void Shutdown();
-	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
-
-	/**
-	 * Register TObject pool. Construction is NewObject -> Pool.Allocate -> T's ctor.
-	 * DestroyFn: void(TObject*) TearDown only (no Free).
-	 */
-	template <typename TObject, typename TDestroyFn>
-	void RegisterObjectType(
-		std::size_t InitialChunkSlots,
-		TDestroyFn&& DestroyFn)
-	{
-		static_assert(std::is_base_of_v<UObject, TObject>, "TObject must derive from UObject");
-
-		typename TPooledObjectType<TObject>::FDestroyFn BoundDestroy =
-			[Destroy = std::decay_t<TDestroyFn>(std::forward<TDestroyFn>(DestroyFn))](TObject* Object)
-			{
-				Destroy(Object);
-			};
-
-		PooledTypes[std::type_index(typeid(TObject))] =
-			std::make_unique<TPooledObjectType<TObject>>(
-				InitialChunkSlots,
-				std::move(BoundDestroy));
-	}
 
 	template <typename TObject, typename... TArgs>
 	[[nodiscard]] FObjectRef NewObject(TArgs&&... Args)
@@ -197,9 +154,62 @@ public:
 
 	void CollectGarbage();
 	void PurgePendingKill();
-	void Tick(float DeltaSeconds);
+
+	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 
 private:
+	friend void RegisterGeneratedGCPooledTypes(FGC& GC);
+	friend void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
+
+	const char* GetName() const override { return "GC"; }
+
+	void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const override
+	{
+		switch (Stage)
+		{
+		case EModuleStage::PreInit:
+		case EModuleStage::Init:
+		case EModuleStage::PostInit:
+			OutNames.push_back("Render");
+			break;
+		case EModuleStage::PrepareExit:
+		case EModuleStage::Shutdown:
+			// Wait for Resource to drop catalog refs before GC purge / pool tear-down.
+			OutNames.push_back("Resource");
+			break;
+		default:
+			break;
+		}
+	}
+
+	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
+	[[nodiscard]] bool IsIdle() const override;
+
+	[[nodiscard]] bool Initialize();
+	void Shutdown();
+	void Tick(float DeltaSeconds);
+
+	/**
+	 * Register TObject pool. Construction is NewObject -> Pool.Allocate -> T's ctor.
+	 * TearDown invokes TObject::OnPoolTearDown() (virtual) before Free.
+	 */
+	template <typename TObject>
+	void RegisterObjectType(std::size_t InitialChunkSlots)
+	{
+		static_assert(std::is_base_of_v<UObject, TObject>, "TObject must derive from UObject");
+
+		PooledTypes[std::type_index(typeid(TObject))] =
+			std::make_unique<TPooledObjectType<TObject>>(
+				InitialChunkSlots,
+				[](TObject* Object)
+				{
+					if (Object)
+					{
+						Object->OnPoolTearDown();
+					}
+				});
+	}
+
 	void RegisterObject(UObject& Object);
 	void UnregisterObject(UObject& Object);
 

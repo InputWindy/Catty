@@ -87,14 +87,9 @@ UPackage::~UPackage()
 	Objects.clear();
 }
 
-void UPackage::StaticTearDown(UPackage* Package)
+void UPackage::OnPoolTearDown()
 {
-	if (!Package)
-	{
-		return;
-	}
-
-	if (Package->Objects.empty())
+	if (Objects.empty())
 	{
 		return;
 	}
@@ -102,13 +97,13 @@ void UPackage::StaticTearDown(UPackage* Package)
 	// Package should only reach TearDown after Outer pins are gone.
 	// Leftover name-table entries are stale — detach and clear; do not force-free.
 	CATTY_CORE_ERROR(
-		"UPackage::StaticTearDown: '{}' still has {} object(s) — clearing name table",
-		Package->GetName(),
-		Package->GetObjectCount());
+		"UPackage::OnPoolTearDown: '{}' still has {} object(s) — clearing name table",
+		GetName(),
+		GetObjectCount());
 
 	std::vector<UObject*> Snapshot;
-	Snapshot.reserve(Package->Objects.size());
-	for (const auto& Pair : Package->Objects)
+	Snapshot.reserve(Objects.size());
+	for (const auto& Pair : Objects)
 	{
 		Snapshot.push_back(Pair.second);
 	}
@@ -121,7 +116,7 @@ void UPackage::StaticTearDown(UPackage* Package)
 		}
 	}
 
-	Package->Objects.clear();
+	Objects.clear();
 }
 
 bool UPackage::IsPersistent() const

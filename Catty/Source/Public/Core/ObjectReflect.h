@@ -5,13 +5,13 @@
  *
  * Object:
  *   CATTY_OBJECT()
- *   class FMyAsset : public UObject
+ *   class UMyAsset : public UObject
  *   {
  *   	CATTY_GENERATED_BODY()
  *   public:
- *   	// Optional FGC pool: PoolSize + StaticTearDown (codegen registers).
+ *   	// Optional FGC pool: PoolSize (codegen registers; TearDown via OnPoolTearDown).
  *   	static constexpr int PoolSize = 16;
- *   	static void StaticTearDown(FMyAsset* Self);
+ *   	void OnPoolTearDown() override;
  *   	CATTY_PROPERTY()
  *   	std::string DisplayName;
  *   	CATTY_FUNCTION()

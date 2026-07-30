@@ -20,9 +20,12 @@
 namespace Catty
 {
 
+class FGC;
+class FResourceManager;
 class FResourceServer;
 class IResourceImporter;
 class IResourceExporter;
+void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
 
 /** Raw bytes produced by FResourceServer; consumed by Importer. */
 struct FResourceBulkData
@@ -45,6 +48,10 @@ struct FResourceExportConfig
 	bool bOverwrite = true;
 };
 
+/**
+ * Private Resource IModule. Public methods are catalog / package / import services.
+ * IModule + Initialize/Shutdown + IO registration are private (codegen friend).
+ */
 class FResourceManager final : public IModule
 {
 public:
@@ -53,31 +60,6 @@ public:
 
 	FResourceManager(const FResourceManager&) = delete;
 	FResourceManager& operator=(const FResourceManager&) = delete;
-
-	const char* GetName() const override { return "Resource"; }
-
-	void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const override
-	{
-		switch (Stage)
-		{
-		case EModuleStage::PreInit:
-		case EModuleStage::Init:
-		case EModuleStage::PostInit:
-			OutNames.push_back("GC");
-			break;
-		default:
-			break;
-		}
-	}
-
-	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
-	[[nodiscard]] bool IsIdle() const override;
-
-	[[nodiscard]] bool Initialize();
-	void Shutdown();
-	[[nodiscard]] bool IsInitialized() const;
-
-	void PrepareForExit();
 
 	[[nodiscard]] bool RegisterResource(const FObjectRef& Resource);
 	bool UnregisterResource(UObject* Resource);
@@ -105,13 +87,39 @@ public:
 	[[nodiscard]] FObjectRef KickImport(FResourceImportConfig Config);
 	[[nodiscard]] bool KickExport(FResourceExportConfig Config, const FObjectRef& Resource);
 
+private:
+	friend void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
+	template <typename TResource>
+	friend class TResourceImporter;
+	friend class UResource;
+
+	const char* GetName() const override { return "Resource"; }
+
+	void GetDependencies(EModuleStage Stage, std::vector<std::string>& OutNames) const override
+	{
+		switch (Stage)
+		{
+		case EModuleStage::PreInit:
+		case EModuleStage::Init:
+		case EModuleStage::PostInit:
+			OutNames.push_back("GC");
+			break;
+		default:
+			break;
+		}
+	}
+
+	bool ExecuteStage(EModuleStage Stage, FApp& App, FStageContext& Ctx) override;
+	[[nodiscard]] bool IsIdle() const override;
+
+	[[nodiscard]] bool Initialize();
+	void Shutdown();
+	[[nodiscard]] bool IsInitialized() const;
+	void PrepareForExit();
+
 	void RegisterImporter(std::unique_ptr<IResourceImporter> Importer);
 	void RegisterExporter(std::unique_ptr<IResourceExporter> Exporter);
 	void ClearImportersAndExporters();
-
-private:
-	template <typename TResource>
-	friend class TResourceImporter;
 
 	struct FPendingImport
 	{

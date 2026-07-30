@@ -177,6 +177,13 @@ public:
 	virtual void GetReferencedObjects(std::vector<UObject*>& OutObjects) const;
 	virtual void SetReferencedObjects(const std::vector<UObject*>& InObjects);
 
+	/**
+	 * FGC pool TearDown — called after RefCount hits 0, before pool Free.
+	 * Override for type-specific cleanup (unregister catalogs, clear tables, …).
+	 * Default is no-op. Codegen registers pools with this virtual; no StaticTearDown.
+	 */
+	virtual void OnPoolTearDown();
+
 	// ---------------------------------------------------------------------------
 	// Reflection — CATTY_FUNCTION / CATTY_PROPERTY (game / editor / Lua)
 	// ---------------------------------------------------------------------------
