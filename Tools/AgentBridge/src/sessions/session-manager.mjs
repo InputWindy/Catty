@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AgentError } from "../protocol/errors.mjs";
 import { MockWorld } from "../world/mock-world.mjs";
+import { createEntityContext } from "./entity-context.mjs";
 
 export class SessionManager {
   constructor() {
@@ -15,6 +16,7 @@ export class SessionManager {
       request_promises: new Map(),
       agent_request_results: new Map(),
       agent_request_promises: new Map(),
+      entity_context: createEntityContext(),
       busy: false,
       created_at_ms: Date.now(),
     };
