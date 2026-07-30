@@ -237,6 +237,8 @@ function(catty_add_plugin_modules)
 		target_include_directories(${_MOD_TARGET}
 			PUBLIC "${_MOD_SOURCE_DIR}/Public"
 		)
+		# Also on CattyModules so game EXE always sees plugin Public (Generated App includes).
+		target_include_directories(CattyModules INTERFACE "${_MOD_SOURCE_DIR}/Public")
 		target_link_libraries(${_MOD_TARGET} PUBLIC ${_CATTY_PM_ENGINE_TARGET})
 		target_compile_features(${_MOD_TARGET} PUBLIC cxx_std_20)
 

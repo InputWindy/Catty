@@ -1,13 +1,11 @@
 # {{PROJECT_NAME}} plugins
 
-Game-specific optional plugins go here (`*.cplugin` + `Source/<CName>/`).
+Game-specific optional plugins go here (`*.cplugin` + `Source/<Name>/`).
 Built-in engine modules (Platform / Render / GC / Resource) live in `Catty.dll`,
 not under `Catty/Plugins/`.
 
-Scan roots:
+Enabled plugins are scanned when you double-click the `.cproject` (generateProject):
+RegisterExtension calls are injected into `Source/Generated/{{PROJECT_NAME}}App.cpp`.
+Plugin Public headers are added to the game include path via `Catty::Modules`.
 
-```text
-Tools\scan_plugins.bat --cproject {{PROJECT_NAME}}.cproject
-```
-
-See engine `Catty/Plugins/README.md` for the `.cplugin` schema.
+See engine `Catty/Plugins/README.md` for the `.cplugin` schema (`Extension` metadata).

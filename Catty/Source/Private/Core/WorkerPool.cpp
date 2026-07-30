@@ -1,7 +1,7 @@
-#include <Core/WorkerPool.h>
+#include <Core/Concurrent/WorkerPool.h>
 
-#include <Core/ConsoleManager.h>
-#include <Core/Log.h>
+#include <Core/System/ConsoleManager.h>
+#include <Core/System/Log.h>
 
 #include <algorithm>
 #include <atomic>

@@ -1,6 +1,6 @@
 ﻿#include "ResourceServer.h"
 
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 
 #include <filesystem>
 #include <fstream>

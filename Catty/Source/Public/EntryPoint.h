@@ -10,28 +10,54 @@
  * console black box appears; CATTY_LOG lines go to the editor Output Log instead.
  */
 
-#include <Core/App.h>
+#include <Core/Application/App.h>
+#include <Core/System/Fatal.h>
+
 #include <cstdio>
+#include <exception>
+#include <string>
+
 namespace
 {
-	int CattyMain(int Argc, char** Argv)
-	{
-		(void)Argc;
-		(void)Argv;
 
-		Catty::FApp* App = Catty::CreateApplication();
+int CattyMain(int Argc, char** Argv)
+{
+	(void)Argc;
+	(void)Argv;
+
+	Catty::InstallFatalHandlers();
+
+	Catty::FApp* App = nullptr;
+	try
+	{
+		App = Catty::CreateApplication();
 		if (!App)
 		{
-			std::fprintf(stderr, "CreateApplication returned null\n");
-			return 1;
+			Catty::ReportFatal("CreateApplication returned null");
 		}
 
 		App->Run();
 		delete App;
+		App = nullptr;
 		return 0;
 	}
+	catch (const std::exception& Exception)
+	{
+		delete App;
+		App = nullptr;
+		const std::string Message = std::string("Unhandled exception: ") + Exception.what();
+		Catty::ReportFatal(Message.c_str());
+	}
+	catch (...)
+	{
+		delete App;
+		App = nullptr;
+		Catty::ReportFatal("Unhandled unknown exception");
+	}
+}
 
 } // namespace
+
 #if defined(_WIN32)
 #	ifndef NOMINMAX
 #		define NOMINMAX

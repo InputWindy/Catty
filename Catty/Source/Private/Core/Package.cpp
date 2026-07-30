@@ -1,6 +1,6 @@
-﻿#include <Core/Package.h>
+﻿#include <Core/Object/Package.h>
 
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 #include <Core/Modules/Resource.h>
 
 #include <unordered_map>

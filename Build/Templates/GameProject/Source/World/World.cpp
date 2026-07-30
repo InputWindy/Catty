@@ -1,6 +1,6 @@
 #include "World/World.h"
 
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 
 bool FWorld::Initialize(std::string InName)
 {

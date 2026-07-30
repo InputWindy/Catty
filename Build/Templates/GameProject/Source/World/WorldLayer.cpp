@@ -1,7 +1,7 @@
 #include "World/WorldLayer.h"
 
-#include <Core/App.h>
-#include <Core/Log.h>
+#include <Core/Application/App.h>
+#include <Core/System/Log.h>
 
 #include <utility>
 
@@ -11,26 +11,38 @@ FWorldLayer::FWorldLayer(std::string InWorldName)
 {
 }
 
-void FWorldLayer::OnAttach()
+bool FWorldLayer::ExecuteStage(Catty::EEngineStage Stage)
 {
-	if (!World.Initialize(WorldName))
+	switch (Stage)
 	{
-		CATTY_ERROR("FWorldLayer::OnAttach: FWorld failed");
+	case Catty::EEngineStage::Attach:
+		if (!bWorldReady)
+		{
+			if (!World.Initialize(WorldName))
+			{
+				CATTY_ERROR("FWorldLayer Attach: FWorld failed");
+			}
+			else
+			{
+				bWorldReady = true;
+			}
+		}
+		break;
+	case Catty::EEngineStage::Detach:
+		if (bWorldReady)
+		{
+			World.Shutdown();
+			bWorldReady = false;
+		}
+		break;
+	case Catty::EEngineStage::Update:
+		if (bWorldReady && Catty::GApp)
+		{
+			World.Tick(Catty::GApp->GetDeltaSeconds());
+		}
+		break;
+	default:
+		break;
 	}
-}
-
-void FWorldLayer::OnDetach()
-{
-	World.Shutdown();
-}
-
-void FWorldLayer::OnSequencerStage(Catty::EFrameStage Stage)
-{
-	if (Stage != Catty::EFrameStage::Update || !Catty::GApp)
-	{
-		return;
-	}
-	Catty::FStageContext Ctx{};
-	Catty::GApp->MakeStageContext(Ctx);
-	World.Tick(Ctx.DeltaSeconds);
+	return true;
 }

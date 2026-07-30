@@ -1,10 +1,10 @@
-#include <Core/SoftObjectPath.h>
+﻿#include <Core/Object/SoftObjectPath.h>
 
-#include <Core/Modules/GC.h>
-#include <Core/Log.h>
-#include <Core/Object.h>
-#include <Core/Paths.h>
-#include "Modules/ResourceManager.h"
+#include <Core/Extension/GC.h>
+#include <Core/System/Log.h>
+#include <Core/Object/Object.h>
+#include <Core/System/Paths.h>
+#include <Core/Extension/ResourceManager.h>
 
 #include <cctype>
 

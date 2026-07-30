@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 /**
  * Polymorphic Importer / Exporter for the private Resource module.
@@ -7,11 +7,11 @@
  * FResourceManager only holds IResourceImporter* / IResourceExporter* — no type switch.
  */
 
-#include "ResourceManager.h"
+#include <Core/Extension/ResourceManager.h>
 
-#include <Core/Log.h>
-#include <Core/Modules/GC.h>
-#include <Core/Package.h>
+#include <Core/System/Log.h>
+#include <Core/Extension/GC.h>
+#include <Core/Object/Package.h>
 
 #include <type_traits>
 #include <utility>

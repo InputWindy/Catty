@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/Export.h>
-#include <Core/Object.h>
-#include <Core/ObjectReflect.h>
+#include <Core/Object/Object.h>
+#include <Core/Object/ObjectReflect.h>
 
 #include <cstdint>
 #include <string>

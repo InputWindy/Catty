@@ -1,8 +1,8 @@
-#include <Core/Object.h>
+﻿#include <Core/Object/Object.h>
 
-#include <Core/Log.h>
-#include <Core/Modules/GC.h>
-#include <Core/Package.h>
+#include <Core/System/Log.h>
+#include <Core/Extension/GC.h>
+#include <Core/Object/Package.h>
 
 namespace Catty
 {

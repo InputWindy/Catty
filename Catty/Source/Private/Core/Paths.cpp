@@ -1,6 +1,6 @@
-#include <Core/Paths.h>
+#include <Core/System/Paths.h>
 
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 
 #include <algorithm>
 #include <cctype>

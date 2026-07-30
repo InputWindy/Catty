@@ -1,8 +1,8 @@
-#include <Core/ObjectReflect.h>
+#include <Core/Object/ObjectReflect.h>
 
-#include <Core/Object.h>
+#include <Core/Object/Object.h>
 
-#include <Core/Package.h>
+#include <Core/Object/Package.h>
 #include <Core/Modules/Resource.h>
 
 #include <ObjectReflectTypes.gen.h>

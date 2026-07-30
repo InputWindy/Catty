@@ -1,5 +1,5 @@
 ﻿#include <Core/Modules/Resource.h>
-#include "ResourceManager.h"
+#include <Core/Extension/ResourceManager.h>
 
 namespace Catty
 {

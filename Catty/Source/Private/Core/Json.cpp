@@ -1,6 +1,6 @@
 #include <Core/Json.h>
 
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 
 #include <nlohmann/json.hpp>
 
