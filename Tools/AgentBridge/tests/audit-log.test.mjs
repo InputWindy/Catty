@@ -42,6 +42,20 @@ test("JSONL audit records required fields without API keys or authorization", as
     "request_id",
     "session_id",
     "provider",
+    "model",
+    "request_phase",
+    "attempt_count",
+    "http_status",
+    "finish_reason",
+    "tool_call_count",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "cached_input_tokens",
+    "finalization_used",
+    "finalization_failed",
+    "timeout",
+    "cancelled",
     "user_message",
     "before_revision",
     "after_revision",
@@ -57,4 +71,3 @@ test("JSONL audit records required fields without API keys or authorization", as
   );
   assert.equal(record.tool_calls[0].args.authorization, "[redacted]");
 });
-

@@ -26,6 +26,9 @@ test("v1 health and session creation are available", async (t) => {
     mock: true,
     busy: false,
     status: "mock (no CURSOR_API_KEY)",
+    provider: "mock",
+    model: "mock-deterministic-v0.2",
+    provider_ready: true,
   });
 
   const session = await createSession(app);
@@ -131,4 +134,3 @@ test("v1 errors use structured error JSON and status codes", async (t) => {
   ]);
   assert.equal(body.error.code, "REQUEST_TOO_LARGE");
 });
-

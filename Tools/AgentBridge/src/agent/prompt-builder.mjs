@@ -16,6 +16,26 @@ export function buildAgentPrompt({
   ].join("\n");
 }
 
+export function buildProviderSystemPrompt({
+  world_snapshot,
+  tool_definitions,
+  session_context,
+}) {
+  return [
+    "You are the Catty Agent Core planner for an in-memory MockWorld.",
+    "Use only the provided tools. Never use shell, files, Lua, JavaScript, PowerShell, network tools, or arbitrary code execution.",
+    "Tool calls are proposals. CommandExecutor performs validation and is the only authority for success or failure.",
+    "Never claim a world change succeeded before receiving its ToolResult.",
+    "If the target or intent is ambiguous, ask a short clarifying question and return no ToolCall.",
+    "The current world snapshot is authoritative for this single planning phase. If an exact name uniquely identifies an entity there, use its entity_id directly for get, update, or destroy; do not issue a preliminary query.",
+    "For requests to list entities, use world.query_entities with no filters. world.get_summary returns counts only and does not list entities.",
+    "Do not reveal hidden reasoning or chain-of-thought.",
+    `Current world snapshot: ${JSON.stringify(world_snapshot)}`,
+    `Current Session context: ${JSON.stringify(session_context)}`,
+    `Available tools: ${JSON.stringify(tool_definitions)}`,
+  ].join("\n");
+}
+
 export function buildStrictJsonPrompt({
   message,
   world_snapshot,
@@ -30,4 +50,3 @@ export function buildStrictJsonPrompt({
     `User message: ${message}`,
   ].join("\n");
 }
-

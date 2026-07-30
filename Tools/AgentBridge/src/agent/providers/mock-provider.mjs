@@ -4,6 +4,10 @@ import {
   SCALE_MAX,
   SCALE_MIN,
 } from "../../protocol/schemas.mjs";
+import {
+  DEFAULT_PROVIDER_CAPABILITIES,
+  createProviderOutput,
+} from "../provider-contract.mjs";
 
 const UUID_IN_TEXT =
   /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/;
@@ -287,8 +291,53 @@ function buildSpawn(message, primitive, revision) {
 }
 
 export class MockProvider {
-  constructor() {
+  constructor({ model = "mock-deterministic-v0.2" } = {}) {
     this.name = "mock";
+    this.model = model;
+    this.capabilities = Object.freeze({
+      ...DEFAULT_PROVIDER_CAPABILITIES,
+      supports_finalization: false,
+    });
+  }
+
+  getMetadata() {
+    return {
+      provider: this.name,
+      model: this.model,
+      ready: true,
+      real: false,
+      thinking: "disabled",
+      capabilities: { ...this.capabilities },
+    };
+  }
+
+  async plan(input) {
+    const output = await this.run({
+      message: input.user_message,
+      world_snapshot: input.world_snapshot,
+      session_context: input.session_context,
+      tool_definitions: input.tool_definitions,
+    });
+    return createProviderOutput({
+      provider: this.name,
+      model: this.model,
+      assistant_message: output.assistant_message,
+      tool_calls: output.tool_calls.map((tool_call) => ({
+        tool_call_id: tool_call.tool_call_id,
+        tool_name: tool_call.tool_name,
+        args: tool_call.args,
+      })),
+      finish_reason: output.tool_calls.length ? "tool_calls" : "stop",
+      provider_metadata: {
+        phase: "plan",
+        attempt_count: 1,
+        duration_ms: 0,
+        http_status: null,
+      },
+    });
+  }
+
+  async close() {
   }
 
   async run({ message, world_snapshot, session_context = {} }) {

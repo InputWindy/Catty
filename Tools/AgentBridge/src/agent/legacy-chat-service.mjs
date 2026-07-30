@@ -1,7 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-import { Agent, JsonlLocalAgentStore } from "@cursor/sdk";
-
 const SYSTEM_PREAMBLE =
   "You are the Catty engine in-editor Agent. Help the user write and refine Lua " +
   "game scripts for Catty (catty.log / cvars / packages / resources, Scripts/*.lua). " +
@@ -9,57 +5,40 @@ const SYSTEM_PREAMBLE =
   "Keep answers concise unless the user asks for detail.\n\nUser message:\n";
 
 export class LegacyChatService {
-  constructor(config) {
+  constructor(config, { agent = null, owns_agent = false } = {}) {
     this.config = config;
-    this.agent = null;
+    this.agent = agent;
+    this.owns_agent = owns_agent;
     this.busy = false;
-    this.status = config.force_mock ? "mock (no CURSOR_API_KEY)" : "starting";
+    this.status = config.force_mock
+      ? "mock (no CURSOR_API_KEY)"
+      : agent
+        ? "starting"
+        : `legacy mock (Agent Core provider: ${config.ai?.provider_id || "external"})`;
     this.next_id = 0;
     this.events = [];
   }
 
   async initialize() {
     console.log(
-      `[CattyAgentBridge] apiKey=${
-        this.config.api_key ? `present(len=${this.config.api_key.length})` : "missing"
-      } mock=${this.config.force_mock}`
+      `[CattyAgentBridge] provider=${
+        this.config.ai?.provider_id || (this.config.force_mock ? "mock" : "cursor")
+      } legacyMock=${this.isMock()}`
     );
     this.pushEvent(
       "system",
       this.config.force_mock
         ? "Agent bridge online in MOCK mode. Set CURSOR_API_KEY and restart the engine for a real Cursor Agent."
-        : "Agent bridge starting Cursor local Agent..."
+        : this.agent
+          ? "Agent bridge starting Cursor local Agent..."
+          : `Legacy chat remains in mock mode; Agent Core uses ${this.config.ai?.provider_id || "an external Provider"}.`
     );
 
-    if (this.config.force_mock) {
+    if (!this.agent) {
       return;
     }
-
-    try {
-      const store_root = path.join(
-        this.config.cwd,
-        "Saved",
-        "Agent",
-        "cursor-sdk-store"
-      );
-      fs.mkdirSync(store_root, { recursive: true });
-      const store = new JsonlLocalAgentStore(store_root);
-      this.agent = await Agent.create({
-        apiKey: this.config.api_key,
-        model: { id: "composer-2.5" },
-        local: { cwd: this.config.cwd, store },
-      });
-      this.status = "ready";
-      this.pushEvent("system", "Cursor local Agent ready. cwd=" + this.config.cwd);
-    } catch (error) {
-      const message = error?.message || String(error);
-      this.status = "sdk failed — mock fallback";
-      this.pushEvent(
-        "system",
-        `Agent.create failed (${message}). Falling back to mock replies.`
-      );
-      this.agent = null;
-    }
+    this.status = "ready";
+    this.pushEvent("system", "Cursor local Agent ready. cwd=" + this.config.cwd);
   }
 
   isMock() {
@@ -163,6 +142,9 @@ export class LegacyChatService {
   }
 
   async close() {
+    if (!this.owns_agent) {
+      return;
+    }
     try {
       if (this.agent && typeof this.agent[Symbol.asyncDispose] === "function") {
         await this.agent[Symbol.asyncDispose]();

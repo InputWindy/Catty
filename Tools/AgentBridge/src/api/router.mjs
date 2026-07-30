@@ -55,12 +55,16 @@ export function createRouter({
       }
 
       if (req.method === "GET" && url.pathname === "/v1/health") {
+        const provider_metadata = agent_service?.getProviderMetadata?.() || {};
         return sendJson(res, 200, {
           ok: true,
           protocol_version: PROTOCOL_VERSION,
           mock: legacyChatService.isMock(),
           busy: legacyChatService.isBusy(),
           status: legacyChatService.getHealth().status,
+          provider: provider_metadata.provider ?? null,
+          model: provider_metadata.model ?? null,
+          provider_ready: provider_metadata.ready ?? false,
         });
       }
 
@@ -100,6 +104,15 @@ export function createRouter({
       if (req.method === "POST" && url.pathname === "/v1/agent/run") {
         requireCore(agent_service, "AgentService");
         const body = await readJson(req, { limit_bytes: body_limit_bytes });
+        const controller = new AbortController();
+        const cancel = () =>
+          controller.abort(new Error("HTTP client disconnected"));
+        req.once("aborted", cancel);
+        res.once("close", () => {
+          if (!res.writableEnded) {
+            cancel();
+          }
+        });
         const result = await agent_service.run({
           protocol_version: body.protocol_version || PROTOCOL_VERSION,
           request_id: body.request_id,
@@ -107,6 +120,7 @@ export function createRouter({
           world_id: body.world_id,
           message: body.message,
           expected_revision: body.expected_revision,
+          signal: controller.signal,
         });
         if (!result.replayed && result.ok && result.assistant_message) {
           legacyChatService.pushEvent("assistant", result.assistant_message);

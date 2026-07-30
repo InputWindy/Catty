@@ -17,6 +17,7 @@ export class SessionManager {
       agent_request_results: new Map(),
       agent_request_promises: new Map(),
       entity_context: createEntityContext(),
+      normalized_messages: [],
       busy: false,
       created_at_ms: Date.now(),
     };
