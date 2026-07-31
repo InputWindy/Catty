@@ -1,6 +1,6 @@
-﻿#include <Core/Package.h>
+﻿#include <Core/Object/Package.h>
 
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 #include <Core/Modules/Resource.h>
 
 #include <unordered_map>
@@ -46,8 +46,8 @@ namespace
 
 } // namespace
 
-FPackage::FPackage(std::string InName, EPackageFlags InFlags)
-	: FObject(nullptr, std::move(InName))
+UPackage::UPackage(std::string InName, EPackageFlags InFlags)
+	: UObject(nullptr, std::move(InName))
 	, PackageFlags(InFlags)
 {
 	if (!HasAnyPackageFlags(PackageFlags, EPackageFlags::Transient)
@@ -57,7 +57,7 @@ FPackage::FPackage(std::string InName, EPackageFlags InFlags)
 	}
 }
 
-FPackage::~FPackage()
+UPackage::~UPackage()
 {
 	if (Objects.empty())
 	{
@@ -65,18 +65,18 @@ FPackage::~FPackage()
 	}
 
 	CATTY_CORE_ERROR(
-		"FPackage '{}' destroyed with {} objects still registered — release object Refs first",
+		"UPackage '{}' destroyed with {} objects still registered — release object Refs first",
 		GetName(),
 		Objects.size());
 
-	std::vector<FObject*> Snapshot;
+	std::vector<UObject*> Snapshot;
 	Snapshot.reserve(Objects.size());
 	for (const auto& Pair : Objects)
 	{
 		Snapshot.push_back(Pair.second);
 	}
 
-	for (FObject* Object : Snapshot)
+	for (UObject* Object : Snapshot)
 	{
 		if (Object)
 		{
@@ -87,14 +87,9 @@ FPackage::~FPackage()
 	Objects.clear();
 }
 
-void FPackage::StaticTearDown(FPackage* Package)
+void UPackage::OnPoolTearDown()
 {
-	if (!Package)
-	{
-		return;
-	}
-
-	if (Package->Objects.empty())
+	if (Objects.empty())
 	{
 		return;
 	}
@@ -102,18 +97,18 @@ void FPackage::StaticTearDown(FPackage* Package)
 	// Package should only reach TearDown after Outer pins are gone.
 	// Leftover name-table entries are stale — detach and clear; do not force-free.
 	CATTY_CORE_ERROR(
-		"FPackage::StaticTearDown: '{}' still has {} object(s) — clearing name table",
-		Package->GetName(),
-		Package->GetObjectCount());
+		"UPackage::OnPoolTearDown: '{}' still has {} object(s) — clearing name table",
+		GetName(),
+		GetObjectCount());
 
-	std::vector<FObject*> Snapshot;
-	Snapshot.reserve(Package->Objects.size());
-	for (const auto& Pair : Package->Objects)
+	std::vector<UObject*> Snapshot;
+	Snapshot.reserve(Objects.size());
+	for (const auto& Pair : Objects)
 	{
 		Snapshot.push_back(Pair.second);
 	}
 
-	for (FObject* Object : Snapshot)
+	for (UObject* Object : Snapshot)
 	{
 		if (Object)
 		{
@@ -121,20 +116,20 @@ void FPackage::StaticTearDown(FPackage* Package)
 		}
 	}
 
-	Package->Objects.clear();
+	Objects.clear();
 }
 
-bool FPackage::IsPersistent() const
+bool UPackage::IsPersistent() const
 {
 	return HasAnyPackageFlags(PackageFlags, EPackageFlags::Persistent);
 }
 
-bool FPackage::IsTransient() const
+bool UPackage::IsTransient() const
 {
 	return HasAnyPackageFlags(PackageFlags, EPackageFlags::Transient) && !IsPersistent();
 }
 
-FObjectRef FPackage::FindObject(const std::string& InObjectName) const
+FObjectRef UPackage::FindObject(const std::string& InObjectName) const
 {
 	const auto It = Objects.find(InObjectName);
 	if (It == Objects.end())
@@ -144,7 +139,7 @@ FObjectRef FPackage::FindObject(const std::string& InObjectName) const
 	return FObjectRef::Wrap(It->second);
 }
 
-bool FPackage::RegisterObject(FObject* Object)
+bool UPackage::RegisterObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -153,24 +148,24 @@ bool FPackage::RegisterObject(FObject* Object)
 
 	if (Object->GetName().empty())
 	{
-		CATTY_CORE_ERROR("FPackage::RegisterObject: empty ObjectName");
+		CATTY_CORE_ERROR("UPackage::RegisterObject: empty ObjectName");
 		return false;
 	}
 
 	if (Objects.find(Object->GetName()) != Objects.end())
 	{
 		CATTY_CORE_ERROR(
-			"FPackage::RegisterObject: '{}' already exists in package '{}'",
+			"UPackage::RegisterObject: '{}' already exists in package '{}'",
 			Object->GetName(),
 			GetName());
 		return false;
 	}
 
 	// Object.Outer is already an FObjectRef from construction — that pin keeps us alive.
-	if (Object->Outer.Get() != static_cast<FObject*>(this))
+	if (Object->Outer.Get() != static_cast<UObject*>(this))
 	{
 		CATTY_CORE_ERROR(
-			"FPackage::RegisterObject: '{}' Outer mismatch for package '{}'",
+			"UPackage::RegisterObject: '{}' Outer mismatch for package '{}'",
 			Object->GetName(),
 			GetName());
 		return false;
@@ -180,7 +175,7 @@ bool FPackage::RegisterObject(FObject* Object)
 	return true;
 }
 
-void FPackage::DetachObject(FObject* Object)
+void UPackage::DetachObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -196,7 +191,7 @@ void FPackage::DetachObject(FObject* Object)
 	Objects.erase(It);
 }
 
-bool FPackage::Serialize(FJsonValue& OutObject) const
+bool UPackage::Serialize(FJsonValue& OutObject) const
 {
 	if (!OutObject.IsObject())
 	{
@@ -213,7 +208,7 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 	FJsonValue ObjectArray = FJsonValue::Array();
 	for (const auto& Pair : Objects)
 	{
-		FObject* Object = Pair.second;
+		UObject* Object = Pair.second;
 		if (!Object)
 		{
 			continue;
@@ -222,7 +217,7 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 		FJsonValue Entry = FJsonValue::Object();
 		Entry.SetField("name", FJsonValue::String(Object->GetName()));
 
-		if (const FResource* Resource = dynamic_cast<const FResource*>(Object))
+		if (const UResource* Resource = dynamic_cast<const UResource*>(Object))
 		{
 			Entry.SetField("class", FJsonValue::String("Resource"));
 			Entry.SetField("type", FJsonValue::String(ResourceTypeToString(Resource->GetType())));
@@ -233,12 +228,12 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 			Entry.SetField("class", FJsonValue::String("Object"));
 		}
 
-		std::vector<FObject*> Referenced;
+		std::vector<UObject*> Referenced;
 		Object->GetReferencedObjects(Referenced);
 		if (!Referenced.empty())
 		{
 			FJsonValue RefArray = FJsonValue::Array();
-			for (FObject* RefObj : Referenced)
+			for (UObject* RefObj : Referenced)
 			{
 				if (!RefObj)
 				{
@@ -249,7 +244,7 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 				RefArray.AddElement(FJsonValue::String(RefObj->GetPathName()));
 
 				FObjectRef OtherOuter = RefObj->GetOuter();
-				FPackage* OtherPackage = OtherOuter.Cast<FPackage>();
+				UPackage* OtherPackage = OtherOuter.Cast<UPackage>();
 				if (!OtherPackage || OtherPackage == this)
 				{
 					continue;
@@ -281,11 +276,11 @@ bool FPackage::Serialize(FJsonValue& OutObject) const
 	return true;
 }
 
-bool FPackage::Deserialize(const FJsonValue& InObject)
+bool UPackage::Deserialize(const FJsonValue& InObject)
 {
 	if (!InObject.IsObject())
 	{
-		CATTY_CORE_ERROR("FPackage::Deserialize: root is not an object");
+		CATTY_CORE_ERROR("UPackage::Deserialize: root is not an object");
 		return false;
 	}
 

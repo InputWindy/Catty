@@ -1,5 +1,5 @@
-#include <Core/ObjectReflect.h>
-#include <Core/Object.h>
+#include <Core/Object/ObjectReflect.h>
+#include <Core/Object/Object.h>
 #include <algorithm>
 namespace Catty
 {
@@ -120,7 +120,7 @@ FPropertyValue& FPropertyValue::operator=(FPropertyValue&& Other) noexcept
 	return *this;
 }
 
-FPropertyValue FPropertyValue::FromObject(FObject* InObject)
+FPropertyValue FPropertyValue::FromObject(UObject* InObject)
 {
 	FPropertyValue Out;
 	Out.Type = EPropertyType::ObjectRef;

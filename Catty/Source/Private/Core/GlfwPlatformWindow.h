@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/PlatformWindow.h>
+#include <Core/System/PlatformWindow.h>
 
 struct GLFWwindow;
 

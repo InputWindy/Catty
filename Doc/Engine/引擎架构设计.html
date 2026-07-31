@@ -397,13 +397,13 @@ flowchart TB
   ResMod --> RM["FResourceManager"]
   RM -->|"Register / DestroyHandler"| GC
   RM --> RS["FResourceServer"]
-  RM --> PkgPool["Pool FPackage"]
-  RM --> ResPool["Pool FResource"]
-  PkgPool --> Pkg["FPackage"]
-  ResPool --> Res["FResource : FObject"]
+  RM --> PkgPool["Pool UPackage"]
+  RM --> ResPool["Pool UResource"]
+  PkgPool --> Pkg["UPackage"]
+  ResPool --> Res["UResource : UObject"]
   Pkg -->|"Objects 名表 非拥有"| Res
   Res -->|"Outer"| Pkg
-  GC --> Obj["FObject Live/Root/PendingKill"]
+  GC --> Obj["UObject Live/Root/PendingKill"]
   Res -.->|"继承"| Obj
 		</pre>
 
@@ -425,7 +425,7 @@ sequenceDiagram
   RM->>RS: Initialize
   RM->>GC: AddObjectDestroyHandler
 
-  RM->>Pool: Allocate FResource
+  RM->>Pool: Allocate UResource
   RM->>GC: RegisterObject
   RM->>RS: RequestLoad raw 异步
   Note over GC: Root 或 RefCount 保活
@@ -467,7 +467,7 @@ flowchart LR
 		<table>
 			<thead><tr><th>内容</th><th>路径</th></tr></thead>
 			<tbody>
-				<tr><td>FApp 管线</td><td><code>Catty/Source/Public/Catty/Core/App.h</code>、<code>Private/Core/App.cpp</code></td></tr>
+				<tr><td>FApp 管线</td><td><code>Catty/Source/Public/Catty/Core/Application/App.h</code>、<code>Private/Core/App.cpp</code></td></tr>
 				<tr><td>IModule / EModuleStage</td><td><code>Catty/Source/Public/Catty/Core/Module.h</code></td></tr>
 				<tr><td>引擎 Modules</td><td><code>Catty/Source/Public/Catty/Core/Modules/</code></td></tr>
 				<tr><td>FLayer / FScriptLayer</td><td><code>Catty/Source/Public/Catty/Core/Layer.h</code>、<code>Catty/Script/ScriptLayer.h</code></td></tr>

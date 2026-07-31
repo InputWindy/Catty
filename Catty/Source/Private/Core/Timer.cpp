@@ -1,6 +1,6 @@
-#include <Core/Timer.h>
+#include <Core/System/Timer.h>
 
-#include <Core/App.h>
+#include <Core/Application/App.h>
 
 #include <sstream>
 #include <utility>

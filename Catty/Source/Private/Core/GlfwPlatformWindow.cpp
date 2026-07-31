@@ -1,6 +1,6 @@
 #include "Core/GlfwPlatformWindow.h"
 
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 
 #include <GLFW/glfw3.h>
 

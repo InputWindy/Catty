@@ -1,8 +1,8 @@
 #include <Render/UI/ImGuiSystem.h>
 
-#include <Core/ConsoleManager.h>
-#include <Core/Log.h>
-#include <Core/PlatformWindow.h>
+#include <Core/System/ConsoleManager.h>
+#include <Core/System/Log.h>
+#include <Core/System/PlatformWindow.h>
 #include <Render/RenderServer.h>
 #include <Render/UI/ImGuiTheme.h>
 #include "Render/RHI/VulkanRHI.h"

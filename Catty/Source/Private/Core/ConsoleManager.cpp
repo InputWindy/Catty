@@ -1,9 +1,9 @@
-#include <Core/ConsoleManager.h>
+#include <Core/System/ConsoleManager.h>
 
-#include <Core/App.h>
-#include <Core/ConfigFile.h>
+#include <Core/Application/App.h>
+#include <Core/System/ConfigFile.h>
 #include <Core/Engine.h>
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 
 #include <cctype>
 #include <memory>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Export.h>
-#include <Core/PlatformWindow.h>
+#include <Core/System/PlatformWindow.h>
 
 #include <string>
 
@@ -41,7 +41,7 @@ struct FEngineConfig
 	bool bCreateMainWindow = true;
 	bool bResizableWindow = true;
 
-	/** Clear color used by the default clear/present path (Render / ImGui PostRender). */
+	/** Clear color used by FRenderServer default clear (Boot caches from config). */
 	float ClearColorR = 0.08f;
 	float ClearColorG = 0.10f;
 	float ClearColorB = 0.16f;

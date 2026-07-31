@@ -65,7 +65,10 @@ if(GAME_SOURCES STREQUAL "")
 endif()
 
 add_executable({{PROJECT_NAME}} ${GAME_SOURCES})
-target_include_directories({{PROJECT_NAME}} PRIVATE "${GAME_SOURCE_DIR}")
+target_include_directories({{PROJECT_NAME}} PRIVATE
+	"${GAME_SOURCE_DIR}"
+	"${GAME_SOURCE_DIR}/{{PROJECT_NAME}}/Public"
+)
 target_link_libraries({{PROJECT_NAME}} PRIVATE Catty::Engine Catty::Modules)
 target_compile_features({{PROJECT_NAME}} PRIVATE cxx_std_20)
 target_compile_definitions({{PROJECT_NAME}} PRIVATE

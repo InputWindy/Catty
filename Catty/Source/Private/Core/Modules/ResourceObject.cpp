@@ -1,39 +1,44 @@
 ﻿#include <Core/Modules/Resource.h>
+#include <Core/Extension/ResourceManager.h>
 
 namespace Catty
 {
 
-FResource::FResource(
-	FPackage* InOuter,
+UResource::UResource(
+	UPackage* InOuter,
 	std::string InObjectName,
-	FResourceId InId,
 	EResourceType InType,
 	std::string InSourcePath)
-	: FObject(InOuter, std::move(InObjectName))
-	, Id(InId)
+	: UObject(InOuter, std::move(InObjectName))
 	, Type(InType)
 	, SourcePath(std::move(InSourcePath))
+	, LoadState(EResourceLoadState::Pending)
 {
 }
 
-FResource::~FResource() = default;
+UResource::~UResource() = default;
 
-void FResource::StaticTearDown(FResource* Resource)
+void UResource::OnPoolTearDown()
 {
-	if (!Resource)
-	{
-		return;
-	}
-
 	if (FResourceManager* Manager = Detail::GetResourceManager())
 	{
-		// Drop catalog while Outer still valid (virtual path needs Package.ObjectName).
-		Manager->UnregisterResource(Resource);
-		if (Resource->GetId().IsValid())
-		{
-			Manager->ReleaseResourceId(Resource->GetId());
-		}
+		Manager->UnregisterResource(this);
 	}
 }
+
+UTextureResource::UTextureResource(
+	UPackage* InOuter,
+	std::string InObjectName,
+	EResourceType InType,
+	std::string InSourcePath)
+	: UResource(
+		InOuter,
+		std::move(InObjectName),
+		InType == EResourceType::Unknown ? EResourceType::Texture : InType,
+		std::move(InSourcePath))
+{
+}
+
+UTextureResource::~UTextureResource() = default;
 
 } // namespace Catty

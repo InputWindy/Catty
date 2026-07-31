@@ -2,9 +2,7 @@
 
 #include "World/World.h"
 
-#include <Core/FrameStage.h>
-#include <Core/Layer.h>
-#include <Core/Module.h>
+#include <Core/Sequencer/EngineExtension.h>
 
 /**
  * Project layer that owns and ticks FWorld.
@@ -16,9 +14,7 @@ public:
 	explicit FWorldLayer(std::string WorldName = "MainWorld");
 	~FWorldLayer() override = default;
 
-	virtual void OnAttach() override;
-	virtual void OnDetach() override;
-	virtual void OnSequencerStage(Catty::EFrameStage Stage) override;
+	virtual bool ExecuteStage(Catty::EEngineStage Stage) override;
 
 	[[nodiscard]] FWorld& GetWorld() { return World; }
 	[[nodiscard]] const FWorld& GetWorld() const { return World; }
@@ -26,4 +22,5 @@ public:
 private:
 	std::string WorldName;
 	FWorld World;
+	bool bWorldReady = false;
 };

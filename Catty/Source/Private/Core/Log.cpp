@@ -1,7 +1,7 @@
-#include <Core/Log.h>
+#include <Core/System/Log.h>
 
-#include <Core/App.h>
-#include <Core/ConsoleManager.h>
+#include <Core/Application/App.h>
+#include <Core/System/ConsoleManager.h>
 
 #include <algorithm>
 #include <deque>

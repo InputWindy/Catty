@@ -196,7 +196,7 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 <header>
 	<h1>Catty Object Reflect C++ API</h1>
 	<div class="subtitle">
-		编辑器 / Blueprint 向的 <code>FObject</code> · struct · enum 运行时反射。
+		编辑器 / Blueprint 向的 <code>UObject</code> · struct · enum 运行时反射。
 		头文件 <code>Catty/Core/ObjectReflect.h</code>；
 		Codegen：<code>Tools/object_reflect_codegen.py</code> →
 		<code>Catty/Source/Generated/ObjectReflect*.gen.*</code>。
@@ -219,13 +219,12 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 <!-- @@CATTY_OBJECT_REFLECT_TOC_BEGIN@@ -->
 	<div class="sec">Objects</div>
 	<ul>
-		<li><a href="#type-Catty-FObject">FObject</a></li>
-		<li><a href="#type-Catty-FPackage">FPackage</a></li>
-		<li><a href="#type-Catty-FResource">FResource</a></li>
+		<li><a href="#type-Catty-UObject">UObject</a></li>
+		<li><a href="#type-Catty-UPackage">UPackage</a></li>
+		<li><a href="#type-Catty-UResource">UResource</a></li>
 	</ul>
 	<div class="sec">Structs</div>
 	<ul>
-		<li><a href="#type-Catty-FResourceId">FResourceId</a></li>
 	</ul>
 	<div class="sec">Enums</div>
 	<ul>
@@ -279,7 +278,7 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 			</div>
 			<div class="fn-body">
 				<code class="sig">CATTY_OBJECT()
-class CATTY_API FMyAsset : public FObject
+class CATTY_API FMyAsset : public UObject
 {
 	CATTY_GENERATED_BODY()
 	// ...
@@ -303,7 +302,7 @@ struct FPoint
 	CATTY_PROPERTY()
 	float X = 0.0f;
 };</code>
-				<p>普通值类型（非 <code>FObject</code>）。类内用 <code>CATTY_GENERATED_STRUCT_BODY()</code> 声明 <code>StaticType()</code> → <code>FStructType</code>。</p>
+				<p>普通值类型（非 <code>UObject</code>）。类内用 <code>CATTY_GENERATED_STRUCT_BODY()</code> 声明 <code>StaticType()</code> → <code>FStructType</code>。</p>
 			</div>
 		</article>
 
@@ -362,14 +361,14 @@ void Reset();</code>
 	std::uint64_t UIntValue;
 	double FloatValue;
 	std::string StringValue;
-	FObject* ObjectValue;
+	UObject* ObjectValue;
 
 	static FPropertyValue FromBool(bool);
 	static FPropertyValue FromInt(std::int64_t);
 	static FPropertyValue FromUInt(std::uint64_t);
 	static FPropertyValue FromFloat(double);
 	static FPropertyValue FromString(std::string);
-	static FPropertyValue FromObject(FObject*);
+	static FPropertyValue FromObject(UObject*);
 };</code>
 				<p>类型擦除的属性读写载体。<code>EPropertyType</code>：Bool / Int32 / UInt32 / Int64 / UInt64 / Float / Double / String / EnumInt32 / ObjectRef。</p>
 			</div>
@@ -377,7 +376,7 @@ void Reset();</code>
 
 		<article class="fn" id="api-object-type">
 			<div class="fn-head">
-				<h3 class="fn-name">FObjectType / FObject</h3>
+				<h3 class="fn-name">FObjectType / UObject</h3>
 				<span class="tag tag-api">runtime</span>
 				<span class="tag tag-object">object</span>
 			</div>
@@ -385,13 +384,13 @@ void Reset();</code>
 				<code class="sig">const FObjectType&amp; T::StaticType();
 const FObjectType&amp; Obj.GetObjectType() const;
 
-bool FObject::GetPropertyValue(name, Out);
-bool FObject::SetPropertyValue(name, Value);
-bool FObject::CallFunction(name);                      // 0 args
-bool FObject::CallFunction(name, arg0, arg1, ...); // variadic → FPropertyValue
-bool FObject::CallFunction(name, Args*, ArgCount); // type-erased
+bool UObject::GetPropertyValue(name, Out);
+bool UObject::SetPropertyValue(name, Value);
+bool UObject::CallFunction(name);                      // 0 args
+bool UObject::CallFunction(name, arg0, arg1, ...); // variadic → FPropertyValue
+bool UObject::CallFunction(name, Args*, ArgCount); // type-erased
 
-FObjectTypeRegistry::Get().FindType("Catty::FResource");</code>
+FObjectTypeRegistry::Get().FindType("Catty::UResource");</code>
 				<p><code>FObjectType</code> 含 <code>Name</code>、<code>Super</code>、本类 Properties / Functions。<code>Find*InHierarchy</code> / <code>Gather*InHierarchy</code> 沿 Super 链行走。函数元数据含 <code>ParamTypes</code> / <code>ParamCount</code>，调用前校验个数与类型。</p>
 			</div>
 		</article>
@@ -482,15 +481,15 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 <section class="card" id="catalog">
 	<h2>Registered types</h2>
 	<div class="body">
-		<p>Codegen 扫描结果：3 object / 1 struct / 4 enum。 修改标注宏后重新构建即可刷新本节。</p>
+		<p>Codegen 扫描结果：3 object / 0 struct / 4 enum。 修改标注宏后重新构建即可刷新本节。</p>
 
-		<article class="fn" id="type-Catty-FObject">
+		<article class="fn" id="type-Catty-UObject">
 			<div class="fn-head">
-				<h3 class="fn-name">Catty::FObject</h3>
+				<h3 class="fn-name">Catty::UObject</h3>
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: (root) · Catty/Source/Public/Core/Object.h:119</code>
+				<code class="sig">super: (root) · Catty/Source/Public/Core/Object/Object.h:119</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
@@ -515,13 +514,13 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 			</div>
 		</article>
 
-		<article class="fn" id="type-Catty-FPackage">
+		<article class="fn" id="type-Catty-UPackage">
 			<div class="fn-head">
-				<h3 class="fn-name">Catty::FPackage</h3>
+				<h3 class="fn-name">Catty::UPackage</h3>
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: Catty::FObject · Catty/Source/Public/Core/Package.h:77</code>
+				<code class="sig">super: Catty::UObject · Catty/Source/Public/Core/Object/Package.h:74</code>
 				<p>无反射属性。</p>
 				<h4>Functions</h4>
 				<table>
@@ -539,46 +538,30 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 			</div>
 		</article>
 
-		<article class="fn" id="type-Catty-FResource">
+		<article class="fn" id="type-Catty-UResource">
 			<div class="fn-head">
-				<h3 class="fn-name">Catty::FResource</h3>
+				<h3 class="fn-name">Catty::UResource</h3>
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: Catty::FObject · Catty/Source/Public/Core/Modules/Resource.h:71</code>
+				<code class="sig">super: Catty::UObject · Catty/Source/Public/Core/Modules/Resource.h:44</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
 					<tbody>
 						<tr><td><code>Type</code></td><td><code>EResourceType</code></td><td><code>EnumInt32</code></td></tr>
 						<tr><td><code>SourcePath</code></td><td><code>std::string</code></td><td><code>String</code></td></tr>
+						<tr><td><code>LoadState</code></td><td><code>EResourceLoadState</code></td><td><code>EnumInt32</code></td></tr>
 					</tbody>
 				</table>
 				<h4>Functions</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Signature</th></tr></thead>
 					<tbody>
-						<tr><td><code>GetIdValue</code></td><td><code>std::uint64_t()</code></td></tr>
 						<tr><td><code>GetType</code></td><td><code>EResourceType()</code></td></tr>
 						<tr><td><code>GetSourcePath</code></td><td><code>std::string()</code></td></tr>
 						<tr><td><code>GetPath</code></td><td><code>std::string()</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Catty-FResourceId">
-			<div class="fn-head">
-				<h3 class="fn-name">Catty::FResourceId</h3>
-				<span class="tag tag-struct">struct</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">Catty/Source/Public/Core/Modules/Resource.h:27</code>
-				<h4>Properties</h4>
-				<table>
-					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
-					<tbody>
-						<tr><td><code>Value</code></td><td><code>std::uint64_t</code></td><td><code>UInt64</code></td></tr>
+						<tr><td><code>GetLoadState</code></td><td><code>EResourceLoadState()</code></td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -590,7 +573,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Core/Object.h:71</code>
+				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Core/Object/Object.h:71</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>
@@ -608,7 +591,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Core/Package.h:22</code>
+				<code class="sig">enum class : std::uint32_t · Catty/Source/Public/Core/Object/Package.h:22</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>
@@ -627,7 +610,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Modules/Resource.h:41</code>
+				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Modules/Resource.h:16</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>
@@ -647,7 +630,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Modules/Resource.h:51</code>
+				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Modules/Resource.h:26</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>

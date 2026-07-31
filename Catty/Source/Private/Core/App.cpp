@@ -1,19 +1,17 @@
-#include <Core/App.h>
-#include <Core/ConsoleManager.h>
-#include <Core/Log.h>
-#include <Core/Paths.h>
-#include <Core/Modules/GC.h>
-#include <Core/Modules/Platform.h>
-#include <Core/Modules/Render.h>
-#include <Core/Modules/Resource.h>
-#include <Core/Timer.h>
-#include <Core/WorkerPool.h>
+﻿#include <Core/Application/App.h>
+
+#include <Core/System/ConsoleManager.h>
+#include <Core/System/Fatal.h>
+#include <Core/System/Log.h>
+#include <Core/System/Paths.h>
+#include <Core/System/Timer.h>
+#include <Core/Sequencer/EngineStage.h>
 
 #include <algorithm>
-#include <atomic>
-#include <cassert>
 #include <chrono>
-#include <memory>
+#include <cstdio>
+#include <cstdlib>
+#include <queue>
 #include <utility>
 
 namespace Catty
@@ -80,28 +78,107 @@ int LoadProjectEngineIni(FApp& App, FEngineConfig& Config)
 	return Applied;
 }
 
+template <typename TObject>
+void TopoSortPeers(
+	const std::vector<TObject*>& StableOrder,
+	const std::unordered_map<std::type_index, std::vector<FExtensionStageDep>>& Deps,
+	std::vector<TObject*>& OutOrder)
+{
+	OutOrder.clear();
+	const std::size_t Count = StableOrder.size();
+	if (Count == 0)
+	{
+		return;
+	}
+
+	std::vector<std::type_index> Types;
+	Types.reserve(Count);
+	std::unordered_map<std::type_index, std::size_t> TypeToIndex;
+	for (std::size_t Index = 0; Index < Count; ++Index)
+	{
+		const std::type_index Type(typeid(*StableOrder[Index]));
+		Types.push_back(Type);
+		TypeToIndex.emplace(Type, Index);
+	}
+
+	std::vector<int> InDegree(Count, 0);
+	std::vector<std::vector<std::size_t>> Adj(Count);
+
+	for (std::size_t Self = 0; Self < Count; ++Self)
+	{
+		const auto DepIt = Deps.find(Types[Self]);
+		if (DepIt == Deps.end())
+		{
+			continue;
+		}
+		for (const FExtensionStageDep& Edge : DepIt->second)
+		{
+			const auto DepIndexIt = TypeToIndex.find(Edge.Type);
+			if (DepIndexIt == TypeToIndex.end())
+			{
+				continue;
+			}
+			const std::size_t Dep = DepIndexIt->second;
+			if (Dep == Self)
+			{
+				continue;
+			}
+			Adj[Dep].push_back(Self);
+			++InDegree[Self];
+		}
+	}
+
+	std::queue<std::size_t> Ready;
+	for (std::size_t Index = 0; Index < Count; ++Index)
+	{
+		if (InDegree[Index] == 0)
+		{
+			Ready.push(Index);
+		}
+	}
+
+	OutOrder.reserve(Count);
+	while (!Ready.empty())
+	{
+		const std::size_t Index = Ready.front();
+		Ready.pop();
+		OutOrder.push_back(StableOrder[Index]);
+		for (std::size_t Next : Adj[Index])
+		{
+			if (--InDegree[Next] == 0)
+			{
+				Ready.push(Next);
+			}
+		}
+	}
+
+	if (OutOrder.size() != Count)
+	{
+		CATTY_CORE_ERROR("FApp: TDependsPack cycle detected; falling back to registration order");
+		OutOrder = StableOrder;
+	}
+}
+
 } // namespace
 
-FApp* GApp = nullptr;
+bool FApp::InvokeStage(IEngineExtension& Extension, EEngineStage Stage)
+{
+	Extension.SetCurrentStage(Stage);
+	return Extension.ExecuteStage(Stage);
+}
 
-// ---------------------------------------------------------------------------
-// Type aliases & lifetime
-// ---------------------------------------------------------------------------
+FApp* GApp = nullptr;
 
 FApp::FApp()
 {
 	GApp = this;
-
-	// Earliest services, in order: Log → ConsoleManager → Timer → WorkerPool.
-	// ConsoleManager / Timer / WorkerPool are ready via member construction order; Log needs sinks now.
 	BootstrapAppLogging(*this);
-	CATTY_CORE_INFO("FApp core services ready (Log, ConsoleManager, Timer, WorkerPool)");
+	CATTY_CORE_INFO("FApp core services ready (Log, ConsoleManager, Timer)");
 }
 
 FApp::~FApp()
 {
-	ClearLayers();
-	DetachModules();
+	ClearExtensions();
 	if (Log.IsInitialized())
 	{
 		Log.Shutdown();
@@ -112,20 +189,13 @@ FApp::~FApp()
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Lifecycle
-// ---------------------------------------------------------------------------
-
 void FApp::Configure(FEngineConfig& /*OutConfig*/)
 {
 }
 
-void FApp::RegisterModules()
+bool FApp::PreInitialize()
 {
-	RegisterModule(std::make_unique<FPlatform>());
-	RegisterModule(std::make_unique<FRender>());
-	RegisterModule(std::make_unique<FGC>());
-	RegisterModule(std::make_unique<FResourceManager>());
+	return true;
 }
 
 bool FApp::PostInitialize()
@@ -135,30 +205,420 @@ bool FApp::PostInitialize()
 
 void FApp::OnRequestExit()
 {
-	if (GetState() != EAppState::Running)
+	if (AppState != EAppState::Running)
 	{
 		return;
 	}
 
-	CATTY_CORE_INFO("FApp: exit requested — entering WaitForExit (drain pipeline)");
-	RequestWaitForExit();
+	CATTY_CORE_INFO("FApp::OnRequestExit — leaving Game loop");
+	AppState = EAppState::WaitForExit;
 }
 
-void FApp::OnDetachModule(IModule& Module)
+std::vector<IEngineExtension*> FApp::SnapshotExtensions() const
 {
-	Module.GetOnExitRequested().RemoveAll(this);
-	Module.GetOnDetach().RemoveAll(this);
+	std::vector<IEngineExtension*> Out;
+	Out.reserve(Extensions.size());
+	for (const std::unique_ptr<IEngineExtension>& Extension : Extensions)
+	{
+		if (Extension)
+		{
+			Out.push_back(Extension.get());
+		}
+	}
+	return Out;
+}
+
+std::vector<FExtensionDepEdgeView> FApp::SnapshotExtensionDeps(EEngineStage Stage) const
+{
+	std::vector<FExtensionDepEdgeView> Out;
+	const auto StageIndex = static_cast<std::size_t>(Stage);
+	if (StageIndex >= static_cast<std::size_t>(EEngineStage::COUNT))
+	{
+		return Out;
+	}
+
+	const auto& Deps = ExtensionDeps[StageIndex];
+	for (const auto& Pair : Deps)
+	{
+		const auto SelfIt = ExtensionsByType.find(Pair.first);
+		if (SelfIt == ExtensionsByType.end() || !SelfIt->second)
+		{
+			continue;
+		}
+
+		for (const FExtensionStageDep& Edge : Pair.second)
+		{
+			const auto DepIt = ExtensionsByType.find(Edge.Type);
+			if (DepIt == ExtensionsByType.end() || !DepIt->second)
+			{
+				continue;
+			}
+
+			FExtensionDepEdgeView View;
+			View.Predecessor = DepIt->second;
+			View.Successor = SelfIt->second;
+			View.Strength = Edge.Strength;
+			Out.push_back(View);
+		}
+	}
+	return Out;
+}
+
+bool FApp::RunExtensionInitFamily(IEngineExtension& Extension)
+{
+	static constexpr EEngineStage InitStages[] =
+	{
+		EEngineStage::PreInit,
+		EEngineStage::Init,
+		EEngineStage::PostInit,
+	};
+
+	for (EEngineStage Stage : InitStages)
+	{
+		if (!InvokeStage(Extension, Stage))
+		{
+			CATTY_CORE_ERROR(
+				"FApp: extension '{}' failed at {}",
+				Extension.GetName() ? Extension.GetName() : "?",
+				static_cast<int>(Stage));
+			return false;
+		}
+	}
+	return true;
+}
+
+void FApp::RunExtensionAttach(IEngineExtension& Extension)
+{
+	InvokeStage(Extension, EEngineStage::Attach);
+}
+
+void FApp::RegisterExtensionInternal(
+	std::unique_ptr<IEngineExtension> Extension,
+	std::type_index TypeKey,
+	EExtensionPriority Priority)
+{
+	if (!Extension)
+	{
+		return;
+	}
+
+	IEngineExtension* Raw = Extension.get();
+	Raw->SetPriority(Priority);
+
+	if (AppState == EAppState::Running)
+	{
+		PendingAdd.push_back(std::move(Extension));
+		PendingAddTypes.push_back(TypeKey);
+		PendingAddPriorities.push_back(Priority);
+		return;
+	}
+
+	if (ExtensionsByType.find(TypeKey) != ExtensionsByType.end())
+	{
+		CATTY_CORE_ERROR(
+			"FApp::RegisterExtension: duplicate type for '{}'",
+			Raw->GetName() ? Raw->GetName() : "?");
+		return;
+	}
+
+	ExtensionsByType[TypeKey] = Raw;
+	Extensions.push_back(std::move(Extension));
+
+	if (bLifecycleStarted)
+	{
+		if (!RunExtensionInitFamily(*Raw))
+		{
+			ExtensionsByType.erase(TypeKey);
+			Extensions.pop_back();
+			return;
+		}
+		RunExtensionAttach(*Raw);
+	}
+}
+
+void FApp::RequestRemoveExtension(IEngineExtension* Extension)
+{
+	if (!Extension)
+	{
+		return;
+	}
+	PendingRemove.push_back(Extension);
+}
+
+void FApp::ClearExtensions()
+{
+	for (auto It = Extensions.rbegin(); It != Extensions.rend(); ++It)
+	{
+		if (*It)
+		{
+			InvokeStage(**It, EEngineStage::Detach);
+		}
+	}
+	Extensions.clear();
+	ExtensionsByType.clear();
+	StageOrder.clear();
+	PendingAdd.clear();
+	PendingAddTypes.clear();
+	PendingAddPriorities.clear();
+	PendingRemove.clear();
+	RuntimeMounted.clear();
+	for (auto& DepMap : ExtensionDeps)
+	{
+		DepMap.clear();
+	}
+	bLifecycleStarted = false;
+}
+
+void FApp::EraseExtension(IEngineExtension* Extension)
+{
+	if (!Extension)
+	{
+		return;
+	}
+
+	RuntimeMounted.erase(Extension);
+	ExtensionsByType.erase(std::type_index(typeid(*Extension)));
+	Extensions.erase(
+		std::remove_if(
+			Extensions.begin(),
+			Extensions.end(),
+			[Extension](const std::unique_ptr<IEngineExtension>& Ptr)
+			{
+				return Ptr.get() == Extension;
+			}),
+		Extensions.end());
+}
+
+void FApp::FlushPendingMounts()
+{
+	for (IEngineExtension* Remove : PendingRemove)
+	{
+		if (!Remove)
+		{
+			continue;
+		}
+
+		// Running-time unmount: Attach … Detach only (PrepareExit/Shutdown are App exit).
+		InvokeStage(*Remove, EEngineStage::Detach);
+		EraseExtension(Remove);
+	}
+	PendingRemove.clear();
+
+	if (PendingAdd.empty())
+	{
+		return;
+	}
+
+	for (std::size_t Index = 0; Index < PendingAdd.size(); ++Index)
+	{
+		std::unique_ptr<IEngineExtension>& Add = PendingAdd[Index];
+		if (!Add)
+		{
+			continue;
+		}
+
+		const std::type_index TypeKey =
+			Index < PendingAddTypes.size() ? PendingAddTypes[Index] : std::type_index(typeid(*Add));
+		const EExtensionPriority Priority =
+			Index < PendingAddPriorities.size() ? PendingAddPriorities[Index] : EExtensionPriority::Layer;
+
+		IEngineExtension* Raw = Add.get();
+		Raw->SetPriority(Priority);
+
+		if (ExtensionsByType.find(TypeKey) != ExtensionsByType.end())
+		{
+			CATTY_CORE_ERROR(
+				"FApp::FlushPendingMounts: duplicate '{}'",
+				Raw->GetName() ? Raw->GetName() : "?");
+			Add.reset();
+			continue;
+		}
+
+		ExtensionsByType[TypeKey] = Raw;
+		Extensions.push_back(std::move(Add));
+		RunExtensionAttach(*Raw);
+		RuntimeMounted.insert(Raw);
+	}
+	PendingAdd.clear();
+	PendingAddTypes.clear();
+	PendingAddPriorities.clear();
+}
+
+void FApp::DetachRuntimeMountedExtensions()
+{
+	if (RuntimeMounted.empty())
+	{
+		return;
+	}
+
+	std::vector<IEngineExtension*> StillMounted(RuntimeMounted.begin(), RuntimeMounted.end());
+	RuntimeMounted.clear();
+
+	for (IEngineExtension* Extension : StillMounted)
+	{
+		if (!Extension)
+		{
+			continue;
+		}
+
+		bool bAlive = false;
+		for (const std::unique_ptr<IEngineExtension>& Ptr : Extensions)
+		{
+			if (Ptr.get() == Extension)
+			{
+				bAlive = true;
+				break;
+			}
+		}
+		if (!bAlive)
+		{
+			continue;
+		}
+
+		InvokeStage(*Extension, EEngineStage::Detach);
+		EraseExtension(Extension);
+	}
+}
+
+void FApp::AssertExtensionDepsPresent(EEngineStage Stage) const
+{
+	const auto StageIndex = static_cast<std::size_t>(Stage);
+	const auto& Deps = ExtensionDeps[StageIndex];
+
+	for (const auto& Pair : Deps)
+	{
+		const auto SelfIt = ExtensionsByType.find(Pair.first);
+		if (SelfIt == ExtensionsByType.end() || !SelfIt->second)
+		{
+			continue;
+		}
+
+		for (const FExtensionStageDep& Edge : Pair.second)
+		{
+			if (ExtensionsByType.find(Edge.Type) != ExtensionsByType.end())
+			{
+				continue;
+			}
+
+			if (Edge.Strength == EExtensionDepStrength::Weak)
+			{
+				continue;
+			}
+
+			const char* SelfName = SelfIt->second->GetName();
+			char Buffer[512] = {};
+			std::snprintf(
+				Buffer,
+				sizeof(Buffer),
+				"FApp: extension '%s' missing required dependency '%s' for EEngineStage(%d)",
+				SelfName ? SelfName : "?",
+				Edge.Type.name(),
+				static_cast<int>(Stage));
+			ReportFatal(Buffer);
+		}
+	}
+}
+
+void FApp::RebuildStageOrder(EEngineStage Stage)
+{
+	AssertExtensionDepsPresent(Stage);
+
+	const auto StageIndex = static_cast<std::size_t>(Stage);
+	const auto& Deps = ExtensionDeps[StageIndex];
+
+	std::vector<IEngineExtension*> Bands[3];
+	for (std::unique_ptr<IEngineExtension>& Extension : Extensions)
+	{
+		if (!Extension)
+		{
+			continue;
+		}
+		const int Band = static_cast<int>(Extension->GetPriority());
+		if (Band < 0 || Band > 2)
+		{
+			Bands[0].push_back(Extension.get());
+			continue;
+		}
+		Bands[Band].push_back(Extension.get());
+	}
+
+	StageOrder.clear();
+	for (int Band = 0; Band < 3; ++Band)
+	{
+		std::vector<IEngineExtension*> Sorted;
+		TopoSortPeers(Bands[Band], Deps, Sorted);
+		StageOrder.insert(StageOrder.end(), Sorted.begin(), Sorted.end());
+	}
+}
+
+bool FApp::InitRegisteredExtensions()
+{
+	RebuildStageOrder(EEngineStage::Init);
+
+	static constexpr EEngineStage InitStages[] =
+	{
+		EEngineStage::PreInit,
+		EEngineStage::Init,
+		EEngineStage::PostInit,
+	};
+
+	for (EEngineStage Stage : InitStages)
+	{
+		if (Stage == EEngineStage::Init)
+		{
+			RebuildStageOrder(EEngineStage::Init);
+		}
+		for (IEngineExtension* Extension : StageOrder)
+		{
+			if (!Extension)
+			{
+				continue;
+			}
+			if (!InvokeStage(*Extension, Stage))
+			{
+				CATTY_CORE_ERROR(
+					"FApp: extension '{}' failed at {}",
+					Extension->GetName() ? Extension->GetName() : "?",
+					static_cast<int>(Stage));
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+void FApp::AttachRegisteredExtensions()
+{
+	RebuildStageOrder(EEngineStage::BeginFrame);
+	for (IEngineExtension* Extension : StageOrder)
+	{
+		if (Extension)
+		{
+			RunExtensionAttach(*Extension);
+		}
+	}
+}
+
+void FApp::ShutdownRegisteredExtensions()
+{
+	RebuildStageOrder(EEngineStage::Shutdown);
+	for (IEngineExtension* Extension : StageOrder)
+	{
+		if (!Extension)
+		{
+			continue;
+		}
+		InvokeStage(*Extension, EEngineStage::PrepareExit);
+		InvokeStage(*Extension, EEngineStage::Detach);
+		InvokeStage(*Extension, EEngineStage::Shutdown);
+	}
 }
 
 bool FApp::Initialize()
 {
-	// Game fills path defaults / ApplicationName first (often relative).
 	Configure(EngineConfig);
-
-	// Resolve project / engine roots and absolutize Config / Saved / Content / …
 	FPaths::Initialize(EngineConfig);
 
-	// Load DefaultEngine.ini CVars, then sync into EngineConfig.
 	const int IniApplied = LoadProjectEngineIni(*this, EngineConfig);
 	if (IniApplied < 0)
 	{
@@ -174,77 +634,41 @@ bool FApp::Initialize()
 			EngineConfig.ProjectConfigDir);
 	}
 
-	// Logging sinks need final SavedDir / ApplicationName from Configure + ini.
 	ApplyAppLoggingFromConfig(*this, EngineConfig);
 
 	CATTY_CORE_INFO("FPaths: ProjectDir = {}", EngineConfig.ProjectDir);
 	CATTY_CORE_INFO("FPaths: EngineDir  = {}", EngineConfig.EngineDir);
-	CATTY_CORE_INFO("FPaths: Config     = {}", EngineConfig.ProjectConfigDir);
-	CATTY_CORE_INFO("FPaths: Content    = {}", EngineConfig.ProjectContentDir);
-	CATTY_CORE_INFO("FPaths: Saved      = {}", EngineConfig.SavedDir);
-	CATTY_CORE_INFO("FPaths: EngShaders = {}", EngineConfig.EngineShadersDir);
-	CATTY_CORE_INFO("FPaths: EngContent = {}", FPaths::GetEngineContentDir());
-	for (const FPathMount& Mount : FPaths::GetMountPoints())
+
+	if (!PreInitialize())
 	{
-		CATTY_CORE_INFO("FPaths: Mount {} -> {}", Mount.VirtualRoot, Mount.DiskRoot);
+		CATTY_CORE_ERROR("FApp::PreInitialize failed");
+		ClearExtensions();
+		ShutdownAppLogging(*this);
+		return false;
 	}
-
-	RegisterModules();
-
-	if (!RebuildModuleOrder())
+	if (!InitRegisteredExtensions())
 	{
+		ShutdownRegisteredExtensions();
+		ClearExtensions();
 		ShutdownAppLogging(*this);
 		return false;
 	}
 
-	if (!WorkerPool.Initialize())
-	{
-		CATTY_CORE_ERROR("FApp::Initialize: WorkerPool Initialize failed");
-		ShutdownAppLogging(*this);
-		return false;
-	}
-
-	FStageContext Ctx{};
-	if (!ExecuteLifecycleStage(EModuleStage::PreInit, Ctx)
-		|| !ExecuteLifecycleStage(EModuleStage::Init, Ctx)
-		|| !ExecuteLifecycleStage(EModuleStage::PostInit, Ctx))
-	{
-		CATTY_CORE_ERROR("FApp::Initialize module stages failed");
-		Shutdown();
-		ShutdownAppLogging(*this);
-		return false;
-	}
+	AttachRegisteredExtensions();
+	bLifecycleStarted = true;
 
 	if (!PostInitialize())
 	{
 		CATTY_CORE_ERROR("FApp::PostInitialize failed");
-		Shutdown();
-		ShutdownAppLogging(*this);
-		return false;
-	}
-
-	// Game PostInitialize pushes content layers (World / Editor / Script / …).
-	AttachModules();
-
-	for (const auto& Module : Modules)
-	{
-		if (Module)
+		ShutdownRegisteredExtensions();
+		Extensions.clear();
+		ExtensionsByType.clear();
+		for (auto& DepMap : ExtensionDeps)
 		{
-			(void)GetA().Register(*Module);
+			DepMap.clear();
 		}
-	}
-	for (const std::unique_ptr<FLayer>& Layer : Layers)
-	{
-		if (Layer)
-		{
-			(void)GetB().Register(*Layer);
-		}
-	}
-
-	if (!BuildGraph())
-	{
-		CATTY_CORE_ERROR("FApp::Initialize: BuildGraph failed");
-		Shutdown();
+		StageOrder.clear();
+		bLifecycleStarted = false;
 		ShutdownAppLogging(*this);
 		return false;
 	}
@@ -257,547 +681,27 @@ bool FApp::Initialize()
 
 void FApp::Shutdown()
 {
-	FStageContext Ctx{};
-	Ctx.FrameIndex = FrameIndex;
+	// Runtime mounts: Attach…Detach only — auto-Detach if never explicitly removed.
+	DetachRuntimeMountedExtensions();
 
-	ExecuteLifecycleStage(EModuleStage::Shutdown, Ctx);
-
-	ClearLayers();
-	DetachModules();
-
-	if (WorkerPool.IsInitialized())
+	ShutdownRegisteredExtensions();
+	Extensions.clear();
+	ExtensionsByType.clear();
+	for (auto& DepMap : ExtensionDeps)
 	{
-		WorkerPool.Shutdown();
+		DepMap.clear();
 	}
-}
-
-void FApp::Run()
-{
-	if (!Initialize())
-	{
-		return;
-	}
-
-	if (!Execute())
-	{
-		CATTY_CORE_ERROR("FApp::Execute failed or was not built");
-	}
-	Shutdown();
-	ShutdownAppLogging(*this);
-}
-
-void FApp::OnWorkersStarted()
-{
-	BootstrapFirstAttach();
-}
-
-void FApp::MakeStageContext(FStageContext& Out) const
-{
-	Out.DeltaSeconds = DeltaSeconds;
-	Out.FixedDeltaSeconds = FixedDeltaSeconds;
-	Out.FrameIndex = FrameIndex;
-}
-
-bool FApp::BuildGraph()
-{
-	using FModuleStage = FModuleFrameTraits::FStage;
-	using FLayerStage = FLayerFrameTraits::FStage;
-
-	TSequencerDep<FModuleFrameTraits, FLayerFrameTraits> ModuleToLayer;
-	TSequencerDep<FLayerFrameTraits, FModuleFrameTraits> LayerToModule;
-
-	// Module pin → Layer gate (same logical stage on both sides when enums align).
-	const auto WireSame = [&](FModuleStage ModuleStage, FLayerStage LayerStage)
-	{
-		ModuleToLayer.FromTo[ModuleStage] = LayerStage;
-	};
-	// Layer pin → Module gate (advance Module to the next stage).
-	const auto WireNext = [&](FLayerStage FromLayer, FModuleStage ToModule)
-	{
-		LayerToModule.FromTo[FromLayer] = ToModule;
-	};
-
-	WireSame(FModuleStage::Attach, FLayerStage::Attach);
-	WireNext(FLayerStage::Attach, FModuleStage::BeginFrame);
-	WireSame(FModuleStage::BeginFrame, FLayerStage::BeginFrame);
-	WireNext(FLayerStage::BeginFrame, FModuleStage::ProcessInput);
-	WireSame(FModuleStage::ProcessInput, FLayerStage::ProcessInput);
-	// Layer.ProcessInput → Module.FixedUpdate|Update via InstallFixedUpdateRepeat
-	WireSame(FModuleStage::FixedUpdate, FLayerStage::FixedUpdate);
-	// Layer.FixedUpdate → Module.Update / reopen via InstallFixedUpdateRepeat
-	WireSame(FModuleStage::Update, FLayerStage::Update);
-	WireNext(FLayerStage::Update, FModuleStage::LateUpdate);
-	WireSame(FModuleStage::LateUpdate, FLayerStage::LateUpdate);
-	WireNext(FLayerStage::LateUpdate, FModuleStage::PreRender);
-	WireSame(FModuleStage::PreRender, FLayerStage::PreRender);
-	WireNext(FLayerStage::PreRender, FModuleStage::Render);
-	WireSame(FModuleStage::Render, FLayerStage::Render);
-	WireNext(FLayerStage::Render, FModuleStage::PostRender);
-	WireSame(FModuleStage::PostRender, FLayerStage::PostRender);
-	WireNext(FLayerStage::PostRender, FModuleStage::EndFrame);
-	WireSame(FModuleStage::EndFrame, FLayerStage::EndFrame);
-	WireNext(FLayerStage::EndFrame, FModuleStage::Detach);
-	WireSame(FModuleStage::Detach, FLayerStage::Detach);
-	WireNext(FLayerStage::Detach, FModuleStage::Attach);
-	WireSame(FModuleStage::PrepareExit, FLayerStage::PrepareExit);
-	// PrepareExit is an exit-drain slot; do not also feed Module.Detach (EndFrame already does).
-
-	if (!BindDep(GetA(), GetB(), ModuleToLayer))
-	{
-		return false;
-	}
-	if (!BindDep(GetB(), GetA(), LayerToModule))
-	{
-		return false;
-	}
-	if (!Build())
-	{
-		return false;
-	}
-	InstallFixedUpdateRepeat();
-	return true;
-}
-
-void FApp::InstallFixedUpdateRepeat()
-{
-	using FModuleStage = FModuleFrameTraits::FStage;
-	using FLayerStage = FLayerFrameTraits::FStage;
-
-	const std::size_t PiIndex = FLayerFrameTraits::StageToIndex(FLayerStage::ProcessInput);
-	const std::size_t LayerFuIndex = FLayerFrameTraits::StageToIndex(FLayerStage::FixedUpdate);
-	const std::size_t DetachIndex = FLayerFrameTraits::StageToIndex(FLayerStage::Detach);
-	const std::size_t ModuleFuIndex = FModuleFrameTraits::StageToIndex(FModuleStage::FixedUpdate);
-	const std::size_t UpdateIndex = FModuleFrameTraits::StageToIndex(FModuleStage::Update);
-
-	GetA().BindGateExternalExpect(ModuleFuIndex, 1);
-	GetA().BindGateExternalExpect(UpdateIndex, 1);
-	GetB().AddPinRaiseListener([this, PiIndex, LayerFuIndex, DetachIndex, ModuleFuIndex, UpdateIndex](std::size_t Raised)
-	{
-		if (Raised == DetachIndex)
-		{
-			bFrameTickArmed.store(true, std::memory_order_release);
-			return;
-		}
-		if (Raised == PiIndex)
-		{
-			if (FixedStepsRemaining <= 0)
-			{
-				GetA().ForceOpenGate(FModuleStage::Update);
-			}
-			else
-			{
-				GetA().NotifyExternalPin(ModuleFuIndex);
-			}
-			return;
-		}
-		if (Raised != LayerFuIndex)
-		{
-			return;
-		}
-		if (FixedStepsRemaining > 1)
-		{
-			--FixedStepsRemaining;
-			GetA().ForceOpenGate(FModuleStage::FixedUpdate);
-		}
-		else
-		{
-			FixedStepsRemaining = 0;
-			GetA().NotifyExternalPin(UpdateIndex);
-		}
-	});
-}
-
-void FApp::BootstrapFirstAttach()
-{
-	using FModuleStage = FModuleFrameTraits::FStage;
-	GetA().ForceOpenGate(FModuleStage::Attach);
-}
-
-// ---------------------------------------------------------------------------
-// Modules
-// ---------------------------------------------------------------------------
-
-void FApp::AttachModules()
-{
-	for (IModule* Module : GetOrderForStage(EModuleStage::Init))
-	{
-		if (!Module)
-		{
-			continue;
-		}
-		Module->Attach();
-	}
-}
-
-void FApp::DetachModules()
-{
-	for (IModule* Module : GetOrderForStage(EModuleStage::Shutdown))
-	{
-		if (!Module)
-		{
-			continue;
-		}
-		Module->GetOnExitRequested().RemoveAll(this);
-		Module->Detach();
-	}
-}
-
-void FApp::RegisterModule(std::unique_ptr<IModule> Module)
-{
-	if (!Module)
-	{
-		return;
-	}
-
-	IModule* Raw = Module.get();
-	const char* Name = Raw->GetName();
-	ModulesByName[Name ? Name : ""] = Raw;
-	ModulesByType[std::type_index(typeid(*Raw))] = Raw;
-	(void)Raw->GetOnExitRequested().AddRaw(this, &FApp::OnRequestExit);
-	(void)Raw->GetOnDetach().AddRaw(this, &FApp::OnDetachModule);
-	Modules.push_back(std::move(Module));
-}
-
-IModule* FApp::GetModuleByName(const char* Name)
-{
-	if (!Name)
-	{
-		return nullptr;
-	}
-	const auto It = ModulesByName.find(Name);
-	return It != ModulesByName.end() ? It->second : nullptr;
-}
-
-const IModule* FApp::GetModuleByName(const char* Name) const
-{
-	return const_cast<FApp*>(this)->GetModuleByName(Name);
-}
-
-bool FApp::BuildStageOrder(EModuleStage Stage, std::vector<IModule*>& OutOrder)
-{
-	OutOrder.clear();
-
-	std::unordered_map<std::string, int> InDegree;
-	std::unordered_map<std::string, std::vector<std::string>> Adj;
-
-	for (const auto& Module : Modules)
-	{
-		const std::string Name = Module->GetName();
-		InDegree.emplace(Name, 0);
-		Adj.emplace(Name, std::vector<std::string>{});
-	}
-
-	for (const auto& Module : Modules)
-	{
-		const std::string Name = Module->GetName();
-		std::vector<std::string> Deps;
-		Module->GetDependencies(Stage, Deps);
-		for (const std::string& Dep : Deps)
-		{
-			if (ModulesByName.find(Dep) == ModulesByName.end())
-			{
-				CATTY_CORE_ERROR(
-					"Module '{}' stage {} depends on missing '{}'",
-					Name,
-					static_cast<int>(Stage),
-					Dep);
-				return false;
-			}
-			Adj[Dep].push_back(Name);
-			++InDegree[Name];
-		}
-	}
-
-	std::vector<std::string> ReadyList;
-	for (const auto& Module : Modules)
-	{
-		const std::string Name = Module->GetName();
-		if (InDegree[Name] == 0)
-		{
-			ReadyList.push_back(Name);
-		}
-	}
-
-	while (!ReadyList.empty())
-	{
-		const std::string Name = ReadyList.front();
-		ReadyList.erase(ReadyList.begin());
-		OutOrder.push_back(ModulesByName[Name]);
-		for (const std::string& Next : Adj[Name])
-		{
-			if (--InDegree[Next] == 0)
-			{
-				ReadyList.push_back(Next);
-			}
-		}
-	}
-
-	if (OutOrder.size() != Modules.size())
-	{
-		std::string Remaining;
-		for (const auto& Module : Modules)
-		{
-			const std::string Name = Module->GetName();
-			if (InDegree[Name] > 0)
-			{
-				if (!Remaining.empty())
-				{
-					Remaining += ", ";
-				}
-				Remaining += Name;
-			}
-		}
-		CATTY_CORE_ERROR(
-			"FATAL: Module dependency cycle at stage {} involving: {}",
-			static_cast<int>(Stage),
-			Remaining.empty() ? "(unknown)" : Remaining);
-		return false;
-	}
-
-	return true;
-}
-
-bool FApp::RebuildModuleOrder()
-{
-	ModulesByName.clear();
-	for (auto& Order : StageOrders)
-	{
-		Order.clear();
-	}
-
-	for (const auto& Module : Modules)
-	{
-		ModulesByName[Module->GetName()] = Module.get();
-	}
-
-	static constexpr EModuleStage LifecycleStages[] = {
-		EModuleStage::PreInit,
-		EModuleStage::Init,
-		EModuleStage::PostInit,
-		EModuleStage::Shutdown,
-	};
-	for (const EModuleStage Stage : LifecycleStages)
-	{
-		if (!BuildStageOrder(Stage, StageOrders[StageIndex(Stage)]))
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
-const std::vector<IModule*>& FApp::GetOrderForStage(EModuleStage Stage) const
-{
-	return StageOrders[StageIndex(Stage)];
-}
-
-bool FApp::WaitModuleDependencies(IModule& Module, EModuleStage Stage)
-{
-	std::vector<std::string> Deps;
-	Module.GetDependencies(Stage, Deps);
-	for (const std::string& DepName : Deps)
-	{
-		IModule* Dep = GetModuleByName(DepName.c_str());
-		if (!Dep)
-		{
-			CATTY_CORE_ERROR(
-				"Module '{}' missing dependency '{}' at stage {}",
-				Module.GetName(),
-				DepName,
-				static_cast<int>(Stage));
-			return false;
-		}
-		Dep->WaitStageComplete();
-	}
-	return true;
-}
-
-// ---------------------------------------------------------------------------
-// Layers
-// ---------------------------------------------------------------------------
-
-void FApp::PushLayer(std::unique_ptr<FLayer> Layer)
-{
-	if (!Layer)
-	{
-		return;
-	}
-
-	FLayer* Raw = Layer.get();
-	Layers.insert(
-		Layers.begin() + static_cast<std::ptrdiff_t>(LayerInsertIndex),
-		std::move(Layer));
-	++LayerInsertIndex;
-
-	if (IsBuilt())
-	{
-		GetB().RequestAdd(*Raw);
-	}
-	else
-	{
-		Raw->Attach();
-	}
-}
-
-void FApp::PushOverlay(std::unique_ptr<FLayer> Overlay)
-{
-	if (!Overlay)
-	{
-		return;
-	}
-
-	FLayer* Raw = Overlay.get();
-	Layers.push_back(std::move(Overlay));
-
-	if (IsBuilt())
-	{
-		GetB().RequestAdd(*Raw);
-	}
-	else
-	{
-		Raw->Attach();
-	}
-}
-
-void FApp::ClearLayers()
-{
-	for (auto It = Layers.rbegin(); It != Layers.rend(); ++It)
-	{
-		if (*It)
-		{
-			(*It)->Detach();
-		}
-	}
-	Layers.clear();
-	LayerInsertIndex = 0;
-}
-
-// ---------------------------------------------------------------------------
-// Stage pipeline
-// ---------------------------------------------------------------------------
-
-std::size_t FApp::StageIndex(EModuleStage Stage)
-{
-	const std::size_t Index = static_cast<std::size_t>(Stage);
-	assert(Index < static_cast<std::size_t>(EModuleStage::NumMaxStage));
-	return Index;
-}
-
-bool FApp::IsInitFamily(EModuleStage Stage)
-{
-	return Stage == EModuleStage::PreInit
-		|| Stage == EModuleStage::Init
-		|| Stage == EModuleStage::PostInit;
-}
-
-bool FApp::IsLifecycleStage(EModuleStage Stage)
-{
-	return IsInitFamily(Stage) || Stage == EModuleStage::Shutdown;
-}
-
-bool FApp::ExecuteLifecycleStage(EModuleStage Stage, FStageContext& Ctx)
-{
-	assert(IsLifecycleStage(Stage));
-
-	std::atomic<bool> bStageFailed{false};
-
-	for (IModule* Module : GetOrderForStage(Stage))
-	{
-		if (Module)
-		{
-			Module->ResetStageFence();
-		}
-	}
-
-	const std::vector<IModule*>& Order = GetOrderForStage(Stage);
-
-	for (IModule* Module : Order)
-	{
-		if (!Module || Module->PreferMainThread())
-		{
-			continue;
-		}
-
-		WorkerPool.Push([this, Module, Stage, &Ctx, &bStageFailed]()
-		{
-			if (!WaitModuleDependencies(*Module, Stage))
-			{
-				bStageFailed = true;
-				Module->SignalStageComplete();
-				return;
-			}
-
-			Module->SetCurrentStage(Stage);
-			if (!Module->ExecuteStage(Stage, *this, Ctx))
-			{
-				bStageFailed = true;
-			}
-			Module->SignalStageComplete();
-		});
-	}
-
-	for (IModule* Module : Order)
-	{
-		if (!Module || !Module->PreferMainThread())
-		{
-			continue;
-		}
-
-		if (!WaitModuleDependencies(*Module, Stage))
-		{
-			bStageFailed = true;
-			Module->SignalStageComplete();
-			continue;
-		}
-
-		Module->SetCurrentStage(Stage);
-		if (!Module->ExecuteStage(Stage, *this, Ctx))
-		{
-			bStageFailed = true;
-			if (IsInitFamily(Stage))
-			{
-				CATTY_CORE_ERROR(
-					"Module '{}' failed at stage {}",
-					Module->GetName(),
-					static_cast<int>(Stage));
-				Module->SignalStageComplete();
-				WorkerPool.Flush();
-				return false;
-			}
-		}
-		Module->SignalStageComplete();
-	}
-
-	WorkerPool.Flush();
-
-	if (bStageFailed && IsInitFamily(Stage))
-	{
-		return false;
-	}
-
-	return true;
-}
-
-bool FApp::AreAllModulesIdle() const
-{
-	for (const auto& Module : Modules)
-	{
-		if (Module && !Module->IsIdle())
-		{
-			return false;
-		}
-	}
-	return true;
+	StageOrder.clear();
+	PendingAdd.clear();
+	PendingAddTypes.clear();
+	PendingAddPriorities.clear();
+	PendingRemove.clear();
+	RuntimeMounted.clear();
+	bLifecycleStarted = false;
 }
 
 void FApp::UpdateAppState()
 {
-	if (!bFrameTickArmed.exchange(false, std::memory_order_acq_rel))
-	{
-		return;
-	}
-
 	const double NowSeconds = std::chrono::duration<double>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -839,54 +743,70 @@ void FApp::UpdateAppState()
 	}
 }
 
-void IModule::OnSequencerStage(EFrameStage Stage)
+void FApp::Tick()
 {
-	if (!GApp)
-	{
-		return;
-	}
+	UpdateAppState();
 
-	if (Stage == EFrameStage::BeginFrame)
+	auto TickGroup = [this](EEngineStage Stage)
 	{
-		GApp->UpdateAppState();
-	}
-
-	if (GApp->GetState() == EAppState::WaitForExit)
-	{
-		const bool bDrain = Stage == EFrameStage::BeginFrame
-			|| Stage == EFrameStage::PrepareExit
-			|| Stage == EFrameStage::Update
-			|| Stage == EFrameStage::EndFrame
-			|| Stage == EFrameStage::Attach
-			|| Stage == EFrameStage::Detach;
-		if (!bDrain)
+		for (IEngineExtension* Extension : StageOrder)
 		{
-			return;
-		}
-		if (Stage == EFrameStage::PrepareExit || Stage == EFrameStage::EndFrame)
-		{
-			if (GApp->AreAllModulesIdle() && GApp->GetWorkerPool().IsIdle())
+			if (Extension)
 			{
-				GApp->RequestStopAll();
+				InvokeStage(*Extension, Stage);
 			}
 		}
-	}
+	};
 
-	const EModuleStage ModuleStage = FrameStageToModuleStage(Stage);
-	if (ModuleStage == EModuleStage::NumMaxStage)
+	FlushPendingMounts();
+	RebuildStageOrder(EEngineStage::BeginFrame);
+
+	static constexpr EEngineStage Stages[] =
+	{
+		EEngineStage::BeginFrame,
+		EEngineStage::ProcessInput,
+		EEngineStage::FixedUpdate,
+		EEngineStage::Update,
+		EEngineStage::LateUpdate,
+		EEngineStage::EndFrame,
+		EEngineStage::PreRender,
+		EEngineStage::Render,
+		EEngineStage::PostRender,
+	};
+
+	for (EEngineStage Stage : Stages)
+	{
+		if (Stage == EEngineStage::FixedUpdate)
+		{
+			for (int Step = 0; Step < FixedStepsRemaining; ++Step)
+			{
+				TickGroup(Stage);
+			}
+			continue;
+		}
+		TickGroup(Stage);
+	}
+}
+
+void FApp::Run()
+{
+	if (!Initialize())
 	{
 		return;
 	}
 
-	FStageContext Ctx{};
-	GApp->MakeStageContext(Ctx);
-	if (Stage == EFrameStage::FixedUpdate)
+	AppState = EAppState::Running;
+	CATTY_CORE_INFO("FApp: Game loop start (TickGroups + RenderServer)");
+
+	while (AppState == EAppState::Running)
 	{
-		Ctx.DeltaSeconds = Ctx.FixedDeltaSeconds;
+		Tick();
 	}
-	SetCurrentStage(ModuleStage);
-	// Frame work runs on this module's Sequencer thread; no FApp::ExecuteLifecycleStage.
-	(void)ExecuteStage(ModuleStage, *GApp, Ctx);
+
+	CATTY_CORE_INFO("FApp: Game loop end (state={})", static_cast<int>(AppState));
+	Shutdown();
+	ShutdownAppLogging(*this);
+	AppState = EAppState::Stopped;
 }
 
 } // namespace Catty

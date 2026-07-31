@@ -387,7 +387,7 @@ private:
 //   CATTY_DECLARE_DELEGATE_OneParam(FOnScore, int);
 //   CATTY_DECLARE_DELEGATE_RetVal_TwoParams(bool, FOnQuery, int, float);
 //   CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnChanged, int);
-//   CATTY_DECLARE_MULTICAST_DELEGATE_ThreeParams(FStageMulticast, EModuleStage, FApp&, FStageContext&);
+//   CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FStageMulticast, EEngineStage);
 // ---------------------------------------------------------------------------
 
 #define CATTY_DECLARE_DELEGATE(DelegateName) \

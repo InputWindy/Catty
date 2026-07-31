@@ -65,7 +65,7 @@ Catty/                          # 引擎仓库根
 │   └── Plugins/
 ├── Build/                      # CMake 入口、模块、游戏工程模板
 ├── Tools/                      # 工具脚本 + 局部 python/
-│   └── object_reflect_codegen.bat  # FObject 反射表生成
+│   └── object_reflect_codegen.bat  # UObject 反射表生成
 │   └── package.bat             # 打包 GUI
 │   └── generateProject.bat     # .cproject / 工作区 → .sln
 ├── Catty/ThirdParty/           # 引擎第三方依赖（fonts / nlohmann / …）
