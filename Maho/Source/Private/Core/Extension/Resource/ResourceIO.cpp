@@ -1,5 +1,6 @@
 #include "ResourceIO.h"
 #include "TextureImageCodec.h"
+#include "MeshModelCodec.h"
 
 #include <Core/System/Log.h>
 
@@ -243,6 +244,198 @@ bool TResourceIOTraits<UTexture2DArray>::ExportSource(
 	const UTexture2DArray& Resource)
 {
 	return ExportTextureCpu(Config, Resource);
+}
+
+bool TResourceIOTraits<UPrefab>::MatchesSourcePath(const std::string& SourcePath)
+{
+	return MeshModelCodec::MatchesModelSourcePath(SourcePath);
+}
+
+bool TResourceIOTraits<UPrefab>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UPrefab& Resource)
+{
+	if (Bulk.Bytes.empty())
+	{
+		MAHO_CORE_ERROR("ResourceIO: empty BulkData for model '{}'", Config.SourcePath);
+		return false;
+	}
+
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	FGCSystem* GC = Detail::GetGCSystem();
+	UPackage* Package = Config.Package.Cast<UPackage>();
+	if (!Resources || !GC || !Package)
+	{
+		MAHO_CORE_ERROR(
+			"ResourceIO: Prefab import needs ResourceSystem + GC + Package for '{}'",
+			Config.SourcePath);
+		return false;
+	}
+
+	FDecodedModelScene Scene;
+	if (!MeshModelCodec::DecodeFromMemory(
+			Bulk.Bytes.data(),
+			Bulk.Bytes.size(),
+			Config.SourcePath,
+			Scene))
+	{
+		MAHO_CORE_ERROR("ResourceIO: model decode failed for '{}'", Config.SourcePath);
+		return false;
+	}
+
+	if (!MeshModelCodec::ApplyDecodedModelScene(
+			std::move(Scene),
+			*Resources,
+			*GC,
+			*Package,
+			Resource))
+	{
+		MAHO_CORE_ERROR("ResourceIO: model Apply failed for '{}'", Config.SourcePath);
+		return false;
+	}
+	return true;
+}
+
+bool TResourceIOTraits<UPrefab>::ExportSource(
+	FResourceExportConfig& Config,
+	const UPrefab& Resource)
+{
+	(void)Config;
+	(void)Resource;
+	MAHO_CORE_ERROR("ResourceIO: UPrefab model export is not implemented (Phase 1)");
+	return false;
+}
+
+namespace
+{
+
+template <typename TResource>
+[[nodiscard]] bool RejectDirectImport(FResourceImportConfig& Config, TResource&)
+{
+	MAHO_CORE_ERROR(
+		"ResourceIO: '{}' is created by UPrefab scene Apply — not a direct file importer",
+		Config.SourcePath);
+	return false;
+}
+
+template <typename TResource>
+[[nodiscard]] bool RejectDirectExport(FResourceExportConfig&, const TResource&)
+{
+	MAHO_CORE_ERROR("ResourceIO: direct export not implemented for this type (Phase 1)");
+	return false;
+}
+
+} // namespace
+
+bool TResourceIOTraits<UMaterial>::MatchesSourcePath(const std::string& SourcePath)
+{
+	(void)SourcePath;
+	return false;
+}
+
+bool TResourceIOTraits<UMaterial>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UMaterial& Resource)
+{
+	(void)Bulk;
+	return RejectDirectImport(Config, Resource);
+}
+
+bool TResourceIOTraits<UMaterial>::ExportSource(
+	FResourceExportConfig& Config,
+	const UMaterial& Resource)
+{
+	return RejectDirectExport(Config, Resource);
+}
+
+bool TResourceIOTraits<UStaticMesh>::MatchesSourcePath(const std::string& SourcePath)
+{
+	(void)SourcePath;
+	return false;
+}
+
+bool TResourceIOTraits<UStaticMesh>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UStaticMesh& Resource)
+{
+	(void)Bulk;
+	return RejectDirectImport(Config, Resource);
+}
+
+bool TResourceIOTraits<UStaticMesh>::ExportSource(
+	FResourceExportConfig& Config,
+	const UStaticMesh& Resource)
+{
+	return RejectDirectExport(Config, Resource);
+}
+
+bool TResourceIOTraits<USkeleton>::MatchesSourcePath(const std::string& SourcePath)
+{
+	(void)SourcePath;
+	return false;
+}
+
+bool TResourceIOTraits<USkeleton>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	USkeleton& Resource)
+{
+	(void)Bulk;
+	return RejectDirectImport(Config, Resource);
+}
+
+bool TResourceIOTraits<USkeleton>::ExportSource(
+	FResourceExportConfig& Config,
+	const USkeleton& Resource)
+{
+	return RejectDirectExport(Config, Resource);
+}
+
+bool TResourceIOTraits<UAnimation>::MatchesSourcePath(const std::string& SourcePath)
+{
+	(void)SourcePath;
+	return false;
+}
+
+bool TResourceIOTraits<UAnimation>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UAnimation& Resource)
+{
+	(void)Bulk;
+	return RejectDirectImport(Config, Resource);
+}
+
+bool TResourceIOTraits<UAnimation>::ExportSource(
+	FResourceExportConfig& Config,
+	const UAnimation& Resource)
+{
+	return RejectDirectExport(Config, Resource);
+}
+
+bool TResourceIOTraits<UAnimationGraph>::MatchesSourcePath(const std::string& SourcePath)
+{
+	(void)SourcePath;
+	return false;
+}
+
+bool TResourceIOTraits<UAnimationGraph>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UAnimationGraph& Resource)
+{
+	(void)Bulk;
+	return RejectDirectImport(Config, Resource);
+}
+
+bool TResourceIOTraits<UAnimationGraph>::ExportSource(
+	FResourceExportConfig& Config,
+	const UAnimationGraph& Resource)
+{
+	return RejectDirectExport(Config, Resource);
 }
 
 } // namespace Maho

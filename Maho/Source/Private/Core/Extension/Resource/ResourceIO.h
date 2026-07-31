@@ -230,6 +230,89 @@ struct TResourceIOTraits<UTexture2DArray>
 	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UTexture2DArray& Resource);
 };
 
+/**
+ * Model scene import root: fbx/gltf/obj/... → Decode → Apply siblings + Prefab DocumentJson.
+ * SoftPaths to Meshes / Skeleton / AnimationGraph live in Prefab JSON (Metadata peer).
+ */
+template <>
+struct TResourceIOTraits<UPrefab>
+{
+	static constexpr EResourceType GetType() { return EResourceType::Prefab; }
+	static constexpr const char* TypeNames[] = { "Prefab", "UPrefab", "Model", "MeshScene" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UPrefab& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UPrefab& Resource);
+};
+
+/** Sibling CPU types created by Prefab scene Apply (no direct file Match). */
+template <>
+struct TResourceIOTraits<UMaterial>
+{
+	static constexpr EResourceType GetType() { return EResourceType::Material; }
+	static constexpr const char* TypeNames[] = { "Material", "UMaterial" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UMaterial& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UMaterial& Resource);
+};
+
+template <>
+struct TResourceIOTraits<UStaticMesh>
+{
+	static constexpr EResourceType GetType() { return EResourceType::Mesh; }
+	static constexpr const char* TypeNames[] = { "Mesh", "StaticMesh", "UStaticMesh" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UStaticMesh& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UStaticMesh& Resource);
+};
+
+template <>
+struct TResourceIOTraits<USkeleton>
+{
+	static constexpr EResourceType GetType() { return EResourceType::Skeleton; }
+	static constexpr const char* TypeNames[] = { "Skeleton", "USkeleton" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		USkeleton& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const USkeleton& Resource);
+};
+
+template <>
+struct TResourceIOTraits<UAnimation>
+{
+	static constexpr EResourceType GetType() { return EResourceType::Animation; }
+	static constexpr const char* TypeNames[] = { "Animation", "UAnimation" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UAnimation& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UAnimation& Resource);
+};
+
+template <>
+struct TResourceIOTraits<UAnimationGraph>
+{
+	static constexpr EResourceType GetType() { return EResourceType::AnimationGraph; }
+	static constexpr const char* TypeNames[] = { "AnimationGraph", "UAnimationGraph" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UAnimationGraph& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UAnimationGraph& Resource);
+};
+
 template <typename TResource>
 FObjectRef FResourceSystem::BeginImport(FResourceImportConfig& Config, IResourceImporter* Importer)
 {

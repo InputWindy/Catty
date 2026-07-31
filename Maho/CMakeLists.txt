@@ -151,6 +151,10 @@ endif()
 if(MAHO_HAS_OPENIMAGEIO)
 	target_compile_definitions(Maho PRIVATE MAHO_WITH_OPENIMAGEIO=1)
 endif()
+if(MAHO_HAS_ASSIMP)
+	target_link_libraries(Maho PRIVATE assimp)
+	target_compile_definitions(Maho PRIVATE MAHO_WITH_ASSIMP=1)
+endif()
 
 # Re-export ImGui include paths / defs so game TUs can #include <imgui.h> against Maho.dll.
 target_include_directories(Maho

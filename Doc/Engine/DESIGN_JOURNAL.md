@@ -81,6 +81,14 @@ Do not collapse these three.
 - **Not done:** Render-thread GPU snapshot / `FRHITexture` upload from `UTexture` pixels; OIIO wired build.
 - **Pitfalls:** Game `U*` must never hold GPU handles; cube KTX without a name hint may import as `UTexture2D` (dimension warn).
 
+### Model / Prefab CPU IO (2026-08)
+
+- **Done (Phase 1):** `UMaterial` / `UStaticMesh` / `USkeleton` / `UAnimation` / `UAnimationGraph` / `UPrefab`; `EResourceType` + `EModelAxis` / `EModelHandedness`.
+- **Codec:** Private `MeshModelCodec` — Assimp → `FDecodedModelScene` → Apply siblings in package; Prefab `DocumentJson` holds **Metadata** (coordinate system) peer to Meshes / Skeleton / AnimationGraph SoftPaths.
+- **Assimp:** default `MAHO_FETCH_ASSIMP=ON` pulls **v5.3.1** (CMake ≥3.22 not required; 5.4+ needs 3.22) on first configure if no local tree; or set `MAHO_ASSIMP_SOURCE_DIR`. `ASSIMP_WARNINGS_AS_ERRORS=OFF` forced (MSVC C4819 in clipper). `MAHO_FETCH_ASSIMP=OFF` without sources → decode disabled.
+- **Entry:** `TResourceIOTraits<UPrefab>` matches fbx/gltf/glb/obj/…; one BulkData job creates the whole scene package contents.
+- **Not done (Phase 2):** Graph authoring UI, playback, skinning upload, RHI mesh, coordinate auto-remap, Prefab re-export to FBX.
+
 ---
 
 ## ImGui

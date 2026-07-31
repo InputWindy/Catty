@@ -228,6 +228,8 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 	</ul>
 	<div class="sec">Enums</div>
 	<ul>
+		<li><a href="#type-Maho-EModelAxis">EModelAxis</a></li>
+		<li><a href="#type-Maho-EModelHandedness">EModelHandedness</a></li>
 		<li><a href="#type-Maho-EObjectFlags">EObjectFlags</a></li>
 		<li><a href="#type-Maho-EPackageFlags">EPackageFlags</a></li>
 		<li><a href="#type-Maho-EResourceLoadState">EResourceLoadState</a></li>
@@ -483,7 +485,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 <section class="card" id="catalog">
 	<h2>Registered types</h2>
 	<div class="body">
-		<p>Codegen 扫描结果：3 object / 0 struct / 6 enum。 修改标注宏后重新构建即可刷新本节。</p>
+		<p>Codegen 扫描结果：3 object / 0 struct / 8 enum。 修改标注宏后重新构建即可刷新本节。</p>
 
 		<article class="fn" id="type-Maho-UObject">
 			<div class="fn-head">
@@ -546,7 +548,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: Maho::UObject · Maho/Source/Public/Core/Extension/Resource/Resource.h:101</code>
+				<code class="sig">super: Maho::UObject · Maho/Source/Public/Core/Extension/Resource/Resource.h:129</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
@@ -564,6 +566,48 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 						<tr><td><code>GetSourcePath</code></td><td><code>std::string()</code></td></tr>
 						<tr><td><code>GetPath</code></td><td><code>std::string()</code></td></tr>
 						<tr><td><code>GetLoadState</code></td><td><code>EResourceLoadState()</code></td></tr>
+					</tbody>
+				</table>
+			</div>
+		</article>
+
+		<article class="fn" id="type-Maho-EModelAxis">
+			<div class="fn-head">
+				<h3 class="fn-name">Maho::EModelAxis</h3>
+				<span class="tag tag-enum">enum</span>
+			</div>
+			<div class="fn-body">
+				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:72</code>
+				<h4>Values</h4>
+				<table>
+					<thead><tr><th>Name</th><th>Value</th></tr></thead>
+					<tbody>
+						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
+						<tr><td><code>X</code></td><td><code>1</code></td></tr>
+						<tr><td><code>Y</code></td><td><code>2</code></td></tr>
+						<tr><td><code>Z</code></td><td><code>3</code></td></tr>
+						<tr><td><code>NegX</code></td><td><code>4</code></td></tr>
+						<tr><td><code>NegY</code></td><td><code>5</code></td></tr>
+						<tr><td><code>NegZ</code></td><td><code>6</code></td></tr>
+					</tbody>
+				</table>
+			</div>
+		</article>
+
+		<article class="fn" id="type-Maho-EModelHandedness">
+			<div class="fn-head">
+				<h3 class="fn-name">Maho::EModelHandedness</h3>
+				<span class="tag tag-enum">enum</span>
+			</div>
+			<div class="fn-body">
+				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:84</code>
+				<h4>Values</h4>
+				<table>
+					<thead><tr><th>Name</th><th>Value</th></tr></thead>
+					<tbody>
+						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
+						<tr><td><code>Right</code></td><td><code>1</code></td></tr>
+						<tr><td><code>Left</code></td><td><code>2</code></td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -647,9 +691,13 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 						<tr><td><code>Texture2DArray</code></td><td><code>7</code></td></tr>
 						<tr><td><code>Mesh</code></td><td><code>8</code></td></tr>
 						<tr><td><code>Material</code></td><td><code>9</code></td></tr>
-						<tr><td><code>Shader</code></td><td><code>10</code></td></tr>
-						<tr><td><code>Audio</code></td><td><code>11</code></td></tr>
-						<tr><td><code>Data</code></td><td><code>12</code></td></tr>
+						<tr><td><code>Skeleton</code></td><td><code>10</code></td></tr>
+						<tr><td><code>Animation</code></td><td><code>11</code></td></tr>
+						<tr><td><code>AnimationGraph</code></td><td><code>12</code></td></tr>
+						<tr><td><code>Prefab</code></td><td><code>13</code></td></tr>
+						<tr><td><code>Shader</code></td><td><code>14</code></td></tr>
+						<tr><td><code>Audio</code></td><td><code>15</code></td></tr>
+						<tr><td><code>Data</code></td><td><code>16</code></td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -661,7 +709,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:68</code>
+				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:96</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>
@@ -682,7 +730,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:82</code>
+				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:110</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>

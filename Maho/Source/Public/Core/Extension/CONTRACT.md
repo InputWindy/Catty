@@ -46,9 +46,13 @@ See [`../../../../Plugins/README.md`](../../../../Plugins/README.md):
 
 - Stale docs saying `FRenderSystemModule` / `Public/Maho/...` paths
 - Stale architecture HTML under `Doc/Engine/` — prefer this CONTRACT + Plugins README + code
+- Model files import as **`UPrefab`** (scene root), not bare `UStaticMesh`; Metadata/coordinate system lives in Prefab JSON
+- Assimp / libktx are optional at configure time — missing sources disable decode paths without failing CMake
 
 ## Related files
 
 - `Core/Extension/<Name>/<Name>.h` (built-in systems), `Core/Extension/Script/ScriptLayer.h`, `Core/Extension/Editor/EditorLayer.h`, `Core/Application/App.h`
+- `Core/Extension/Resource/Resource.h` — `UTexture*` / model `U*` / `FResourceSystem`
+- Private: `MeshModelCodec`, `TextureImageCodec`, `ResourceIO` (`TResourceIOTraits`)
 - `Render/RenderServer.h`, `Render/RHI/RHIServer.h`
-- Journal: `Doc/Engine/DESIGN_JOURNAL.md` → Extensions
+- Journal: `Doc/Engine/DESIGN_JOURNAL.md` → Extensions / Resource

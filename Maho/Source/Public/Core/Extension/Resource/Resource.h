@@ -56,9 +56,37 @@ enum class EResourceType : std::uint8_t
 	Texture2DArray,
 	Mesh,
 	Material,
+	Skeleton,
+	/** Imported single-clip animation (Assimp aiAnimation). */
+	Animation,
+	/** Package-inline blend/orchestration of UAnimation SoftPaths. */
+	AnimationGraph,
+	/** Prefab (assembly JSON); may carry scene Metadata including coordinate system. */
+	Prefab,
 	Shader,
 	Audio,
 	Data,
+};
+
+/** Source asset up-axis (Prefab Metadata / FDecodedModelMetadata). */
+MAHO_ENUM()
+enum class EModelAxis : std::uint8_t
+{
+	Unknown = 0,
+	X,
+	Y,
+	Z,
+	NegX,
+	NegY,
+	NegZ,
+};
+
+MAHO_ENUM()
+enum class EModelHandedness : std::uint8_t
+{
+	Unknown = 0,
+	Right,
+	Left,
 };
 
 /**
@@ -124,6 +152,9 @@ public:
 	[[nodiscard]] const std::string& GetPath() const { return SourcePath; }
 	MAHO_FUNCTION()
 	[[nodiscard]] EResourceLoadState GetLoadState() const { return LoadState; }
+
+	/** Mark CPU payload ready (sibling assets created during scene Apply, authored content). */
+	void MarkCpuReady() { SetLoadState(EResourceLoadState::Ready); }
 
 protected:
 	friend class FResourceSystem;
@@ -230,6 +261,163 @@ public:
 	~UTexture2DArray() override;
 };
 
+/** CPU material: SoftPaths to textures + simple scalars (Game thread only). */
+class MAHO_API UMaterial : public UResource
+{
+public:
+	static constexpr int PoolSize = 32;
+
+	UMaterial(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UMaterial() override;
+
+	[[nodiscard]] const FSoftObjectPath& GetBaseColorTexture() const { return BaseColorTexture; }
+	void SetBaseColorTexture(FSoftObjectPath Path) { BaseColorTexture = std::move(Path); }
+	[[nodiscard]] const FSoftObjectPath& GetNormalTexture() const { return NormalTexture; }
+	void SetNormalTexture(FSoftObjectPath Path) { NormalTexture = std::move(Path); }
+	[[nodiscard]] const FSoftObjectPath& GetMetallicRoughnessTexture() const { return MetallicRoughnessTexture; }
+	void SetMetallicRoughnessTexture(FSoftObjectPath Path) { MetallicRoughnessTexture = std::move(Path); }
+
+	float BaseColorFactor[4] = {1.f, 1.f, 1.f, 1.f};
+	float MetallicFactor = 0.f;
+	float RoughnessFactor = 1.f;
+
+protected:
+	FSoftObjectPath BaseColorTexture;
+	FSoftObjectPath NormalTexture;
+	FSoftObjectPath MetallicRoughnessTexture;
+};
+
+/** CPU static mesh geometry + SoftPath to UMaterial. */
+class MAHO_API UStaticMesh : public UResource
+{
+public:
+	static constexpr int PoolSize = 32;
+
+	UStaticMesh(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UStaticMesh() override;
+
+	[[nodiscard]] const FSoftObjectPath& GetMaterial() const { return Material; }
+	void SetMaterial(FSoftObjectPath Path) { Material = std::move(Path); }
+	[[nodiscard]] const std::vector<float>& GetPositions() const { return Positions; }
+	[[nodiscard]] const std::vector<float>& GetNormals() const { return Normals; }
+	[[nodiscard]] const std::vector<float>& GetUVs() const { return UVs; }
+	[[nodiscard]] const std::vector<std::uint32_t>& GetIndices() const { return Indices; }
+
+	void SetCpuGeometry(
+		std::vector<float> InPositions,
+		std::vector<float> InNormals,
+		std::vector<float> InUVs,
+		std::vector<std::uint32_t> InIndices);
+
+protected:
+	FSoftObjectPath Material;
+	std::vector<float> Positions;
+	std::vector<float> Normals;
+	std::vector<float> UVs;
+	std::vector<std::uint32_t> Indices;
+};
+
+struct FSkeletonBone
+{
+	std::string Name;
+	std::int32_t ParentIndex = -1;
+	/** Row-major 4x4 bind local matrix. */
+	float BindLocal[16] = {
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1};
+};
+
+class MAHO_API USkeleton : public UResource
+{
+public:
+	static constexpr int PoolSize = 16;
+
+	USkeleton(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~USkeleton() override;
+
+	[[nodiscard]] const std::vector<FSkeletonBone>& GetBones() const { return Bones; }
+	void SetBones(std::vector<FSkeletonBone> InBones) { Bones = std::move(InBones); }
+
+protected:
+	std::vector<FSkeletonBone> Bones;
+};
+
+struct FAnimationKey
+{
+	float Time = 0.f;
+	float Translation[3] = {0, 0, 0};
+	float Rotation[4] = {0, 0, 0, 1}; // xyzw
+	float Scale[3] = {1, 1, 1};
+};
+
+struct FAnimationTrack
+{
+	std::string TargetBoneName;
+	std::vector<FAnimationKey> Keys;
+};
+
+/** Imported single animation clip (CPU tracks). */
+class MAHO_API UAnimation : public UResource
+{
+public:
+	static constexpr int PoolSize = 32;
+
+	UAnimation(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UAnimation() override;
+
+	[[nodiscard]] const FSoftObjectPath& GetSkeleton() const { return Skeleton; }
+	void SetSkeleton(FSoftObjectPath Path) { Skeleton = std::move(Path); }
+	[[nodiscard]] float GetDurationSeconds() const { return DurationSeconds; }
+	void SetDurationSeconds(float Seconds) { DurationSeconds = Seconds; }
+	[[nodiscard]] const std::vector<FAnimationTrack>& GetTracks() const { return Tracks; }
+	void SetTracks(std::vector<FAnimationTrack> InTracks) { Tracks = std::move(InTracks); }
+
+protected:
+	FSoftObjectPath Skeleton;
+	float DurationSeconds = 0.f;
+	std::vector<FAnimationTrack> Tracks;
+};
+
+/**
+ * Package-inline orchestration of UAnimation SoftPaths (default blend config).
+ * Authoritative DocumentJson; SourcePath may be empty.
+ */
+class MAHO_API UAnimationGraph : public UResource
+{
+public:
+	static constexpr int PoolSize = 16;
+
+	UAnimationGraph(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UAnimationGraph() override;
+
+	[[nodiscard]] const std::string& GetDocumentJson() const { return DocumentJson; }
+	void SetDocumentJson(std::string Json) { DocumentJson = std::move(Json); }
+
+protected:
+	std::string DocumentJson;
+};
+
+/**
+ * Prefab (assembly). Package-inline JSON: Meshes[], Skeleton, AnimationGraph, Metadata.
+ * SourcePath may be empty for authored prefabs; model import sets SourcePath to the scene file.
+ */
+class MAHO_API UPrefab : public UResource
+{
+public:
+	static constexpr int PoolSize = 16;
+
+	UPrefab(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UPrefab() override;
+
+	[[nodiscard]] const std::string& GetDocumentJson() const { return DocumentJson; }
+	void SetDocumentJson(std::string Json) { DocumentJson = std::move(Json); }
+
+protected:
+	std::string DocumentJson;
+};
+
 /** Raw bytes produced by FResourceServer; consumed by Importer. */
 struct FResourceBulkData
 {
@@ -271,6 +459,12 @@ public:
 	[[nodiscard]] bool RegisterResource(const FObjectRef& Resource);
 	bool UnregisterResource(UObject* Resource);
 	bool UnregisterResource(const FObjectRef& Resource);
+
+	/**
+	 * Package name-table + catalog for a newly created sibling (e.g. mesh scene Apply).
+	 * Prefers this over calling UPackage::RegisterObject from codecs (that API is private).
+	 */
+	[[nodiscard]] bool RegisterOwnedResource(UPackage& Package, const FObjectRef& Resource);
 
 	bool UnloadResource(const std::string& VirtualPath);
 	bool UnloadResource(const FObjectRef& Resource);

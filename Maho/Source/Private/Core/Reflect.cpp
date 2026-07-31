@@ -111,6 +111,15 @@ void SelfTestObjectReflect()
 	assert(ResourceEnum->FindByName("TextureCube") != nullptr);
 	assert(ResourceEnum->FindByName("TextureCube")->Value == static_cast<std::int64_t>(EResourceType::TextureCube));
 	assert(ResourceEnum->FindByValue(static_cast<std::int64_t>(EResourceType::Mesh)) != nullptr);
+	assert(ResourceEnum->FindByName("Skeleton") != nullptr);
+	assert(ResourceEnum->FindByName("Animation") != nullptr);
+	assert(ResourceEnum->FindByName("AnimationGraph") != nullptr);
+	assert(ResourceEnum->FindByName("Prefab") != nullptr);
+	assert(ResourceEnum->FindByName("Material") != nullptr);
+
+	const FEnumType* ModelAxisEnum = FEnumTypeRegistry::Get().FindType("Maho::EModelAxis");
+	assert(ModelAxisEnum != nullptr);
+	assert(ModelAxisEnum->FindByName("Y") != nullptr);
 
 	const FEnumType* TexDimEnum = FEnumTypeRegistry::Get().FindType("Maho::ETextureDimension");
 	assert(TexDimEnum != nullptr);

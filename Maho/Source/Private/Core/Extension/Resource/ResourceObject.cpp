@@ -145,4 +145,106 @@ UTexture2DArray::UTexture2DArray(
 
 UTexture2DArray::~UTexture2DArray() = default;
 
+UMaterial::UMaterial(
+	UPackage* InOuter,
+	std::string InObjectName,
+	EResourceType InType,
+	std::string InSourcePath)
+	: UResource(
+		InOuter,
+		std::move(InObjectName),
+		InType == EResourceType::Unknown ? EResourceType::Material : InType,
+		std::move(InSourcePath))
+{
+}
+
+UMaterial::~UMaterial() = default;
+
+UStaticMesh::UStaticMesh(
+	UPackage* InOuter,
+	std::string InObjectName,
+	EResourceType InType,
+	std::string InSourcePath)
+	: UResource(
+		InOuter,
+		std::move(InObjectName),
+		InType == EResourceType::Unknown ? EResourceType::Mesh : InType,
+		std::move(InSourcePath))
+{
+}
+
+UStaticMesh::~UStaticMesh() = default;
+
+void UStaticMesh::SetCpuGeometry(
+	std::vector<float> InPositions,
+	std::vector<float> InNormals,
+	std::vector<float> InUVs,
+	std::vector<std::uint32_t> InIndices)
+{
+	Positions = std::move(InPositions);
+	Normals = std::move(InNormals);
+	UVs = std::move(InUVs);
+	Indices = std::move(InIndices);
+}
+
+USkeleton::USkeleton(
+	UPackage* InOuter,
+	std::string InObjectName,
+	EResourceType InType,
+	std::string InSourcePath)
+	: UResource(
+		InOuter,
+		std::move(InObjectName),
+		InType == EResourceType::Unknown ? EResourceType::Skeleton : InType,
+		std::move(InSourcePath))
+{
+}
+
+USkeleton::~USkeleton() = default;
+
+UAnimation::UAnimation(
+	UPackage* InOuter,
+	std::string InObjectName,
+	EResourceType InType,
+	std::string InSourcePath)
+	: UResource(
+		InOuter,
+		std::move(InObjectName),
+		InType == EResourceType::Unknown ? EResourceType::Animation : InType,
+		std::move(InSourcePath))
+{
+}
+
+UAnimation::~UAnimation() = default;
+
+UAnimationGraph::UAnimationGraph(
+	UPackage* InOuter,
+	std::string InObjectName,
+	EResourceType InType,
+	std::string InSourcePath)
+	: UResource(
+		InOuter,
+		std::move(InObjectName),
+		InType == EResourceType::Unknown ? EResourceType::AnimationGraph : InType,
+		std::move(InSourcePath))
+{
+}
+
+UAnimationGraph::~UAnimationGraph() = default;
+
+UPrefab::UPrefab(
+	UPackage* InOuter,
+	std::string InObjectName,
+	EResourceType InType,
+	std::string InSourcePath)
+	: UResource(
+		InOuter,
+		std::move(InObjectName),
+		InType == EResourceType::Unknown ? EResourceType::Prefab : InType,
+		std::move(InSourcePath))
+{
+}
+
+UPrefab::~UPrefab() = default;
+
 } // namespace Maho

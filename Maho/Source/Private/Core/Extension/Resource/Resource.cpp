@@ -146,6 +146,31 @@ bool FResourceSystem::RegisterResource(const FObjectRef& Resource)
 	return true;
 }
 
+bool FResourceSystem::RegisterOwnedResource(UPackage& Package, const FObjectRef& Resource)
+{
+	UObject* Object = Resource.Get();
+	if (!Object)
+	{
+		MAHO_CORE_ERROR("FResourceSystem::RegisterOwnedResource: null Resource");
+		return false;
+	}
+
+	if (!Package.RegisterObject(Object))
+	{
+		MAHO_CORE_ERROR(
+			"FResourceSystem::RegisterOwnedResource: Package.RegisterObject failed for '{}'",
+			Object->GetName());
+		return false;
+	}
+
+	if (!RegisterResource(Resource))
+	{
+		Package.DetachObject(Object);
+		return false;
+	}
+	return true;
+}
+
 bool FResourceSystem::UnregisterResource(UObject* Resource)
 {
 	UResource* ResourcePtr = dynamic_cast<UResource*>(Resource);

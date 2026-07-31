@@ -41,6 +41,10 @@ namespace
 	case EResourceType::Texture2DArray: return "Texture2DArray";
 	case EResourceType::Mesh: return "Mesh";
 	case EResourceType::Material: return "Material";
+	case EResourceType::Skeleton: return "Skeleton";
+	case EResourceType::Animation: return "Animation";
+	case EResourceType::AnimationGraph: return "AnimationGraph";
+	case EResourceType::Prefab: return "Prefab";
 	case EResourceType::Shader: return "Shader";
 	case EResourceType::Audio: return "Audio";
 	case EResourceType::Data: return "Data";
