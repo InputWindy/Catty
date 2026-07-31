@@ -22,4 +22,4 @@ Internal（`Tools/`）：`generateProject.bat` / `package.bat` / `object_reflect
 
 Game project template ships root `package.bat` / `clean.bat` + `Tools/invoke_engine.ps1`（读 `.cproject` → 引擎局部 Python）。
 
-Docs agent rules: `Doc/AGENTS.md`.
+Docs for agents: repository-root `AGENTS.md` → `Doc/Engine/`.

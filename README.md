@@ -69,9 +69,8 @@ Catty/                          # 引擎仓库根
 │   └── package.bat             # 打包 GUI
 │   └── generateProject.bat     # .cproject / 工作区 → .sln
 ├── Catty/ThirdParty/           # 引擎第三方依赖（fonts / nlohmann / …）
-├── Doc/                        # 文档（HTML）
-│   ├── Engine/                 # 引擎 API / 架构
-│   └── …                       # UE 源码学习书（Nanite / Lumen / …）
+├── Doc/                        # Catty 文档
+│   └── Engine/                 # 引擎 API / 架构 / Agent 规范与进度
 └── README.md
 ```
 
@@ -94,9 +93,12 @@ MyGame/
 
 | 文档 | 说明 |
 |------|------|
+| [**AGENTS.md**](AGENTS.md) | **所有 AI Agent 第一站**（项目地图、约束入口、进度指路） |
+| [Doc/Engine/AGENTS.md](Doc/Engine/AGENTS.md) | 引擎开发 Agent 说明 |
+| [Doc/Engine/CODING_STANDARDS.md](Doc/Engine/CODING_STANDARDS.md) | C++ 编码规范（全文） |
+| [Doc/Engine/DESIGN_JOURNAL.md](Doc/Engine/DESIGN_JOURNAL.md) | 子系统做到哪一步、设计意图与踩坑 |
 | [Doc/Engine/ObjectReflectAPI.html](Doc/Engine/ObjectReflectAPI.html) | Object / Struct / Enum 反射 C++ API（codegen 同步类型目录） |
 | [Doc/Engine/LuaAPI.html](Doc/Engine/LuaAPI.html) | Lua API（手工 `catty.*`；Object usertype 另案） |
-| [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html) | 引擎架构（FApp / GC / Resource / Package 等） |
-| [Doc/index.html](Doc/index.html) | UE 渲染源码解析文档集入口（可选阅读） |
+| [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html) | 引擎架构（FApp / Extension / RHI 等；若与代码冲突以代码与 CONTRACT 为准） |
 
-用浏览器或 Cursor **Live Preview** 打开 HTML 即可。
+用浏览器或 Cursor **Live Preview** 打开 HTML 即可。Markdown（`AGENTS.md` / `CONTRACT.md` / `DESIGN_JOURNAL.md`）直接给 Agent 读。
