@@ -3,9 +3,12 @@ import { AgentService } from "../src/agent/agent-service.mjs";
 import { resolveProviderConfig } from "../src/agent/provider-config.mjs";
 import { ProviderRegistry } from "../src/agent/provider-registry.mjs";
 import { CommandExecutor } from "../src/execution/command-executor.mjs";
-import { UndoJournal } from "../src/history/undo-journal.mjs";
 import { SessionManager } from "../src/sessions/session-manager.mjs";
 import { createDefaultToolRegistry } from "../src/tools/definitions.mjs";
+import {
+  WorldAdapterFactory,
+  worldAdapterConfigDefaults,
+} from "../src/world/world-adapter-factory.mjs";
 
 export class MemoryAuditLog {
   constructor() {
@@ -51,14 +54,18 @@ export async function createRealProviderCore({
   });
   const provider_registry = new ProviderRegistry({ config });
   const provider = await provider_registry.initialize();
-  const session_manager = new SessionManager();
   const tool_registry = createDefaultToolRegistry();
-  const undo_journal = new UndoJournal();
+  const world_adapter_factory = new WorldAdapterFactory({
+    config: { ...worldAdapterConfigDefaults },
+    tool_registry,
+  });
+  const session_manager = new SessionManager({
+    world_adapter_factory,
+  });
   const audit_log = new MemoryAuditLog();
   const command_executor = new CommandExecutor({
     session_manager,
     tool_registry,
-    undo_journal,
     audit_log,
   });
   const agent_service = new AgentService({
@@ -74,25 +81,30 @@ export async function createRealProviderCore({
     provider,
     session_manager,
     tool_registry,
-    undo_journal,
+    world_adapter_factory,
     audit_log,
     command_executor,
     agent_service,
     createSession(initial_entities = []) {
       const session = session_manager.createSession();
       for (const entity of initial_entities) {
-        session.world.spawnPrimitive(entity);
+        session.adapter.mock_world.spawnPrimitive(entity);
       }
       return session;
     },
     async run(session, message) {
       const record_start = audit_log.records.length;
+      const snapshot = await session.adapter.getSnapshot({
+        request_id: randomUUID(),
+        session_id: session.session_id,
+        world_id: session.world_id,
+      });
       const result = await agent_service.run({
         protocol_version: "1.0",
         request_id: randomUUID(),
         session_id: session.session_id,
         message,
-        expected_revision: session.world.revision,
+        expected_revision: snapshot.revision,
       });
       const records = audit_log.records.slice(record_start);
       const plan_record = records.find(
@@ -108,6 +120,14 @@ export async function createRealProviderCore({
     },
     async close() {
       await provider_registry.close();
+      await session_manager.close();
+    },
+    async getSnapshot(session) {
+      return session.adapter.getSnapshot({
+        request_id: randomUUID(),
+        session_id: session.session_id,
+        world_id: session.world_id,
+      });
     },
   };
 }

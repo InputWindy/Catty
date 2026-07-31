@@ -34,7 +34,7 @@ export async function main({
           "Return a short plain-text response. No tools are available.",
         user_message: text_message,
       }),
-      world_snapshot: text_session.world.snapshot(),
+      world_snapshot: await core.getSnapshot(text_session),
       session_context: structuredClone(text_session.entity_context),
       tool_definitions: core.tool_registry.listDefinitions(),
     });
@@ -47,7 +47,7 @@ export async function main({
     if (
       !tool.result.ok ||
       !tool.plan_tool_names.includes("entity.spawn_primitive") ||
-      tool_session.world.entities.size !== 1
+      (await core.getSnapshot(tool_session)).entities.length !== 1
     ) {
       throw new Error("ToolCall or MockWorld check failed");
     }

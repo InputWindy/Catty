@@ -49,7 +49,9 @@ export async function main({
           break;
         }
       }
-      case_ok = case_ok && scenario.verify(session.world.snapshot());
+      case_ok =
+        case_ok &&
+        scenario.verify(await core.getSnapshot(session));
       if (case_ok) {
         passed += 1;
         output.write(`PASS ${scenario.name}\n`);

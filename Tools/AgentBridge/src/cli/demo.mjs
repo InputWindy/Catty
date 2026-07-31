@@ -6,10 +6,14 @@ import { resolveProviderConfig } from "../agent/provider-config.mjs";
 import { ProviderRegistry } from "../agent/provider-registry.mjs";
 import { MockProvider } from "../agent/providers/mock-provider.mjs";
 import { CommandExecutor } from "../execution/command-executor.mjs";
-import { UndoJournal } from "../history/undo-journal.mjs";
 import { NullAuditLog } from "../logging/audit-log.mjs";
 import { SessionManager } from "../sessions/session-manager.mjs";
 import { createDefaultToolRegistry } from "../tools/definitions.mjs";
+import {
+  WorldAdapterFactory,
+  resolveWorldAdapterConfig,
+  worldAdapterConfigDefaults,
+} from "../world/world-adapter-factory.mjs";
 
 const HELP_TEXT = `Commands:
   /help      Show this help
@@ -46,15 +50,23 @@ class RecordingProvider {
 export function createDemoState({
   provider: selected_provider = new MockProvider(),
   provider_registry = null,
+  world_adapter_factory = null,
+  world_config = { ...worldAdapterConfigDefaults },
 } = {}) {
-  const session_manager = new SessionManager();
   const tool_registry = createDefaultToolRegistry();
-  const undo_journal = new UndoJournal();
+  const adapter_factory =
+    world_adapter_factory ||
+    new WorldAdapterFactory({
+      config: world_config,
+      tool_registry,
+    });
+  const session_manager = new SessionManager({
+    world_adapter_factory: adapter_factory,
+  });
   const audit_log = new NullAuditLog();
   const command_executor = new CommandExecutor({
     session_manager,
     tool_registry,
-    undo_journal,
     audit_log,
   });
   const provider = new RecordingProvider(selected_provider);
@@ -69,9 +81,10 @@ export function createDemoState({
   return {
     session_manager,
     tool_registry,
-    undo_journal,
+    world_adapter_factory: adapter_factory,
     command_executor,
     provider,
+    provider_registry,
     agent_service,
     active_session: session_manager.createSession(),
   };
@@ -82,12 +95,26 @@ export async function createConfiguredDemoState({
   cwd = process.cwd(),
 } = {}) {
   const config = resolveProviderConfig({ env, cwd });
+  const world_config = resolveWorldAdapterConfig({ env });
   const provider_registry = new ProviderRegistry({ config });
   const selected_provider = await provider_registry.initialize();
-  return createDemoState({
+  const state = createDemoState({
     provider: selected_provider,
     provider_registry,
+    world_config,
   });
+  try {
+    await state.active_session.adapter.health();
+    const snapshot = await getSessionSnapshot(
+      state.active_session
+    );
+    state.active_session.last_world_revision = snapshot.revision;
+    return state;
+  } catch (error) {
+    await state.session_manager.close();
+    await provider_registry.close();
+    throw error;
+  }
 }
 
 export function formatWorld(snapshot) {
@@ -131,19 +158,36 @@ export function formatAgentResult(result, provider_output, snapshot) {
 
 async function runAgent(state, message) {
   const session = state.active_session;
+  const before_snapshot = await getSessionSnapshot(session);
   state.provider.last_output = null;
   const result = await state.agent_service.run({
     protocol_version: "1.0",
     request_id: randomUUID(),
     session_id: session.session_id,
     message,
-    expected_revision: session.world.revision,
+    expected_revision: before_snapshot.revision,
   });
+  let after_snapshot = before_snapshot;
+  try {
+    after_snapshot = await getSessionSnapshot(session);
+  } catch {
+    // Preserve the real execution result when a remote refresh fails.
+  }
   return formatAgentResult(
     result,
     state.provider.last_output,
-    session.world.snapshot()
+    after_snapshot
   );
+}
+
+export async function getSessionSnapshot(session) {
+  const snapshot = await session.adapter.getSnapshot({
+    request_id: randomUUID(),
+    session_id: session.session_id,
+    world_id: session.world_id,
+  });
+  session.last_world_revision = snapshot.revision;
+  return snapshot;
 }
 
 export async function handleDemoInput(state, input) {
@@ -160,13 +204,17 @@ export async function handleDemoInput(state, input) {
     if (command === "/world") {
       return {
         exit: false,
-        output: formatWorld(state.active_session.world.snapshot()),
+        output: formatWorld(
+          await getSessionSnapshot(state.active_session)
+        ),
       };
     }
     if (command === "/entities") {
       return {
         exit: false,
-        output: formatEntities(state.active_session.world.snapshot()),
+        output: formatEntities(
+          await getSessionSnapshot(state.active_session)
+        ),
       };
     }
     if (command === "/undo") {
@@ -176,7 +224,21 @@ export async function handleDemoInput(state, input) {
       };
     }
     if (command === "/reset") {
-      state.active_session = state.session_manager.createSession();
+      const previous_session = state.active_session;
+      const next_session = state.session_manager.createSession();
+      try {
+        await next_session.adapter.health();
+        await getSessionSnapshot(next_session);
+      } catch (error) {
+        await state.session_manager.deleteSession(
+          next_session.session_id
+        );
+        throw error;
+      }
+      state.active_session = next_session;
+      await state.session_manager.deleteSession(
+        previous_session.session_id
+      );
       return {
         exit: false,
         output: `Started new Session: ${state.active_session.session_id}`,
@@ -213,7 +275,7 @@ export async function runDemo({
   try {
     state = await createConfiguredDemoState({ env, cwd });
   } catch (error) {
-    output.write(`Provider configuration error: ${error?.message || String(error)}\n`);
+    output.write(`Configuration error: ${error?.message || String(error)}\n`);
     return 1;
   }
   const interactive = Boolean(input.isTTY && output.isTTY);
@@ -225,8 +287,10 @@ export async function runDemo({
   });
 
   const metadata = state.provider.getMetadata();
+  const adapter_metadata =
+    state.active_session.adapter.getMetadata();
   output.write(
-    `Catty Agent Core v0.3\nProvider: ${metadata.provider}\nModel: ${metadata.model}\nMode: ${metadata.real ? "real" : "Mock"}\nThinking: disabled\nType /help for commands.\n\n`
+    `Catty Agent Core v0.4\nProvider: ${metadata.provider}\nModel: ${metadata.model}\nMode: ${metadata.real ? "real" : "Mock"}\nThinking: disabled\nWorld adapter: ${adapter_metadata.adapter}\nAdapter readiness: ${adapter_metadata.ready ? "ready" : "not ready"}${adapter_metadata.remote ? `\nRemote base URL: ${adapter_metadata.base_url}` : ""}\nType /help for commands.\n\n`
   );
   reader.on("SIGINT", () => {
     output.write("\nBye.\n");
@@ -255,6 +319,7 @@ export async function runDemo({
   } finally {
     reader.close();
     await state.provider_registry?.close();
+    await state.session_manager.close();
   }
   return 0;
 }

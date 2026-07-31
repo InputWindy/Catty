@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { AgentError, asAgentError } from "../protocol/errors.mjs";
 import {
   assertProtocolVersion,
@@ -17,6 +18,10 @@ import {
   ProviderError,
   providerErrorToAgentError,
 } from "./providers/provider-errors.mjs";
+import {
+  WorldAdapterError,
+  worldAdapterErrorToAgentError,
+} from "../world/world-adapter-errors.mjs";
 
 const SESSION_MESSAGE_LIMIT = 40;
 
@@ -49,16 +54,16 @@ export class AgentService {
   async run(request) {
     const started_at = Date.now();
     let session;
-    let world;
+    let adapter;
     try {
       assertProtocolVersion(request.protocol_version);
       assertUuid(request.request_id, "request_id");
       assertUuid(request.session_id, "session_id");
       session = this.session_manager.getSession(request.session_id);
-      world = session.world;
+      adapter = session.adapter;
       if (
         request.world_id !== undefined &&
-        request.world_id !== world.world_id
+        request.world_id !== session.world_id
       ) {
         throw new AgentError(
           "UNKNOWN_WORLD",
@@ -70,7 +75,7 @@ export class AgentService {
       const result = this.#failure(
         request,
         asAgentError(error, "INVALID_REQUEST"),
-        world
+        session?.last_world_revision ?? null
       );
       await this.#writeAgentOnlyAudit(request, result, [], started_at);
       return result;
@@ -86,6 +91,7 @@ export class AgentService {
       return { ...structuredClone(result), replayed: true };
     }
 
+    let world_snapshot;
     try {
       if (typeof request.message !== "string" || !request.message.trim()) {
         throw new AgentError("INVALID_REQUEST", "message is required", {
@@ -102,13 +108,20 @@ export class AgentService {
           { field: "expected_revision" }
         );
       }
-      if (request.expected_revision !== world.revision) {
+      world_snapshot = await adapter.getSnapshot({
+        request_id: randomUUID(),
+        session_id: request.session_id,
+        world_id: session.world_id,
+        signal: request.signal,
+      });
+      session.last_world_revision = world_snapshot.revision;
+      if (request.expected_revision !== world_snapshot.revision) {
         throw new AgentError(
           "REVISION_CONFLICT",
-          `Expected revision ${request.expected_revision}, current revision is ${world.revision}`,
+          `Expected revision ${request.expected_revision}, current revision is ${world_snapshot.revision}`,
           {
             expected_revision: request.expected_revision,
-            current_revision: world.revision,
+            current_revision: world_snapshot.revision,
           },
           true
         );
@@ -116,8 +129,8 @@ export class AgentService {
     } catch (error) {
       const result = this.#failure(
         request,
-        asAgentError(error, "INVALID_REQUEST"),
-        world
+        this.#worldAgentError(error, "INVALID_REQUEST"),
+        world_snapshot?.revision ?? session.last_world_revision
       );
       session.agent_request_results.set(
         request.request_id,
@@ -130,7 +143,8 @@ export class AgentService {
     const execution = this.#runProviderAndTools(
       request,
       session,
-      world,
+      adapter,
+      world_snapshot,
       started_at
     );
     session.agent_request_promises.set(request.request_id, execution);
@@ -146,12 +160,18 @@ export class AgentService {
     }
   }
 
-  async #runProviderAndTools(request, session, world, started_at) {
+  async #runProviderAndTools(
+    request,
+    session,
+    adapter,
+    world_snapshot,
+    started_at
+  ) {
     let provider_output;
     const tool_definitions = this.tool_registry.listDefinitions();
     const normalized_messages = createPlanMessages({
       system_message: buildProviderSystemPrompt({
-        world_snapshot: world.snapshot(),
+        world_snapshot,
         tool_definitions,
         session_context: session.entity_context,
       }),
@@ -163,7 +183,7 @@ export class AgentService {
       session_id: request.session_id,
       user_message: request.message.trim(),
       normalized_messages,
-      world_snapshot: world.snapshot(),
+      world_snapshot,
       session_context: structuredClone(session.entity_context),
       tool_definitions,
       signal: request.signal,
@@ -179,7 +199,11 @@ export class AgentService {
       });
     } catch (error) {
       const agent_error = this.#providerAgentError(error);
-      const result = this.#failure(request, agent_error, world);
+      const result = this.#failure(
+        request,
+        agent_error,
+        world_snapshot.revision
+      );
       await this.#writeProviderAudit({
         request,
         error,
@@ -196,7 +220,7 @@ export class AgentService {
         request_id: request.request_id,
         assistant_message: provider_output.assistant_message,
         tool_results: [],
-        world_revision: world.revision,
+        world_revision: world_snapshot.revision,
         undo_token: null,
         error: null,
         replayed: false,
@@ -216,7 +240,7 @@ export class AgentService {
     const executable_tool_calls = provider_output.tool_calls.map(
       (tool_call) => ({
         ...structuredClone(tool_call),
-        expected_revision: world.revision,
+        expected_revision: world_snapshot.revision,
         dry_run: false,
       })
     );
@@ -224,10 +248,11 @@ export class AgentService {
       protocol_version: request.protocol_version,
       request_id: request.request_id,
       session_id: request.session_id,
-      world_id: world.world_id,
+      world_id: session.world_id,
       tool_calls: executable_tool_calls,
       provider: this.provider.name,
       user_message: request.message.trim(),
+      signal: request.signal,
     });
 
     const assistant_tool_message =
@@ -256,11 +281,27 @@ export class AgentService {
     let finalization_failed = false;
     if (finalization_used) {
       try {
+        let finalization_snapshot = world_snapshot;
+        if (execution.ok) {
+          try {
+            finalization_snapshot = await adapter.getSnapshot({
+              request_id: randomUUID(),
+              session_id: request.session_id,
+              world_id: session.world_id,
+              signal: request.signal,
+            });
+            session.last_world_revision =
+              finalization_snapshot.revision;
+          } catch {
+            // ToolResults remain authoritative if the follow-up snapshot
+            // cannot be refreshed for optional finalization.
+          }
+        }
         finalization_output = validateProviderOutput(
           await this.provider.finalize({
             ...provider_input,
             normalized_messages: finalization_messages,
-            world_snapshot: world.snapshot(),
+            world_snapshot: finalization_snapshot,
             session_context: structuredClone(session.entity_context),
           }),
           {
@@ -375,6 +416,13 @@ export class AgentService {
     );
   }
 
+  #worldAgentError(error, fallback_code = "EXECUTION_FAILED") {
+    if (error instanceof WorldAdapterError) {
+      return worldAdapterErrorToAgentError(error);
+    }
+    return asAgentError(error, fallback_code);
+  }
+
   #deterministicExecutionReply(execution) {
     if (!execution.ok) {
       return `操作未完成：${execution.error.message}`;
@@ -395,13 +443,13 @@ export class AgentService {
     }
   }
 
-  #failure(request, error, world) {
+  #failure(request, error, revision) {
     return {
       ok: false,
       request_id: request?.request_id ?? null,
       assistant_message: `操作未完成：${error.message}`,
       tool_results: [],
-      world_revision: world?.revision ?? null,
+      world_revision: revision ?? null,
       undo_token: null,
       error: error.toJSON(),
       replayed: false,

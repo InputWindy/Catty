@@ -1,0 +1,59 @@
+import { pathToFileURL } from "node:url";
+import {
+  WorldAdapterFactory,
+  resolveWorldAdapterConfig,
+} from "../src/world/world-adapter-factory.mjs";
+import { startFakeCattyWorldServer } from "../tests/helpers/fake-catty-world-server.mjs";
+import { runEvaluations } from "./eval-runner.mjs";
+
+export async function main({
+  output = process.stdout,
+  error_output = process.stderr,
+} = {}) {
+  const fake = await startFakeCattyWorldServer();
+  try {
+    const config = resolveWorldAdapterConfig({
+      env: {
+        CATTY_WORLD_ADAPTER: "remote",
+        CATTY_WORLD_BASE_URL: fake.base_url,
+      },
+    });
+    const summary = await runEvaluations({
+      output,
+      adapter_name: "remote",
+      create_world_adapter_factory(tool_registry) {
+        return new WorldAdapterFactory({
+          config,
+          tool_registry,
+        });
+      },
+      async seed_session(session, initial_entities) {
+        if (initial_entities.length === 0) {
+          return;
+        }
+        const backing = fake.getAdapter(
+          session.session_id,
+          session.world_id
+        );
+        if (!backing) {
+          throw new Error("Fake world Session was not initialized");
+        }
+        for (const entity of initial_entities) {
+          backing.mock_world.spawnPrimitive(entity);
+        }
+      },
+    });
+    return summary.failed === 0 ? 0 : 1;
+  } catch (error) {
+    error_output.write(
+      `Remote eval runner failed: ${error?.stack || error}\n`
+    );
+    return 1;
+  } finally {
+    await fake.close();
+  }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await main();
+}

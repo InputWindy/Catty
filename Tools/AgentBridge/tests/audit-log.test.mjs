@@ -11,11 +11,21 @@ test("JSONL audit records required fields without API keys or authorization", as
   t.after(() => fs.rm(data_dir, { recursive: true, force: true }));
   const audit_log = new AuditLog({ data_dir });
   const secret_value = "cursor-secret-value-for-test";
+  const world_secret = "world-secret-value-for-test";
 
   await audit_log.write({
     request_id: randomUUID(),
     session_id: randomUUID(),
     provider: "mock",
+    world_adapter: "remote",
+    adapter_protocol_version: "1.0",
+    adapter_request_phase: "execute",
+    adapter_duration_ms: 7,
+    adapter_http_status: 409,
+    adapter_replayed: true,
+    adapter_timeout: false,
+    adapter_cancelled: false,
+    remote_error_class: "revision_conflict",
     user_message: "spawn a cube",
     before_revision: 0,
     after_revision: 1,
@@ -26,6 +36,7 @@ test("JSONL audit records required fields without API keys or authorization", as
           primitive_type: "cube",
           cursor_api_key: secret_value,
           authorization: `Bearer ${secret_value}`,
+          world_auth_token: world_secret,
         },
       },
     ],
@@ -36,6 +47,7 @@ test("JSONL audit records required fields without API keys or authorization", as
 
   const raw = await fs.readFile(path.join(data_dir, "audit.jsonl"), "utf8");
   assert.equal(raw.includes(secret_value), false);
+  assert.equal(raw.includes(world_secret), false);
   const record = JSON.parse(raw.trim());
   assert.deepEqual(Object.keys(record), [
     "timestamp_ms",
@@ -56,6 +68,15 @@ test("JSONL audit records required fields without API keys or authorization", as
     "finalization_failed",
     "timeout",
     "cancelled",
+    "world_adapter",
+    "adapter_protocol_version",
+    "adapter_request_phase",
+    "adapter_duration_ms",
+    "adapter_http_status",
+    "adapter_replayed",
+    "adapter_timeout",
+    "adapter_cancelled",
+    "remote_error_class",
     "user_message",
     "before_revision",
     "after_revision",
@@ -70,4 +91,11 @@ test("JSONL audit records required fields without API keys or authorization", as
     "[redacted]"
   );
   assert.equal(record.tool_calls[0].args.authorization, "[redacted]");
+  assert.equal(record.tool_calls[0].args.world_auth_token, "[redacted]");
+  assert.equal(record.world_adapter, "remote");
+  assert.equal(record.adapter_protocol_version, "1.0");
+  assert.equal(record.adapter_request_phase, "execute");
+  assert.equal(record.adapter_http_status, 409);
+  assert.equal(record.adapter_replayed, true);
+  assert.equal(record.remote_error_class, "revision_conflict");
 });

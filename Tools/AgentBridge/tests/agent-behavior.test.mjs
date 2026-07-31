@@ -23,7 +23,7 @@ function createHarness() {
         request_id: randomUUID(),
         session_id: session.session_id,
         message,
-        expected_revision: session.world.revision,
+        expected_revision: session.adapter.mock_world.revision,
       });
     },
   };

@@ -21,7 +21,7 @@ function request(session, message) {
     request_id: randomUUID(),
     session_id: session.session_id,
     message,
-    expected_revision: session.world.revision,
+    expected_revision: session.adapter.mock_world.revision,
   };
 }
 
@@ -70,7 +70,7 @@ test("entity context is isolated between Sessions", async () => {
     protocol_version: "1.0",
     request_id: randomUUID(),
     session_id: second_session.session_id,
-    world_id: second_session.world.world_id,
+    world_id: second_session.world_id,
     tool_calls: [
       toolCall("entity.spawn_primitive", { primitive_type: "sphere" }, 0),
     ],

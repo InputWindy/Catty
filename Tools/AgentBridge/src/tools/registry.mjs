@@ -17,7 +17,6 @@ export class ToolRegistry {
       "schema",
       "mutates_world",
       "undoable",
-      "execute",
     ];
     for (const field of required_fields) {
       if (definition[field] === undefined) {

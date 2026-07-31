@@ -11,10 +11,10 @@ import { AgentService } from "./src/agent/agent-service.mjs";
 import { LegacyChatService } from "./src/agent/legacy-chat-service.mjs";
 import { ProviderRegistry } from "./src/agent/provider-registry.mjs";
 import { CommandExecutor } from "./src/execution/command-executor.mjs";
-import { UndoJournal } from "./src/history/undo-journal.mjs";
 import { AuditLog } from "./src/logging/audit-log.mjs";
 import { SessionManager } from "./src/sessions/session-manager.mjs";
 import { createDefaultToolRegistry } from "./src/tools/definitions.mjs";
+import { WorldAdapterFactory } from "./src/world/world-adapter-factory.mjs";
 
 const config = loadConfig();
 const providerRegistry = new ProviderRegistry({ config: config.ai });
@@ -23,14 +23,18 @@ const legacyChatService = new LegacyChatService(config, {
   agent: providerRegistry.getLegacyAgent(),
 });
 await legacyChatService.initialize();
-const sessionManager = new SessionManager();
 const toolRegistry = createDefaultToolRegistry();
-const undoJournal = new UndoJournal();
+const worldAdapterFactory = new WorldAdapterFactory({
+  config: config.world,
+  tool_registry: toolRegistry,
+});
+const sessionManager = new SessionManager({
+  world_adapter_factory: worldAdapterFactory,
+});
 const auditLog = new AuditLog({ data_dir: config.data_dir });
 const commandExecutor = new CommandExecutor({
   session_manager: sessionManager,
   tool_registry: toolRegistry,
-  undo_journal: undoJournal,
   audit_log: auditLog,
 });
 const agentService = new AgentService({
@@ -59,6 +63,7 @@ async function shutdown({ exit = true } = {}) {
   });
   await legacyChatService.close();
   await providerRegistry.close();
+  await sessionManager.close();
 
   if (exit) {
     process.exit(0);
@@ -84,8 +89,9 @@ const router = createRouter({
 server = http.createServer(router);
 server.listen(config.port, config.host, () => {
   const provider_metadata = providerRegistry.getMetadata();
+  const world_metadata = worldAdapterFactory.getMetadata();
   console.log(
-    `[CattyAgentBridge] listening on ${config.host}:${config.port} cwd=${config.cwd} provider=${provider_metadata.provider} model=${provider_metadata.model} mode=${provider_metadata.real ? "real" : "mock"} thinking=${provider_metadata.thinking}`
+    `[CattyAgentBridge] listening on ${config.host}:${config.port} cwd=${config.cwd} provider=${provider_metadata.provider} model=${provider_metadata.model} mode=${provider_metadata.real ? "real" : "mock"} thinking=${provider_metadata.thinking} world_adapter=${world_metadata.adapter}${world_metadata.base_url ? ` world_base_url=${world_metadata.base_url}` : ""}`
   );
 });
 
