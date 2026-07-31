@@ -1,5 +1,5 @@
-﻿#include <Core/Modules/Resource.h>
-#include <Core/Extension/ResourceManager.h>
+﻿#include <Core/Extension/Resource.h>
+#include <Core/Extension/Resource.h>
 
 namespace Catty
 {
@@ -20,7 +20,7 @@ UResource::~UResource() = default;
 
 void UResource::OnPoolTearDown()
 {
-	if (FResourceManager* Manager = Detail::GetResourceManager())
+	if (FResourceSystem* Manager = Detail::GetResourceSystem())
 	{
 		Manager->UnregisterResource(this);
 	}

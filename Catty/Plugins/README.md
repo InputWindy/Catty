@@ -9,12 +9,12 @@ calls `RegisterExtension` for builtins, the game Layer, and enabled plugins.
 
 | Extension class | `GetName()` | Location |
 |-----------------|-------------|----------|
-| `FPlatform` | `Platform` | `Source/Public/Core/Extension/Platform.h` |
-| `FRender` | `Render` | `Source/Public/Core/Extension/Render.h` |
-| `FGC` | `GC` | `Source/Public/Core/Extension/GC.h` |
-| `FResourceManager` | `Resource` | `Source/Public/Core/Extension/ResourceManager.h` |
-| `FWorkerPoolModule` | `WorkerPool` | `Source/Public/Core/Extension/WorkerPool.h` |
-| `FScript` | `Script` | `Source/Public/Core/Extension/Script.h` |
+| `FPlatformSystem` | `Platform` | `Source/Public/Core/Extension/Platform.h` |
+| `FRenderSystem` | `Render` | `Source/Public/Core/Extension/Render.h` |
+| `FGCSystem` | `GC` | `Source/Public/Core/Extension/GC.h` |
+| `FResourceSystem` | `Resource` | `Source/Public/Core/Extension/Resource.h` |
+| `FWorkerPoolSystem` | `WorkerPool` | `Source/Public/Core/Extension/WorkerPool.h` |
+| `FScriptSystem` | `Script` | `Source/Public/Core/Extension/Script.h` |
 
 Game-specific plugins belong in the game project's `Plugins/`.
 

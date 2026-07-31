@@ -14,7 +14,7 @@ class FObjectRef;
  * Soft reference string (UE FSoftObjectPath lite).
  * Serialisable object address — not a live FObjectRef wrapper.
  *
- * Game code resolves via Resolve() / TryLoad() against FGC LiveObjects and the private Resource module.
+ * Game code resolves via Resolve() / TryLoad() against FGCSystem LiveObjects and the private Resource module.
  *
  * Supported forms:
  *   /Game/Maps/Demo.Demo

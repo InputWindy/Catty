@@ -1,7 +1,7 @@
 ﻿#include <Core/Extension/Script.h>
 
 #include <Core/Application/App.h>
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/System/Log.h>
 #include "Core/Layer/LuaObjectReflect.h"
 
@@ -33,37 +33,37 @@ void RegisterCoreBindings(sol::state& Lua)
 
 	CattyTable["get_cvar_int"] = [](const std::string& Name, sol::optional<int> DefaultValue) -> int
 	{
-		return FConsoleManager::Get().GetInt(Name.c_str(), DefaultValue.value_or(0));
+		return FConsole::Get().GetInt(Name.c_str(), DefaultValue.value_or(0));
 	};
 	CattyTable["get_cvar_float"] = [](const std::string& Name, sol::optional<float> DefaultValue) -> float
 	{
-		return FConsoleManager::Get().GetFloat(Name.c_str(), DefaultValue.value_or(0.0f));
+		return FConsole::Get().GetFloat(Name.c_str(), DefaultValue.value_or(0.0f));
 	};
 	CattyTable["get_cvar_bool"] = [](const std::string& Name, sol::optional<bool> DefaultValue) -> bool
 	{
-		return FConsoleManager::Get().GetBool(Name.c_str(), DefaultValue.value_or(false));
+		return FConsole::Get().GetBool(Name.c_str(), DefaultValue.value_or(false));
 	};
 	CattyTable["get_cvar_string"] = [](const std::string& Name, sol::optional<std::string> DefaultValue) -> std::string
 	{
 		const char* Default = DefaultValue ? DefaultValue->c_str() : "";
-		return FConsoleManager::Get().GetString(Name.c_str(), Default);
+		return FConsole::Get().GetString(Name.c_str(), Default);
 	};
 
 	CattyTable["set_cvar_int"] = [](const std::string& Name, int Value) -> bool
 	{
-		return FConsoleManager::Get().SetInt(Name.c_str(), Value);
+		return FConsole::Get().SetInt(Name.c_str(), Value);
 	};
 	CattyTable["set_cvar_float"] = [](const std::string& Name, float Value) -> bool
 	{
-		return FConsoleManager::Get().SetFloat(Name.c_str(), Value);
+		return FConsole::Get().SetFloat(Name.c_str(), Value);
 	};
 	CattyTable["set_cvar_bool"] = [](const std::string& Name, bool Value) -> bool
 	{
-		return FConsoleManager::Get().SetBool(Name.c_str(), Value);
+		return FConsole::Get().SetBool(Name.c_str(), Value);
 	};
 	CattyTable["set_cvar_string"] = [](const std::string& Name, const std::string& Value) -> bool
 	{
-		return FConsoleManager::Get().SetString(Name.c_str(), Value.c_str());
+		return FConsole::Get().SetString(Name.c_str(), Value.c_str());
 	};
 }
 
@@ -80,19 +80,19 @@ void RegisterCoreBindings(sol::state& Lua)
 
 } // namespace
 
-struct FScript::FImpl
+struct FScriptSystem::FImpl
 {
 	sol::state Lua;
 };
 
-FScript::FScript() = default;
+FScriptSystem::FScriptSystem() = default;
 
-FScript::~FScript()
+FScriptSystem::~FScriptSystem()
 {
 	ShutdownLua();
 }
 
-bool FScript::ExecuteStage(EEngineStage Stage)
+bool FScriptSystem::ExecuteStage(EEngineStage Stage)
 {
 	switch (Stage)
 	{
@@ -100,13 +100,13 @@ bool FScript::ExecuteStage(EEngineStage Stage)
 	{
 		if (!GApp)
 		{
-			CATTY_CORE_ERROR("FScript: GApp missing at Init");
+			CATTY_CORE_ERROR("FScriptSystem: GApp missing at Init");
 			return false;
 		}
 		const std::string& ScriptsDir = GApp->GetConfig().ProjectScriptsDir;
 		if (!InitializeLua(ScriptsDir.empty() ? "Scripts" : ScriptsDir))
 		{
-			CATTY_CORE_ERROR("FScript: InitializeLua failed");
+			CATTY_CORE_ERROR("FScriptSystem: InitializeLua failed");
 			return false;
 		}
 		return true;
@@ -119,7 +119,7 @@ bool FScript::ExecuteStage(EEngineStage Stage)
 	}
 }
 
-bool FScript::InitializeLua(const std::string& InScriptsDirectory)
+bool FScriptSystem::InitializeLua(const std::string& InScriptsDirectory)
 {
 	if (bLuaInitialized)
 	{
@@ -151,7 +151,7 @@ bool FScript::InitializeLua(const std::string& InScriptsDirectory)
 	RegisterLuaObjectReflectBindings(Impl->Lua);
 
 	bLuaInitialized = true;
-	CATTY_CORE_INFO("FScript Lua initialized (Scripts='{}')", ScriptsDirectory);
+	CATTY_CORE_INFO("FScriptSystem Lua initialized (Scripts='{}')", ScriptsDirectory);
 
 	for (ILuaBindable* Bindable : PendingBindables)
 	{
@@ -166,7 +166,7 @@ bool FScript::InitializeLua(const std::string& InScriptsDirectory)
 	return true;
 }
 
-void* FScript::TryGetLuaState()
+void* FScriptSystem::TryGetLuaState()
 {
 	if (!bLuaInitialized || !Impl)
 	{
@@ -175,7 +175,7 @@ void* FScript::TryGetLuaState()
 	return &Impl->Lua;
 }
 
-void FScript::Bind(ILuaBindable& Bindable)
+void FScriptSystem::Bind(ILuaBindable& Bindable)
 {
 	if (!bLuaInitialized || !Impl)
 	{
@@ -186,7 +186,7 @@ void FScript::Bind(ILuaBindable& Bindable)
 	Bindable.BindLua(*this);
 }
 
-void FScript::ShutdownLua()
+void FScriptSystem::ShutdownLua()
 {
 	OnLuaReady.Clear();
 	PendingBindables.clear();
@@ -199,10 +199,10 @@ void FScript::ShutdownLua()
 
 	Impl.reset();
 	bLuaInitialized = false;
-	CATTY_CORE_INFO("FScript Lua shut down");
+	CATTY_CORE_INFO("FScriptSystem Lua shut down");
 }
 
-bool FScript::DoFile(const std::string& FilePath)
+bool FScriptSystem::DoFile(const std::string& FilePath)
 {
 	if (!bLuaInitialized || !Impl)
 	{
@@ -213,7 +213,7 @@ bool FScript::DoFile(const std::string& FilePath)
 	namespace fs = std::filesystem;
 	if (!fs::is_regular_file(Resolved))
 	{
-		CATTY_CORE_WARN("FScript::DoFile: file not found '{}'", Resolved);
+		CATTY_CORE_WARN("FScriptSystem::DoFile: file not found '{}'", Resolved);
 		return false;
 	}
 
@@ -221,15 +221,15 @@ bool FScript::DoFile(const std::string& FilePath)
 	if (!Result.valid())
 	{
 		const sol::error Error = Result;
-		CATTY_CORE_ERROR("FScript::DoFile('{}'): {}", Resolved, Error.what());
+		CATTY_CORE_ERROR("FScriptSystem::DoFile('{}'): {}", Resolved, Error.what());
 		return false;
 	}
 
-	CATTY_CORE_INFO("FScript loaded '{}'", Resolved);
+	CATTY_CORE_INFO("FScriptSystem loaded '{}'", Resolved);
 	return true;
 }
 
-bool FScript::HasFunction(const char* FunctionName)
+bool FScriptSystem::HasFunction(const char* FunctionName)
 {
 	if (!bLuaInitialized || !Impl || !FunctionName || FunctionName[0] == '\0')
 	{
@@ -240,7 +240,7 @@ bool FScript::HasFunction(const char* FunctionName)
 	return Object.is<sol::function>();
 }
 
-bool FScript::Call(const char* FunctionName)
+bool FScriptSystem::Call(const char* FunctionName)
 {
 	if (!HasFunction(FunctionName))
 	{
@@ -252,13 +252,13 @@ bool FScript::Call(const char* FunctionName)
 	if (!Result.valid())
 	{
 		const sol::error Error = Result;
-		CATTY_CORE_ERROR("FScript::Call('{}'): {}", FunctionName, Error.what());
+		CATTY_CORE_ERROR("FScriptSystem::Call('{}'): {}", FunctionName, Error.what());
 		return false;
 	}
 	return true;
 }
 
-bool FScript::Call(const char* FunctionName, float Arg0)
+bool FScriptSystem::Call(const char* FunctionName, float Arg0)
 {
 	if (!HasFunction(FunctionName))
 	{
@@ -270,7 +270,7 @@ bool FScript::Call(const char* FunctionName, float Arg0)
 	if (!Result.valid())
 	{
 		const sol::error Error = Result;
-		CATTY_CORE_ERROR("FScript::Call('{}', float): {}", FunctionName, Error.what());
+		CATTY_CORE_ERROR("FScriptSystem::Call('{}', float): {}", FunctionName, Error.what());
 		return false;
 	}
 	return true;

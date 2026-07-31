@@ -9,7 +9,7 @@
  *   {
  *   	CATTY_GENERATED_BODY()
  *   public:
- *   	// Optional FGC pool: PoolSize (codegen registers; TearDown via OnPoolTearDown).
+ *   	// Optional FGCSystem pool: PoolSize (codegen registers; TearDown via OnPoolTearDown).
  *   	static constexpr int PoolSize = 16;
  *   	void OnPoolTearDown() override;
  *   	CATTY_PROPERTY()

@@ -16,14 +16,14 @@ namespace Catty
 {
 
 /**
- * RenderCore extension. Init after FPlatform (needs live window).
+ * RenderCore extension. Init after FPlatformSystem (needs live window).
  * BeginFrame: ImGui NewFrame. Render: Present / submit.
  */
-class CATTY_API FRender final
+class CATTY_API FRenderSystem final
 	: public IEngineExtension
 	, public TDependsPack<
-		TDependsOn<EEngineStage::Init, TTypeList<FPlatform>>,
-		TDependsOn<EEngineStage::BeginFrame, TTypeList<FPlatform>>>
+		TDependsOn<EEngineStage::Init, TTypeList<FPlatformSystem>>,
+		TDependsOn<EEngineStage::BeginFrame, TTypeList<FPlatformSystem>>>
 {
 public:
 	[[nodiscard]] FRenderServer& GetRenderServer() { return RenderServer; }

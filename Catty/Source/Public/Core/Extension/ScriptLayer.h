@@ -7,11 +7,11 @@
 namespace Catty
 {
 
-class FScript;
+class FScriptSystem;
 
 /**
  * Programmable Lua layer (Priority Overlay / Layer).
- * VM lifetime is FScript; this layer loads main.lua on Attach and drives OnUpdate / OnFixedUpdate.
+ * VM lifetime is FScriptSystem; this layer loads main.lua on Attach and drives OnUpdate / OnFixedUpdate.
  */
 class CATTY_API FScriptLayer final : public FLayer
 {
@@ -21,7 +21,7 @@ public:
 	bool ExecuteStage(EEngineStage Stage) override;
 
 private:
-	[[nodiscard]] FScript* TryGetScript() const;
+	[[nodiscard]] FScriptSystem* TryGetScript() const;
 };
 
 } // namespace Catty

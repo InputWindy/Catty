@@ -14,18 +14,18 @@ FScriptLayer::FScriptLayer()
 {
 }
 
-FScript* FScriptLayer::TryGetScript() const
+FScriptSystem* FScriptLayer::TryGetScript() const
 {
 	if (!GApp)
 	{
 		return nullptr;
 	}
-	return GApp->GetExtension<FScript>();
+	return GApp->GetExtension<FScriptSystem>();
 }
 
 bool FScriptLayer::ExecuteStage(EEngineStage Stage)
 {
-	FScript* Script = TryGetScript();
+	FScriptSystem* Script = TryGetScript();
 	if (!Script || !Script->IsLuaInitialized())
 	{
 		return true;

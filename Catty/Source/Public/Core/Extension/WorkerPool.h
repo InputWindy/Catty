@@ -9,18 +9,18 @@
 namespace Catty
 {
 
-class FPlatform;
-class FScript;
-class FGC;
+class FPlatformSystem;
+class FScriptSystem;
+class FGCSystem;
 
 /**
  * Built-in worker pool extension. Owns FWorkerPool.
  * Shutdown after Platform / Script / GC so consumers can drain first.
  */
-class CATTY_API FWorkerPoolModule final
+class CATTY_API FWorkerPoolSystem final
 	: public IEngineExtension
 	, public TDependsPack<
-		TDependsOn<EEngineStage::Shutdown, TTypeList<FPlatform, FScript, FGC>, EExtensionDepStrength::Weak>>
+		TDependsOn<EEngineStage::Shutdown, TTypeList<FPlatformSystem, FScriptSystem, FGCSystem>, EExtensionDepStrength::Weak>>
 {
 public:
 	[[nodiscard]] FWorkerPool& GetPool() { return Pool; }

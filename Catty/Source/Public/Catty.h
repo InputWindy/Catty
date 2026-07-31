@@ -19,7 +19,7 @@
 #include <Core/Json.h>
 #include <Core/Object/PoolAllocator.h>
 #include <Core/System/ConsoleVariable.h>
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/Delegate.h>
 #include <Core/Object/ObjectReflect.h>
 #include <Core/Concurrent/WorkerPool.h>
@@ -33,14 +33,16 @@
 #include <Core/Extension/WorkerPool.h>
 #include <Core/Extension/Platform.h>
 #include <Core/Extension/Render.h>
-#include <Core/Extension/ResourceManager.h>
+#include <Core/Extension/Resource.h>
 #include <Core/Extension/Script.h>
 #include <Core/Extension/ScriptLayer.h>
 #include <Core/Extension/EditorLayer.h>
-#include <Core/Modules/Resource.h>
 #include <Core/System/PlatformWindow.h>
 #include <Render/RHI/RHI.h>
+#include <Render/RHI/RHIServer.h>
 #include <Render/RenderServer.h>
+#include <Render/Sequencer/RenderStage.h>
+#include <Render/Sequencer/RenderExtension.h>
 #include <Core/Object/Object.h>
 #include <Core/Object/Package.h>
 #include <Core/Server/ThreadedServer.h>

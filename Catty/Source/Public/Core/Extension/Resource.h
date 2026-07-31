@@ -1,16 +1,17 @@
 #pragma once
 
 /**
- * Resource extension: catalog, package IO, BulkData kick-off.
+ * Resource extension: UResource types, catalog, package IO, BulkData kick-off.
  * Type-specific work is IResourceImporter / IResourceExporter (private ResourceIO).
  */
 
 #include <Core/DependsPack.h>
 #include <Core/Export.h>
-#include <Core/Sequencer/EngineExtension.h>
 #include <Core/Extension/GC.h>
-#include <Core/Modules/Resource.h>
+#include <Core/Object/Object.h>
+#include <Core/Object/ObjectReflect.h>
 #include <Core/Object/SoftObjectPath.h>
+#include <Core/Sequencer/EngineExtension.h>
 #include <Core/TypeList.h>
 
 #include <cstdint>
@@ -23,12 +24,98 @@
 namespace Catty
 {
 
-class FGC;
-class FResourceManager;
+class UPackage;
+class FGCSystem;
+class FResourceSystem;
 class FResourceServer;
 class IResourceImporter;
 class IResourceExporter;
-void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
+void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);
+
+CATTY_ENUM()
+enum class EResourceLoadState : std::uint8_t
+{
+	Invalid = 0,
+	Pending,
+	Ready,
+	Failed
+};
+
+/** High-level asset kind (extend as typed resources appear). */
+CATTY_ENUM()
+enum class EResourceType : std::uint8_t
+{
+	Unknown = 0,
+	Raw,
+	Texture,
+	Mesh,
+	Material,
+	Shader,
+	Audio,
+	Data,
+};
+
+/**
+ * External-file asset (png / mesh / ...).
+ * Outer may be an UPackage (saved content) or null (runtime-only; PathName = ObjectName).
+ * Created by the private Resource module; LoadState becomes Ready after BulkData import.
+ */
+CATTY_OBJECT()
+class CATTY_API UResource : public UObject
+{
+	CATTY_GENERATED_BODY()
+
+public:
+	static constexpr int PoolSize = 64;
+
+	UResource(
+		UPackage* InOuter,
+		std::string InObjectName,
+		EResourceType InType,
+		std::string InSourcePath);
+	virtual ~UResource() override;
+
+	void OnPoolTearDown() override;
+
+	CATTY_FUNCTION()
+	[[nodiscard]] EResourceType GetType() const { return Type; }
+	CATTY_FUNCTION()
+	[[nodiscard]] const std::string& GetSourcePath() const { return SourcePath; }
+	/** Alias for GetSourcePath (legacy name). */
+	CATTY_FUNCTION()
+	[[nodiscard]] const std::string& GetPath() const { return SourcePath; }
+	CATTY_FUNCTION()
+	[[nodiscard]] EResourceLoadState GetLoadState() const { return LoadState; }
+
+protected:
+	friend class FResourceSystem;
+
+	void SetLoadState(EResourceLoadState InState) { LoadState = InState; }
+
+	CATTY_PROPERTY()
+	EResourceType Type = EResourceType::Unknown;
+	CATTY_PROPERTY()
+	std::string SourcePath;
+	CATTY_PROPERTY()
+	EResourceLoadState LoadState = EResourceLoadState::Pending;
+};
+
+/**
+ * Typed texture asset shell (decode / GPU upload live in private ResourceIO Traits).
+ * Not CATTY_OBJECT — Lua FLua_* wrappers only support UObject as sol base today.
+ */
+class CATTY_API UTextureResource : public UResource
+{
+public:
+	static constexpr int PoolSize = 32;
+
+	UTextureResource(
+		UPackage* InOuter,
+		std::string InObjectName,
+		EResourceType InType,
+		std::string InSourcePath);
+	virtual ~UTextureResource() override;
+};
 
 /** Raw bytes produced by FResourceServer; consumed by Importer. */
 struct FResourceBulkData
@@ -55,18 +142,18 @@ struct FResourceExportConfig
  * Resource extension. Catalog / package / import services are public;
  * Initialize/Shutdown and IO registration stay private (codegen friend).
  */
-class CATTY_API FResourceManager final
+class CATTY_API FResourceSystem final
 	: public IEngineExtension
 	, public TDependsPack<
-		TDependsOn<EEngineStage::BeginFrame, TTypeList<FGC>>,
-		TDependsOn<EEngineStage::Init, TTypeList<FGC>>>
+		TDependsOn<EEngineStage::BeginFrame, TTypeList<FGCSystem>>,
+		TDependsOn<EEngineStage::Init, TTypeList<FGCSystem>>>
 {
 public:
-	FResourceManager();
-	~FResourceManager() override;
+	FResourceSystem();
+	~FResourceSystem() override;
 
-	FResourceManager(const FResourceManager&) = delete;
-	FResourceManager& operator=(const FResourceManager&) = delete;
+	FResourceSystem(const FResourceSystem&) = delete;
+	FResourceSystem& operator=(const FResourceSystem&) = delete;
 
 	[[nodiscard]] bool RegisterResource(const FObjectRef& Resource);
 	bool UnregisterResource(UObject* Resource);
@@ -99,7 +186,7 @@ public:
 	[[nodiscard]] bool IsIdle() const override;
 
 private:
-	friend void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
+	friend void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);
 	template <typename TResource>
 	friend class TResourceImporter;
 	friend class UResource;
@@ -172,7 +259,7 @@ private:
 
 namespace Detail
 {
-[[nodiscard]] FResourceManager* GetResourceManager();
+[[nodiscard]] FResourceSystem* GetResourceSystem();
 }
 
 } // namespace Catty

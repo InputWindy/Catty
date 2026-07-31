@@ -4,10 +4,10 @@
  * Polymorphic Importer / Exporter for the private Resource module.
  * Add a resource type: inherit UResource, specialize TResourceIOTraits, register
  * TResourceImporter<T> / TResourceExporter<T> (see RegisterDefaultImportersAndExporters).
- * FResourceManager only holds IResourceImporter* / IResourceExporter* — no type switch.
+ * FResourceSystem only holds IResourceImporter* / IResourceExporter* — no type switch.
  */
 
-#include <Core/Extension/ResourceManager.h>
+#include <Core/Extension/Resource.h>
 
 #include <Core/System/Log.h>
 #include <Core/Extension/GC.h>
@@ -26,7 +26,7 @@ public:
 
 	[[nodiscard]] virtual EResourceType GetType() const = 0;
 	[[nodiscard]] virtual bool MatchesSourcePath(const std::string& SourcePath) const = 0;
-	[[nodiscard]] virtual FObjectRef Import(FResourceManager& Manager, FResourceImportConfig Config) = 0;
+	[[nodiscard]] virtual FObjectRef Import(FResourceSystem& Manager, FResourceImportConfig Config) = 0;
 	[[nodiscard]] virtual bool ApplyBulkData(
 		FResourceImportConfig& Config,
 		FResourceBulkData& Bulk,
@@ -67,7 +67,7 @@ public:
 		return FTraits::MatchesSourcePath(SourcePath);
 	}
 
-	[[nodiscard]] FObjectRef Import(FResourceManager& Manager, FResourceImportConfig Config) override
+	[[nodiscard]] FObjectRef Import(FResourceSystem& Manager, FResourceImportConfig Config) override
 	{
 		if (Config.TypeHint == EResourceType::Unknown)
 		{
@@ -183,36 +183,36 @@ struct TResourceIOTraits<UTextureResource>
 };
 
 template <typename TResource>
-FObjectRef FResourceManager::BeginImport(FResourceImportConfig& Config, IResourceImporter* Importer)
+FObjectRef FResourceSystem::BeginImport(FResourceImportConfig& Config, IResourceImporter* Importer)
 {
 	if (!Importer)
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: null Importer");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: null Importer");
 		return {};
 	}
 
 	if (!IsInitialized())
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: not initialized");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: not initialized");
 		return {};
 	}
 
 	if (!bAcceptingNewWork)
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: refused during exit");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: refused during exit");
 		return {};
 	}
 
 	if (!Config.Package)
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: invalid Package");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: invalid Package");
 		return {};
 	}
 
 	UPackage* PackagePtr = Config.Package.Cast<UPackage>();
 	if (!PackagePtr)
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: Ref is not an UPackage");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: Ref is not an UPackage");
 		return {};
 	}
 
@@ -226,20 +226,20 @@ FObjectRef FResourceManager::BeginImport(FResourceImportConfig& Config, IResourc
 
 	if (Config.ObjectName.empty())
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: empty ObjectName");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: empty ObjectName");
 		return {};
 	}
 
 	if (Config.SourcePath.empty())
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: empty SourcePath");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: empty SourcePath");
 		return {};
 	}
 
 	if (PackageObj.FindObject(Config.ObjectName))
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::BeginImport: '{}' already exists in '{}'",
+			"FResourceSystem::BeginImport: '{}' already exists in '{}'",
 			Config.ObjectName,
 			PackageObj.GetName());
 		return {};
@@ -253,7 +253,7 @@ FObjectRef FResourceManager::BeginImport(FResourceImportConfig& Config, IResourc
 
 	if (!HasActiveServer())
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: ResourceServer unavailable");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: ResourceServer unavailable");
 		return {};
 	}
 
@@ -263,10 +263,10 @@ FObjectRef FResourceManager::BeginImport(FResourceImportConfig& Config, IResourc
 		return {};
 	}
 
-	FGC* GC = Detail::GetGC();
+	FGCSystem* GC = Detail::GetGCSystem();
 	if (!GC)
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: GC unavailable");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: GC unavailable");
 		ReleaseLoadId(LoadId);
 		return {};
 	}
@@ -279,7 +279,7 @@ FObjectRef FResourceManager::BeginImport(FResourceImportConfig& Config, IResourc
 	TResource* Resource = ResourceRef.Cast<TResource>();
 	if (!Resource)
 	{
-		CATTY_CORE_ERROR("FResourceManager::BeginImport: NewObject failed");
+		CATTY_CORE_ERROR("FResourceSystem::BeginImport: NewObject failed");
 		ReleaseLoadId(LoadId);
 		return {};
 	}

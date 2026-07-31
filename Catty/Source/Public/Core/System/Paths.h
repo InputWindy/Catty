@@ -42,7 +42,7 @@ public:
 	 * Detect ProjectDir / EngineDir, absolutize config dirs, register default mounts.
 	 * Safe to call more than once (recomputes mounts from the new roots).
 	 */
-	static void Initialize(FEngineConfig& InOutConfig);
+	static void Initialize(FConfig& InOutConfig);
 
 	[[nodiscard]] static bool IsInitialized();
 	[[nodiscard]] static const std::string& GetProjectDir();

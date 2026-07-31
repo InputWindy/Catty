@@ -764,9 +764,9 @@ def _normalize_module_entry(raw: Any, *, cplugin_path: Path) -> dict[str, Any]:
 			raise ValueError(f"Module '{name}' Extension.Class required in {cplugin_path}")
 		if not isinstance(header, str) or not header.strip():
 			raise ValueError(f"Module '{name}' Extension.Header required in {cplugin_path}")
-		if not isinstance(priority, str) or priority.strip() not in ("Module", "Layer", "Overlay"):
+		if not isinstance(priority, str) or priority.strip() not in ("System", "Layer", "Overlay"):
 			raise ValueError(
-				f"Module '{name}' Extension.Priority must be Module|Layer|Overlay in {cplugin_path}"
+				f"Module '{name}' Extension.Priority must be System|Layer|Overlay in {cplugin_path}"
 			)
 		extension = {
 			"Class": cls.strip(),
@@ -1024,7 +1024,7 @@ def generate_game_app_cpp(cproject_path: Path, *, log: Any = print) -> Path:
 			f"class {app_class} : public Catty::FApp",
 			"{",
 			"protected:",
-			"\tvirtual void Configure(Catty::FEngineConfig& OutConfig) override",
+			"\tvirtual void Configure(Catty::FConfig& OutConfig) override",
 			"\t{",
 			f'\t\tOutConfig.ApplicationName = "{project_name}";',
 			"\t\t// Relative dirs — FPaths::Initialize turns them into absolute under Project/Engine roots.",
@@ -1043,12 +1043,12 @@ def generate_game_app_cpp(cproject_path: Path, *, log: Any = print) -> Path:
 			"\t{",
 			"\t\tusing Catty::EExtensionPriority;",
 			"",
-			"\t\tRegisterExtension<Catty::FWorkerPoolModule>(EExtensionPriority::Module);",
-			"\t\tRegisterExtension<Catty::FPlatform>(EExtensionPriority::Module);",
-			"\t\tRegisterExtension<Catty::FRender>(EExtensionPriority::Module);",
-			"\t\tRegisterExtension<Catty::FGC>(EExtensionPriority::Module);",
-			"\t\tRegisterExtension<Catty::FResourceManager>(EExtensionPriority::Module);",
-			"\t\tRegisterExtension<Catty::FScript>(EExtensionPriority::Module);",
+			"\t\tRegisterExtension<Catty::FWorkerPoolSystem>(EExtensionPriority::System);",
+			"\t\tRegisterExtension<Catty::FPlatformSystem>(EExtensionPriority::System);",
+			"\t\tRegisterExtension<Catty::FRenderSystem>(EExtensionPriority::System);",
+			"\t\tRegisterExtension<Catty::FGCSystem>(EExtensionPriority::System);",
+			"\t\tRegisterExtension<Catty::FResourceSystem>(EExtensionPriority::System);",
+			"\t\tRegisterExtension<Catty::FScriptSystem>(EExtensionPriority::System);",
 			"",
 			f'\t\tRegisterExtension<{layer_class}>(EExtensionPriority::Layer, "{project_name}");',
 			'\t\tRegisterExtension<FWorldLayer>(EExtensionPriority::Layer, "MainWorld");',

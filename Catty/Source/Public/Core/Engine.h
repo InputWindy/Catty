@@ -12,7 +12,7 @@ namespace Catty
  * App / module configuration owned by FApp (not a separate FEngine instance).
  * Paths may be relative until FPaths::Initialize absolutizes them from project/engine roots.
  */
-struct FEngineConfig
+struct FConfig
 {
 	std::string ApplicationName = "CattyApp";
 

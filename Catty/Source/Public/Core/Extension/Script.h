@@ -13,13 +13,13 @@
 namespace Catty
 {
 
-class FResourceManager;
-class FScript;
+class FResourceSystem;
+class FScriptSystem;
 
 /**
  * Types that can register themselves into the Lua VM.
- * FScript::Bind forwards to BindLua — no per-type hardcode on FScript.
- * Prefer auto-bind by listening to FScript::GetOnLuaReady().
+ * FScriptSystem::Bind forwards to BindLua — no per-type hardcode on FScriptSystem.
+ * Prefer auto-bind by listening to FScriptSystem::GetOnLuaReady().
  */
 class CATTY_API ILuaBindable
 {
@@ -27,7 +27,7 @@ public:
 	virtual ~ILuaBindable() = default;
 
 	/** Called when Lua is ready (or immediately if already initialized). */
-	virtual void BindLua(FScript& Script) = 0;
+	virtual void BindLua(FScriptSystem& Script) = 0;
 };
 
 /**
@@ -43,20 +43,20 @@ public:
  *   Script.Bind(Obj) or subscribe to GetOnLuaReady() for auto-bind.
  * Per-frame OnUpdate calls stay on FScriptLayer.
  */
-class CATTY_API FScript final
+class CATTY_API FScriptSystem final
 	: public IEngineExtension
 	, public TDependsPack<
-		TDependsOn<EEngineStage::Init, TTypeList<FResourceManager>>>
+		TDependsOn<EEngineStage::Init, TTypeList<FResourceSystem>>>
 {
 public:
 	/** Fired after Lua Initialize succeeds (and after any Bind queued before init). */
-	CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnLuaReady, FScript&);
+	CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnLuaReady, FScriptSystem&);
 
-	FScript();
-	~FScript() override;
+	FScriptSystem();
+	~FScriptSystem() override;
 
-	FScript(const FScript&) = delete;
-	FScript& operator=(const FScript&) = delete;
+	FScriptSystem(const FScriptSystem&) = delete;
+	FScriptSystem& operator=(const FScriptSystem&) = delete;
 
 	[[nodiscard]] bool IsLuaInitialized() const { return bLuaInitialized; }
 	[[nodiscard]] const std::string& GetScriptsDirectory() const { return ScriptsDirectory; }

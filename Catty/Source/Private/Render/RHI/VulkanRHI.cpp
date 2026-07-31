@@ -1,6 +1,6 @@
-#include "Render/RHI/VulkanRHI.h"
+﻿#include "Render/RHI/VulkanRHI.h"
 
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/System/Log.h>
 
 #if defined(_WIN32)

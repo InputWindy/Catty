@@ -1,6 +1,6 @@
 ﻿#include <Core/Application/App.h>
 
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/System/Fatal.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
@@ -46,7 +46,7 @@ void BootstrapAppLogging(FApp& App)
 	App.GetLog().Initialize(LogConfig);
 }
 
-void ApplyAppLoggingFromConfig(FApp& App, const FEngineConfig& Config)
+void ApplyAppLoggingFromConfig(FApp& App, const FConfig& Config)
 {
 	FLogConfig LogConfig;
 	LogConfig.CoreLoggerName = "Catty";
@@ -70,10 +70,10 @@ void ShutdownAppLogging(FApp& App)
 	App.GetLog().Shutdown();
 }
 
-int LoadProjectEngineIni(FApp& App, FEngineConfig& Config)
+int LoadProjectEngineIni(FApp& App, FConfig& Config)
 {
 	const std::string IniPath = Config.ProjectConfigDir + "/DefaultEngine.ini";
-	const int Applied = App.GetConsoleManager().LoadConsoleVariablesFromIni(IniPath);
+	const int Applied = App.GetConsole().LoadConsoleVariablesFromIni(IniPath);
 	ApplyEngineCVarsToConfig(Config);
 	return Applied;
 }
@@ -173,7 +173,7 @@ FApp::FApp()
 {
 	GApp = this;
 	BootstrapAppLogging(*this);
-	CATTY_CORE_INFO("FApp core services ready (Log, ConsoleManager, Timer)");
+	CATTY_CORE_INFO("FApp core services ready (Log, Console, Timer)");
 }
 
 FApp::~FApp()
@@ -189,7 +189,7 @@ FApp::~FApp()
 	}
 }
 
-void FApp::Configure(FEngineConfig& /*OutConfig*/)
+void FApp::Configure(FConfig& /*OutConfig*/)
 {
 }
 
@@ -616,28 +616,28 @@ void FApp::ShutdownRegisteredExtensions()
 
 bool FApp::Initialize()
 {
-	Configure(EngineConfig);
-	FPaths::Initialize(EngineConfig);
+	Configure(Config);
+	FPaths::Initialize(Config);
 
-	const int IniApplied = LoadProjectEngineIni(*this, EngineConfig);
+	const int IniApplied = LoadProjectEngineIni(*this, Config);
 	if (IniApplied < 0)
 	{
 		CATTY_CORE_WARN(
 			"DefaultEngine.ini not found (looked for '{}/DefaultEngine.ini') — using CVar defaults",
-			EngineConfig.ProjectConfigDir);
+			Config.ProjectConfigDir);
 	}
 	else
 	{
 		CATTY_CORE_INFO(
 			"Loaded/queued {} CVar override(s) from '{}/DefaultEngine.ini'",
 			IniApplied,
-			EngineConfig.ProjectConfigDir);
+			Config.ProjectConfigDir);
 	}
 
-	ApplyAppLoggingFromConfig(*this, EngineConfig);
+	ApplyAppLoggingFromConfig(*this, Config);
 
-	CATTY_CORE_INFO("FPaths: ProjectDir = {}", EngineConfig.ProjectDir);
-	CATTY_CORE_INFO("FPaths: EngineDir  = {}", EngineConfig.EngineDir);
+	CATTY_CORE_INFO("FPaths: ProjectDir = {}", Config.ProjectDir);
+	CATTY_CORE_INFO("FPaths: EngineDir  = {}", Config.EngineDir);
 
 	if (!PreInitialize())
 	{

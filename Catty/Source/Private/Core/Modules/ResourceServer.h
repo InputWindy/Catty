@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include <Core/Extension/ResourceManager.h>
+#include <Core/Extension/Resource.h>
 #include <Core/Server/ThreadedServer.h>
 
 #include <condition_variable>
@@ -13,7 +13,7 @@
 namespace Catty
 {
 
-/** Opaque BulkData job handle — private to FResourceServer / FResourceManager. */
+/** Opaque BulkData job handle — private to FResourceServer / FResourceSystem. */
 struct FResourceId
 {
 	std::uint64_t Value = 0;
@@ -25,7 +25,7 @@ struct FResourceId
 };
 
 /**
- * Private async BulkData loader for FResourceManager.
+ * Private async BulkData loader for FResourceSystem.
  * Issues FResourceId handles; Manager alone sees this type.
  * Does not create UResource / touch Package / catalog / Importer.
  */

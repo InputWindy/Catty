@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Core/System/ConsoleVariable.h>
 #include <Core/Export.h>
@@ -11,25 +11,25 @@ namespace Catty
 
 /**
  * CVar registry (UE IConsoleManager subset). Process-wide variable storage;
- * FApp owns a facade — FConsoleManager::Get() resolves via GApp.
+ * FApp owns a facade — FConsole::Get() resolves via GApp.
  *
  * Cross-module string access:
- *   FConsoleManager::Get().GetInt("catty.Window.Width");
+ *   FConsole::Get().GetInt("catty.Window.Width");
  */
-class CATTY_API FConsoleManager
+class CATTY_API FConsole
 {
 public:
-	FConsoleManager() = default;
-	~FConsoleManager() = default;
+	FConsole() = default;
+	~FConsole() = default;
 
-	FConsoleManager(const FConsoleManager&) = delete;
-	FConsoleManager& operator=(const FConsoleManager&) = delete;
+	FConsole(const FConsole&) = delete;
+	FConsole& operator=(const FConsole&) = delete;
 
 	/**
 	 * App-owned manager when GApp is set; otherwise a pre-App fallback
 	 * (static TAutoConsoleVariable registration before main).
 	 */
-	[[nodiscard]] static FConsoleManager& Get();
+	[[nodiscard]] static FConsole& Get();
 
 	[[nodiscard]] IConsoleVariable* RegisterBool(
 		const char* Name,
@@ -101,7 +101,7 @@ public:
 /**
  * Static registration helper (define in a .cpp — one instance per CVar name).
  * Type is deduced from the default value (bool / int / float / const char*).
- * Other modules should read via FConsoleManager::Get().GetInt("name"), not this object.
+ * Other modules should read via FConsole::Get().GetInt("name"), not this object.
  *
  * Example:
  * ```
@@ -137,7 +137,7 @@ inline TAutoConsoleVariable<bool>::TAutoConsoleVariable(
 	bool DefaultValue,
 	const char* Help,
 	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterBool(Name, DefaultValue, Help, Flags))
+	: Variable(FConsole::Get().RegisterBool(Name, DefaultValue, Help, Flags))
 {
 }
 
@@ -153,7 +153,7 @@ inline TAutoConsoleVariable<int>::TAutoConsoleVariable(
 	int DefaultValue,
 	const char* Help,
 	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterInt(Name, DefaultValue, Help, Flags))
+	: Variable(FConsole::Get().RegisterInt(Name, DefaultValue, Help, Flags))
 {
 }
 
@@ -169,7 +169,7 @@ inline TAutoConsoleVariable<float>::TAutoConsoleVariable(
 	float DefaultValue,
 	const char* Help,
 	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterFloat(Name, DefaultValue, Help, Flags))
+	: Variable(FConsole::Get().RegisterFloat(Name, DefaultValue, Help, Flags))
 {
 }
 
@@ -185,7 +185,7 @@ inline TAutoConsoleVariable<std::string>::TAutoConsoleVariable(
 	std::string DefaultValue,
 	const char* Help,
 	EConsoleVariableFlags Flags)
-	: Variable(FConsoleManager::Get().RegisterString(Name, DefaultValue.c_str(), Help, Flags))
+	: Variable(FConsole::Get().RegisterString(Name, DefaultValue.c_str(), Help, Flags))
 {
 }
 
@@ -207,7 +207,7 @@ TAutoConsoleVariable(const char*, double, const char*, EConsoleVariableFlags = E
 TAutoConsoleVariable(const char*, const char*, const char*, EConsoleVariableFlags = EConsoleVariableFlags::Default)
 	-> TAutoConsoleVariable<std::string>;
 
-/** Sync built-in catty.* / app.Name CVars into FEngineConfig (call after loading ini). */
-CATTY_API void ApplyEngineCVarsToConfig(struct FEngineConfig& OutConfig);
+/** Sync built-in catty.* / app.Name CVars into FConfig (call after loading ini). */
+CATTY_API void ApplyEngineCVarsToConfig(struct FConfig& OutConfig);
 
 } // namespace Catty

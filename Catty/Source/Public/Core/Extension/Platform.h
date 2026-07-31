@@ -12,20 +12,20 @@
 namespace Catty
 {
 
-class FRender;
+class FRenderSystem;
 
 CATTY_DECLARE_MULTICAST_DELEGATE(FOnRequestExit);
 
 /**
  * Built-in platform window / headless clock extension.
- * Sole owner of the main FPlatformWindow. Shutdown after FRender (TearDown needs the window).
- * BeginFrame: PollEvents / ShouldClose / headless auto-exit (before FRender ImGui NewFrame).
+ * Sole owner of the main FPlatformWindow. Shutdown after FRenderSystem (TearDown needs the window).
+ * BeginFrame: PollEvents / ShouldClose / headless auto-exit (before FRenderSystem ImGui NewFrame).
  * Exit requests Broadcast OnRequestExit (FApp binds in Init).
  */
-class CATTY_API FPlatform final
+class CATTY_API FPlatformSystem final
 	: public IEngineExtension
 	, public TDependsPack<
-		TDependsOn<EEngineStage::Shutdown, TTypeList<FRender>, EExtensionDepStrength::Weak>>
+		TDependsOn<EEngineStage::Shutdown, TTypeList<FRenderSystem>, EExtensionDepStrength::Weak>>
 {
 public:
 	[[nodiscard]] FPlatformWindow* GetWindow() { return PlatformWindow.get(); }

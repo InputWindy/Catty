@@ -1,6 +1,6 @@
-#include <Core/Concurrent/WorkerPool.h>
+﻿#include <Core/Concurrent/WorkerPool.h>
 
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/System/Log.h>
 
 #include <algorithm>

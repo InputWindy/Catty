@@ -17,22 +17,22 @@
 namespace Catty
 {
 
-FResourceManager::FResourceManager()
+FResourceSystem::FResourceSystem()
 	: Server(std::make_unique<FResourceServer>())
 {
 }
 
-FResourceManager::~FResourceManager()
+FResourceSystem::~FResourceSystem()
 {
 	Shutdown();
 }
 
-bool FResourceManager::IsInitialized() const
+bool FResourceSystem::IsInitialized() const
 {
 	return Server && Server->IsInitialized();
 }
 
-std::string FResourceManager::NormalizePackageName(std::string Name)
+std::string FResourceSystem::NormalizePackageName(std::string Name)
 {
 	for (char& Ch : Name)
 	{
@@ -48,7 +48,7 @@ std::string FResourceManager::NormalizePackageName(std::string Name)
 	return Name;
 }
 
-std::string FResourceManager::NormalizeSourcePath(std::string Path)
+std::string FResourceSystem::NormalizeSourcePath(std::string Path)
 {
 	for (char& Ch : Path)
 	{
@@ -69,7 +69,7 @@ std::string FResourceManager::NormalizeSourcePath(std::string Path)
 	return Path;
 }
 
-std::string FResourceManager::MakeObjectNameFromSource(const std::string& SourcePath)
+std::string FResourceSystem::MakeObjectNameFromSource(const std::string& SourcePath)
 {
 	const std::size_t Slash = SourcePath.find_last_of("/\\");
 	const std::size_t Start = (Slash == std::string::npos) ? 0 : Slash + 1;
@@ -82,45 +82,45 @@ std::string FResourceManager::MakeObjectNameFromSource(const std::string& Source
 	return Stem.empty() ? std::string("Resource") : Stem;
 }
 
-bool FResourceManager::Initialize()
+bool FResourceSystem::Initialize()
 {
 	if (IsInitialized())
 	{
 		return true;
 	}
 
-	FGC* GC = Detail::GetGC();
+	FGCSystem* GC = Detail::GetGCSystem();
 	if (!GC || !GC->IsInitialized())
 	{
-		CATTY_CORE_ERROR("FResourceManager::Initialize: FGC must be initialized first");
+		CATTY_CORE_ERROR("FResourceSystem::Initialize: FGCSystem must be initialized first");
 		return false;
 	}
 
 	if (!Server->Initialize())
 	{
-		CATTY_CORE_ERROR("FResourceManager::Initialize: FResourceServer failed");
+		CATTY_CORE_ERROR("FResourceSystem::Initialize: FResourceServer failed");
 		return false;
 	}
 
 	RegisterGeneratedResourceTypes(*this, *GC);
 
 	bAcceptingNewWork = true;
-	CATTY_CORE_INFO("ResourceManager initialized");
+	CATTY_CORE_INFO("FResourceSystem initialized");
 	return true;
 }
 
-bool FResourceManager::RegisterResource(const FObjectRef& Resource)
+bool FResourceSystem::RegisterResource(const FObjectRef& Resource)
 {
 	if (!bAcceptingNewWork)
 	{
-		CATTY_CORE_ERROR("FResourceManager::RegisterResource: refused during exit");
+		CATTY_CORE_ERROR("FResourceSystem::RegisterResource: refused during exit");
 		return false;
 	}
 
 	UResource* ResourcePtr = Resource.Cast<UResource>();
 	if (!ResourcePtr)
 	{
-		CATTY_CORE_ERROR("FResourceManager::RegisterResource: Ref is not an UResource");
+		CATTY_CORE_ERROR("FResourceSystem::RegisterResource: Ref is not an UResource");
 		return false;
 	}
 
@@ -128,7 +128,7 @@ bool FResourceManager::RegisterResource(const FObjectRef& Resource)
 	if (CatalogKey.empty())
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::RegisterResource: empty catalog key for '{}'",
+			"FResourceSystem::RegisterResource: empty catalog key for '{}'",
 			ResourcePtr->GetName());
 		return false;
 	}
@@ -137,7 +137,7 @@ bool FResourceManager::RegisterResource(const FObjectRef& Resource)
 	if (Existing != Resources.end() && Existing->second && Existing->second.Get() != ResourcePtr)
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::RegisterResource: '{}' already registered to another object",
+			"FResourceSystem::RegisterResource: '{}' already registered to another object",
 			CatalogKey);
 		return false;
 	}
@@ -146,7 +146,7 @@ bool FResourceManager::RegisterResource(const FObjectRef& Resource)
 	return true;
 }
 
-bool FResourceManager::UnregisterResource(UObject* Resource)
+bool FResourceSystem::UnregisterResource(UObject* Resource)
 {
 	UResource* ResourcePtr = dynamic_cast<UResource*>(Resource);
 	if (!ResourcePtr)
@@ -172,17 +172,17 @@ bool FResourceManager::UnregisterResource(UObject* Resource)
 	return true;
 }
 
-bool FResourceManager::UnregisterResource(const FObjectRef& Resource)
+bool FResourceSystem::UnregisterResource(const FObjectRef& Resource)
 {
 	return UnregisterResource(Resource.Get());
 }
 
-std::string FResourceManager::MakeResourceCatalogKey(const UResource& Resource)
+std::string FResourceSystem::MakeResourceCatalogKey(const UResource& Resource)
 {
 	return NormalizeResourceVirtualPath(Resource.GetPathName());
 }
 
-std::string FResourceManager::NormalizeResourceVirtualPath(const std::string& VirtualPath)
+std::string FResourceSystem::NormalizeResourceVirtualPath(const std::string& VirtualPath)
 {
 	FSoftObjectPath SoftPath;
 	if (SoftPath.TrySetPath(VirtualPath) && SoftPath.IsValid())
@@ -201,7 +201,7 @@ std::string FResourceManager::NormalizeResourceVirtualPath(const std::string& Vi
 	return Path;
 }
 
-void FResourceManager::UnregisterResourcesInPackage(const std::string& PackageName)
+void FResourceSystem::UnregisterResourcesInPackage(const std::string& PackageName)
 {
 	const std::string Key = NormalizePackageName(PackageName);
 	std::vector<UObject*> Snapshot;
@@ -227,7 +227,7 @@ void FResourceManager::UnregisterResourcesInPackage(const std::string& PackageNa
 	}
 }
 
-void FResourceManager::PrepareForExit()
+void FResourceSystem::PrepareForExit()
 {
 	if (!IsInitialized())
 	{
@@ -257,7 +257,7 @@ void FResourceManager::PrepareForExit()
 	Snapshot.clear();
 }
 
-bool FResourceManager::IsIdle() const
+bool FResourceSystem::IsIdle() const
 {
 	if (!IsInitialized())
 	{
@@ -269,14 +269,14 @@ bool FResourceManager::IsIdle() const
 		&& !Server->HasPendingLoads();
 }
 
-bool FResourceManager::ExecuteStage(EEngineStage Stage)
+bool FResourceSystem::ExecuteStage(EEngineStage Stage)
 {
 	switch (Stage)
 	{
 	case EEngineStage::Init:
 		if (!Initialize())
 		{
-			CATTY_CORE_ERROR("FResourceManager: Initialize failed");
+			CATTY_CORE_ERROR("FResourceSystem: Initialize failed");
 			return false;
 		}
 		return true;
@@ -298,7 +298,7 @@ bool FResourceManager::ExecuteStage(EEngineStage Stage)
 	}
 }
 
-void FResourceManager::Shutdown()
+void FResourceSystem::Shutdown()
 {
 	if (!IsInitialized())
 	{
@@ -315,10 +315,10 @@ void FResourceManager::Shutdown()
 		Server->Shutdown();
 	}
 
-	CATTY_CORE_INFO("ResourceManager shut down");
+	CATTY_CORE_INFO("FResourceSystem shut down");
 }
 
-void FResourceManager::CancelPendingImport(UObject* Resource)
+void FResourceSystem::CancelPendingImport(UObject* Resource)
 {
 	if (!Resource)
 	{
@@ -339,7 +339,7 @@ void FResourceManager::CancelPendingImport(UObject* Resource)
 	}
 }
 
-void FResourceManager::ProcessReadyImports()
+void FResourceSystem::ProcessReadyImports()
 {
 	if (!HasActiveServer() || PendingImports.empty())
 	{
@@ -390,7 +390,7 @@ void FResourceManager::ProcessReadyImports()
 		if (!TakeBulkData(Pending.LoadId, Bulk))
 		{
 			CATTY_CORE_ERROR(
-				"FResourceManager::ProcessReadyImports: TakeBulkData failed for '{}'",
+				"FResourceSystem::ProcessReadyImports: TakeBulkData failed for '{}'",
 				Resource->GetSourcePath());
 			Resource->SetLoadState(EResourceLoadState::Failed);
 			ReleaseLoadId(Pending.LoadId);
@@ -405,13 +405,13 @@ void FResourceManager::ProcessReadyImports()
 		if (!bOk)
 		{
 			CATTY_CORE_ERROR(
-				"FResourceManager::ProcessReadyImports: Importer failed for '{}'",
+				"FResourceSystem::ProcessReadyImports: Importer failed for '{}'",
 				Resource->GetSourcePath());
 		}
 	}
 }
 
-void FResourceManager::RegisterImporter(std::unique_ptr<IResourceImporter> Importer)
+void FResourceSystem::RegisterImporter(std::unique_ptr<IResourceImporter> Importer)
 {
 	if (Importer)
 	{
@@ -419,7 +419,7 @@ void FResourceManager::RegisterImporter(std::unique_ptr<IResourceImporter> Impor
 	}
 }
 
-void FResourceManager::RegisterExporter(std::unique_ptr<IResourceExporter> Exporter)
+void FResourceSystem::RegisterExporter(std::unique_ptr<IResourceExporter> Exporter)
 {
 	if (Exporter)
 	{
@@ -427,13 +427,13 @@ void FResourceManager::RegisterExporter(std::unique_ptr<IResourceExporter> Expor
 	}
 }
 
-void FResourceManager::ClearImportersAndExporters()
+void FResourceSystem::ClearImportersAndExporters()
 {
 	Importers.clear();
 	Exporters.clear();
 }
 
-IResourceImporter* FResourceManager::FindImporter(const FResourceImportConfig& Config) const
+IResourceImporter* FResourceSystem::FindImporter(const FResourceImportConfig& Config) const
 {
 	if (Config.TypeHint != EResourceType::Unknown)
 	{
@@ -469,7 +469,7 @@ IResourceImporter* FResourceManager::FindImporter(const FResourceImportConfig& C
 	return Fallback;
 }
 
-IResourceExporter* FResourceManager::FindExporter(const FObjectRef& Resource) const
+IResourceExporter* FResourceSystem::FindExporter(const FObjectRef& Resource) const
 {
 	IResourceExporter* Fallback = nullptr;
 	for (const auto& Exporter : Exporters)
@@ -491,12 +491,12 @@ IResourceExporter* FResourceManager::FindExporter(const FObjectRef& Resource) co
 	return Fallback;
 }
 
-bool FResourceManager::HasActiveServer() const
+bool FResourceSystem::HasActiveServer() const
 {
 	return Server && Server->IsInitialized();
 }
 
-std::uint64_t FResourceManager::RequestLoadId(const std::string& SourcePath)
+std::uint64_t FResourceSystem::RequestLoadId(const std::string& SourcePath)
 {
 	if (!HasActiveServer())
 	{
@@ -505,7 +505,7 @@ std::uint64_t FResourceManager::RequestLoadId(const std::string& SourcePath)
 	return Server->RequestLoad(SourcePath).Value;
 }
 
-void FResourceManager::ReleaseLoadId(std::uint64_t LoadId)
+void FResourceSystem::ReleaseLoadId(std::uint64_t LoadId)
 {
 	if (HasActiveServer() && LoadId != 0)
 	{
@@ -513,7 +513,7 @@ void FResourceManager::ReleaseLoadId(std::uint64_t LoadId)
 	}
 }
 
-bool FResourceManager::TakeBulkData(std::uint64_t LoadId, FResourceBulkData& OutBulk)
+bool FResourceSystem::TakeBulkData(std::uint64_t LoadId, FResourceBulkData& OutBulk)
 {
 	if (!HasActiveServer() || LoadId == 0)
 	{
@@ -522,13 +522,13 @@ bool FResourceManager::TakeBulkData(std::uint64_t LoadId, FResourceBulkData& Out
 	return Server->TryTakeBulkData(FResourceId{LoadId}, OutBulk);
 }
 
-FObjectRef FResourceManager::KickImport(FResourceImportConfig Config)
+FObjectRef FResourceSystem::KickImport(FResourceImportConfig Config)
 {
 	IResourceImporter* Importer = FindImporter(Config);
 	if (!Importer)
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::KickImport: no importer for '{}' (type hint {})",
+			"FResourceSystem::KickImport: no importer for '{}' (type hint {})",
 			Config.SourcePath,
 			static_cast<int>(Config.TypeHint));
 		return {};
@@ -537,19 +537,19 @@ FObjectRef FResourceManager::KickImport(FResourceImportConfig Config)
 	return Importer->Import(*this, std::move(Config));
 }
 
-bool FResourceManager::KickExport(FResourceExportConfig Config, const FObjectRef& Resource)
+bool FResourceSystem::KickExport(FResourceExportConfig Config, const FObjectRef& Resource)
 {
 	IResourceExporter* Exporter = FindExporter(Resource);
 	if (!Exporter)
 	{
-		CATTY_CORE_ERROR("FResourceManager::KickExport: no exporter for resource");
+		CATTY_CORE_ERROR("FResourceSystem::KickExport: no exporter for resource");
 		return false;
 	}
 
 	return Exporter->Export(std::move(Config), Resource);
 }
 
-FObjectRef FResourceManager::LoadResourceIntoPackage(
+FObjectRef FResourceSystem::LoadResourceIntoPackage(
 	const FObjectRef& Package,
 	std::string ObjectName,
 	std::string SourcePath,
@@ -563,9 +563,9 @@ FObjectRef FResourceManager::LoadResourceIntoPackage(
 	return KickImport(std::move(Config));
 }
 
-bool FResourceManager::UnloadResource(const std::string& VirtualPath)
+bool FResourceSystem::UnloadResource(const std::string& VirtualPath)
 {
-	FGC* GC = Detail::GetGC();
+	FGCSystem* GC = Detail::GetGCSystem();
 	FObjectRef Found = GC ? GC->FindObject(VirtualPath) : FObjectRef{};
 	UResource* ResourcePtr = Found.Cast<UResource>();
 	if (!ResourcePtr)
@@ -576,7 +576,7 @@ bool FResourceManager::UnloadResource(const std::string& VirtualPath)
 	return UnregisterResource(ResourcePtr);
 }
 
-bool FResourceManager::UnloadResource(const FObjectRef& Resource)
+bool FResourceSystem::UnloadResource(const FObjectRef& Resource)
 {
 	UResource* ResourcePtr = Resource.Cast<UResource>();
 	if (!ResourcePtr)
@@ -587,14 +587,14 @@ bool FResourceManager::UnloadResource(const FObjectRef& Resource)
 	return UnregisterResource(ResourcePtr);
 }
 
-FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
+FObjectRef FResourceSystem::TryLoad(const FSoftObjectPath& SoftPath)
 {
 	if (!SoftPath.IsValid())
 	{
 		return {};
 	}
 
-	FGC* GC = Detail::GetGC();
+	FGCSystem* GC = Detail::GetGCSystem();
 	if (GC)
 	{
 		if (FObjectRef Existing = GC->FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName()))
@@ -609,7 +609,7 @@ FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
 		if (Filename.empty())
 		{
 			CATTY_CORE_ERROR(
-				"FResourceManager::TryLoad: no mount mapping for '{}'",
+				"FResourceSystem::TryLoad: no mount mapping for '{}'",
 				SoftPath.GetPackageName());
 			return {};
 		}
@@ -617,18 +617,18 @@ FObjectRef FResourceManager::TryLoad(const FSoftObjectPath& SoftPath)
 		if (!LoadPackage(Filename))
 		{
 			CATTY_CORE_ERROR(
-				"FResourceManager::TryLoad: LoadPackage failed for '{}' ('{}')",
+				"FResourceSystem::TryLoad: LoadPackage failed for '{}' ('{}')",
 				SoftPath.GetPackageName(),
 				Filename);
 			return {};
 		}
 	}
 
-	GC = Detail::GetGC();
+	GC = Detail::GetGCSystem();
 	return GC ? GC->FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName()) : FObjectRef{};
 }
 
-FObjectRef FResourceManager::TryLoad(const std::string& SoftPathString)
+FObjectRef FResourceSystem::TryLoad(const std::string& SoftPathString)
 {
 	FSoftObjectPath SoftPath;
 	if (!SoftPath.TrySetPath(SoftPathString) || !SoftPath.IsValid())
@@ -638,7 +638,7 @@ FObjectRef FResourceManager::TryLoad(const std::string& SoftPathString)
 	return TryLoad(SoftPath);
 }
 
-bool FResourceManager::SavePackage(
+bool FResourceSystem::SavePackage(
 	const FObjectRef& Package,
 	const std::string& FilePath,
 	bool bPretty,
@@ -648,7 +648,7 @@ bool FResourceManager::SavePackage(
 	return SavePackageInternal(Package, FilePath, bPretty, bSaveDependencies, SavingPackageNames);
 }
 
-bool FResourceManager::SavePackageInternal(
+bool FResourceSystem::SavePackageInternal(
 	const FObjectRef& Package,
 	const std::string& FilePath,
 	bool bPretty,
@@ -657,20 +657,20 @@ bool FResourceManager::SavePackageInternal(
 {
 	if (!IsInitialized())
 	{
-		CATTY_CORE_ERROR("FResourceManager::SavePackage: not initialized");
+		CATTY_CORE_ERROR("FResourceSystem::SavePackage: not initialized");
 		return false;
 	}
 
 	if (!Package)
 	{
-		CATTY_CORE_ERROR("FResourceManager::SavePackage: invalid Package");
+		CATTY_CORE_ERROR("FResourceSystem::SavePackage: invalid Package");
 		return false;
 	}
 
 	UPackage* PackagePtr = Package.Cast<UPackage>();
 	if (!PackagePtr)
 	{
-		CATTY_CORE_ERROR("FResourceManager::SavePackage: Ref is not an UPackage");
+		CATTY_CORE_ERROR("FResourceSystem::SavePackage: Ref is not an UPackage");
 		return false;
 	}
 
@@ -680,7 +680,7 @@ bool FResourceManager::SavePackageInternal(
 	if (SavingPackageNames.find(PackageKey) != SavingPackageNames.end())
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::SavePackage: cycle detected while saving '{}'",
+			"FResourceSystem::SavePackage: cycle detected while saving '{}'",
 			PackageKey);
 		return false;
 	}
@@ -689,7 +689,7 @@ bool FResourceManager::SavePackageInternal(
 	const std::string OutPath = FilePath.empty() ? PackageObj.GetFilePath() : FilePath;
 	if (OutPath.empty())
 	{
-		CATTY_CORE_ERROR("FResourceManager::SavePackage: empty file path for '{}'", PackageKey);
+		CATTY_CORE_ERROR("FResourceSystem::SavePackage: empty file path for '{}'", PackageKey);
 		SavingPackageNames.erase(PackageKey);
 		return false;
 	}
@@ -697,7 +697,7 @@ bool FResourceManager::SavePackageInternal(
 	if (!PackageObj.IsPersistent())
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::SavePackage: package '{}' is Transient — mark Persistent first",
+			"FResourceSystem::SavePackage: package '{}' is Transient — mark Persistent first",
 			PackageObj.GetName());
 		SavingPackageNames.erase(PackageKey);
 		return false;
@@ -709,7 +709,7 @@ bool FResourceManager::SavePackageInternal(
 	FJsonValue Root = FJsonValue::Object();
 	if (!PackageObj.Serialize(Root))
 	{
-		CATTY_CORE_ERROR("FResourceManager::SavePackage: Serialize failed for '{}'", PackageObj.GetName());
+		CATTY_CORE_ERROR("FResourceSystem::SavePackage: Serialize failed for '{}'", PackageObj.GetName());
 		SavingPackageNames.erase(PackageKey);
 		return false;
 	}
@@ -735,13 +735,13 @@ bool FResourceManager::SavePackageInternal(
 					continue;
 				}
 
-				FGC* GC = Detail::GetGC();
+				FGCSystem* GC = Detail::GetGCSystem();
 				FObjectRef DepPackage = GC ? GC->FindPackage(DepName) : FObjectRef{};
 				UPackage* DepPtr = DepPackage.Cast<UPackage>();
 				if (!DepPtr)
 				{
 					CATTY_CORE_ERROR(
-						"FResourceManager::SavePackage: dependency '{}' not loaded",
+						"FResourceSystem::SavePackage: dependency '{}' not loaded",
 						DepName);
 					SavingPackageNames.erase(PackageKey);
 					return false;
@@ -754,7 +754,7 @@ bool FResourceManager::SavePackageInternal(
 				if (DepFile.empty())
 				{
 					CATTY_CORE_ERROR(
-						"FResourceManager::SavePackage: dependency '{}' has no file path",
+						"FResourceSystem::SavePackage: dependency '{}' has no file path",
 						DepName);
 					SavingPackageNames.erase(PackageKey);
 					return false;
@@ -763,7 +763,7 @@ bool FResourceManager::SavePackageInternal(
 				if (!SavePackageInternal(DepPackage, DepFile, bPretty, true, SavingPackageNames))
 				{
 					CATTY_CORE_ERROR(
-						"FResourceManager::SavePackage: failed saving dependency '{}' for '{}'",
+						"FResourceSystem::SavePackage: failed saving dependency '{}' for '{}'",
 						DepName,
 						PackageKey);
 					SavingPackageNames.erase(PackageKey);
@@ -776,7 +776,7 @@ bool FResourceManager::SavePackageInternal(
 		Root = FJsonValue::Object();
 		if (!PackageObj.Serialize(Root))
 		{
-			CATTY_CORE_ERROR("FResourceManager::SavePackage: Serialize failed for '{}'", PackageObj.GetName());
+			CATTY_CORE_ERROR("FResourceSystem::SavePackage: Serialize failed for '{}'", PackageObj.GetName());
 			SavingPackageNames.erase(PackageKey);
 			return false;
 		}
@@ -786,7 +786,7 @@ bool FResourceManager::SavePackageInternal(
 	Doc.SetRoot(std::move(Root));
 	if (!Doc.SaveToFile(OutPath, bPretty))
 	{
-		CATTY_CORE_ERROR("FResourceManager::SavePackage: write failed '{}'", OutPath);
+		CATTY_CORE_ERROR("FResourceSystem::SavePackage: write failed '{}'", OutPath);
 		SavingPackageNames.erase(PackageKey);
 		return false;
 	}
@@ -800,37 +800,37 @@ bool FResourceManager::SavePackageInternal(
 	return true;
 }
 
-FObjectRef FResourceManager::ResolveObjectPath(const std::string& PathName) const
+FObjectRef FResourceSystem::ResolveObjectPath(const std::string& PathName) const
 {
-	FGC* GC = Detail::GetGC();
+	FGCSystem* GC = Detail::GetGCSystem();
 	return GC ? GC->FindObject(PathName) : FObjectRef{};
 }
 
-FObjectRef FResourceManager::LoadPackage(const std::string& FilePath)
+FObjectRef FResourceSystem::LoadPackage(const std::string& FilePath)
 {
 	std::unordered_set<std::string> LoadingFilePaths;
 	return LoadPackageInternal(FilePath, LoadingFilePaths);
 }
 
-FObjectRef FResourceManager::LoadPackageInternal(
+FObjectRef FResourceSystem::LoadPackageInternal(
 	const std::string& FilePath,
 	std::unordered_set<std::string>& LoadingFilePaths)
 {
 	if (!IsInitialized())
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: not initialized");
+		CATTY_CORE_ERROR("FResourceSystem::LoadPackage: not initialized");
 		return {};
 	}
 
 	if (!bAcceptingNewWork)
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: refused during exit");
+		CATTY_CORE_ERROR("FResourceSystem::LoadPackage: refused during exit");
 		return {};
 	}
 
 	if (FilePath.empty())
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: empty file path");
+		CATTY_CORE_ERROR("FResourceSystem::LoadPackage: empty file path");
 		return {};
 	}
 
@@ -838,7 +838,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	if (LoadingFilePaths.find(NormalizedFile) != LoadingFilePaths.end())
 	{
 		CATTY_CORE_ERROR(
-			"FResourceManager::LoadPackage: cycle detected at '{}'",
+			"FResourceSystem::LoadPackage: cycle detected at '{}'",
 			FilePath);
 		return {};
 	}
@@ -847,7 +847,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	FJsonDocument Doc;
 	if (!Doc.LoadFromFile(FilePath))
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: read failed '{}'", FilePath);
+		CATTY_CORE_ERROR("FResourceSystem::LoadPackage: read failed '{}'", FilePath);
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}
@@ -855,7 +855,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	const FJsonValue& Root = Doc.GetRoot();
 	if (!Root.IsObject())
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: root is not an object '{}'", FilePath);
+		CATTY_CORE_ERROR("FResourceSystem::LoadPackage: root is not an object '{}'", FilePath);
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}
@@ -878,7 +878,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 
 			if (!DepName.empty())
 			{
-				FGC* GC = Detail::GetGC();
+				FGCSystem* GC = Detail::GetGCSystem();
 				if (GC && GC->FindPackage(DepName))
 				{
 					continue;
@@ -888,7 +888,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 			if (DepFile.empty())
 			{
 				CATTY_CORE_WARN(
-					"FResourceManager::LoadPackage: dependency '{}' has empty file — skip",
+					"FResourceSystem::LoadPackage: dependency '{}' has empty file — skip",
 					DepName.empty() ? "<unnamed>" : DepName);
 				continue;
 			}
@@ -896,7 +896,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 			if (!LoadPackageInternal(DepFile, LoadingFilePaths))
 			{
 				CATTY_CORE_ERROR(
-					"FResourceManager::LoadPackage: failed loading dependency '{}' from '{}'",
+					"FResourceSystem::LoadPackage: failed loading dependency '{}' from '{}'",
 					DepName.empty() ? DepFile : DepName,
 					DepFile);
 				LoadingFilePaths.erase(NormalizedFile);
@@ -911,11 +911,11 @@ FObjectRef FResourceManager::LoadPackageInternal(
 		PackageName = FilePath;
 	}
 
-	FGC* GC = Detail::GetGC();
+	FGCSystem* GC = Detail::GetGCSystem();
 	if (FObjectRef Existing = GC ? GC->FindPackage(PackageName) : FObjectRef{})
 	{
 		CATTY_CORE_WARN(
-			"FResourceManager::LoadPackage: '{}' already loaded — returning existing",
+			"FResourceSystem::LoadPackage: '{}' already loaded — returning existing",
 			PackageName);
 		LoadingFilePaths.erase(NormalizedFile);
 		return Existing;
@@ -927,14 +927,14 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	UPackage* Raw = PackageRef.Cast<UPackage>();
 	if (!Raw)
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: NewObject<UPackage> failed");
+		CATTY_CORE_ERROR("FResourceSystem::LoadPackage: NewObject<UPackage> failed");
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}
 
 	if (!Raw->Deserialize(Root))
 	{
-		CATTY_CORE_ERROR("FResourceManager::LoadPackage: Deserialize failed '{}'", FilePath);
+		CATTY_CORE_ERROR("FResourceSystem::LoadPackage: Deserialize failed '{}'", FilePath);
 		LoadingFilePaths.erase(NormalizedFile);
 		// Drop the only Ref so GC can finalize; otherwise FindPackage keeps returning this shell.
 		PackageRef = {};
@@ -1001,7 +1001,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 				&& !TryResourceTypeFromClassName(ClassName.empty() ? "Resource" : ClassName, Type))
 			{
 				CATTY_CORE_WARN(
-					"FResourceManager::LoadPackage: unsupported class '{}' for '{}' — skip",
+					"FResourceSystem::LoadPackage: unsupported class '{}' for '{}' — skip",
 					ClassName,
 					ObjectName);
 				continue;
@@ -1010,7 +1010,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 			if (SourcePath.empty())
 			{
 				CATTY_CORE_WARN(
-					"FResourceManager::LoadPackage: object '{}' has no source — skip",
+					"FResourceSystem::LoadPackage: object '{}' has no source — skip",
 					ObjectName);
 				continue;
 			}
@@ -1020,7 +1020,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 			if (!Created)
 			{
 				CATTY_CORE_WARN(
-					"FResourceManager::LoadPackage: failed to create '{}' in '{}'",
+					"FResourceSystem::LoadPackage: failed to create '{}' in '{}'",
 					ObjectName,
 					PackageName);
 				continue;
@@ -1063,7 +1063,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 			if (!ResolvedRef)
 			{
 				CATTY_CORE_WARN(
-					"FResourceManager::LoadPackage: unresolved ref '{}' in '{}'",
+					"FResourceSystem::LoadPackage: unresolved ref '{}' in '{}'",
 					SoftPath,
 					PackageName);
 				Resolved.push_back(nullptr);
@@ -1084,7 +1084,7 @@ FObjectRef FResourceManager::LoadPackageInternal(
 	return PackageRef;
 }
 
-EResourceLoadState FResourceManager::GetLoadState(const FObjectRef& Object) const
+EResourceLoadState FResourceSystem::GetLoadState(const FObjectRef& Object) const
 {
 	const UResource* Resource = Object.Cast<UResource>();
 	if (!Resource)
@@ -1095,12 +1095,12 @@ EResourceLoadState FResourceManager::GetLoadState(const FObjectRef& Object) cons
 	return Resource->GetLoadState();
 }
 
-bool FResourceManager::IsReady(const FObjectRef& Object) const
+bool FResourceSystem::IsReady(const FObjectRef& Object) const
 {
 	return GetLoadState(Object) == EResourceLoadState::Ready;
 }
 
-void FResourceManager::Flush(const FObjectRef& Object)
+void FResourceSystem::Flush(const FObjectRef& Object)
 {
 	if (!IsInitialized())
 	{
@@ -1125,7 +1125,7 @@ void FResourceManager::Flush(const FObjectRef& Object)
 	ProcessReadyImports();
 }
 
-void FResourceManager::FlushAll()
+void FResourceSystem::FlushAll()
 {
 	if (!IsInitialized())
 	{
@@ -1144,13 +1144,13 @@ void FResourceManager::FlushAll()
 namespace Detail
 {
 
-FResourceManager* GetResourceManager()
+FResourceSystem* GetResourceSystem()
 {
 	if (!GApp)
 	{
 		return nullptr;
 	}
-	return GApp->GetExtension<FResourceManager>();
+	return GApp->GetExtension<FResourceSystem>();
 }
 
 } // namespace Detail

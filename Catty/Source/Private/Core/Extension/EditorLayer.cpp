@@ -2,7 +2,7 @@
 
 #include <Core/Application/App.h>
 #include <Core/System/ConfigFile.h>
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/Editor/AgentChatClient.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
@@ -127,7 +127,7 @@ namespace SeqGraphIds
 {
 	switch (Priority)
 	{
-	case EExtensionPriority::Module: return "Module";
+	case EExtensionPriority::System: return "System";
 	case EExtensionPriority::Layer: return "Layer";
 	case EExtensionPriority::Overlay: return "Overlay";
 	default: return "?";
@@ -138,7 +138,7 @@ namespace SeqGraphIds
 {
 	switch (Priority)
 	{
-	case EExtensionPriority::Module:
+	case EExtensionPriority::System:
 		return ImVec4(0.55f, 0.78f, 1.0f, 1.0f);
 	case EExtensionPriority::Layer:
 		return ImVec4(0.70f, 0.95f, 0.55f, 1.0f);
@@ -1636,7 +1636,7 @@ void FEditorLayer::DrawSequenceGraphPanel(FApp& App)
 	ImGui::Separator();
 	if (SequenceGraphViewMode == 0)
 	{
-		ImGui::TextColored(ImVec4(0.55f, 0.78f, 1.0f, 1.0f), "Module");
+		ImGui::TextColored(ImVec4(0.55f, 0.78f, 1.0f, 1.0f), "System");
 		ImGui::SameLine();
 		ImGui::TextColored(ImVec4(0.70f, 0.95f, 0.55f, 1.0f), "Layer");
 		ImGui::SameLine();
@@ -1730,7 +1730,7 @@ void FEditorLayer::DrawSequenceGraphPanel(FApp& App)
 			const char* Detail;
 		};
 		const FLifeStep Steps[] = {
-			{"Configure", "Game fills FEngineConfig"},
+			{"Configure", "Game fills FConfig"},
 			{"FPaths + Ini", "Roots / DefaultEngine.ini"},
 			{"Generate App", "codegen RegisterExtension (+ plugins)"},
 			{"InitExtensions", "PreInit/Init/PostInit by Priority+depends"},
@@ -2049,7 +2049,7 @@ void FEditorLayer::ExecuteConsoleLine(FApp& App, const std::string& RawLine)
 
 	if (Lower == "dump")
 	{
-		FConsoleManager& Console = App.GetConsoleManager();
+		FConsole& Console = App.GetConsole();
 		const std::vector<std::string> Names = Console.GetNames();
 		AppendOutput("Registered CVars (" + std::to_string(Names.size()) + "):");
 		for (const std::string& CVarName : Names)
@@ -2077,7 +2077,7 @@ void FEditorLayer::ExecuteConsoleLine(FApp& App, const std::string& RawLine)
 		Value = TrimAscii(Value);
 	}
 
-	FConsoleManager& Console = App.GetConsoleManager();
+	FConsole& Console = App.GetConsole();
 	IConsoleVariable* Variable = Console.Find(CVarName.c_str());
 	if (!Variable)
 	{

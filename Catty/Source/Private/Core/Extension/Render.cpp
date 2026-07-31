@@ -6,7 +6,7 @@
 namespace Catty
 {
 
-bool FRender::ExecuteStage(EEngineStage Stage)
+bool FRenderSystem::ExecuteStage(EEngineStage Stage)
 {
 	switch (Stage)
 	{
@@ -14,19 +14,19 @@ bool FRender::ExecuteStage(EEngineStage Stage)
 	{
 		if (!GApp)
 		{
-			CATTY_CORE_ERROR("FRender: GApp missing at Init");
+			CATTY_CORE_ERROR("FRenderSystem: GApp missing at Init");
 			return false;
 		}
-		FPlatform* Platform = GApp->GetExtension<FPlatform>();
+		FPlatformSystem* Platform = GApp->GetExtension<FPlatformSystem>();
 		FPlatformWindow* Window = Platform ? Platform->GetWindow() : nullptr;
 		if (!Window)
 		{
-			CATTY_CORE_ERROR("FRender: no platform window at Init");
+			CATTY_CORE_ERROR("FRenderSystem: no platform window at Init");
 			return false;
 		}
 		if (!RenderServer.Boot(*Window, GApp->GetConfig()))
 		{
-			CATTY_CORE_ERROR("FRender: RenderServer.Boot failed");
+			CATTY_CORE_ERROR("FRenderSystem: RenderServer.Boot failed");
 			return false;
 		}
 		return true;

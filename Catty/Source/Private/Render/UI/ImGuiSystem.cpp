@@ -1,9 +1,9 @@
-#include <Render/UI/ImGuiSystem.h>
+﻿#include <Render/UI/ImGuiSystem.h>
 
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/System/Log.h>
 #include <Core/System/PlatformWindow.h>
-#include <Render/RenderServer.h>
+#include <Render/RHI/RHIServer.h>
 #include <Render/UI/ImGuiTheme.h>
 #include "Render/RHI/VulkanRHI.h"
 
@@ -195,12 +195,12 @@ void LoadEditorFonts(ImGuiIO& IO, const std::string& ConfigDirectory)
 
 FImGuiSystem::~FImGuiSystem()
 {
-	// Prefer Shutdown(RenderServer) from FApp so Vulkan backends die before the device.
+	// Prefer Shutdown(RHIServer) from FRenderServer so Vulkan backends die before the device.
 }
 
 bool FImGuiSystem::Initialize(
 	FPlatformWindow& Window,
-	FRenderServer& RenderServer,
+	FRHIServer& RHIServer,
 	const std::string& ConfigDirectory)
 {
 	if (bInitialized)
@@ -221,7 +221,7 @@ bool FImGuiSystem::Initialize(
 		return false;
 	}
 
-	FVulkanRHI* VulkanRHI = RenderServer.GetVulkanRHI();
+	FVulkanRHI* VulkanRHI = RHIServer.GetVulkanRHI();
 	if (!VulkanRHI || !VulkanRHI->IsInitialized())
 	{
 		CATTY_CORE_ERROR("FImGuiSystem::Initialize: Vulkan RHI is not ready");
@@ -260,7 +260,7 @@ bool FImGuiSystem::Initialize(
 	}
 
 	std::atomic<bool> bVulkanBackendOk{false};
-	RenderServer.Enqueue([VulkanRHI, &bVulkanBackendOk](FThreadedServer& /*Server*/)
+	RHIServer.Enqueue([VulkanRHI, &bVulkanBackendOk](FThreadedServer& /*Server*/)
 	{
 		ImGui_ImplVulkan_InitInfo InitInfo{};
 		InitInfo.ApiVersion = VK_API_VERSION_1_2;
@@ -281,7 +281,7 @@ bool FImGuiSystem::Initialize(
 
 		bVulkanBackendOk.store(ImGui_ImplVulkan_Init(&InitInfo));
 	});
-	RenderServer.Flush();
+	RHIServer.Flush();
 
 	if (!bVulkanBackendOk.load())
 	{
@@ -292,27 +292,25 @@ bool FImGuiSystem::Initialize(
 		return false;
 	}
 
-	RenderServer.SetImGuiEnabled(true);
 	bInitialized = true;
 	CATTY_CORE_INFO("FImGuiSystem initialized (GLFW + Vulkan, docking)");
 	return true;
 }
 
-void FImGuiSystem::Shutdown(FRenderServer& RenderServer)
+void FImGuiSystem::Shutdown(FRHIServer& RHIServer)
 {
 	if (!bInitialized)
 	{
 		return;
 	}
 
-	RenderServer.SetImGuiEnabled(false);
-	RenderServer.Flush();
+	RHIServer.Flush();
 
-	RenderServer.Enqueue([](FThreadedServer& /*Server*/)
+	RHIServer.Enqueue([](FThreadedServer& /*Server*/)
 	{
 		ImGui_ImplVulkan_Shutdown();
 	});
-	RenderServer.Flush();
+	RHIServer.Flush();
 
 	ImGui_ImplGlfw_Shutdown();
 	ImPlot::DestroyContext();

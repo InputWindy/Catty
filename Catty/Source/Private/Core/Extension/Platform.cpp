@@ -1,7 +1,7 @@
 ﻿#include <Core/Extension/Platform.h>
 
 #include <Core/Application/App.h>
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/System/Log.h>
 
 #include <algorithm>
@@ -19,7 +19,7 @@ static TAutoConsoleVariable GCVarHeadlessAutoExitFrames(
 
 } // namespace
 
-bool FPlatform::ExecuteStage(EEngineStage Stage)
+bool FPlatformSystem::ExecuteStage(EEngineStage Stage)
 {
 	switch (Stage)
 	{
@@ -27,10 +27,10 @@ bool FPlatform::ExecuteStage(EEngineStage Stage)
 	{
 		if (!GApp)
 		{
-			CATTY_CORE_ERROR("FPlatform: GApp missing at Init");
+			CATTY_CORE_ERROR("FPlatformSystem: GApp missing at Init");
 			return false;
 		}
-		const FEngineConfig& Config = GApp->GetConfig();
+		const FConfig& Config = GApp->GetConfig();
 		FPlatformWindowDesc PlatformDesc;
 		PlatformDesc.Platform = Config.Platform;
 		PlatformDesc.Title = Config.ApplicationName.empty() ? "Catty" : Config.ApplicationName;
@@ -42,7 +42,7 @@ bool FPlatform::ExecuteStage(EEngineStage Stage)
 		PlatformWindow = FPlatformWindowFactory::Create(PlatformDesc);
 		if (!PlatformWindow)
 		{
-			CATTY_CORE_ERROR("FPlatform: failed to create platform window");
+			CATTY_CORE_ERROR("FPlatformSystem: failed to create platform window");
 			return false;
 		}
 

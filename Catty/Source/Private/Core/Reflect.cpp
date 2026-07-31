@@ -3,7 +3,7 @@
 #include <Core/Object/Object.h>
 
 #include <Core/Object/Package.h>
-#include <Core/Modules/Resource.h>
+#include <Core/Extension/Resource.h>
 
 #include <ObjectReflectTypes.gen.h>
 

@@ -1,7 +1,7 @@
-#pragma once
+﻿#pragma once
 
 #include <Core/DependsPack.h>
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/Engine.h>
 #include <Core/Export.h>
 #include <Core/System/Log.h>
@@ -55,11 +55,11 @@ public:
 
 	void Run();
 
-	[[nodiscard]] FEngineConfig& GetConfig() { return EngineConfig; }
-	[[nodiscard]] const FEngineConfig& GetConfig() const { return EngineConfig; }
+	[[nodiscard]] FConfig& GetConfig() { return Config; }
+	[[nodiscard]] const FConfig& GetConfig() const { return Config; }
 
 	[[nodiscard]] FLog& GetLog() { return Log; }
-	[[nodiscard]] FConsoleManager& GetConsoleManager() { return ConsoleManager; }
+	[[nodiscard]] FConsole& GetConsole() { return Console; }
 	[[nodiscard]] FTimer& GetTimer() { return Timer; }
 
 	[[nodiscard]] std::uint64_t GetFrameIndex() const { return FrameIndex; }
@@ -106,7 +106,7 @@ protected:
 		return Ref;
 	}
 
-	virtual void Configure(FEngineConfig& OutConfig);
+	virtual void Configure(FConfig& OutConfig);
 	virtual bool PreInitialize();
 	virtual bool PostInitialize();
 
@@ -185,9 +185,9 @@ private:
 	void RebuildStageOrder(EEngineStage Stage);
 	static bool InvokeStage(IEngineExtension& Extension, EEngineStage Stage);
 
-	FEngineConfig EngineConfig;
+	FConfig Config;
 	FLog Log;
-	FConsoleManager ConsoleManager;
+	FConsole Console;
 	FTimer Timer;
 
 	std::vector<std::unique_ptr<IEngineExtension>> Extensions;

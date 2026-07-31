@@ -2,15 +2,17 @@
 
 #include <Core/Engine.h>
 #include <Core/Export.h>
-#include <Core/Server/ThreadedServer.h>
 #include <Core/System/PlatformWindow.h>
-#include <Render/RHI/RHI.h>
+#include <Render/RHI/RHIServer.h>
+#include <Render/Sequencer/RenderExtension.h>
+#include <Render/Sequencer/RenderStage.h>
 #include <Render/UI/ImGuiSystem.h>
 
-#include <condition_variable>
 #include <cstdint>
 #include <memory>
-#include <mutex>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace Catty
 {
@@ -19,39 +21,35 @@ class FVulkanRHI;
 struct FImGuiDrawDataRing;
 
 /**
- * RenderCore service owned by FRender module. Does not own the platform window.
- * Boot borrows FPlatformWindow&; TearDown leaves the window alone.
- * Render(FrameIndex): fence gate, default clear, ImGui submit, End+fence.
- * FApp::Tick runs TickGroups: BeginFrame…EndFrame → PreRender → Render → PostRender.
- * FRender handles ImGui NewFrame on BeginFrame and submit on Render.
+ * Frame orchestration owned by FRenderSystem (Game-callable today).
+ * Holds FRHIServer (RHI thread). Runs ERenderStage + IRenderExtension synchronously on Game for now.
  */
-class CATTY_API FRenderServer : public FThreadedServer
+class CATTY_API FRenderServer
 {
 public:
 	static constexpr int MaxFramesInFlightCap = 3;
 
 	FRenderServer();
-	~FRenderServer() override;
+	~FRenderServer();
 
 	FRenderServer(const FRenderServer&) = delete;
 	FRenderServer& operator=(const FRenderServer&) = delete;
 
-	/** Start worker, RHI (from Window), optional ImGui. Does not create/destroy Window. */
-	[[nodiscard]] bool Boot(FPlatformWindow& InWindow, const FEngineConfig& Config);
+	/** Start RHI worker, RHI (from Window), optional ImGui. Does not create/destroy Window. */
+	[[nodiscard]] bool Boot(FPlatformWindow& InWindow, const FConfig& Config);
 
 	void TearDown();
 
 	/**
-	 * Game thread: wait MaxFramesInFlight, sync resize, default clear + ImGui EndFrame/clone,
-	 * enqueue UI/End, signal fence. Call from FRender on EEngineStage::Render
-	 * (ImGui NewFrame already done on BeginFrame).
+	 * Game thread: wait MaxFramesInFlight, run ERenderStage pipeline (built-in KickRHI
+	 * does clear + ImGui EndFrame/clone + Submit*). Call from FRenderSystem on EEngineStage::Render.
 	 */
 	void Render(std::uint64_t FrameIndex);
 
 	/**
 	 * Call on the game thread before ImGui NewFrame.
 	 * ImGui Vulkan backend is not safe concurrent with RenderDrawData / clone teardown on the
-	 * render thread — wait until the previous frame's render job has finished.
+	 * RHI thread — wait until the previous frame's render job has finished.
 	 */
 	void WaitBeforeImGuiNewFrame(std::uint64_t FrameIndex);
 
@@ -60,43 +58,47 @@ public:
 	[[nodiscard]] FImGuiSystem& GetImGui() { return ImGui; }
 	[[nodiscard]] const FImGuiSystem& GetImGui() const { return ImGui; }
 
-	[[nodiscard]] bool HasRHI() const { return static_cast<bool>(RHI); }
-	[[nodiscard]] FVulkanRHI* GetVulkanRHI() const;
+	[[nodiscard]] FRHIServer& GetRHIServer() { return RHIServer; }
+	[[nodiscard]] const FRHIServer& GetRHIServer() const { return RHIServer; }
+
+	[[nodiscard]] bool HasRHI() const { return RHIServer.HasRHI(); }
+	[[nodiscard]] FVulkanRHI* GetVulkanRHI() const { return RHIServer.GetVulkanRHI(); }
 
 	void SetImGuiEnabled(bool bEnabled) { bImGuiEnabled = bEnabled; }
 	[[nodiscard]] bool IsImGuiEnabled() const { return bImGuiEnabled; }
 
-	void RequestResize(int Width, int Height);
+	void RequestResize(int Width, int Height) { RHIServer.RequestResize(Width, Height); }
 
 	/** Non-owning window set by Boot (for framebuffer sync). */
 	[[nodiscard]] FPlatformWindow* GetBoundWindow() { return BoundWindow; }
 	[[nodiscard]] const FPlatformWindow* GetBoundWindow() const { return BoundWindow; }
 
-protected:
-	[[nodiscard]] const char* GetServerThreadName() const override { return "CattyRenderCore"; }
-	[[nodiscard]] const char* GetServerLogName() const override { return "RenderServer"; }
-
-	bool OnInitialize() override;
-	void OnShutdown() override;
+	/** Takes ownership. Call during Boot / game setup (before heavy ticking). */
+	template <typename T, typename... TArgs>
+	T& RegisterRenderExtension(TArgs&&... Args)
+	{
+		static_assert(std::is_base_of_v<IRenderExtension, T>, "T must derive from IRenderExtension");
+		auto Extension = std::make_unique<T>(std::forward<TArgs>(Args)...);
+		T& Ref = *Extension;
+		RenderExtensions.push_back(std::move(Extension));
+		return Ref;
+	}
 
 private:
 	void SyncFramebufferSize();
-	void WaitForRenderFrame(std::uint64_t FrameIndex);
-	void SignalRenderFrameComplete(std::uint64_t FrameIndex);
 	[[nodiscard]] int GetMaxFramesInFlight() const;
-	void SubmitBeginMainPass(float R, float G, float B, float A);
-	void SubmitRenderUI(int SlotIndex);
-	void SubmitEndFrameAndFence(std::uint64_t FrameIndex);
-	[[nodiscard]] bool InitializeRHI(FPlatformWindow& InWindow, ERHIBackend Backend = ERHIBackend::Vulkan);
+	void ExecuteRenderStages();
+	[[nodiscard]] static bool InvokeRenderStage(
+		IRenderExtension& Extension,
+		ERenderStage Stage,
+		FRenderServer& Self);
 
+	FRHIServer RHIServer;
 	FPlatformWindow* BoundWindow = nullptr;
 	FImGuiSystem ImGui;
-	FRHIPtr RHI;
 	std::unique_ptr<FImGuiDrawDataRing> ImGuiDrawDataRing;
+	std::vector<std::unique_ptr<IRenderExtension>> RenderExtensions;
 
-	std::mutex FenceMutex;
-	std::condition_variable FenceCv;
-	std::uint64_t LastCompletedRenderFrame = 0;
 	std::uint64_t CurrentFrameIndex = 0;
 	int PendingImGuiSlotIndex = -1;
 

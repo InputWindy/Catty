@@ -8,11 +8,11 @@ namespace Catty
 {
 
 class FPlatformWindow;
-class FRenderServer;
+class FRHIServer;
 
 /**
  * Dear ImGui lifecycle helper (GLFW + Vulkan backends).
- * Call BeginFrame after PollEvents (Game); build UI in TickGroups; EndFrame inside FRenderServer::Render.
+ * Call BeginFrame after PollEvents (Game); build UI in TickGroups; EndFrame inside FRenderServer KickRHI.
  */
 class CATTY_API FImGuiSystem
 {
@@ -24,17 +24,17 @@ public:
 	FImGuiSystem& operator=(const FImGuiSystem&) = delete;
 
 	/**
-	 * Requires an OS window + initialized Vulkan RHI on the render server.
+	 * Requires an OS window + initialized Vulkan RHI on the RHI server.
 	 * Safe to call when headless (returns false without error spam).
 	 * @param ConfigDirectory Project Config/ path; imgui.ini is stored as ConfigDirectory/imgui.ini.
 	 */
 	[[nodiscard]] bool Initialize(
 		FPlatformWindow& Window,
-		FRenderServer& RenderServer,
+		FRHIServer& RHIServer,
 		const std::string& ConfigDirectory = "Config");
 
-	/** Flushes the render server and tears down GLFW/Vulkan backends. */
-	void Shutdown(FRenderServer& RenderServer);
+	/** Flushes the RHI server and tears down GLFW/Vulkan backends. */
+	void Shutdown(FRHIServer& RHIServer);
 
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 

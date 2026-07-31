@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Core/Delegate.h>
 #include <Core/Export.h>
@@ -63,11 +63,11 @@ CATTY_DECLARE_MULTICAST_DELEGATE_OneParam(FOnConsoleVariableChanged, IConsoleVar
 
 /**
  * Runtime console variable (UE IConsoleVariable subset).
- * Owned by FConsoleManager. Cross-module access: FConsoleManager::Find / GetInt(name).
+ * Owned by FConsole. Cross-module access: FConsole::Find / GetInt(name).
  *
  * Example:
  * ```
- *   if (Catty::IConsoleVariable* V = Catty::FConsoleManager::Get().Find("catty.Window.Width"))
+ *   if (Catty::IConsoleVariable* V = Catty::FConsole::Get().Find("catty.Window.Width"))
  *   {
  *       const Catty::FDelegateHandle H = V->AddOnChangedCallback(
  *           [](Catty::IConsoleVariable& CVar)

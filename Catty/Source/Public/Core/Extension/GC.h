@@ -19,13 +19,13 @@
 namespace Catty
 {
 
-class FGC;
-class FResourceManager;
-void RegisterGeneratedGCPooledTypes(FGC& GC);
-void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
+class FGCSystem;
+class FResourceSystem;
+void RegisterGeneratedGCPooledTypes(FGCSystem& GC);
+void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);
 
 /**
- * Type-erased pool + TearDown owned by FGC.
+ * Type-erased pool + TearDown owned by FGCSystem.
  */
 class IPooledObjectType
 {
@@ -112,17 +112,17 @@ private:
  * Public surface is application services only. Extension / pool registration are private
  * (FApp drives lifecycle via IEngineExtension*; codegen friends RegisterGenerated*).
  */
-class CATTY_API FGC final
+class CATTY_API FGCSystem final
 	: public IEngineExtension
 	, public TDependsPack<
-		TDependsOn<EEngineStage::Shutdown, TTypeList<FResourceManager>, EExtensionDepStrength::Weak>>
+		TDependsOn<EEngineStage::Shutdown, TTypeList<FResourceSystem>, EExtensionDepStrength::Weak>>
 {
 public:
-	FGC() = default;
-	~FGC() override;
+	FGCSystem() = default;
+	~FGCSystem() override;
 
-	FGC(const FGC&) = delete;
-	FGC& operator=(const FGC&) = delete;
+	FGCSystem(const FGCSystem&) = delete;
+	FGCSystem& operator=(const FGCSystem&) = delete;
 
 	template <typename TObject, typename... TArgs>
 	[[nodiscard]] FObjectRef NewObject(TArgs&&... Args)
@@ -163,8 +163,8 @@ public:
 	[[nodiscard]] bool IsInitialized() const { return bInitialized; }
 
 private:
-	friend void RegisterGeneratedGCPooledTypes(FGC& GC);
-	friend void RegisterGeneratedResourceTypes(FResourceManager& Manager, FGC& GC);
+	friend void RegisterGeneratedGCPooledTypes(FGCSystem& GC);
+	friend void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);
 
 	const char* GetName() const override { return "GC"; }
 
@@ -223,7 +223,7 @@ private:
 
 namespace Detail
 {
-[[nodiscard]] CATTY_API FGC* GetGC();
+[[nodiscard]] CATTY_API FGCSystem* GetGCSystem();
 }
 
 } // namespace Catty

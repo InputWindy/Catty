@@ -1,4 +1,4 @@
-#include <Core/System/ConsoleManager.h>
+﻿#include <Core/System/Console.h>
 
 #include <Core/Application/App.h>
 #include <Core/System/ConfigFile.h>
@@ -333,7 +333,7 @@ struct FEarlyConsoleVariableSet
 	EConsoleVariableSetBy SetBy = EConsoleVariableSetBy::ConsoleVariablesIni;
 };
 
-struct FConsoleManagerStorage
+struct FConsoleStorage
 {
 	mutable std::mutex Mutex;
 	std::unordered_map<std::string, std::unique_ptr<IConsoleVariable>> Variables;
@@ -341,14 +341,14 @@ struct FConsoleManagerStorage
 	std::vector<std::string> RegistrationOrder;
 };
 
-FConsoleManagerStorage& GetConsoleManagerStorage()
+FConsoleStorage& GetConsoleStorage()
 {
-	static FConsoleManagerStorage Storage;
+	static FConsoleStorage Storage;
 	return Storage;
 }
 
 void QueueEarlySet_NoLock(
-	FConsoleManagerStorage& Storage,
+	FConsoleStorage& Storage,
 	const std::string& Key,
 	const std::string& Value,
 	EConsoleVariableSetBy SetBy)
@@ -369,7 +369,7 @@ void ApplyEarlySetIfAny(IConsoleVariable* Variable)
 		return;
 	}
 
-	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+	FConsoleStorage& Storage = GetConsoleStorage();
 	const std::string Key = ToLowerAscii(Variable->GetName());
 
 	FEarlyConsoleVariableSet Early;
@@ -407,20 +407,20 @@ IConsoleVariable* RegisterTyped(
 {
 	if (!Name || Name[0] == '\0')
 	{
-		CATTY_CORE_ERROR("FConsoleManager::Register: empty name");
+		CATTY_CORE_ERROR("FConsole::Register: empty name");
 		return nullptr;
 	}
 
 	IConsoleVariable* Raw = nullptr;
 	{
-		FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+		FConsoleStorage& Storage = GetConsoleStorage();
 		const std::string Key = ToLowerAscii(Name);
 		std::lock_guard<std::mutex> Lock(Storage.Mutex);
 
 		const auto Existing = Storage.Variables.find(Key);
 		if (Existing != Storage.Variables.end())
 		{
-			CATTY_CORE_WARN("FConsoleManager: CVar '{}' already registered — returning existing", Name);
+			CATTY_CORE_WARN("FConsole: CVar '{}' already registered — returning existing", Name);
 			return Existing->second.get();
 		}
 
@@ -445,7 +445,7 @@ bool SetByNameFromString(const char* Name, const char* Value, EConsoleVariableSe
 		return false;
 	}
 
-	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+	FConsoleStorage& Storage = GetConsoleStorage();
 	const std::string Key = ToLowerAscii(Name);
 
 	IConsoleVariable* Variable = nullptr;
@@ -469,17 +469,17 @@ bool SetByNameFromString(const char* Name, const char* Value, EConsoleVariableSe
 
 } // namespace
 
-FConsoleManager& FConsoleManager::Get()
+FConsole& FConsole::Get()
 {
 	if (GApp)
 	{
-		return GApp->GetConsoleManager();
+		return GApp->GetConsole();
 	}
-	static FConsoleManager PreAppFallback;
+	static FConsole PreAppFallback;
 	return PreAppFallback;
 }
 
-IConsoleVariable* FConsoleManager::RegisterBool(
+IConsoleVariable* FConsole::RegisterBool(
 	const char* Name,
 	bool DefaultValue,
 	const char* Help,
@@ -488,7 +488,7 @@ IConsoleVariable* FConsoleManager::RegisterBool(
 	return RegisterTyped<FConsoleVariableBool>(Name, DefaultValue, Help, Flags);
 }
 
-IConsoleVariable* FConsoleManager::RegisterInt(
+IConsoleVariable* FConsole::RegisterInt(
 	const char* Name,
 	int DefaultValue,
 	const char* Help,
@@ -497,7 +497,7 @@ IConsoleVariable* FConsoleManager::RegisterInt(
 	return RegisterTyped<FConsoleVariableInt>(Name, DefaultValue, Help, Flags);
 }
 
-IConsoleVariable* FConsoleManager::RegisterFloat(
+IConsoleVariable* FConsole::RegisterFloat(
 	const char* Name,
 	float DefaultValue,
 	const char* Help,
@@ -506,7 +506,7 @@ IConsoleVariable* FConsoleManager::RegisterFloat(
 	return RegisterTyped<FConsoleVariableFloat>(Name, DefaultValue, Help, Flags);
 }
 
-IConsoleVariable* FConsoleManager::RegisterString(
+IConsoleVariable* FConsole::RegisterString(
 	const char* Name,
 	const char* DefaultValue,
 	const char* Help,
@@ -519,21 +519,21 @@ IConsoleVariable* FConsoleManager::RegisterString(
 		Flags);
 }
 
-IConsoleVariable* FConsoleManager::Find(const char* Name) const
+IConsoleVariable* FConsole::Find(const char* Name) const
 {
 	if (!Name)
 	{
 		return nullptr;
 	}
 
-	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+	FConsoleStorage& Storage = GetConsoleStorage();
 	const std::string Key = ToLowerAscii(Name);
 	std::lock_guard<std::mutex> Lock(Storage.Mutex);
 	const auto It = Storage.Variables.find(Key);
 	return It != Storage.Variables.end() ? It->second.get() : nullptr;
 }
 
-bool FConsoleManager::TryGetBool(const char* Name, bool& OutValue) const
+bool FConsole::TryGetBool(const char* Name, bool& OutValue) const
 {
 	if (const IConsoleVariable* Variable = Find(Name))
 	{
@@ -543,7 +543,7 @@ bool FConsoleManager::TryGetBool(const char* Name, bool& OutValue) const
 	return false;
 }
 
-bool FConsoleManager::TryGetInt(const char* Name, int& OutValue) const
+bool FConsole::TryGetInt(const char* Name, int& OutValue) const
 {
 	if (const IConsoleVariable* Variable = Find(Name))
 	{
@@ -553,7 +553,7 @@ bool FConsoleManager::TryGetInt(const char* Name, int& OutValue) const
 	return false;
 }
 
-bool FConsoleManager::TryGetFloat(const char* Name, float& OutValue) const
+bool FConsole::TryGetFloat(const char* Name, float& OutValue) const
 {
 	if (const IConsoleVariable* Variable = Find(Name))
 	{
@@ -563,7 +563,7 @@ bool FConsoleManager::TryGetFloat(const char* Name, float& OutValue) const
 	return false;
 }
 
-bool FConsoleManager::TryGetString(const char* Name, std::string& OutValue) const
+bool FConsole::TryGetString(const char* Name, std::string& OutValue) const
 {
 	if (const IConsoleVariable* Variable = Find(Name))
 	{
@@ -573,28 +573,28 @@ bool FConsoleManager::TryGetString(const char* Name, std::string& OutValue) cons
 	return false;
 }
 
-bool FConsoleManager::GetBool(const char* Name, bool DefaultValue) const
+bool FConsole::GetBool(const char* Name, bool DefaultValue) const
 {
 	bool Value = DefaultValue;
 	(void)TryGetBool(Name, Value);
 	return Value;
 }
 
-int FConsoleManager::GetInt(const char* Name, int DefaultValue) const
+int FConsole::GetInt(const char* Name, int DefaultValue) const
 {
 	int Value = DefaultValue;
 	(void)TryGetInt(Name, Value);
 	return Value;
 }
 
-float FConsoleManager::GetFloat(const char* Name, float DefaultValue) const
+float FConsole::GetFloat(const char* Name, float DefaultValue) const
 {
 	float Value = DefaultValue;
 	(void)TryGetFloat(Name, Value);
 	return Value;
 }
 
-std::string FConsoleManager::GetString(const char* Name, const char* DefaultValue) const
+std::string FConsole::GetString(const char* Name, const char* DefaultValue) const
 {
 	std::string Value;
 	if (TryGetString(Name, Value))
@@ -604,32 +604,32 @@ std::string FConsoleManager::GetString(const char* Name, const char* DefaultValu
 	return DefaultValue ? DefaultValue : "";
 }
 
-bool FConsoleManager::SetBool(const char* Name, bool Value, EConsoleVariableSetBy SetBy)
+bool FConsole::SetBool(const char* Name, bool Value, EConsoleVariableSetBy SetBy)
 {
 	return SetFromString(Name, Value ? "1" : "0", SetBy);
 }
 
-bool FConsoleManager::SetInt(const char* Name, int Value, EConsoleVariableSetBy SetBy)
+bool FConsole::SetInt(const char* Name, int Value, EConsoleVariableSetBy SetBy)
 {
 	return SetFromString(Name, std::to_string(Value).c_str(), SetBy);
 }
 
-bool FConsoleManager::SetFloat(const char* Name, float Value, EConsoleVariableSetBy SetBy)
+bool FConsole::SetFloat(const char* Name, float Value, EConsoleVariableSetBy SetBy)
 {
 	return SetFromString(Name, std::to_string(Value).c_str(), SetBy);
 }
 
-bool FConsoleManager::SetString(const char* Name, const char* Value, EConsoleVariableSetBy SetBy)
+bool FConsole::SetString(const char* Name, const char* Value, EConsoleVariableSetBy SetBy)
 {
 	return SetFromString(Name, Value ? Value : "", SetBy);
 }
 
-bool FConsoleManager::SetFromString(const char* Name, const char* Value, EConsoleVariableSetBy SetBy)
+bool FConsole::SetFromString(const char* Name, const char* Value, EConsoleVariableSetBy SetBy)
 {
 	return SetByNameFromString(Name, Value, SetBy);
 }
 
-int FConsoleManager::ApplyConsoleVariablesSection(
+int FConsole::ApplyConsoleVariablesSection(
 	const FConfigFile& Config,
 	const char* SectionName,
 	EConsoleVariableSetBy SetBy)
@@ -665,7 +665,7 @@ int FConsoleManager::ApplyConsoleVariablesSection(
 	return Applied;
 }
 
-int FConsoleManager::LoadConsoleVariablesFromIni(const std::string& IniFilePath)
+int FConsole::LoadConsoleVariablesFromIni(const std::string& IniFilePath)
 {
 	FConfigFile Config;
 	if (!Config.Load(IniFilePath))
@@ -681,14 +681,14 @@ int FConsoleManager::LoadConsoleVariablesFromIni(const std::string& IniFilePath)
 	return ApplyConsoleVariablesSection(Config, "ConsoleVariables", EConsoleVariableSetBy::ConsoleVariablesIni);
 }
 
-std::vector<std::string> FConsoleManager::GetNames() const
+std::vector<std::string> FConsole::GetNames() const
 {
-	FConsoleManagerStorage& Storage = GetConsoleManagerStorage();
+	FConsoleStorage& Storage = GetConsoleStorage();
 	std::lock_guard<std::mutex> Lock(Storage.Mutex);
 	return Storage.RegistrationOrder;
 }
 
-void FConsoleManager::Dump() const
+void FConsole::Dump() const
 {
 	for (const std::string& Name : GetNames())
 	{
@@ -748,22 +748,22 @@ static TAutoConsoleVariable GCVarClearColorA(
 	1.0f,
 	"Default clear color A");
 
-void ApplyEngineCVarsToConfig(FEngineConfig& OutConfig)
+void ApplyEngineCVarsToConfig(FConfig& OutConfig)
 {
-	const std::string AppName = FConsoleManager::Get().GetString("app.Name", OutConfig.ApplicationName.c_str());
+	const std::string AppName = FConsole::Get().GetString("app.Name", OutConfig.ApplicationName.c_str());
 	if (!AppName.empty())
 	{
 		OutConfig.ApplicationName = AppName;
 	}
 
-	OutConfig.WindowWidth = FConsoleManager::Get().GetInt("catty.Window.Width", OutConfig.WindowWidth);
-	OutConfig.WindowHeight = FConsoleManager::Get().GetInt("catty.Window.Height", OutConfig.WindowHeight);
-	OutConfig.bResizableWindow = FConsoleManager::Get().GetBool("catty.Window.Resizable", OutConfig.bResizableWindow);
-	OutConfig.bCreateMainWindow = FConsoleManager::Get().GetBool("catty.Window.Create", OutConfig.bCreateMainWindow);
-	OutConfig.ClearColorR = FConsoleManager::Get().GetFloat("catty.ClearColor.R", OutConfig.ClearColorR);
-	OutConfig.ClearColorG = FConsoleManager::Get().GetFloat("catty.ClearColor.G", OutConfig.ClearColorG);
-	OutConfig.ClearColorB = FConsoleManager::Get().GetFloat("catty.ClearColor.B", OutConfig.ClearColorB);
-	OutConfig.ClearColorA = FConsoleManager::Get().GetFloat("catty.ClearColor.A", OutConfig.ClearColorA);
+	OutConfig.WindowWidth = FConsole::Get().GetInt("catty.Window.Width", OutConfig.WindowWidth);
+	OutConfig.WindowHeight = FConsole::Get().GetInt("catty.Window.Height", OutConfig.WindowHeight);
+	OutConfig.bResizableWindow = FConsole::Get().GetBool("catty.Window.Resizable", OutConfig.bResizableWindow);
+	OutConfig.bCreateMainWindow = FConsole::Get().GetBool("catty.Window.Create", OutConfig.bCreateMainWindow);
+	OutConfig.ClearColorR = FConsole::Get().GetFloat("catty.ClearColor.R", OutConfig.ClearColorR);
+	OutConfig.ClearColorG = FConsole::Get().GetFloat("catty.ClearColor.G", OutConfig.ClearColorG);
+	OutConfig.ClearColorB = FConsole::Get().GetFloat("catty.ClearColor.B", OutConfig.ClearColorB);
+	OutConfig.ClearColorA = FConsole::Get().GetFloat("catty.ClearColor.A", OutConfig.ClearColorA);
 }
 
 } // namespace Catty

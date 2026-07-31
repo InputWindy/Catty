@@ -11,10 +11,13 @@ namespace Catty
 
 class FApp;
 
-/** Ordering band for FApp RebuildOrder (Module before Layer before Overlay). */
+/**
+ * Ordering band for FApp RebuildOrder (System before Layer before Overlay).
+ * System = in-engine feature systems; Module (DLL plugins) typically use Overlay/Layer.
+ */
 enum class EExtensionPriority : std::uint8_t
 {
-	Module = 0,
+	System = 0,
 	Layer = 1,
 	Overlay = 2,
 };
@@ -58,7 +61,7 @@ private:
 	void SetPriority(EExtensionPriority InPriority) { Priority = InPriority; }
 	void SetCurrentStage(EEngineStage Stage) { CurrentStage = Stage; }
 
-	EExtensionPriority Priority = EExtensionPriority::Module;
+	EExtensionPriority Priority = EExtensionPriority::System;
 	EEngineStage CurrentStage = EEngineStage::COUNT;
 };
 

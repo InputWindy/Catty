@@ -13,7 +13,7 @@ namespace Catty
 {
 
 class UPackage;
-class FGC;
+class FGCSystem;
 class UObject;
 
 /**
@@ -55,8 +55,8 @@ public:
 
 private:
 	friend class UPackage;
-	friend class FResourceManager;
-	friend class FGC;
+	friend class FResourceSystem;
+	friend class FGCSystem;
 	friend class UObject;
 	friend struct FPropertyValue;
 
@@ -178,7 +178,7 @@ public:
 	virtual void SetReferencedObjects(const std::vector<UObject*>& InObjects);
 
 	/**
-	 * FGC pool TearDown — called after RefCount hits 0, before pool Free.
+	 * FGCSystem pool TearDown — called after RefCount hits 0, before pool Free.
 	 * Override for type-specific cleanup (unregister catalogs, clear tables, …).
 	 * Default is no-op. Codegen registers pools with this virtual; no StaticTearDown.
 	 */
@@ -222,8 +222,8 @@ protected:
 private:
 	friend class FObjectRef;
 	friend class UPackage;
-	friend class FResourceManager;
-	friend class FGC;
+	friend class FResourceSystem;
+	friend class FGCSystem;
 	friend struct FPropertyValue;
 
 	// ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ private:
 	// ---------------------------------------------------------------------------
 	// Fields
 	// ---------------------------------------------------------------------------
-	FGC* GC = nullptr;
+	FGCSystem* GC = nullptr;
 	/** Outer package pin. Empty for UPackage, or runtime-only objects. */
 	FObjectRef Outer;
 	std::uint32_t RefCount = 0;

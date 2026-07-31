@@ -294,7 +294,7 @@ fs::path FPaths::GetExecutableDir()
 	return fs::current_path(ErrorCode);
 }
 
-void FPaths::Initialize(FEngineConfig& InOutConfig)
+void FPaths::Initialize(FConfig& InOutConfig)
 {
 	const fs::path ExeDir = GetExecutableDir();
 	const fs::path ProjectRoot = DetectProjectDir(ExeDir);

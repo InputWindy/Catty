@@ -1,6 +1,6 @@
 ﻿#include <Core/Extension/GC.h>
 
-#include <Core/System/ConsoleManager.h>
+#include <Core/System/Console.h>
 #include <Core/Application/App.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
@@ -28,12 +28,12 @@ static TAutoConsoleVariable GCVarPurgeInterval(
 
 } // namespace
 
-FGC::~FGC()
+FGCSystem::~FGCSystem()
 {
 	Shutdown();
 }
 
-bool FGC::Initialize()
+bool FGCSystem::Initialize()
 {
 	if (bInitialized)
 	{
@@ -48,7 +48,7 @@ bool FGC::Initialize()
 	return true;
 }
 
-void FGC::Shutdown()
+void FGCSystem::Shutdown()
 {
 	if (!bInitialized)
 	{
@@ -61,7 +61,7 @@ void FGC::Shutdown()
 	if (!LiveObjects.empty() || !PendingKill.empty())
 	{
 		CATTY_CORE_ERROR(
-			"FGC::Shutdown: refuse — {} live / {} pending-kill object(s); "
+			"FGCSystem::Shutdown: refuse — {} live / {} pending-kill object(s); "
 			"FApp must WaitForExit until GC IsIdle before unloading GC module",
 			LiveObjects.size(),
 			PendingKill.size());
@@ -75,11 +75,11 @@ void FGC::Shutdown()
 	CATTY_CORE_INFO("GC shut down");
 }
 
-void FGC::RegisterObject(UObject& Object)
+void FGCSystem::RegisterObject(UObject& Object)
 {
 	if (!bInitialized)
 	{
-		CATTY_CORE_ERROR("FGC::RegisterObject: not initialized");
+		CATTY_CORE_ERROR("FGCSystem::RegisterObject: not initialized");
 		return;
 	}
 
@@ -87,7 +87,7 @@ void FGC::RegisterObject(UObject& Object)
 	LiveObjects.push_back(&Object);
 }
 
-FObjectRef FGC::FindPackage(const std::string& PackageName) const
+FObjectRef FGCSystem::FindPackage(const std::string& PackageName) const
 {
 	if (!bInitialized)
 	{
@@ -122,7 +122,7 @@ FObjectRef FGC::FindPackage(const std::string& PackageName) const
 	return {};
 }
 
-FObjectRef FGC::FindObject(const std::string& PackageName, const std::string& ObjectName) const
+FObjectRef FGCSystem::FindObject(const std::string& PackageName, const std::string& ObjectName) const
 {
 	if (!bInitialized || ObjectName.empty())
 	{
@@ -169,7 +169,7 @@ FObjectRef FGC::FindObject(const std::string& PackageName, const std::string& Ob
 	return {};
 }
 
-FObjectRef FGC::FindObject(const std::string& PathName) const
+FObjectRef FGCSystem::FindObject(const std::string& PathName) const
 {
 	if (!bInitialized || PathName.empty())
 	{
@@ -182,7 +182,7 @@ FObjectRef FGC::FindObject(const std::string& PathName) const
 		if (SoftPath.HasSubPath())
 		{
 			CATTY_CORE_WARN(
-				"FGC::FindObject: subobject path not implemented yet ('{}') — resolving asset only",
+				"FGCSystem::FindObject: subobject path not implemented yet ('{}') — resolving asset only",
 				SoftPath.ToStringWithoutClass());
 		}
 		return FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName());
@@ -191,7 +191,7 @@ FObjectRef FGC::FindObject(const std::string& PathName) const
 	return FindPackage(PathName);
 }
 
-void FGC::UnregisterObject(UObject& Object)
+void FGCSystem::UnregisterObject(UObject& Object)
 {
 	LiveObjects.erase(
 		std::remove(LiveObjects.begin(), LiveObjects.end(), &Object),
@@ -200,17 +200,17 @@ void FGC::UnregisterObject(UObject& Object)
 	Object.GC = nullptr;
 }
 
-void FGC::RemoveFromPendingKill(UObject* Object)
+void FGCSystem::RemoveFromPendingKill(UObject* Object)
 {
 	PendingKill.erase(std::remove(PendingKill.begin(), PendingKill.end(), Object), PendingKill.end());
 }
 
-bool FGC::IsKeptAlive(const UObject& Object)
+bool FGCSystem::IsKeptAlive(const UObject& Object)
 {
 	return Object.GetRefCount() > 0;
 }
 
-void FGC::FinalizeDeadObject(UObject* Object)
+void FGCSystem::FinalizeDeadObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -220,7 +220,7 @@ void FGC::FinalizeDeadObject(UObject* Object)
 	if (IsKeptAlive(*Object))
 	{
 		CATTY_CORE_ERROR(
-			"FGC::FinalizeDeadObject: '{}' still has RefCount {} — refuse finalize",
+			"FGCSystem::FinalizeDeadObject: '{}' still has RefCount {} — refuse finalize",
 			Object->GetPathName(),
 			Object->GetRefCount());
 		return;
@@ -229,7 +229,7 @@ void FGC::FinalizeDeadObject(UObject* Object)
 	if (!TearDownPooledObject(Object))
 	{
 		CATTY_CORE_ERROR(
-			"FGC::FinalizeDeadObject: no pooled type claimed TearDown for '{}'",
+			"FGCSystem::FinalizeDeadObject: no pooled type claimed TearDown for '{}'",
 			Object->GetPathName());
 	}
 
@@ -238,29 +238,29 @@ void FGC::FinalizeDeadObject(UObject* Object)
 	if (!FreePooledObject(Object))
 	{
 		CATTY_CORE_ERROR(
-			"FGC::FinalizeDeadObject: no pooled type claimed Free for '{}'",
+			"FGCSystem::FinalizeDeadObject: no pooled type claimed Free for '{}'",
 			Object->GetPathName());
 	}
 }
 
-bool FGC::IsIdle() const
+bool FGCSystem::IsIdle() const
 {
 	return !bInitialized || (LiveObjects.empty() && PendingKill.empty());
 }
 
-bool FGC::ExecuteStage(EEngineStage Stage)
+bool FGCSystem::ExecuteStage(EEngineStage Stage)
 {
 	switch (Stage)
 	{
 	case EEngineStage::Init:
 		if (!Initialize())
 		{
-			CATTY_CORE_ERROR("FGC: Initialize failed");
+			CATTY_CORE_ERROR("FGCSystem: Initialize failed");
 			return false;
 		}
 		if (!IsInitialized())
 		{
-			CATTY_CORE_ERROR("FGC: must be initialized after Init");
+			CATTY_CORE_ERROR("FGCSystem: must be initialized after Init");
 			return false;
 		}
 		return true;
@@ -285,7 +285,7 @@ bool FGC::ExecuteStage(EEngineStage Stage)
 	}
 }
 
-bool FGC::TearDownPooledObject(UObject* Object)
+bool FGCSystem::TearDownPooledObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -302,7 +302,7 @@ bool FGC::TearDownPooledObject(UObject* Object)
 	return false;
 }
 
-bool FGC::FreePooledObject(UObject* Object)
+bool FGCSystem::FreePooledObject(UObject* Object)
 {
 	if (!Object)
 	{
@@ -319,7 +319,7 @@ bool FGC::FreePooledObject(UObject* Object)
 	return false;
 }
 
-void FGC::QueueUnreferenced()
+void FGCSystem::QueueUnreferenced()
 {
 	for (UObject* Object : LiveObjects)
 	{
@@ -350,7 +350,7 @@ void FGC::QueueUnreferenced()
 	}
 }
 
-void FGC::CollectGarbage()
+void FGCSystem::CollectGarbage()
 {
 	if (!bInitialized)
 	{
@@ -360,7 +360,7 @@ void FGC::CollectGarbage()
 	QueueUnreferenced();
 }
 
-void FGC::PurgePendingKill()
+void FGCSystem::PurgePendingKill()
 {
 	if (!bInitialized || PendingKill.empty())
 	{
@@ -395,7 +395,7 @@ void FGC::PurgePendingKill()
 	}
 }
 
-void FGC::Tick(float DeltaSeconds)
+void FGCSystem::Tick(float DeltaSeconds)
 {
 	if (!bInitialized)
 	{
@@ -424,13 +424,13 @@ void FGC::Tick(float DeltaSeconds)
 namespace Detail
 {
 
-FGC* GetGC()
+FGCSystem* GetGCSystem()
 {
 	if (!GApp)
 	{
 		return nullptr;
 	}
-	return GApp->GetExtension<FGC>();
+	return GApp->GetExtension<FGCSystem>();
 }
 
 } // namespace Detail

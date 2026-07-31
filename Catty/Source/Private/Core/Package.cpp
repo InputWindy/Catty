@@ -1,7 +1,7 @@
 ﻿#include <Core/Object/Package.h>
 
 #include <Core/System/Log.h>
-#include <Core/Modules/Resource.h>
+#include <Core/Extension/Resource.h>
 
 #include <unordered_map>
 #include <vector>

@@ -4,7 +4,7 @@
 #include <Core/System/Log.h>
 #include <Core/Object/Object.h>
 #include <Core/System/Paths.h>
-#include <Core/Extension/ResourceManager.h>
+#include <Core/Extension/Resource.h>
 
 #include <cctype>
 
@@ -251,7 +251,7 @@ bool FSoftObjectPath::operator==(const FSoftObjectPath& Other) const
 
 FObjectRef FSoftObjectPath::Resolve() const
 {
-	FGC* GC = Detail::GetGC();
+	FGCSystem* GC = Detail::GetGCSystem();
 	if (!GC || !IsValid())
 	{
 		return {};
@@ -267,7 +267,7 @@ FObjectRef FSoftObjectPath::Resolve() const
 
 FObjectRef FSoftObjectPath::TryLoad() const
 {
-	FResourceManager* Manager = Detail::GetResourceManager();
+	FResourceSystem* Manager = Detail::GetResourceSystem();
 	return Manager ? Manager->TryLoad(*this) : FObjectRef{};
 }
 

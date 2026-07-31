@@ -5,14 +5,14 @@
 namespace Catty
 {
 
-bool FWorkerPoolModule::ExecuteStage(EEngineStage Stage)
+bool FWorkerPoolSystem::ExecuteStage(EEngineStage Stage)
 {
 	switch (Stage)
 	{
 	case EEngineStage::Init:
 		if (!Pool.Initialize())
 		{
-			CATTY_CORE_ERROR("FWorkerPoolModule: Initialize failed");
+			CATTY_CORE_ERROR("FWorkerPoolSystem: Initialize failed");
 			return false;
 		}
 		return true;
@@ -27,7 +27,7 @@ bool FWorkerPoolModule::ExecuteStage(EEngineStage Stage)
 	}
 }
 
-bool FWorkerPoolModule::IsIdle() const
+bool FWorkerPoolSystem::IsIdle() const
 {
 	return !Pool.IsInitialized() || Pool.IsIdle();
 }

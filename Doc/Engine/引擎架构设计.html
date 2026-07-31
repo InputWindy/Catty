@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -188,7 +188,7 @@ flowchart TB
 					<td>替换 Module；不是独立调度器</td>
 				</tr>
 				<tr>
-					<td><code>FEngineConfig</code></td>
+					<td><code>FConfig</code></td>
 					<td>路径、窗口、清屏色等配置</td>
 					<td>运行时子系统实例</td>
 				</tr>
@@ -286,17 +286,17 @@ flowchart TB
 			<thead><tr><th>Module</th><th>依赖</th><th>Init 要点</th><th>Tick / 其它 stage</th></tr></thead>
 			<tbody>
 				<tr><td><code>FEngineModule</code></td><td>—</td><td><code>FEngine::Initialize</code></td><td>Update：<code>Engine.Tick</code></td></tr>
-				<tr><td><code>FPlatformModule</code></td><td>Engine</td><td>创建 Window / Headless</td><td>BeginFrame：PollEvents；EndFrame：headless 自动退出</td></tr>
-				<tr><td><code>FRenderModule</code></td><td>Platform</td><td>RenderServer + RHI</td><td>BeginFrame：Resize；PostRender：无 ImGui 时 clear/present/flush</td></tr>
+				<tr><td><code>FPlatformSystemModule</code></td><td>Engine</td><td>创建 Window / Headless</td><td>BeginFrame：PollEvents；EndFrame：headless 自动退出</td></tr>
+				<tr><td><code>FRenderSystemModule</code></td><td>Platform</td><td>RenderServer + RHI</td><td>BeginFrame：Resize；PostRender：无 ImGui 时 clear/present/flush</td></tr>
 				<tr><td><code>FImGuiModule</code></td><td>Render, Platform</td><td>有 OS 窗体才 Init</td><td>BeginFrame NewFrame；ProcessInput Escape；PostRender EndFrame+Present+Flush</td></tr>
-				<tr><td><code>FGCModule</code></td><td>ImGui</td><td><code>GCManager::Initialize</code></td><td>Update：<code>GCManager.Tick</code></td></tr>
-				<tr><td><code>FResourceModule</code></td><td>GC</td><td><code>ResourceManager::Initialize(GC)</code>；订阅 <code>App.GetScriptSystem().OnLuaReady</code></td><td>—</td></tr>
+				<tr><td><code>FGCSystemModule</code></td><td>ImGui</td><td><code>GCManager::Initialize</code></td><td>Update：<code>GCManager.Tick</code></td></tr>
+				<tr><td><code>FResourceSystemModule</code></td><td>GC</td><td><code>ResourceManager::Initialize(GC)</code>；订阅 <code>App.GetScriptSystem().OnLuaReady</code></td><td>—</td></tr>
 				<tr><td><code>FWorkerModule</code></td><td>Resource</td><td><code>WorkerPool::Initialize</code></td><td>—</td></tr>
 			</tbody>
 		</table>
-		<p class="note">Lua 不在 Module DAG：游戏 Push <code>FScriptLayer</code>；<code>FScriptSystem</code> 与 <code>FLog</code> / <code>FConsoleManager</code> / <code>FTimer</code> 同级由 <code>FApp</code> 托管，经 <code>GApp</code> / <code>GetScriptSystem()</code> 访问。默认引擎 Module 用 <code>RegisterEngineModules(*this)</code> 由游戏主动拉取。</p>
+		<p class="note">Lua 不在 Module DAG：游戏 Push <code>FScriptLayer</code>；<code>FScriptSystem</code> 与 <code>FLog</code> / <code>FConsole</code> / <code>FTimer</code> 同级由 <code>FApp</code> 托管，经 <code>GApp</code> / <code>GetScriptSystem()</code> 访问。默认引擎 Module 用 <code>RegisterEngineModules(*this)</code> 由游戏主动拉取。</p>
 		<ul>
-			<li>访问：<code>App.GetModule&lt;FRenderModule&gt;()-&gt;GetServer()</code>，无 <code>GetRenderServer</code> 等特化 getter。</li>
+			<li>访问：<code>App.GetModule&lt;FRenderSystemModule&gt;()-&gt;GetServer()</code>，无 <code>GetRenderServer</code> 等特化 getter。</li>
 			<li>拓扑并列节点按 <b>注册顺序</b> 出队，保证启动序稳定。</li>
 		</ul>
 	</div>
@@ -390,11 +390,11 @@ sequenceDiagram
 		<pre class="mermaid">
 flowchart TB
   subgraph Mods["FApp Modules"]
-    GCMod["FGCModule"]
-    ResMod["FResourceModule"]
+    GCMod["FGCSystemModule"]
+    ResMod["FResourceSystemModule"]
   end
-  GCMod --> GC["FGCManager"]
-  ResMod --> RM["FResourceManager"]
+  GCMod --> GC["FGCSystemManager"]
+  ResMod --> RM["FResourceSystem"]
   RM -->|"Register / DestroyHandler"| GC
   RM --> RS["FResourceServer"]
   RM --> PkgPool["Pool UPackage"]
@@ -411,8 +411,8 @@ flowchart TB
 		<pre class="mermaid">
 sequenceDiagram
   participant App as FApp
-  participant GCMod as FGCModule
-  participant ResMod as FResourceModule
+  participant GCMod as FGCSystemModule
+  participant ResMod as FResourceSystemModule
   participant RM as ResourceManager
   participant GC as GCManager
   participant RS as ResourceServer

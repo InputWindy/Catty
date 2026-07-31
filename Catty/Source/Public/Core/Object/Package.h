@@ -11,7 +11,7 @@
 namespace Catty
 {
 
-class FResourceManager;
+class FResourceSystem;
 
 /**
  * Package residency / save policy (UE PKG_* lite).
@@ -66,7 +66,7 @@ inline EPackageFlags& operator&=(EPackageFlags& A, EPackageFlags B)
  *
  * Example:
  * ```
- *   Catty::FGC* GC = Catty::Detail::GetGC();
+ *   Catty::FGCSystem* GC = Catty::Detail::GetGCSystem();
  *   Catty::FObjectRef PkgRef = GC->NewObject<Catty::UPackage>(
  *       "/Game/Maps/Demo", Catty::EPackageFlags::Persistent);
  * ```
@@ -77,7 +77,7 @@ class CATTY_API UPackage : public UObject
 	CATTY_GENERATED_BODY()
 
 public:
-	/** Initial FGC pool chunk slots (codegen RegisterGeneratedGCPooledTypes). */
+	/** Initial FGCSystem pool chunk slots (codegen RegisterGeneratedGCPooledTypes). */
 	static constexpr int PoolSize = 16;
 
 	UPackage(std::string InName, EPackageFlags InFlags = EPackageFlags::Transient);
@@ -110,7 +110,7 @@ public:
 	}
 
 private:
-	friend class FResourceManager;
+	friend class FResourceSystem;
 	friend class UObject;
 
 	// ---------------------------------------------------------------------------
