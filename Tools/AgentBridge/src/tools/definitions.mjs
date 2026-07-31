@@ -26,32 +26,16 @@ export function createDefaultToolRegistry() {
 
   registry.register({
     name: "world.get_summary",
-    description: "Return the current MockWorld revision and entity counts.",
+    description: "Return the current world revision and entity counts.",
     schema: emptyObjectSchema,
     mutates_world: false,
     undoable: false,
-    execute: ({ world }) => {
-      const by_primitive_type = {};
-      for (const entity of world.entities.values()) {
-        by_primitive_type[entity.primitive_type] =
-          (by_primitive_type[entity.primitive_type] || 0) + 1;
-      }
-      return {
-        data: {
-          world_id: world.world_id,
-          revision: world.revision,
-          entity_count: world.entities.size,
-          by_primitive_type,
-        },
-        changes: [],
-      };
-    },
   });
 
   registry.register({
     name: "world.query_entities",
     description:
-      "Query or list MockWorld entities. Omit filters to list all entities, or filter by exact name, entity type, or primitive type.",
+      "Query or list world entities. Omit filters to list all entities, or filter by exact name, entity type, or primitive type.",
     schema: {
       type: "object",
       properties: {
@@ -66,12 +50,6 @@ export function createDefaultToolRegistry() {
     },
     mutates_world: false,
     undoable: false,
-    execute: ({ world, args }) => ({
-      data: {
-        entities: world.queryEntities(args),
-      },
-      changes: [],
-    }),
   });
 
   registry.register({
@@ -80,17 +58,11 @@ export function createDefaultToolRegistry() {
     schema: entityIdSchema,
     mutates_world: false,
     undoable: false,
-    execute: ({ world, args }) => ({
-      data: {
-        entity: world.getEntity(args.entity_id),
-      },
-      changes: [],
-    }),
   });
 
   registry.register({
     name: "entity.spawn_primitive",
-    description: "Spawn a bounded MockWorld primitive entity.",
+    description: "Spawn a bounded primitive entity in the current world.",
     schema: {
       type: "object",
       required: ["primitive_type"],
@@ -106,20 +78,6 @@ export function createDefaultToolRegistry() {
     },
     mutates_world: true,
     undoable: true,
-    execute: ({ world, args }) => {
-      const entity = world.spawnPrimitive(args);
-      return {
-        data: { entity },
-        changes: [
-          {
-            operation: "spawn",
-            entity_id: entity.entity_id,
-            before: null,
-            after: entity,
-          },
-        ],
-      };
-    },
   });
 
   registry.register({
@@ -136,20 +94,6 @@ export function createDefaultToolRegistry() {
     },
     mutates_world: true,
     undoable: true,
-    execute: ({ world, args }) => {
-      const changed = world.setTransform(args.entity_id, args.transform);
-      return {
-        data: { entity: changed.after },
-        changes: [
-          {
-            operation: "set_transform",
-            entity_id: args.entity_id,
-            before: changed.before,
-            after: changed.after,
-          },
-        ],
-      };
-    },
   });
 
   registry.register({
@@ -191,25 +135,6 @@ export function createDefaultToolRegistry() {
     },
     mutates_world: true,
     undoable: true,
-    execute: ({ world, args }) => {
-      const changed = world.setProperty(
-        args.entity_id,
-        args.property_name,
-        args.value
-      );
-      return {
-        data: { entity: changed.after },
-        changes: [
-          {
-            operation: "set_property",
-            entity_id: args.entity_id,
-            property_name: args.property_name,
-            before: changed.before,
-            after: changed.after,
-          },
-        ],
-      };
-    },
   });
 
   registry.register({
@@ -218,25 +143,11 @@ export function createDefaultToolRegistry() {
     schema: entityIdSchema,
     mutates_world: true,
     undoable: true,
-    execute: ({ world, args }) => {
-      const entity = world.destroyEntity(args.entity_id);
-      return {
-        data: { entity_id: args.entity_id },
-        changes: [
-          {
-            operation: "destroy",
-            entity_id: args.entity_id,
-            before: entity,
-            after: null,
-          },
-        ],
-      };
-    },
   });
 
   registry.register({
     name: "history.undo",
-    description: "Undo the latest successful MockWorld write transaction.",
+    description: "Undo the latest successful world write transaction.",
     schema: {
       type: "object",
       properties: {
@@ -246,8 +157,6 @@ export function createDefaultToolRegistry() {
     },
     mutates_world: true,
     undoable: false,
-    execute: ({ world, args, undo_journal }) =>
-      undo_journal.undo(world, args.undo_token),
   });
 
   return registry;

@@ -7,10 +7,13 @@ import { AgentService } from "../../src/agent/agent-service.mjs";
 import { LegacyChatService } from "../../src/agent/legacy-chat-service.mjs";
 import { MockProvider } from "../../src/agent/providers/mock-provider.mjs";
 import { CommandExecutor } from "../../src/execution/command-executor.mjs";
-import { UndoJournal } from "../../src/history/undo-journal.mjs";
 import { AuditLog } from "../../src/logging/audit-log.mjs";
 import { SessionManager } from "../../src/sessions/session-manager.mjs";
 import { createDefaultToolRegistry } from "../../src/tools/definitions.mjs";
+import {
+  WorldAdapterFactory,
+  worldAdapterConfigDefaults,
+} from "../../src/world/world-adapter-factory.mjs";
 
 export async function startLegacyTestServer(overrides = {}) {
   const temporary_dir = await fs.mkdtemp(
@@ -28,14 +31,20 @@ export async function startLegacyTestServer(overrides = {}) {
   };
   const legacyChatService = new LegacyChatService(config);
   await legacyChatService.initialize();
-  const session_manager = new SessionManager();
   const tool_registry = createDefaultToolRegistry();
-  const undo_journal = new UndoJournal();
+  const world_adapter_factory = new WorldAdapterFactory({
+    config: overrides.world_config || {
+      ...worldAdapterConfigDefaults,
+    },
+    tool_registry,
+  });
+  const session_manager = new SessionManager({
+    world_adapter_factory,
+  });
   const audit_log = new AuditLog({ data_dir: config.data_dir });
   const command_executor = new CommandExecutor({
     session_manager,
     tool_registry,
-    undo_journal,
     audit_log,
   });
   const provider = overrides.provider || new MockProvider();
@@ -69,7 +78,7 @@ export async function startLegacyTestServer(overrides = {}) {
     legacyChatService,
     session_manager,
     tool_registry,
-    undo_journal,
+    world_adapter_factory,
     command_executor,
     agent_service,
     audit_log,
@@ -80,6 +89,7 @@ export async function startLegacyTestServer(overrides = {}) {
         await new Promise((resolve) => server.close(resolve));
       }
       await legacyChatService.close();
+      await session_manager.close();
       await fs.rm(temporary_dir, { recursive: true, force: true });
     },
   };

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const SENSITIVE_KEY_PATTERN =
-  /authorization|api[_-]?key|secret|password|credential|reasoning_content/i;
+  /authorization|auth[_-]?token|api[_-]?key|secret|password|credential|reasoning_content/i;
 
 function sanitize(value) {
   if (Array.isArray(value)) {
@@ -51,6 +51,23 @@ export class AuditLog {
       finalization_failed: record.finalization_failed ?? false,
       timeout: record.timeout ?? false,
       cancelled: record.cancelled ?? false,
+      world_adapter: record.world_adapter ?? null,
+      adapter_protocol_version:
+        record.adapter_protocol_version ?? null,
+      adapter_request_phase:
+        record.adapter_request_phase ?? null,
+      adapter_duration_ms:
+        record.adapter_duration_ms ?? 0,
+      adapter_http_status:
+        record.adapter_http_status ?? null,
+      adapter_replayed:
+        record.adapter_replayed ?? false,
+      adapter_timeout:
+        record.adapter_timeout ?? false,
+      adapter_cancelled:
+        record.adapter_cancelled ?? false,
+      remote_error_class:
+        record.remote_error_class ?? null,
       user_message: record.user_message ?? null,
       before_revision: record.before_revision ?? null,
       after_revision: record.after_revision ?? null,

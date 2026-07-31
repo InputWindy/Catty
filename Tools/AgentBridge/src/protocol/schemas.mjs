@@ -54,6 +54,73 @@ export const entityPropertiesSchema = {
   additionalProperties: false,
 };
 
+export const entitySchema = {
+  type: "object",
+  required: [
+    "entity_id",
+    "generation",
+    "name",
+    "entity_type",
+    "primitive_type",
+    "transform",
+    "properties",
+  ],
+  properties: {
+    entity_id: { type: "string", minLength: 1, maxLength: 128 },
+    generation: {
+      type: "integer",
+      minimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    },
+    name: { type: "string", minLength: 1, maxLength: 128 },
+    entity_type: { const: "primitive" },
+    primitive_type: {
+      enum: ["cube", "sphere", "cylinder", "plane"],
+    },
+    transform: {
+      type: "object",
+      required: ["position", "rotation", "scale"],
+      properties: {
+        position: positionSchema,
+        rotation: rotationSchema,
+        scale: scaleSchema,
+      },
+      additionalProperties: false,
+    },
+    properties: {
+      type: "object",
+      required: ["color", "visible", "label"],
+      properties: entityPropertiesSchema.properties,
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+};
+
+export const worldSnapshotSchema = {
+  type: "object",
+  required: ["world_id", "revision", "entities", "history"],
+  properties: {
+    world_id: { type: "string", minLength: 1, maxLength: 128 },
+    revision: {
+      type: "integer",
+      minimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    },
+    entities: {
+      type: "array",
+      items: entitySchema,
+    },
+    history: {
+      type: "array",
+    },
+    adapter_metadata: {
+      type: "object",
+    },
+  },
+  additionalProperties: false,
+};
+
 export const envelopeSchema = {
   type: "object",
   required: [

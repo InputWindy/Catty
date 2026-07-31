@@ -1,13 +1,14 @@
 # Catty AgentBridge
 
 AgentBridge is a loopback-only Node.js service used by the existing Catty editor
-Agent panel. It preserves the legacy chat API and provides Agent Core v0.3,
-backed by an in-memory `MockWorld`.
+Agent panel. It preserves the legacy chat API and Agent Protocol v1 while
+providing Agent Core v0.4 with a selectable `WorldAdapter`.
 
-The v0.3 theme is **Generic AI Provider Architecture and DeepSeek
-Integration**. Real model planning is no longer coupled to Cursor SDK:
-MockProvider, DeepSeek, generic OpenAI-compatible Chat Completions, and the
-optional CursorProvider implement one internal Provider contract.
+Agent Core v0.4 adds the **World Adapter Abstraction and Remote World
+Protocol**. It keeps the v0.3 Generic AI Provider architecture: real model
+planning is not coupled to Cursor SDK, and MockProvider, DeepSeek, generic
+OpenAI-compatible Chat Completions, and the optional CursorProvider implement
+one internal Provider contract.
 
 Agent Core does **not** connect to the C++ game world in this version. It does
 not expose shell commands, file tools, Lua execution, C++ reflection, pointers,
@@ -15,7 +16,7 @@ WebSockets, rendering, physics, or multiplayer features.
 
 ## Architecture
 
-The v0.3 request path is:
+The v0.4 request path is:
 
 ```text
 natural language
@@ -27,8 +28,10 @@ natural language
   -> structured ToolCall
   -> ToolRegistry + Ajv validation
   -> CommandExecutor
-  -> MockWorld
-  -> ChangeSet + UndoJournal
+  -> WorldAdapterFactory
+       -> MockWorldAdapter -> MockWorld + UndoJournal
+       -> RemoteWorldAdapter -> Catty World Adapter Protocol v1
+  -> authoritative ToolResult + ChangeSet
   -> HTTP response + JSONL audit log
 ```
 
@@ -36,14 +39,15 @@ natural language
 the HTTP router, starts the server, and coordinates shutdown. Business logic is
 under `src/`.
 
-Provider code can only plan ToolCalls. It cannot modify MockWorld.
-`CommandExecutor` remains the only execution path, and ToolResult remains the
-only authority for success.
+Provider code can only plan ToolCalls. It cannot access MockWorld or a remote
+transport. `CommandExecutor` remains the only Agent Core execution path, and
+the selected WorldAdapter is authoritative for snapshots, revisions, changes,
+transactions, idempotency, and undo.
 
 The existing `@cursor/sdk` dependency is retained. Version 1.0.26 exposes
 `customTools`; `CursorProvider` uses those callbacks only to capture internal
-ToolCalls and runs the SDK in plan mode. The callback does not modify
-`MockWorld`. The SDK is dynamically imported only when Cursor is selected.
+ToolCalls and runs the SDK in plan mode. The callback does not execute world
+operations. The SDK is dynamically imported only when Cursor is selected.
 
 OpenAICompatibleProvider uses the Node.js 22 built-in `fetch` and standard Chat
 Completions `/chat/completions`; no additional HTTP SDK is required. DeepSeek
@@ -62,15 +66,19 @@ cd Tools\AgentBridge
 npm install
 npm test
 npm run eval
+npm run eval:remote
+npm run smoke:remote
 ```
 
+`eval:remote` and `smoke:remote` start an isolated fake world server on a
+random loopback port. They do not contact a real external service.
+
 All default tests use `node:test`, random loopback ports, local fake HTTP
-servers, independent Sessions, and MockWorld. No DeepSeek/Cursor API key,
+servers, independent Sessions, and offline world adapters. No DeepSeek/Cursor API key,
 external network service, C++ game, or MyGame checkout is required.
 
-The install currently reports 3 dependency advisories (2 moderate and 1 high).
-They require separate analysis; this version does not run
-`npm audit fix --force` or upgrade unrelated dependencies.
+The verified v0.4 install reports zero dependency vulnerabilities. This task
+does not run `npm audit fix --force` or upgrade unrelated dependencies.
 
 ## Provider selection
 
@@ -95,6 +103,26 @@ Supported Provider IDs:
 See [AI Provider Architecture](docs/AI_PROVIDER_ARCHITECTURE.md) for the
 contract and lifecycle, and [DeepSeek Setup](docs/DEEPSEEK_SETUP.md) for real
 API configuration.
+
+## World adapter selection
+
+World selection is independent of Provider selection:
+
+- `mock` is the default and requires no network service.
+- `remote` is selected only by `CATTY_WORLD_ADAPTER=remote`.
+- A selected remote adapter never falls back to mock after configuration,
+  health, transport, protocol, validation, or execution failures.
+
+The remote protocol is a development integration boundary, not a public
+Internet API. Remote URLs are restricted to `127.0.0.1`, `localhost`, or
+`::1` by default.
+A non-loopback URL requires both `CATTY_WORLD_ALLOW_NON_LOOPBACK=1` and a
+non-empty `CATTY_WORLD_AUTH_TOKEN`. The token is sent only as a bearer
+authorization header and is excluded from metadata, CLI output, and audit
+records.
+
+See [World Adapter Architecture](docs/WORLD_ADAPTER_ARCHITECTURE.md) and
+[Catty World Adapter Protocol v1](docs/CATTY_WORLD_ADAPTER_PROTOCOL_V1.md).
 
 ## Run
 
@@ -129,13 +157,25 @@ Their precedence is:
 
 ## CLI demo
 
-The CLI creates its own in-memory Session, MockWorld, ToolRegistry,
-CommandExecutor, AgentService, and selected Provider. It does not start the
-HTTP server or occupy a port. With no Provider environment variables it remains
-fully offline:
+The CLI creates its own Session, WorldAdapter, ToolRegistry, CommandExecutor,
+AgentService, and selected Provider. It does not start the AgentBridge HTTP
+server or occupy a port. With no Provider or world environment variables it
+uses MockProvider + MockWorldAdapter and remains fully offline:
 
 ```powershell
 cd Tools\AgentBridge
+npm run demo
+```
+
+Remote CLI demo against the included fake server:
+
+```powershell
+# Window 1
+npm run world:fake
+
+# Window 2
+$env:CATTY_WORLD_ADAPTER = "remote"
+$env:CATTY_WORLD_BASE_URL = "http://127.0.0.1:8770"
 npm run demo
 ```
 
@@ -188,7 +228,7 @@ Run all checked-in deterministic behavior cases with:
 npm run eval
 ```
 
-Every scenario uses MockProvider with a fresh Session and MockWorld. No Cursor
+Every scenario uses MockProvider with a fresh Session and MockWorldAdapter. No Cursor
 API key, model service, or external network is used. JSON files under
 `evals/cases/` define single- and multi-turn conversations separately from the
 runner. The suite checks replies, tool names/counts, revision changes, undo
@@ -213,7 +253,7 @@ Target resolution is deterministic:
 5. the last created entity that still exists.
 
 Deleted or undone-away entities are removed from the context. Every reference
-is checked against the current MockWorld before use. Duplicate names or
+is checked against the current authoritative snapshot before use. Duplicate names or
 primitive matches, missing pronoun targets, and other uncertain references
 produce an assistant clarification with no ToolCall, revision change, or undo
 token.
@@ -249,6 +289,11 @@ are rejected without bypassing the existing JSON Schemas.
 | `CATTY_AGENT_PORT` | `8765` | Listen port; `--port` takes precedence |
 | `CATTY_AGENT_MOCK` | automatic | `1` forces MockProvider |
 | `CATTY_AGENT_DATA_DIR` | `Tools/AgentBridge/.runtime` | JSONL audit/runtime directory |
+| `CATTY_WORLD_ADAPTER` | `mock` | World adapter ID: `mock` or explicit `remote` |
+| `CATTY_WORLD_BASE_URL` | `http://127.0.0.1:8770` | Credential-free remote base URL |
+| `CATTY_WORLD_TIMEOUT_MS` | `5000` | Per-remote-world-request timeout |
+| `CATTY_WORLD_AUTH_TOKEN` | empty | Optional bearer token; required for non-loopback |
+| `CATTY_WORLD_ALLOW_NON_LOOPBACK` | `0` | Set to `1` only with a bearer token |
 | `CURSOR_API_KEY` | empty | Cursor SDK key; absence selects Mock mode |
 | `CATTY_AI_PROVIDER` | selection rules above | `mock`, `deepseek`, `openai-compatible`, or `cursor` |
 | `CATTY_AI_API_KEY` | empty | Generic Key; takes precedence over `DEEPSEEK_API_KEY` for DeepSeek |
@@ -272,7 +317,7 @@ non-loopback address.
 Generic OpenAI-compatible mode requires all of `CATTY_AI_BASE_URL`,
 `CATTY_AI_MODEL`, and `CATTY_AI_API_KEY`. It receives no DeepSeek-specific
 fields. DeepSeek defaults to `https://api.deepseek.com` and
-`deepseek-v4-flash`, both overridable by generic variables. Agent Core v0.3
+`deepseek-v4-flash`, both overridable by generic variables. Agent Core v0.4
 always disables thinking mode.
 
 ## Offline and real-network commands
@@ -360,18 +405,19 @@ Invoke-RestMethod -Method Post -Uri "$base/shutdown" `
   -ContentType "application/json" -Body "{}"
 ```
 
-## MockWorld and current integration limits
+## Current integration limits
 
-- All state is in memory and disappears when the process exits.
-- Each Session owns exactly one MockWorld.
+- State in the included Mock and fake implementations is in memory and
+  disappears when the process exits.
+- Each Session owns exactly one selected WorldAdapter.
+- The included fake remote server is test scaffolding, not a production engine.
 - Entities are primitives only: `cube`, `sphere`, `cylinder`, or `plane`.
 - Properties are restricted to `color`, `visible`, and `label`.
 - Rotation uses three Euler-angle numbers.
 - Undo is limited to the latest successful write transaction.
-- The UndoJournal stores a complete pre-transaction MockWorld snapshot.
-  This is intentionally temporary and must be replaced by a real world adapter
-  and engine-native change/undo mechanism when C++ integration is designed.
-- Agent Core v0.3 still has no C++ World adapter or game integration.
+- MockWorldAdapter uses an in-memory UndoJournal internally; RemoteWorldAdapter
+  retains only opaque undo tokens returned by the remote world.
+- Agent Core v0.4 does not include a production C++ adapter or game integration.
 - Session state and reference context are not persisted.
 - Provider finalization is limited to one text-only request; it cannot produce
   another executable ToolCall.

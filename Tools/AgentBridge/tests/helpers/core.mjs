@@ -1,28 +1,38 @@
 import { randomUUID } from "node:crypto";
 import { CommandExecutor } from "../../src/execution/command-executor.mjs";
-import { UndoJournal } from "../../src/history/undo-journal.mjs";
 import { NullAuditLog } from "../../src/logging/audit-log.mjs";
 import { SessionManager } from "../../src/sessions/session-manager.mjs";
 import { createDefaultToolRegistry } from "../../src/tools/definitions.mjs";
+import {
+  WorldAdapterFactory,
+  worldAdapterConfigDefaults,
+} from "../../src/world/world-adapter-factory.mjs";
 
 export function createTestCore({ audit_log = new NullAuditLog() } = {}) {
-  const session_manager = new SessionManager();
   const tool_registry = createDefaultToolRegistry();
-  const undo_journal = new UndoJournal();
+  const world_adapter_factory = new WorldAdapterFactory({
+    config: { ...worldAdapterConfigDefaults },
+    tool_registry,
+  });
+  const session_manager = new SessionManager({
+    world_adapter_factory,
+  });
   const command_executor = new CommandExecutor({
     session_manager,
     tool_registry,
-    undo_journal,
     audit_log,
   });
   const session = session_manager.createSession();
+  const adapter = session.adapter;
   return {
     session_manager,
     tool_registry,
-    undo_journal,
+    world_adapter_factory,
     command_executor,
     session,
-    world: session.world,
+    adapter,
+    world: adapter.mock_world,
+    undo_journal: adapter.undo_journal,
   };
 }
 
@@ -46,7 +56,7 @@ export async function execute(core, tool_calls, overrides = {}) {
     protocol_version: "1.0",
     request_id: randomUUID(),
     session_id: core.session.session_id,
-    world_id: core.world.world_id,
+    world_id: core.session.world_id,
     tool_calls,
     ...overrides,
   });

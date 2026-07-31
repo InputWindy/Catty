@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveProviderConfig } from "./agent/provider-config.mjs";
+import { resolveWorldAdapterConfig } from "./world/world-adapter-factory.mjs";
 
 const DEFAULT_PORT = 8765;
 const DEFAULT_BODY_LIMIT_BYTES = 1024 * 1024;
@@ -72,6 +73,7 @@ export function loadConfig({
     legacy_api_key: api_key,
     cwd: resolved_cwd,
   });
+  const world = resolveWorldAdapterConfig({ env });
 
   if (!["127.0.0.1", "::1"].includes(host)) {
     throw new Error("CATTY_AGENT_HOST must resolve to a loopback-only host");
@@ -84,6 +86,7 @@ export function loadConfig({
     api_key,
     force_mock: ai.provider_id === "mock",
     ai,
+    world,
     data_dir: path.resolve(env.CATTY_AGENT_DATA_DIR || path.join(BRIDGE_ROOT, ".runtime")),
     body_limit_bytes: DEFAULT_BODY_LIMIT_BYTES,
   };

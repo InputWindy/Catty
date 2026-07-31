@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { AgentError, asAgentError } from "../protocol/errors.mjs";
 import {
   assertProtocolVersion,
@@ -5,6 +6,14 @@ import {
 } from "../protocol/envelope.mjs";
 import { NullAuditLog } from "../logging/audit-log.mjs";
 import { applyToolResultsToEntityContext } from "../sessions/entity-context.mjs";
+import {
+  validateExecuteTransactionResult,
+  validateUndoResult,
+} from "../world/world-adapter-contract.mjs";
+import {
+  WorldAdapterError,
+  worldAdapterErrorToAgentError,
+} from "../world/world-adapter-errors.mjs";
 
 const TOOL_CALL_FIELDS = new Set([
   "tool_call_id",
@@ -70,6 +79,7 @@ function failureResult({
   tool_call_id = null,
   revision,
   error,
+  dry_run = false,
 }) {
   return {
     ok: false,
@@ -80,26 +90,33 @@ function failureResult({
     changes: [],
     undo_token: null,
     error: error.toJSON(),
+    data: null,
+    dry_run,
   };
+}
+
+function asExecutionError(error) {
+  if (error instanceof WorldAdapterError) {
+    return worldAdapterErrorToAgentError(error);
+  }
+  return asAgentError(error, "EXECUTION_FAILED");
 }
 
 export class CommandExecutor {
   constructor({
     session_manager,
     tool_registry,
-    undo_journal,
     audit_log = new NullAuditLog(),
   }) {
     this.session_manager = session_manager;
     this.tool_registry = tool_registry;
-    this.undo_journal = undo_journal;
     this.audit_log = audit_log;
   }
 
   async executeBatch(request) {
     const started_at = Date.now();
     let session;
-    let world;
+    let adapter;
 
     try {
       assertProtocolVersion(request.protocol_version);
@@ -107,11 +124,20 @@ export class CommandExecutor {
       assertUuid(request.session_id, "session_id");
       assertUuid(request.world_id, "world_id");
       session = this.session_manager.getSession(request.session_id);
-      world = this.session_manager.getWorld(request.session_id, request.world_id);
+      adapter = this.session_manager.getAdapter(
+        request.session_id,
+        request.world_id
+      );
     } catch (error) {
       const agent_error = asAgentError(error, "INVALID_REQUEST");
       const result = this.#failureResponse(request, null, agent_error);
-      await this.#writeAudit(request, result, started_at);
+      await this.#writeAudit(
+        request,
+        result,
+        started_at,
+        adapter,
+        null
+      );
       return result;
     }
 
@@ -139,26 +165,65 @@ export class CommandExecutor {
         { session_id: request.session_id },
         true
       );
-      const result = this.#failureResponse(request, world.revision, error);
+      const revision =
+        session.last_world_revision ??
+        request.tool_calls?.[0]?.expected_revision ??
+        null;
+      const result = this.#failureResponse(request, revision, error);
       session.request_results.set(request.request_id, clone(result));
-      await this.#writeAudit(request, result, started_at);
+      await this.#writeAudit(
+        request,
+        result,
+        started_at,
+        adapter,
+        null
+      );
       return result;
     }
 
     session.busy = true;
-    const execution = this.#executeTransaction(request, world);
-    session.request_promises.set(request.request_id, execution);
+    const execution = this.#executeWithAdapter(
+      request,
+      session,
+      adapter
+    );
+    session.request_promises.set(
+      request.request_id,
+      execution.then((outcome) => outcome.result)
+    );
     try {
-      const result = await execution;
-      if (result.ok) {
-        applyToolResultsToEntityContext({
-          session,
-          tool_calls: request.tool_calls,
-          tool_results: result.tool_results,
-        });
+      const outcome = await execution;
+      const result = outcome.result;
+      if (result.ok && !result.replayed) {
+        try {
+          const snapshot = await adapter.getSnapshot({
+            request_id: randomUUID(),
+            session_id: request.session_id,
+            world_id: request.world_id,
+            signal: request.signal,
+          });
+          session.last_world_revision = snapshot.revision;
+          applyToolResultsToEntityContext({
+            session,
+            snapshot,
+            tool_calls: request.tool_calls,
+            tool_results: result.tool_results,
+          });
+        } catch {
+          // Execution remains authoritative. If post-execution snapshot
+          // refresh fails, leave EntityContext unchanged rather than guessing.
+        }
+      } else if (Number.isSafeInteger(result.world_revision)) {
+        session.last_world_revision = result.world_revision;
       }
       session.request_results.set(request.request_id, clone(result));
-      await this.#writeAudit(request, result, started_at);
+      await this.#writeAudit(
+        request,
+        result,
+        started_at,
+        adapter,
+        outcome.adapter_metadata
+      );
       return result;
     } finally {
       session.request_promises.delete(request.request_id);
@@ -166,194 +231,185 @@ export class CommandExecutor {
     }
   }
 
-  async #executeTransaction(request, world) {
-    const before_revision = world.revision;
-    let world_state;
-    let journal_state;
-    let failed_tool_call_index = null;
-    const executed = [];
-
+  async #executeWithAdapter(request, session, adapter) {
+    let prepared;
     try {
-      if (
-        !Array.isArray(request.tool_calls) ||
-        request.tool_calls.length === 0 ||
-        request.tool_calls.length > 100
-      ) {
-        throw new AgentError(
-          "INVALID_REQUEST",
-          "tool_calls must contain between 1 and 100 calls",
-          { field: "tool_calls" }
-        );
-      }
-
-      const validated = [];
-      for (let index = 0; index < request.tool_calls.length; index += 1) {
-        failed_tool_call_index = index;
-        const tool_call = request.tool_calls[index];
-        validateToolCallShape(tool_call, index);
-        if (tool_call.expected_revision !== before_revision) {
+      prepared = this.#prepareTransaction(request, adapter);
+      if (prepared.undo) {
+        if (prepared.dry_run) {
           throw new AgentError(
-            "REVISION_CONFLICT",
-            `Expected revision ${tool_call.expected_revision}, current revision is ${before_revision}`,
-            {
-              tool_call_index: index,
-              expected_revision: tool_call.expected_revision,
-              current_revision: before_revision,
-            },
-            true
+            "INVALID_ARGUMENT",
+            "dry_run is not supported for history.undo"
           );
         }
-        const tool = this.tool_registry.get(tool_call.tool_name);
-        const args = this.tool_registry.validate(tool_call.tool_name, tool_call.args);
-        validated.push({ tool_call, tool, args });
-      }
-
-      const dry_run_values = new Set(
-        validated.map(({ tool_call }) => tool_call.dry_run)
-      );
-      if (dry_run_values.size !== 1) {
-        throw new AgentError(
-          "INVALID_ARGUMENT",
-          "All tool_calls in one transaction must use the same dry_run value",
-          { field: "tool_calls[].dry_run" }
-        );
-      }
-      if (
-        validated.length > 1 &&
-        validated.some(({ tool }) => tool.name === "history.undo")
-      ) {
-        throw new AgentError(
-          "INVALID_ARGUMENT",
-          "history.undo must be executed as a single-call transaction"
-        );
-      }
-
-      const dry_run = validated[0].tool_call.dry_run;
-      world_state = world.captureState();
-      journal_state = this.undo_journal.captureState();
-
-      for (let index = 0; index < validated.length; index += 1) {
-        failed_tool_call_index = index;
-        const { tool_call, tool, args } = validated[index];
-        const output = await tool.execute({
-          world,
-          args,
-          undo_journal: this.undo_journal,
+        const adapter_request = {
           request_id: request.request_id,
-        });
-        executed.push({
-          tool_call,
-          tool,
-          output: {
-            data: output?.data ?? null,
-            changes: Array.isArray(output?.changes) ? output.changes : [],
-          },
-        });
-      }
-
-      const mutates_world = executed.some(({ tool }) => tool.mutates_world);
-      const changes = executed.flatMap(({ output }) => output.changes);
-
-      if (dry_run) {
-        world.restoreState(world_state);
-        this.undo_journal.restoreState(journal_state);
-      } else if (mutates_world) {
-        world.revision = before_revision + 1;
-        world.history.push({
+          session_id: request.session_id,
+          world_id: request.world_id,
+          expected_revision: prepared.expected_revision,
+          undo_token: prepared.tool_calls[0].args.undo_token ?? null,
+          signal: request.signal,
+        };
+        const adapter_result = validateUndoResult(
+          await adapter.undo(adapter_request),
+          adapter_request
+        );
+        const tool_call = prepared.tool_calls[0];
+        const tool_result = {
+          ok: adapter_result.ok,
           request_id: request.request_id,
-          before_revision,
-          after_revision: world.revision,
-          changes: clone(changes),
-          timestamp_ms: Date.now(),
-        });
-      }
-
-      const after_revision = world.revision;
-      const creates_undo =
-        !dry_run &&
-        mutates_world &&
-        executed.some(({ tool }) => tool.undoable) &&
-        !executed.some(({ tool }) => tool.name === "history.undo");
-      const undo_token = creates_undo
-        ? this.undo_journal.createRecord({
-            world_id: world.world_id,
+          tool_call_id: tool_call.tool_call_id,
+          before_revision: adapter_result.before_revision,
+          after_revision: adapter_result.after_revision,
+          changes: clone(adapter_result.changes),
+          undo_token: null,
+          error: clone(adapter_result.error),
+          data: clone(adapter_result.data ?? null),
+          dry_run: false,
+        };
+        return {
+          result: {
+            ok: adapter_result.ok,
             request_id: request.request_id,
-            before_state: world_state,
-            changes,
-            before_revision,
-            after_revision,
-          })
-        : null;
+            tool_results: [tool_result],
+            world_revision: adapter_result.after_revision,
+            undo_token: null,
+            error: clone(adapter_result.error),
+            failed_tool_call_index: adapter_result.ok ? null : 0,
+            replayed: adapter_result.replayed,
+          },
+          adapter_metadata: clone(
+            adapter_result.adapter_metadata ?? null
+          ),
+        };
+      }
 
-      const tool_results = executed.map(({ tool_call, tool, output }) => ({
-        ok: true,
+      const adapter_request = {
         request_id: request.request_id,
-        tool_call_id: tool_call.tool_call_id,
-        before_revision,
-        after_revision,
-        changes: clone(output.changes),
-        undo_token:
-          undo_token && tool.mutates_world && tool.undoable ? undo_token : null,
-        error: null,
-        data: clone(output.data),
-        dry_run,
-      }));
-
+        session_id: request.session_id,
+        world_id: request.world_id,
+        expected_revision: prepared.expected_revision,
+        dry_run: prepared.dry_run,
+        atomic: true,
+        tool_calls: prepared.tool_calls.map((tool_call) => ({
+          tool_call_id: tool_call.tool_call_id,
+          tool_name: tool_call.tool_name,
+          args: clone(tool_call.args),
+        })),
+        signal: request.signal,
+      };
+      const adapter_result = validateExecuteTransactionResult(
+        await adapter.executeTransaction(adapter_request),
+        adapter_request
+      );
       return {
-        ok: true,
-        request_id: request.request_id,
-        tool_results,
-        world_revision: after_revision,
-        undo_token,
-        error: null,
-        replayed: false,
+        result: {
+          ok: adapter_result.ok,
+          request_id: request.request_id,
+          tool_results: clone(adapter_result.tool_results),
+          world_revision: adapter_result.after_revision,
+          undo_token: adapter_result.undo_token,
+          error: clone(adapter_result.error),
+          failed_tool_call_index:
+            adapter_result.failed_tool_call_index ?? null,
+          replayed: adapter_result.replayed,
+        },
+        adapter_metadata: clone(
+          adapter_result.adapter_metadata ?? null
+        ),
       };
     } catch (error) {
-      const agent_error = asAgentError(error, "EXECUTION_FAILED");
-      if (world_state) {
-        world.restoreState(world_state);
-      }
-      if (journal_state) {
-        this.undo_journal.restoreState(journal_state);
-      }
-
-      const tool_call =
-        failed_tool_call_index === null
-          ? null
-          : request.tool_calls?.[failed_tool_call_index];
-      const rolled_back_results = executed.map(({ tool_call: executed_call }) => ({
-        ...failureResult({
-          request_id: request.request_id,
-          tool_call_id: executed_call.tool_call_id,
-          revision: before_revision,
-          error: new AgentError(
-            "EXECUTION_FAILED",
-            "Transaction rolled back because a later tool call failed",
-            { failed_tool_call_index }
-          ),
-        }),
-        rolled_back: true,
-      }));
-      rolled_back_results.push(
-        failureResult({
-          request_id: request.request_id,
-          tool_call_id: tool_call?.tool_call_id ?? null,
-          revision: before_revision,
-          error: agent_error,
-        })
-      );
-
+      const agent_error = asExecutionError(error);
+      const revision =
+        session.last_world_revision ??
+        prepared?.expected_revision ??
+        request.tool_calls?.[0]?.expected_revision ??
+        null;
       return {
-        ok: false,
-        request_id: request.request_id ?? null,
-        tool_results: rolled_back_results,
-        world_revision: before_revision,
-        undo_token: null,
-        error: agent_error.toJSON(),
-        failed_tool_call_index,
-        replayed: false,
+        result: this.#failureResponse(request, revision, agent_error),
+        adapter_metadata:
+          error instanceof WorldAdapterError
+            ? {
+                adapter_request_phase: error.phase,
+                adapter_http_status: error.http_status,
+                adapter_timeout: error.timeout,
+                adapter_cancelled: error.cancelled,
+                remote_error_class: error.reason,
+              }
+            : null,
       };
     }
+  }
+
+  #prepareTransaction(request, adapter) {
+    const max_tool_calls = Math.min(
+      100,
+      adapter.capabilities.max_tool_calls
+    );
+    if (
+      !Array.isArray(request.tool_calls) ||
+      request.tool_calls.length === 0 ||
+      request.tool_calls.length > max_tool_calls
+    ) {
+      throw new AgentError(
+        "INVALID_REQUEST",
+        `tool_calls must contain between 1 and ${max_tool_calls} calls`,
+        { field: "tool_calls", max_tool_calls }
+      );
+    }
+
+    const validated = [];
+    for (let index = 0; index < request.tool_calls.length; index += 1) {
+      const tool_call = request.tool_calls[index];
+      validateToolCallShape(tool_call, index);
+      const tool = this.tool_registry.get(tool_call.tool_name);
+      const args = this.tool_registry.validate(
+        tool_call.tool_name,
+        tool_call.args
+      );
+      validated.push({
+        ...clone(tool_call),
+        args: clone(args),
+        tool,
+      });
+    }
+
+    const expected_revisions = new Set(
+      validated.map((tool_call) => tool_call.expected_revision)
+    );
+    if (expected_revisions.size !== 1) {
+      throw new AgentError(
+        "INVALID_ARGUMENT",
+        "All tool_calls in one transaction must use the same expected_revision",
+        { field: "tool_calls[].expected_revision" }
+      );
+    }
+    const dry_run_values = new Set(
+      validated.map((tool_call) => tool_call.dry_run)
+    );
+    if (dry_run_values.size !== 1) {
+      throw new AgentError(
+        "INVALID_ARGUMENT",
+        "All tool_calls in one transaction must use the same dry_run value",
+        { field: "tool_calls[].dry_run" }
+      );
+    }
+    const contains_undo = validated.some(
+      (tool_call) => tool_call.tool.name === "history.undo"
+    );
+    if (contains_undo && validated.length !== 1) {
+      throw new AgentError(
+        "INVALID_ARGUMENT",
+        "history.undo must be executed as a single-call transaction"
+      );
+    }
+
+    return {
+      tool_calls: validated,
+      expected_revision: validated[0].expected_revision,
+      dry_run: validated[0].dry_run,
+      undo: contains_undo,
+    };
   }
 
   #failureResponse(request, revision, error) {
@@ -363,9 +419,11 @@ export class CommandExecutor {
       tool_results: [
         failureResult({
           request_id: request?.request_id,
-          tool_call_id: request?.tool_calls?.[0]?.tool_call_id ?? null,
+          tool_call_id:
+            request?.tool_calls?.[0]?.tool_call_id ?? null,
           revision,
           error,
+          dry_run: request?.tool_calls?.[0]?.dry_run ?? false,
         }),
       ],
       world_revision: revision,
@@ -376,21 +434,50 @@ export class CommandExecutor {
     };
   }
 
-  async #writeAudit(request, result, started_at) {
+  async #writeAudit(
+    request,
+    result,
+    started_at,
+    adapter,
+    adapter_metadata
+  ) {
     try {
       await this.audit_log.write({
         request_id: request?.request_id,
         session_id: request?.session_id,
         provider: request?.provider || "direct",
         user_message: request?.user_message ?? null,
+        world_adapter: adapter?.name ?? null,
+        adapter_protocol_version:
+          adapter?.protocolVersion ?? null,
+        adapter_request_phase:
+          adapter_metadata?.adapter_request_phase ?? "execute",
+        adapter_duration_ms:
+          adapter_metadata?.adapter_duration_ms ??
+          Date.now() - started_at,
+        adapter_http_status:
+          adapter_metadata?.adapter_http_status ?? null,
+        adapter_replayed:
+          adapter_metadata?.adapter_replayed ?? result.replayed ?? false,
+        adapter_timeout:
+          adapter_metadata?.adapter_timeout ??
+          result.error?.code === "TIMEOUT",
+        adapter_cancelled:
+          adapter_metadata?.adapter_cancelled ?? false,
+        remote_error_class:
+          adapter_metadata?.remote_error_class ??
+          result.error?.details?.adapter_reason ??
+          null,
         before_revision:
-          result.tool_results?.[0]?.before_revision ?? result.world_revision,
+          result.tool_results?.[0]?.before_revision ??
+          result.world_revision,
         after_revision: result.world_revision,
         tool_calls: request?.tool_calls || [],
         tool_results: result.tool_results,
         error: result.error,
         duration_ms: Date.now() - started_at,
-        failed_tool_call_index: result.failed_tool_call_index ?? null,
+        failed_tool_call_index:
+          result.failed_tool_call_index ?? null,
       });
     } catch (error) {
       console.error(

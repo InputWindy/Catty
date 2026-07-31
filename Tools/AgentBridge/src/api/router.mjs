@@ -8,6 +8,10 @@ import {
 import { validateEnvelope } from "../protocol/envelope.mjs";
 import { PROTOCOL_VERSION } from "../protocol/schemas.mjs";
 import { sendAgentError, sendJson } from "./responses.mjs";
+import {
+  WorldAdapterError,
+  worldAdapterErrorToAgentError,
+} from "../world/world-adapter-errors.mjs";
 
 export function createRouter({
   legacyChatService,
@@ -91,14 +95,25 @@ export function createRouter({
           );
         }
         const session = session_manager.createSession();
-        return sendJson(res, 201, {
-          ok: true,
-          protocol_version: PROTOCOL_VERSION,
-          session_id: session.session_id,
-          world_id: session.world.world_id,
-          world_revision: session.world.revision,
-          error: null,
-        });
+        try {
+          const snapshot = await session.adapter.getSnapshot({
+            request_id: randomUUID(),
+            session_id: session.session_id,
+            world_id: session.world_id,
+          });
+          session.last_world_revision = snapshot.revision;
+          return sendJson(res, 201, {
+            ok: true,
+            protocol_version: PROTOCOL_VERSION,
+            session_id: session.session_id,
+            world_id: session.world_id,
+            world_revision: snapshot.revision,
+            error: null,
+          });
+        } catch (error) {
+          await session_manager.deleteSession(session.session_id);
+          throw error;
+        }
       }
 
       if (req.method === "POST" && url.pathname === "/v1/agent/run") {
@@ -161,7 +176,7 @@ export function createRouter({
             protocol_version: body.protocol_version || PROTOCOL_VERSION,
             request_id: body.request_id,
             session_id: body.session_id,
-            world_id: body.world_id || session.world.world_id,
+            world_id: body.world_id || session.world_id,
             tool_calls: body.tool_calls,
           };
         }
@@ -185,12 +200,18 @@ export function createRouter({
         }
         const session = session_manager.getSession(session_id);
         const world_id =
-          url.searchParams.get("world_id") || session.world.world_id;
-        const world = session_manager.getWorld(session_id, world_id);
+          url.searchParams.get("world_id") || session.world_id;
+        const adapter = session_manager.getAdapter(session_id, world_id);
+        const snapshot = await adapter.getSnapshot({
+          request_id: randomUUID(),
+          session_id,
+          world_id,
+        });
+        session.last_world_revision = snapshot.revision;
         return sendJson(res, 200, {
           ok: true,
           protocol_version: PROTOCOL_VERSION,
-          snapshot: world.snapshot(),
+          snapshot,
           error: null,
         });
       }
@@ -204,7 +225,7 @@ export function createRouter({
           protocol_version: body.protocol_version || PROTOCOL_VERSION,
           request_id: body.request_id,
           session_id: body.session_id,
-          world_id: body.world_id || session.world.world_id,
+          world_id: body.world_id || session.world_id,
           tool_calls: [
             {
               tool_call_id: body.tool_call_id || randomUUID(),
@@ -240,6 +261,14 @@ export function createRouter({
       }
       if (error instanceof AgentError) {
         return sendAgentError(res, error, errorHttpStatus(error));
+      }
+      if (error instanceof WorldAdapterError) {
+        const agent_error = worldAdapterErrorToAgentError(error);
+        return sendAgentError(
+          res,
+          agent_error,
+          errorHttpStatus(agent_error)
+        );
       }
       const agent_error = asAgentError(error);
       const url = new URL(req.url || "/", "http://127.0.0.1");
