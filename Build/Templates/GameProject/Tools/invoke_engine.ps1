@@ -33,9 +33,13 @@ if ([System.IO.Path]::IsPathRooted($engineRaw)) {
 	$engine = [System.IO.Path]::GetFullPath((Join-Path $projectDir $engineRaw))
 }
 
+# Installer layout: Tools\python\python.exe ; venv: Tools\python\Scripts\python.exe
 $localPy = Join-Path $engine "Tools\python\python.exe"
 if (-not (Test-Path -LiteralPath $localPy)) {
-	Write-Error "Engine local Python missing: $localPy`nRun setup.bat in the Maho engine root first."
+	$localPy = Join-Path $engine "Tools\python\Scripts\python.exe"
+}
+if (-not (Test-Path -LiteralPath $localPy)) {
+	Write-Error "Engine local Python missing under Tools\python (or Scripts).`nRun setup.bat in the Maho engine root first."
 	exit 1
 }
 

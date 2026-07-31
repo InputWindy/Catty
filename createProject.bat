@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 rem Launch GUI via WScript + pythonw (no Python console).
-rem A brief cmd flash from this .bat is normal when double-clicked; the UI should stay open.
+rem Double-clicking this .bat briefly flashes cmd — that is expected.
 
 set "VBS=%~dp0Tools\launch_create_project.vbs"
 if not exist "%VBS%" (

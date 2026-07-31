@@ -29,6 +29,7 @@ createProject.bat
 1. 填写项目名、父目录、引擎路径 → Create  
 2. 得到 `Parent/Name/Name.cproject`  
 3. 双击 `.cproject` → 生成同级 `.sln` → 用 Visual Studio 打开  
+4. 右键 `.cproject` → **选择链接引擎…** → 可改写 `EngineDirectory`（换引擎目录后建议勾选重新生成 `.sln`） 
 
 也可在引擎根用 `Tools\generateProject.bat`（无参数）生成引擎工作区 `MahoWorkspace.sln`。
 

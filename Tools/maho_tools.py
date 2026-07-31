@@ -22,7 +22,7 @@ ENGINE_PYTHON_DIR = (ENGINE_ROOT / "Tools" / "python").resolve()
 def ensure_engine_python() -> None:
 	"""
 	Require the Maho-managed interpreter (setup.bat), not an arbitrary system Python.
-	Real files live under %LOCALAPPDATA%\\Maho\\python\\<ver>\\; Tools\\python is a junction.
+	Real files live under %LOCALAPPDATA%\\Maho\\python\\tooling\\; Tools\\python is a junction.
 	Set MAHO_ALLOW_SYSTEM_PYTHON=1 only for emergency debugging.
 	"""
 	if os.environ.get("MAHO_ALLOW_SYSTEM_PYTHON") == "1":
@@ -46,7 +46,7 @@ def ensure_engine_python() -> None:
 	msg = (
 		"This Maho tool must run with the engine-local Python, not a system install.\n\n"
 		f"Expected under:\n  {ENGINE_PYTHON_DIR}\n"
-		f"  (junction → %LOCALAPPDATA%\\Maho\\python\\<ver>)\n\n"
+		f"  (junction → %LOCALAPPDATA%\\Maho\\python\\tooling)\n\n"
 		f"Current interpreter:\n  {exe}\n\n"
 		"Fix:\n"
 		"  1) Run setup.bat in the Maho engine root\n"
@@ -216,6 +216,26 @@ def engine_path_for_cproject(engine_root: Path, project_dir: Path) -> str:
 		return rel.replace("\\", "/")
 	except ValueError:
 		return str(engine_root.resolve()).replace("\\", "/")
+
+
+def set_cproject_engine(cproject_path: Path, engine_root: Path) -> str:
+	"""
+	Rewrite EngineDirectory in a .cproject (relative when possible).
+	Returns the path string written into the JSON.
+	"""
+	cproject_path = cproject_path.expanduser().resolve()
+	engine_root = engine_root.expanduser().resolve()
+	if cproject_path.suffix.lower() != ".cproject" or not cproject_path.is_file():
+		raise FileNotFoundError(f"Not a .cproject file: {cproject_path}")
+	if not (engine_root / "Maho").is_dir():
+		raise FileNotFoundError(f"Maho engine not found under: {engine_root}")
+
+	data = read_cproject(cproject_path)
+	stored = engine_path_for_cproject(engine_root, cproject_path.parent)
+	data["EngineDirectory"] = stored
+	data["EngineAssociation"] = data.get("EngineAssociation") or "Maho"
+	write_cproject(cproject_path, data)
+	return stored
 
 
 def render_template_text(text: str, mapping: dict[str, str]) -> str:
@@ -540,8 +560,12 @@ def install_windows_cproject_association(*, log: Any = print) -> None:
 
 	# Prefer Tools bat so Explorer double-click stays aligned with internal layout.
 	generate_bat = ENGINE_ROOT / "Tools" / "generateProject.bat"
+	switch_vbs = ENGINE_ROOT / "Tools" / "launch_switch_engine.vbs"
 	prog_id = "Maho.CProject"
-	command = f"\"{generate_bat}\" \"%1\""
+	open_command = f"\"{generate_bat}\" \"%1\""
+	# VBS → pythonw: no console flash for the folder-picker UI.
+	wscript = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "wscript.exe")
+	switch_command = f"\"{wscript}\" //nologo \"{switch_vbs}\" \"%1\""
 
 	# Use winreg (no reg.exe) so pythonw GUIs do not flash 3 console windows.
 	with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Classes\.cproject") as key:
@@ -554,10 +578,25 @@ def install_windows_cproject_association(*, log: Any = print) -> None:
 		winreg.HKEY_CURRENT_USER,
 		rf"Software\Classes\{prog_id}\shell\open\command",
 	) as key:
-		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, command)
+		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, open_command)
+
+	# Explorer context menu: pick EngineDirectory (like UE "Switch Unreal Engine version").
+	with winreg.CreateKeyEx(
+		winreg.HKEY_CURRENT_USER,
+		rf"Software\Classes\{prog_id}\shell\SwitchEngine",
+	) as key:
+		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, "选择链接引擎(&E)…")
+		winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, "选择链接引擎(&E)…")
+
+	with winreg.CreateKeyEx(
+		winreg.HKEY_CURRENT_USER,
+		rf"Software\Classes\{prog_id}\shell\SwitchEngine\command",
+	) as key:
+		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, switch_command)
 
 	log("[Maho] Associated .cproject → Tools/generateProject.bat (current user)")
-	log(f"[Maho] Command: {command}")
+	log("[Maho] Context menu: 选择链接引擎 → launch_switch_engine.vbs")
+	log(f"[Maho] Open: {open_command}")
 
 
 # Entire trees wiped by clean (including any README/.gitkeep inside).

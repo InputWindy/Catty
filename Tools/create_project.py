@@ -245,7 +245,9 @@ class CreateProjectApp(tk.Tk):
 					0,
 					lambda: messagebox.showinfo(
 						"Maho",
-						"Associated .cproject with Tools/generateProject.bat for the current Windows user.\n"
+						"Associated .cproject for the current Windows user:\n"
+						"  • Double-click → generate .sln\n"
+						"  • Right-click → 选择链接引擎…\n\n"
 						"You may need to sign out/in once for Explorer to refresh icons.",
 					),
 				)
@@ -297,7 +299,8 @@ class CreateProjectApp(tk.Tk):
 		if not (engine / "Maho").is_dir():
 			messagebox.showerror("Maho", f"Engine root must contain Maho/:\n{engine}")
 			return
-		if not (engine / "Tools" / "python" / "python.exe").is_file():
+		py_root = engine / "Tools" / "python"
+		if not (py_root / "python.exe").is_file() and not (py_root / "Scripts" / "python.exe").is_file():
 			messagebox.showerror(
 				"Maho",
 				f"Engine local Python missing.\nRun setup.bat in:\n{engine}",

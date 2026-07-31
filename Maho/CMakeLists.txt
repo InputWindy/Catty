@@ -18,9 +18,13 @@ include(MahoHelpers)
 set(MAHO_GENERATED_DIR "${MAHO_SOURCE_DIR}/Generated")
 
 # Engine repo root (Tools/python + object_reflect_codegen.py).
+# Installer layout: Tools/python/python.exe ; venv: Tools/python/Scripts/python.exe
 get_filename_component(_MAHO_ENGINE_ROOT_FOR_CODEGEN "${MAHO_ROOT}/.." ABSOLUTE)
 set(_MAHO_OBJECT_REFLECT_CODEGEN_PY "${_MAHO_ENGINE_ROOT_FOR_CODEGEN}/Tools/object_reflect_codegen.py")
 set(_MAHO_LOCAL_PYTHON "${_MAHO_ENGINE_ROOT_FOR_CODEGEN}/Tools/python/python.exe")
+if(NOT EXISTS "${_MAHO_LOCAL_PYTHON}")
+	set(_MAHO_LOCAL_PYTHON "${_MAHO_ENGINE_ROOT_FOR_CODEGEN}/Tools/python/Scripts/python.exe")
+endif()
 set(_MAHO_GEN_OBJECT_H "${MAHO_GENERATED_DIR}/ObjectReflectTypes.gen.h")
 set(_MAHO_GEN_OBJECT_CPP "${MAHO_GENERATED_DIR}/ObjectReflectTypes.gen.cpp")
 set(_MAHO_GEN_LUA_H "${MAHO_GENERATED_DIR}/LuaReflectBindings.gen.h")
@@ -31,7 +35,10 @@ set(_MAHO_GEN_RESOURCE_CPP "${MAHO_GENERATED_DIR}/ResourceTypes.gen.cpp")
 # Build-time FObject reflection codegen.
 if(NOT EXISTS "${_MAHO_LOCAL_PYTHON}")
 	message(FATAL_ERROR
-		"Maho: engine-local Python missing:\n  ${_MAHO_LOCAL_PYTHON}\n"
+		"Maho: engine-local Python missing under Tools/python (or Scripts).\n"
+		"  Tried:\n"
+		"    ${_MAHO_ENGINE_ROOT_FOR_CODEGEN}/Tools/python/python.exe\n"
+		"    ${_MAHO_ENGINE_ROOT_FOR_CODEGEN}/Tools/python/Scripts/python.exe\n"
 		"Run setup.bat in the Maho engine root, then re-configure.")
 endif()
 if(NOT EXISTS "${_MAHO_OBJECT_REFLECT_CODEGEN_PY}")
