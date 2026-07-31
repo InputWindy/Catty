@@ -2,7 +2,9 @@
 
 #include <Core/Engine.h>
 #include <Core/Export.h>
+#include <Core/Server/ThreadedServer.h>
 #include <Core/System/PlatformWindow.h>
+#include <Render/RenderFramePacket.h>
 #include <Render/RHI/RHIServer.h>
 #include <Render/Sequencer/RenderExtension.h>
 #include <Render/Sequencer/RenderStage.h>
@@ -10,6 +12,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -19,41 +22,47 @@ namespace Maho
 
 class FVulkanRHI;
 struct FImGuiDrawDataRing;
+class FTextureProxyRegistry;
 
 /**
- * Frame orchestration owned by FRenderSystem (Game-callable today).
- * Holds FRHIServer (RHI thread). Runs ERenderStage + IRenderExtension synchronously on Game for now.
+ * MahoRender worker (FThreadedServer). Owned by FRenderSystem (Game).
+ * Game submits work via ENQUEUE_RENDER_COMMAND; this server records/submits to FRHIServer.
  */
-class MAHO_API FRenderServer
+class MAHO_API FRenderServer final : public FThreadedServer
 {
 public:
 	static constexpr int MaxFramesInFlightCap = 3;
 
 	FRenderServer();
-	~FRenderServer();
+	~FRenderServer() override;
 
 	FRenderServer(const FRenderServer&) = delete;
 	FRenderServer& operator=(const FRenderServer&) = delete;
 
-	/** Start RHI worker, RHI (from Window), optional ImGui. Does not create/destroy Window. */
+	/** Start MahoRender + RHI worker, RHI (from Window), optional ImGui. */
 	[[nodiscard]] bool Boot(FPlatformWindow& InWindow, const FConfig& Config);
 
 	void TearDown();
 
 	/**
-	 * Game thread: wait MaxFramesInFlight, run ERenderStage pipeline (built-in KickRHI
-	 * does clear + ImGui EndFrame/clone + Submit*). Call from FRenderSystem on EEngineStage::Render.
+	 * Game: wait MaxFramesInFlight, EndFrame/Capture ImGui, enqueue ExecuteFrame on MahoRender,
+	 * flush, then UpdateAndRenderPlatformWindows on Game.
 	 */
 	void Render(std::uint64_t FrameIndex);
 
-	/**
-	 * Call on the game thread before ImGui NewFrame.
-	 * ImGui Vulkan backend is not safe concurrent with RenderDrawData / clone teardown on the
-	 * RHI thread — wait until the previous frame's render job has finished.
-	 */
+	/** MahoRender: run stages + texture uploads + RHI Submit* for one packet. */
+	void ExecuteFrame(FRenderFramePacket Packet);
+
 	void WaitBeforeImGuiNewFrame(std::uint64_t FrameIndex);
 
 	void SetClearColor(float R, float G, float B, float A);
+
+	/** Game: queue a CPU snapshot for the next Render frame. */
+	void QueueTextureUpload(FTextureCpuSnapshot Snapshot);
+	void RequestTextureDestroy(std::string CatalogKey);
+
+	[[nodiscard]] FTextureProxyRegistry& GetTextureProxyRegistry();
+	[[nodiscard]] const FTextureProxyRegistry& GetTextureProxyRegistry() const;
 
 	[[nodiscard]] FImGuiSystem& GetImGui() { return ImGui; }
 	[[nodiscard]] const FImGuiSystem& GetImGui() const { return ImGui; }
@@ -69,11 +78,9 @@ public:
 
 	void RequestResize(int Width, int Height) { RHIServer.RequestResize(Width, Height); }
 
-	/** Non-owning window set by Boot (for framebuffer sync). */
 	[[nodiscard]] FPlatformWindow* GetBoundWindow() { return BoundWindow; }
 	[[nodiscard]] const FPlatformWindow* GetBoundWindow() const { return BoundWindow; }
 
-	/** Takes ownership. Call during Boot / game setup (before heavy ticking). */
 	template <typename T, typename... TArgs>
 	T& RegisterRenderExtension(TArgs&&... Args)
 	{
@@ -84,10 +91,14 @@ public:
 		return Ref;
 	}
 
+protected:
+	[[nodiscard]] const char* GetServerThreadName() const override { return "MahoRender"; }
+	[[nodiscard]] const char* GetServerLogName() const override { return "RenderServer"; }
+
 private:
 	void SyncFramebufferSize();
 	[[nodiscard]] int GetMaxFramesInFlight() const;
-	void ExecuteRenderStages();
+	void ExecuteRenderStages(const FRenderFramePacket& Packet);
 	[[nodiscard]] static bool InvokeRenderStage(
 		IRenderExtension& Extension,
 		ERenderStage Stage,
@@ -97,10 +108,14 @@ private:
 	FPlatformWindow* BoundWindow = nullptr;
 	FImGuiSystem ImGui;
 	std::unique_ptr<FImGuiDrawDataRing> ImGuiDrawDataRing;
+	std::unique_ptr<FTextureProxyRegistry> TextureProxies;
 	std::vector<std::unique_ptr<IRenderExtension>> RenderExtensions;
 
+	std::mutex PendingUploadMutex;
+	std::vector<FTextureCpuSnapshot> PendingTextureUploads;
+	std::vector<std::string> PendingTextureDestroys;
+
 	std::uint64_t CurrentFrameIndex = 0;
-	int PendingImGuiSlotIndex = -1;
 
 	float ClearColorR = 0.08f;
 	float ClearColorG = 0.10f;

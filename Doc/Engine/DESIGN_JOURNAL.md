@@ -78,7 +78,8 @@ Do not collapse these three.
 - **Raster:** Win32 **WIC** (png/jpg/… → RGBA8). `MAHO_WITH_OPENIMAGEIO` default **OFF** (FetchContent deferred).
 - **KTX2:** **libktx** when KTX-Software sources are present (`MAHO_KTX_SOURCE_DIR` or `Intermediate/_deps/ktx_software-src`; optional `MAHO_FETCH_LIBKTX=ON`). Needs Git Bash (`BASH_EXECUTABLE`) and `enable_language(C)`. Without sources, configure still succeeds (WIC-only). OIIO does not stably decode KTX2.
 - **Path hints:** `.cube.` / `.cubemap.` / `.cubearray.` / `.3d.` / `.2darray.` select subtype when TypeHint unknown; plain `.ktx2` defaults to `UTexture2D`.
-- **Not done:** Render-thread GPU snapshot / `FRHITexture` upload from `UTexture` pixels; OIIO wired build.
+- **Render proxy (2026-08):** `FRenderServer : FThreadedServer` (MahoRender) + `ENQUEUE_RENDER_COMMAND`; Game captures ImGui then enqueues `ExecuteFrame`. `FTextureCpuSnapshot` → `FTextureProxyRegistry` → staging + `CopyBufferToTexture` (RGBA8 Tex2D). No `ENQUEUE_RHI_COMMAND` — RHI uses CommandList Submit on MahoRHI.
+- **Not done:** Sampler/material bind of proxies; Cube/3D/BC upload; OIIO wired build.
 - **Pitfalls:** Game `U*` must never hold GPU handles; cube KTX without a name hint may import as `UTexture2D` (dimension warn).
 
 ### Model / Prefab CPU IO (2026-08)

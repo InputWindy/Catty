@@ -197,6 +197,7 @@ public:
 	[[nodiscard]] bool IsSRGB() const { return bSRGB; }
 	[[nodiscard]] const std::vector<std::uint8_t>& GetPixels() const { return Pixels; }
 	[[nodiscard]] std::vector<std::uint8_t>& GetPixelsMutable() { return Pixels; }
+	[[nodiscard]] std::uint64_t GetContentGeneration() const { return ContentGeneration; }
 
 	void SetCpuImage(
 		ETextureDimension InDimension,
@@ -219,6 +220,7 @@ protected:
 	std::uint32_t MipCount = 1;
 	bool bSRGB = true;
 	std::vector<std::uint8_t> Pixels;
+	std::uint64_t ContentGeneration = 0;
 };
 
 class MAHO_API UTexture2D : public UTexture

@@ -38,7 +38,7 @@ Mutual strong refs leak. Break cycles with a **non-owning raw observer** pointer
 
 - `U*` assets hold **CPU data only** (BulkData / pixels / metadata). No `FRHI*`, `Vk*`, or GPU handles on Game objects.
 - Texture hierarchy: `UTexture` → `UTexture2D` / `UTexture3D` / `UTextureCube` / `UTextureCubeArray` / `UTexture2DArray`.
-- GPU textures are created later on the Render thread from a **snapshot** of Game CPU data (not in this layer).
+- GPU textures: Game copies `FTextureCpuSnapshot` → `ENQUEUE_RENDER_COMMAND` → MahoRender `FTextureProxyRegistry` → MahoRHI `FRHITexture` (staging upload). `UTexture` never holds `FRHI*`.
 
 ## Pitfalls
 

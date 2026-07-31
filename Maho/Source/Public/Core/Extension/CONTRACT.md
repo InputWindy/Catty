@@ -25,8 +25,8 @@ See [`../../../../Plugins/README.md`](../../../../Plugins/README.md):
 
 ## Render vs RHI thread
 
-- `FRenderServer`: orchestration / stages (Game thread side of render).
-- `FRHIServer`: owns `IRHI`, runs on thread `MahoRHI`, fence/submit helpers.
+- `FRenderServer`: `FThreadedServer` worker **MahoRender**; Game uses `ENQUEUE_RENDER_COMMAND`.
+- `FRHIServer`: owns `IRHI`, thread **MahoRHI**; CommandList Submit (no public RHI enqueue macro).
 
 ## Allowed callers
 

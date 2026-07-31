@@ -197,9 +197,34 @@ void FVulkanCommandList::CopyBuffer(FRHIBuffer* Src, std::uint64_t SrcOffset, FR
 	vkCmdCopyBuffer(Buffer, SrcVk->GetVkBuffer(), DstVk->GetVkBuffer(), 1, &Region);
 }
 
-void FVulkanCommandList::CopyBufferToTexture(FRHIBuffer* /*Src*/, FRHITexture* /*Dst*/, std::uint64_t /*SrcOffset*/)
+void FVulkanCommandList::CopyBufferToTexture(FRHIBuffer* Src, FRHITexture* Dst, std::uint64_t SrcOffset)
 {
-	// Skeleton: full image copy regions land in a follow-up.
+	auto* SrcVk = static_cast<FVulkanBuffer*>(Src);
+	auto* DstVk = static_cast<FVulkanTexture*>(Dst);
+	if (SrcVk == nullptr || DstVk == nullptr || !bRecording)
+	{
+		return;
+	}
+
+	const FRHITextureDesc& Desc = DstVk->GetDesc();
+	VkBufferImageCopy Region{};
+	Region.bufferOffset = SrcOffset;
+	Region.bufferRowLength = 0;
+	Region.bufferImageHeight = 0;
+	Region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	Region.imageSubresource.mipLevel = 0;
+	Region.imageSubresource.baseArrayLayer = 0;
+	Region.imageSubresource.layerCount = Desc.ArrayLayers;
+	Region.imageOffset = { 0, 0, 0 };
+	Region.imageExtent = { Desc.Extent.Width, Desc.Extent.Height, Desc.Extent.Depth };
+
+	vkCmdCopyBufferToImage(
+		Buffer,
+		SrcVk->GetVkBuffer(),
+		DstVk->GetVkImage(),
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1,
+		&Region);
 }
 
 void FVulkanCommandList::CopyTextureToBuffer(FRHITexture* /*Src*/, FRHIBuffer* /*Dst*/, std::uint64_t /*DstOffset*/)
@@ -244,8 +269,63 @@ void FVulkanCommandList::TransitionBuffer(FRHIBuffer* InBuffer, ERHIResourceStat
 		0, nullptr);
 }
 
-void FVulkanCommandList::TransitionTexture(FRHITexture* /*Texture*/, ERHIResourceState /*OldState*/, ERHIResourceState /*NewState*/)
+void FVulkanCommandList::TransitionTexture(FRHITexture* Texture, ERHIResourceState OldState, ERHIResourceState NewState)
 {
+	auto* Tex = static_cast<FVulkanTexture*>(Texture);
+	if (Tex == nullptr || !bRecording)
+	{
+		return;
+	}
+
+	auto ToLayout = [](ERHIResourceState State) -> VkImageLayout
+	{
+		switch (State)
+		{
+		case ERHIResourceState::CopySrc:
+			return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		case ERHIResourceState::CopyDst:
+			return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		case ERHIResourceState::ShaderResource:
+			return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		case ERHIResourceState::RenderTarget:
+			return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		case ERHIResourceState::DepthWrite:
+			return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		case ERHIResourceState::Present:
+			return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		case ERHIResourceState::Common:
+		default:
+			return VK_IMAGE_LAYOUT_UNDEFINED;
+		}
+	};
+
+	const FRHITextureDesc& Desc = Tex->GetDesc();
+	VkImageMemoryBarrier Barrier{};
+	Barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	Barrier.oldLayout = ToLayout(OldState);
+	Barrier.newLayout = ToLayout(NewState);
+	Barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	Barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	Barrier.image = Tex->GetVkImage();
+	Barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	Barrier.subresourceRange.baseMipLevel = 0;
+	Barrier.subresourceRange.levelCount = Desc.MipLevels;
+	Barrier.subresourceRange.baseArrayLayer = 0;
+	Barrier.subresourceRange.layerCount = Desc.ArrayLayers;
+	Barrier.srcAccessMask = ToVkAccess(OldState);
+	Barrier.dstAccessMask = ToVkAccess(NewState);
+
+	vkCmdPipelineBarrier(
+		Buffer,
+		ToVkPipelineStage(OldState),
+		ToVkPipelineStage(NewState),
+		0,
+		0,
+		nullptr,
+		0,
+		nullptr,
+		1,
+		&Barrier);
 }
 
 void FVulkanCommandList::BeginRenderPass()

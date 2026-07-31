@@ -1,10 +1,15 @@
 ﻿#include <Render/RenderServer.h>
+#include <Render/RenderCommand.h>
 
+#include <Core/Application/App.h>
+#include <Core/Extension/Render/Render.h>
 #include <Core/System/Console.h>
 #include <Core/System/Log.h>
+#include "Render/TextureRenderProxy.h"
 #include "Render/UI/ImGuiDrawDataRing.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace Maho
 {
@@ -23,8 +28,24 @@ static_assert(
 
 } // namespace
 
+namespace Detail
+{
+
+FRenderServer* GetRenderServer()
+{
+	if (!GApp)
+	{
+		return nullptr;
+	}
+	FRenderSystem* System = GApp->GetExtension<FRenderSystem>();
+	return System ? &System->GetRenderServer() : nullptr;
+}
+
+} // namespace Detail
+
 FRenderServer::FRenderServer()
 	: ImGuiDrawDataRing(std::make_unique<FImGuiDrawDataRing>())
+	, TextureProxies(std::make_unique<FTextureProxyRegistry>())
 {
 }
 
@@ -47,6 +68,28 @@ void FRenderServer::SetClearColor(float R, float G, float B, float A)
 	ClearColorA = A;
 }
 
+FTextureProxyRegistry& FRenderServer::GetTextureProxyRegistry()
+{
+	return *TextureProxies;
+}
+
+const FTextureProxyRegistry& FRenderServer::GetTextureProxyRegistry() const
+{
+	return *TextureProxies;
+}
+
+void FRenderServer::QueueTextureUpload(FTextureCpuSnapshot Snapshot)
+{
+	std::lock_guard<std::mutex> Lock(PendingUploadMutex);
+	PendingTextureUploads.push_back(std::move(Snapshot));
+}
+
+void FRenderServer::RequestTextureDestroy(std::string CatalogKey)
+{
+	std::lock_guard<std::mutex> Lock(PendingUploadMutex);
+	PendingTextureDestroys.push_back(std::move(CatalogKey));
+}
+
 bool FRenderServer::Boot(FPlatformWindow& InWindow, const FConfig& Config)
 {
 	BoundWindow = &InWindow;
@@ -55,9 +98,17 @@ bool FRenderServer::Boot(FPlatformWindow& InWindow, const FConfig& Config)
 	ClearColorB = Config.ClearColorB;
 	ClearColorA = Config.ClearColorA;
 
+	if (!Initialize())
+	{
+		MAHO_CORE_ERROR("RenderServer: MahoRender Initialize failed");
+		BoundWindow = nullptr;
+		return false;
+	}
+
 	if (!RHIServer.Initialize())
 	{
 		MAHO_CORE_ERROR("RenderServer: RHIServer Initialize failed");
+		Shutdown();
 		BoundWindow = nullptr;
 		return false;
 	}
@@ -66,6 +117,7 @@ bool FRenderServer::Boot(FPlatformWindow& InWindow, const FConfig& Config)
 	{
 		MAHO_CORE_ERROR("RenderServer: InitializeRHI failed");
 		RHIServer.Shutdown();
+		Shutdown();
 		BoundWindow = nullptr;
 		return false;
 	}
@@ -77,6 +129,7 @@ bool FRenderServer::Boot(FPlatformWindow& InWindow, const FConfig& Config)
 		{
 			MAHO_CORE_ERROR("RenderServer: ImGui Initialize failed");
 			RHIServer.Shutdown();
+			Shutdown();
 			BoundWindow = nullptr;
 			return false;
 		}
@@ -85,7 +138,6 @@ bool FRenderServer::Boot(FPlatformWindow& InWindow, const FConfig& Config)
 
 	RHIServer.ResetFrameFence();
 	CurrentFrameIndex = 0;
-	PendingImGuiSlotIndex = -1;
 
 	MAHO_CORE_INFO("RenderServer: Boot ok (MaxFramesInFlight={})", GetMaxFramesInFlight());
 	return true;
@@ -93,6 +145,16 @@ bool FRenderServer::Boot(FPlatformWindow& InWindow, const FConfig& Config)
 
 void FRenderServer::TearDown()
 {
+	if (IsInitialized())
+	{
+		Flush();
+	}
+
+	if (TextureProxies && RHIServer.IsInitialized())
+	{
+		TextureProxies->DestroyAll(RHIServer);
+	}
+
 	if (RHIServer.IsInitialized())
 	{
 		RHIServer.Flush();
@@ -113,16 +175,25 @@ void FRenderServer::TearDown()
 	}
 
 	RenderExtensions.clear();
+	{
+		std::lock_guard<std::mutex> Lock(PendingUploadMutex);
+		PendingTextureUploads.clear();
+		PendingTextureDestroys.clear();
+	}
+
+	if (IsInitialized())
+	{
+		Shutdown();
+	}
+
 	BoundWindow = nullptr;
 	LastFramebufferWidth = 0;
 	LastFramebufferHeight = 0;
-	PendingImGuiSlotIndex = -1;
 	CurrentFrameIndex = 0;
 }
 
 void FRenderServer::WaitBeforeImGuiNewFrame(std::uint64_t FrameIndex)
 {
-	// Serialize ImGui: never NewFrame while the previous frame's RenderDrawData may still run.
 	if (FrameIndex > 1)
 	{
 		RHIServer.WaitForRenderFrame(FrameIndex - 1);
@@ -138,7 +209,7 @@ bool FRenderServer::InvokeRenderStage(
 	return Extension.ExecuteStage(Stage, Self);
 }
 
-void FRenderServer::ExecuteRenderStages()
+void FRenderServer::ExecuteRenderStages(const FRenderFramePacket& Packet)
 {
 	static constexpr ERenderStage Stages[] =
 	{
@@ -171,68 +242,113 @@ void FRenderServer::ExecuteRenderStages()
 
 		if (Stage == ERenderStage::KickRHI)
 		{
-			if (ImGui.IsInitialized())
+			RHIServer.SubmitBeginMainPass(
+				Packet.ClearColorR,
+				Packet.ClearColorG,
+				Packet.ClearColorB,
+				Packet.ClearColorA);
+			if (Packet.bSubmitImGui && Packet.ImGuiSlotIndex >= 0 && ImGuiDrawDataRing)
 			{
-				ImGui.EndFrame();
-				if (ImGuiDrawDataRing)
-				{
-					PendingImGuiSlotIndex = ImGuiDrawDataRing->CaptureFromImGui(CurrentFrameIndex);
-				}
+				RHIServer.SubmitRenderUI(*ImGuiDrawDataRing, Packet.ImGuiSlotIndex);
 			}
-
-			RHIServer.SubmitBeginMainPass(ClearColorR, ClearColorG, ClearColorB, ClearColorA);
-			if (bImGuiEnabled && PendingImGuiSlotIndex >= 0 && ImGuiDrawDataRing)
-			{
-				RHIServer.SubmitRenderUI(*ImGuiDrawDataRing, PendingImGuiSlotIndex);
-			}
-			RHIServer.SubmitEndFrameAndFence(CurrentFrameIndex);
-
-			if (ImGui.IsInitialized())
-			{
-				// Drain RHI so secondary viewport Vulkan create/render can run on Game safely.
-				RHIServer.Flush();
-				ImGui.UpdateAndRenderPlatformWindows();
-			}
+			RHIServer.SubmitEndFrameAndFence(Packet.FrameIndex);
+			RHIServer.Flush();
 		}
 	}
 }
 
+void FRenderServer::ExecuteFrame(FRenderFramePacket Packet)
+{
+	CurrentFrameIndex = Packet.FrameIndex;
+
+	if (Packet.bResizeFramebuffer && Packet.FramebufferWidth > 0 && Packet.FramebufferHeight > 0)
+	{
+		LastFramebufferWidth = Packet.FramebufferWidth;
+		LastFramebufferHeight = Packet.FramebufferHeight;
+		RHIServer.RequestResize(Packet.FramebufferWidth, Packet.FramebufferHeight);
+	}
+
+	std::vector<FTextureCpuSnapshot> Uploads = std::move(Packet.TextureUploads);
+	std::vector<std::string> Destroys;
+	{
+		std::lock_guard<std::mutex> Lock(PendingUploadMutex);
+		Uploads.insert(
+			Uploads.end(),
+			std::make_move_iterator(PendingTextureUploads.begin()),
+			std::make_move_iterator(PendingTextureUploads.end()));
+		PendingTextureUploads.clear();
+		Destroys.swap(PendingTextureDestroys);
+	}
+
+	for (std::string& Key : Destroys)
+	{
+		TextureProxies->Destroy(RHIServer, Key);
+	}
+	for (FTextureCpuSnapshot& Snap : Uploads)
+	{
+		TextureProxies->UploadOrUpdate(RHIServer, std::move(Snap));
+	}
+
+	ExecuteRenderStages(Packet);
+}
+
 void FRenderServer::Render(std::uint64_t FrameIndex)
 {
-	CurrentFrameIndex = FrameIndex;
-	PendingImGuiSlotIndex = -1;
-
 	const int MaxInFlight = GetMaxFramesInFlight();
 	if (FrameIndex > static_cast<std::uint64_t>(MaxInFlight))
 	{
 		RHIServer.WaitForRenderFrame(FrameIndex - static_cast<std::uint64_t>(MaxInFlight));
 	}
 
-	SyncFramebufferSize();
-	ExecuteRenderStages();
+	FRenderFramePacket Packet{};
+	Packet.FrameIndex = FrameIndex;
+	Packet.ClearColorR = ClearColorR;
+	Packet.ClearColorG = ClearColorG;
+	Packet.ClearColorB = ClearColorB;
+	Packet.ClearColorA = ClearColorA;
+
+	int Width = LastFramebufferWidth;
+	int Height = LastFramebufferHeight;
+	if (BoundWindow && BoundWindow->HasOsWindow() && HasRHI())
+	{
+		BoundWindow->GetFramebufferSize(Width, Height);
+		if (Width > 0 && Height > 0
+			&& (Width != LastFramebufferWidth || Height != LastFramebufferHeight))
+		{
+			Packet.bResizeFramebuffer = true;
+			Packet.FramebufferWidth = Width;
+			Packet.FramebufferHeight = Height;
+		}
+	}
+
+	Packet.ImGuiSlotIndex = -1;
+	Packet.bSubmitImGui = false;
+	if (ImGui.IsInitialized())
+	{
+		ImGui.EndFrame();
+		if (ImGuiDrawDataRing)
+		{
+			Packet.ImGuiSlotIndex = ImGuiDrawDataRing->CaptureFromImGui(FrameIndex);
+			Packet.bSubmitImGui = bImGuiEnabled && Packet.ImGuiSlotIndex >= 0;
+		}
+	}
+
+	ENQUEUE_RENDER_COMMAND(RenderFrame)(
+		[Packet = std::move(Packet)](FRenderServer& Server) mutable
+		{
+			Server.ExecuteFrame(std::move(Packet));
+		});
+	Flush();
+
+	if (ImGui.IsInitialized())
+	{
+		ImGui.UpdateAndRenderPlatformWindows();
+	}
 }
 
 void FRenderServer::SyncFramebufferSize()
 {
-	if (!BoundWindow || !BoundWindow->HasOsWindow() || !HasRHI())
-	{
-		return;
-	}
-
-	int Width = 0;
-	int Height = 0;
-	BoundWindow->GetFramebufferSize(Width, Height);
-	if (Width <= 0 || Height <= 0)
-	{
-		return;
-	}
-
-	if (Width != LastFramebufferWidth || Height != LastFramebufferHeight)
-	{
-		LastFramebufferWidth = Width;
-		LastFramebufferHeight = Height;
-		RequestResize(Width, Height);
-	}
+	// Framebuffer sync is performed on Game in Render() into FRenderFramePacket.
 }
 
 } // namespace Maho

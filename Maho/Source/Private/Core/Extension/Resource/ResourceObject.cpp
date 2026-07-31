@@ -60,6 +60,7 @@ void UTexture::SetCpuImage(
 	MipCount = InMipCount == 0 ? 1 : InMipCount;
 	bSRGB = bInSRGB;
 	Pixels = std::move(InPixels);
+	++ContentGeneration;
 }
 
 UTexture2D::UTexture2D(
