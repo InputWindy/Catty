@@ -8,10 +8,10 @@
  * Default game Layer created with the project.
  * Hand-written — do not put RegisterExtension lists here (those live in Source/Generated/*App.cpp).
  */
-class F{{PROJECT_NAME}}Layer final : public Maho::FLayer
+class F{{PROJECT_IDENT}}Layer final : public Maho::FLayer
 {
 public:
-	explicit F{{PROJECT_NAME}}Layer(std::string InName = "{{PROJECT_NAME}}")
+	explicit F{{PROJECT_IDENT}}Layer(std::string InName = "{{PROJECT_NAME}}")
 		: Maho::FLayer(std::move(InName))
 	{
 	}

@@ -76,7 +76,13 @@ ensure_engine_python()
 
 
 def is_valid_project_name(name: str) -> bool:
-	return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name or ""))
+	# Folder / display name. Hyphen allowed; C++ idents use project_cpp_ident().
+	return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name or ""))
+
+
+def project_cpp_ident(name: str) -> str:
+	"""Map project name to a C++ identifier (hyphen → underscore)."""
+	return (name or "").replace("-", "_")
 
 
 def find_cmake() -> str:
@@ -271,7 +277,9 @@ def create_project(
 	author: str = "",
 ) -> Path:
 	if not is_valid_project_name(project_name):
-		raise ValueError("Project name must start with a letter and contain only A-Z, a-z, 0-9, _")
+		raise ValueError(
+			"Project name must start with a letter and contain only A-Z, a-z, 0-9, _, -"
+		)
 
 	parent_dir = parent_dir.expanduser().resolve()
 	engine_root = engine_root.expanduser().resolve()
@@ -280,9 +288,11 @@ def create_project(
 		raise FileExistsError(f"Target folder is not empty: {project_dir}")
 
 	project_dir.mkdir(parents=True, exist_ok=True)
+	ident = project_cpp_ident(project_name)
 	mapping = {
 		"PROJECT_NAME": project_name,
-		"APP_CLASS": f"F{project_name}App",
+		"PROJECT_IDENT": ident,
+		"APP_CLASS": f"F{ident}App",
 		"DESCRIPTION": description,
 		"AUTHOR": author,
 	}
@@ -552,24 +562,92 @@ def run_package(
 	log(f"[Maho] Packaged → {packaged}")
 
 
+def _winreg_delete_tree(root: Any, path: str) -> None:
+	"""Delete a registry key and all subkeys (HKCU Classes cleanup)."""
+	import winreg
+
+	try:
+		with winreg.OpenKey(root, path, 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+			while True:
+				try:
+					sub = winreg.EnumKey(key, 0)
+				except OSError:
+					break
+				_winreg_delete_tree(root, f"{path}\\{sub}")
+		winreg.DeleteKey(root, path)
+	except FileNotFoundError:
+		pass
+	except OSError:
+		pass
+
+
 def install_windows_cproject_association(*, log: Any = print) -> None:
 	if sys.platform != "win32":
 		raise RuntimeError("File association is only implemented for Windows.")
 
 	import winreg
 
-	# Prefer Tools bat so Explorer double-click stays aligned with internal layout.
-	generate_bat = ENGINE_ROOT / "Tools" / "generateProject.bat"
+	# Open via wscript.exe — Windows often refuses to make .bat the silent default
+	# and keeps showing "Select an app" (especially after Catty→Maho renames).
+	generate_vbs = ENGINE_ROOT / "Tools" / "launch_generate_project.vbs"
 	switch_vbs = ENGINE_ROOT / "Tools" / "launch_switch_engine.vbs"
+	if not generate_vbs.is_file():
+		raise FileNotFoundError(f"Missing {generate_vbs}")
+	if not switch_vbs.is_file():
+		raise FileNotFoundError(f"Missing {switch_vbs}")
+
 	prog_id = "Maho.CProject"
-	open_command = f"\"{generate_bat}\" \"%1\""
-	# VBS → pythonw: no console flash for the folder-picker UI.
 	wscript = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "wscript.exe")
+	open_command = f"\"{wscript}\" //nologo \"{generate_vbs}\" \"%1\""
 	switch_command = f"\"{wscript}\" //nologo \"{switch_vbs}\" \"%1\""
+
+	# Drop legacy Catty ProgID (points at deleted Desktop\\Catty paths).
+	_winreg_delete_tree(winreg.HKEY_CURRENT_USER, r"Software\Classes\Catty.CProject")
+
+	# Clear Explorer "chosen app" / multi-ProgID chooser state for .cproject.
+	_winreg_delete_tree(
+		winreg.HKEY_CURRENT_USER,
+		r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.cproject\UserChoice",
+	)
+	try:
+		with winreg.CreateKeyEx(
+			winreg.HKEY_CURRENT_USER,
+			r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.cproject\OpenWithProgids",
+		) as key:
+			# Snapshot names first — EnumValue(0) + delete can skip entries.
+			names: list[str] = []
+			i = 0
+			while True:
+				try:
+					name, _, _ = winreg.EnumValue(key, i)
+					names.append(name)
+					i += 1
+				except OSError:
+					break
+			for name in names:
+				try:
+					winreg.DeleteValue(key, name)
+				except OSError:
+					pass
+			# Legacy ProgID leftover from Catty rename.
+			for stale in ("Catty.CProject", "catty.cproject"):
+				try:
+					winreg.DeleteValue(key, stale)
+				except OSError:
+					pass
+			winreg.SetValueEx(key, prog_id, 0, winreg.REG_NONE, b"")
+	except OSError as ex:
+		log(f"[Maho] OpenWithProgids cleanup warning: {ex}")
 
 	# Use winreg (no reg.exe) so pythonw GUIs do not flash 3 console windows.
 	with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Classes\.cproject") as key:
 		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, prog_id)
+
+	with winreg.CreateKeyEx(
+		winreg.HKEY_CURRENT_USER,
+		r"Software\Classes\.cproject\OpenWithProgids",
+	) as key:
+		winreg.SetValueEx(key, prog_id, 0, winreg.REG_NONE, b"")
 
 	with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{prog_id}") as key:
 		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, "Maho Project")
@@ -594,9 +672,10 @@ def install_windows_cproject_association(*, log: Any = print) -> None:
 	) as key:
 		winreg.SetValueEx(key, None, 0, winreg.REG_SZ, switch_command)
 
-	log("[Maho] Associated .cproject → Tools/generateProject.bat (current user)")
+	log("[Maho] Associated .cproject → launch_generate_project.vbs (current user)")
 	log("[Maho] Context menu: 选择链接引擎 → launch_switch_engine.vbs")
 	log(f"[Maho] Open: {open_command}")
+	log("[Maho] Removed legacy Catty.CProject association if present.")
 
 
 # Entire trees wiped by clean (including any README/.gitkeep inside).
@@ -1030,8 +1109,9 @@ def generate_game_app_cpp(cproject_path: Path, *, log: Any = print) -> Path:
 	data = read_cproject(cproject_path)
 	project_dir = cproject_path.parent
 	project_name = str(data["ProjectName"])
-	app_class = f"F{project_name}App"
-	layer_class = f"F{project_name}Layer"
+	ident = project_cpp_ident(project_name)
+	app_class = f"F{ident}App"
+	layer_class = f"F{ident}Layer"
 	layer_header = f"{project_name}Layer.h"
 
 	roots = resolve_plugin_roots_for_cproject(cproject_path)

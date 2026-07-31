@@ -7,6 +7,7 @@ Engine-local tooling. Root only exposes thin user-facing `.bat` launchers.
 | `maho_python.bat` | Run with `Tools/python/python.exe` or `Scripts/python.exe` (venv) |
 | `maho_pythonw.bat` | Same with `pythonw.exe` (no console; for GUI tools) |
 | `launch_create_project.vbs` / `launch_package.vbs` | WScript → pythonw (root or Scripts) for create / package GUIs |
+| `launch_generate_project.vbs` | Double-click `.cproject` → generate `.sln` (open verb; via wscript) |
 | `launch_switch_engine.vbs` / `switch_engine.py` | Explorer right-click → rewrite `.cproject` `EngineDirectory` |
 | `create_project.py` | New-project UI (`createProject.bat`) |
 | `generateProject.py` / `generateProject.bat` | `.cproject` / workspace → sibling `.sln` |

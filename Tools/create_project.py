@@ -248,7 +248,8 @@ class CreateProjectApp(tk.Tk):
 						"Associated .cproject for the current Windows user:\n"
 						"  • Double-click → generate .sln\n"
 						"  • Right-click → 选择链接引擎…\n\n"
-						"You may need to sign out/in once for Explorer to refresh icons.",
+						"If Explorer still asks which app to use, close all Explorer\n"
+						"windows once, or sign out/in.",
 					),
 				)
 		except Exception as ex:  # noqa: BLE001
@@ -291,7 +292,7 @@ class CreateProjectApp(tk.Tk):
 		want_open = self.var_open_folder.get()
 
 		if not is_valid_project_name(name):
-			messagebox.showerror("Maho", "Invalid project name.\nUse Letter + A-Z a-z 0-9 _")
+			messagebox.showerror("Maho", "Invalid project name.\nUse Letter + A-Z a-z 0-9 _ -")
 			return
 		if not parent:
 			messagebox.showerror("Maho", "Parent folder is required.")
