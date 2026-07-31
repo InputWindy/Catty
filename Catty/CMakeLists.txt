@@ -109,6 +109,10 @@ add_custom_command(TARGET Catty PRE_BUILD
 	VERBATIM
 )
 
+if(NOT CATTY_VMA_INCLUDE_DIR)
+	message(FATAL_ERROR "Catty: VMA include dir was not set (CattyDependencies.cmake)")
+endif()
+
 target_include_directories(Catty
 	PUBLIC
 		"${CATTY_PUBLIC_DIR}"
@@ -117,6 +121,7 @@ target_include_directories(Catty
 		"${CATTY_PRIVATE_DIR}"
 		"${CATTY_NLOHMANN_JSON_INCLUDE_DIR}"
 		"${CATTY_SOL2_INCLUDE_DIR}"
+		"${CATTY_VMA_INCLUDE_DIR}"
 )
 
 # PUBLIC: game code uses CATTY_* macros that expand to spdlog calls.

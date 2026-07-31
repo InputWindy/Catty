@@ -417,6 +417,27 @@ else()
 endif()
 unset(_CATTY_VENDORED_REFL)
 
+# -----------------------------------------------------------------------------
+# Vulkan Memory Allocator (GPUOpen) — header-only; VMA_IMPLEMENTATION in one Catty .cpp
+# Prefer vendored tree; FetchContent only if missing (needs network).
+# -----------------------------------------------------------------------------
+set(_CATTY_VENDORED_VMA "${_CATTY_REPO_ROOT}/Catty/ThirdParty/VulkanMemoryAllocator")
+if(EXISTS "${_CATTY_VENDORED_VMA}/include/vk_mem_alloc.h")
+	set(CATTY_VMA_INCLUDE_DIR "${_CATTY_VENDORED_VMA}/include" CACHE INTERNAL "VulkanMemoryAllocator include directory" FORCE)
+	message(STATUS "Catty: VMA (vendored) at ${CATTY_VMA_INCLUDE_DIR}")
+else()
+	FetchContent_Declare(
+		vma
+		GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+		GIT_TAG v3.2.1
+		GIT_SHALLOW TRUE
+	)
+	catty_fetchcontent_populate_or_reuse(vma include/vk_mem_alloc.h)
+	set(CATTY_VMA_INCLUDE_DIR "${vma_SOURCE_DIR}/include" CACHE INTERNAL "VulkanMemoryAllocator include directory" FORCE)
+	message(STATUS "Catty: VMA (FetchContent) at ${CATTY_VMA_INCLUDE_DIR}")
+endif()
+unset(_CATTY_VENDORED_VMA)
+
 unset(_CATTY_REPO_ROOT)
 unset(_CATTY_PUBLIC_HEADERS)
 unset(_CATTY_TP)

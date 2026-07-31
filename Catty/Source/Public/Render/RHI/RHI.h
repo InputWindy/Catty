@@ -1,17 +1,17 @@
 #pragma once
 
 #include <Core/Export.h>
+#include <Render/RHI/RHICommandList.h>
+#include <Render/RHI/RHIEnums.h>
+#include <Render/RHI/RHIResourceManager.h>
+#include <Render/RHI/RHIResources.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 
 namespace Catty
 {
-
-enum class ERHIBackend : std::uint8_t
-{
-	Vulkan = 0,
-};
 
 struct FRHIInitDesc
 {
@@ -25,23 +25,10 @@ struct FRHIInitDesc
 };
 
 /**
- * Minimal render-hardware interface (Vulkan-backed implementation today).
- * Created through FRHIFactory; no third-party types in the public API.
+ * Render-hardware interface. Public surface has no Vulkan / VMA types.
  *
- * Example:
- * ```
- *   Catty::FRHIInitDesc Desc;
- *   Desc.Backend = Catty::ERHIBackend::Vulkan;
- *   Desc.NativeWindowHandle = Window->GetNativeHandle();
- *   Window->GetFramebufferSize(Desc.FramebufferWidth, Desc.FramebufferHeight);
- *
- *   Catty::FRHIPtr RHI = Catty::FRHIFactory::Create(Desc.Backend);
- *   RHI->Initialize(Desc);
- *   RHI->BeginFrame();
- *   RHI->Clear(0.1f, 0.1f, 0.15f, 1.0f);
- *   RHI->EndFrame();
- *   RHI->Shutdown();
- * ```
+ * Device creates resources; prefer FRHIResourceManager for Acquire/Release.
+ * Always exposes Graphics / Compute / Transfer logical queues.
  */
 class CATTY_API IRHI
 {
@@ -61,6 +48,40 @@ public:
 	virtual void Resize(int Width, int Height) = 0;
 
 	[[nodiscard]] virtual bool IsInitialized() const = 0;
+
+	[[nodiscard]] virtual FRHIResourceManager& GetResourceManager() = 0;
+	[[nodiscard]] virtual IRHIMemoryAllocator* GetMemoryAllocator() = 0;
+
+	[[nodiscard]] virtual FRHIQueue& GetGraphicsQueue() = 0;
+	[[nodiscard]] virtual FRHIQueue& GetComputeQueue() = 0;
+	[[nodiscard]] virtual FRHIQueue& GetTransferQueue() = 0;
+
+	[[nodiscard]] virtual FRHICommandList* CreateCommandList(ERHICommandListType Type) = 0;
+	virtual void DestroyCommandList(FRHICommandList* CmdList) = 0;
+
+	[[nodiscard]] virtual FRHIFence* CreateFence(bool bSignaled) = 0;
+	virtual void DestroyFence(FRHIFence* Fence) = 0;
+	virtual void WaitForFence(FRHIFence* Fence, std::uint64_t TimeoutNs = std::numeric_limits<std::uint64_t>::max()) = 0;
+
+	[[nodiscard]] virtual FRHISemaphore* CreateGpuSemaphore() = 0;
+	virtual void DestroyGpuSemaphore(FRHISemaphore* Semaphore) = 0;
+
+	virtual void UpdateBuffer(FRHIBuffer* Buffer, std::uint64_t Offset, std::uint64_t Size, const void* Data) = 0;
+	virtual void UpdateDescriptorSets(const FRHIDescriptorWrite* Writes, std::uint32_t Count) = 0;
+
+	/** Internal factories used by FRHIResourceManager. Prefer Acquire* on the manager. */
+	[[nodiscard]] virtual FRHIBuffer* CreateBuffer(const FRHIBufferDesc& Desc) = 0;
+	virtual void DestroyBuffer(FRHIBuffer* Buffer) = 0;
+	[[nodiscard]] virtual FRHITexture* CreateTexture(const FRHITextureDesc& Desc) = 0;
+	virtual void DestroyTexture(FRHITexture* Texture) = 0;
+	[[nodiscard]] virtual FRHISampler* CreateSampler(const FRHISamplerDesc& Desc) = 0;
+	virtual void DestroySampler(FRHISampler* Sampler) = 0;
+	[[nodiscard]] virtual FRHIShaderModule* CreateShaderModule(const FRHIShaderModuleDesc& Desc) = 0;
+	virtual void DestroyShaderModule(FRHIShaderModule* Module) = 0;
+	[[nodiscard]] virtual FRHIGraphicsPipeline* CreateGraphicsPipeline(const FRHIGraphicsPipelineDesc& Desc) = 0;
+	virtual void DestroyGraphicsPipeline(FRHIGraphicsPipeline* Pipeline) = 0;
+	[[nodiscard]] virtual FRHIComputePipeline* CreateComputePipeline(const FRHIComputePipelineDesc& Desc) = 0;
+	virtual void DestroyComputePipeline(FRHIComputePipeline* Pipeline) = 0;
 
 protected:
 	IRHI() = default;

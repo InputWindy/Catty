@@ -1,5 +1,7 @@
 ﻿#include "Render/RHI/VulkanRHI.h"
 
+#include "Render/RHI/VulkanResources.h"
+
 #include <Core/System/Console.h>
 #include <Core/System/Log.h>
 
@@ -8,6 +10,8 @@
 #endif
 
 #include <algorithm>
+#include <cstring>
+#include <map>
 #include <set>
 #include <string>
 
@@ -57,6 +61,8 @@ constexpr const char* GDeviceExtensions[] =
 }
 
 } // namespace
+
+FVulkanRHI::FVulkanRHI() = default;
 
 FVulkanRHI::~FVulkanRHI()
 {
@@ -117,6 +123,18 @@ bool FVulkanRHI::Initialize(const FRHIInitDesc& Desc)
 		return false;
 	}
 
+	if (!CreateMemoryAllocatorAndManager())
+	{
+		Shutdown();
+		return false;
+	}
+
+	if (!CreateLogicalQueuesAndPools())
+	{
+		Shutdown();
+		return false;
+	}
+
 	if (!CreateSwapchain())
 	{
 		Shutdown();
@@ -165,6 +183,18 @@ void FVulkanRHI::Shutdown()
 		vkDeviceWaitIdle(Device);
 	}
 
+	if (ResourceManager)
+	{
+		ResourceManager->Shutdown();
+		ResourceManager.reset();
+	}
+
+	if (MemoryAllocator)
+	{
+		MemoryAllocator->Shutdown();
+		MemoryAllocator.reset();
+	}
+
 	if (Device != VK_NULL_HANDLE && InFlightFence != VK_NULL_HANDLE)
 	{
 		vkDestroyFence(Device, InFlightFence, nullptr);
@@ -181,6 +211,41 @@ void FVulkanRHI::Shutdown()
 	{
 		vkDestroySemaphore(Device, ImageAvailableSemaphore, nullptr);
 		ImageAvailableSemaphore = VK_NULL_HANDLE;
+	}
+
+	auto DestroyPool = [this](VkCommandPool& Pool)
+	{
+		if (Device != VK_NULL_HANDLE && Pool != VK_NULL_HANDLE)
+		{
+			vkDestroyCommandPool(Device, Pool, nullptr);
+			Pool = VK_NULL_HANDLE;
+		}
+	};
+
+	// Logical pools may alias the same VkCommandPool handle.
+	{
+		std::set<VkCommandPool> UniqueLogicalPools;
+		if (GraphicsCmdPool != VK_NULL_HANDLE)
+		{
+			UniqueLogicalPools.insert(GraphicsCmdPool);
+		}
+		if (ComputeCmdPool != VK_NULL_HANDLE)
+		{
+			UniqueLogicalPools.insert(ComputeCmdPool);
+		}
+		if (TransferCmdPool != VK_NULL_HANDLE)
+		{
+			UniqueLogicalPools.insert(TransferCmdPool);
+		}
+
+		for (VkCommandPool Pool : UniqueLogicalPools)
+		{
+			VkCommandPool Temp = Pool;
+			DestroyPool(Temp);
+		}
+		GraphicsCmdPool = VK_NULL_HANDLE;
+		ComputeCmdPool = VK_NULL_HANDLE;
+		TransferCmdPool = VK_NULL_HANDLE;
 	}
 
 	if (Device != VK_NULL_HANDLE && CommandPool != VK_NULL_HANDLE)
@@ -202,8 +267,10 @@ void FVulkanRHI::Shutdown()
 	{
 		vkDestroyDevice(Device, nullptr);
 		Device = VK_NULL_HANDLE;
-		GraphicsQueue = VK_NULL_HANDLE;
+		GraphicsVkQueue = VK_NULL_HANDLE;
 		PresentQueue = VK_NULL_HANDLE;
+		ComputeVkQueue = VK_NULL_HANDLE;
+		TransferVkQueue = VK_NULL_HANDLE;
 	}
 
 	if (Instance != VK_NULL_HANDLE && Surface != VK_NULL_HANDLE)
@@ -361,7 +428,7 @@ void FVulkanRHI::EndFrame()
 	SubmitInfo.signalSemaphoreCount = 1;
 	SubmitInfo.pSignalSemaphores = &RenderFinishedSemaphore;
 
-	if (!CheckVkResult(vkQueueSubmit(GraphicsQueue, 1, &SubmitInfo, InFlightFence), "vkQueueSubmit"))
+	if (!CheckVkResult(vkQueueSubmit(GraphicsVkQueue, 1, &SubmitInfo, InFlightFence), "vkQueueSubmit"))
 	{
 		return;
 	}
@@ -462,10 +529,7 @@ bool FVulkanRHI::CreateSurface()
 #endif
 }
 
-bool FVulkanRHI::FindQueueFamilies(
-	VkPhysicalDevice InPhysicalDevice,
-	std::uint32_t& OutGraphicsFamily,
-	std::uint32_t& OutPresentFamily) const
+bool FVulkanRHI::FindQueueFamilies(VkPhysicalDevice InPhysicalDevice)
 {
 	std::uint32_t QueueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(InPhysicalDevice, &QueueFamilyCount, nullptr);
@@ -473,30 +537,71 @@ bool FVulkanRHI::FindQueueFamilies(
 	std::vector<VkQueueFamilyProperties> QueueFamilies(QueueFamilyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(InPhysicalDevice, &QueueFamilyCount, QueueFamilies.data());
 
-	OutGraphicsFamily = UINT32_MAX;
-	OutPresentFamily = UINT32_MAX;
+	std::uint32_t GraphicsFamily = UINT32_MAX;
+	std::uint32_t PresentFamily = UINT32_MAX;
+	std::uint32_t ComputeFamily = UINT32_MAX;
+	std::uint32_t TransferFamily = UINT32_MAX;
+	bool bComputeFallback = true;
+	bool bTransferFallback = true;
 
 	for (std::uint32_t Index = 0; Index < QueueFamilyCount; ++Index)
 	{
-		if (QueueFamilies[Index].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		const VkQueueFlags Flags = QueueFamilies[Index].queueFlags;
+
+		if ((Flags & VK_QUEUE_GRAPHICS_BIT) != 0 && GraphicsFamily == UINT32_MAX)
 		{
-			OutGraphicsFamily = Index;
+			GraphicsFamily = Index;
 		}
 
 		VkBool32 PresentSupport = VK_FALSE;
 		vkGetPhysicalDeviceSurfaceSupportKHR(InPhysicalDevice, Index, Surface, &PresentSupport);
-		if (PresentSupport == VK_TRUE)
+		if (PresentSupport == VK_TRUE && PresentFamily == UINT32_MAX)
 		{
-			OutPresentFamily = Index;
+			PresentFamily = Index;
 		}
 
-		if (OutGraphicsFamily != UINT32_MAX && OutPresentFamily != UINT32_MAX)
+		if ((Flags & VK_QUEUE_COMPUTE_BIT) != 0
+			&& (Flags & VK_QUEUE_GRAPHICS_BIT) == 0
+			&& ComputeFamily == UINT32_MAX)
 		{
-			return true;
+			ComputeFamily = Index;
+			bComputeFallback = false;
+		}
+
+		if ((Flags & VK_QUEUE_TRANSFER_BIT) != 0
+			&& (Flags & VK_QUEUE_GRAPHICS_BIT) == 0
+			&& (Flags & VK_QUEUE_COMPUTE_BIT) == 0
+			&& TransferFamily == UINT32_MAX)
+		{
+			TransferFamily = Index;
+			bTransferFallback = false;
 		}
 	}
 
-	return false;
+	if (GraphicsFamily == UINT32_MAX || PresentFamily == UINT32_MAX)
+	{
+		return false;
+	}
+
+	if (ComputeFamily == UINT32_MAX)
+	{
+		ComputeFamily = GraphicsFamily;
+		bComputeFallback = true;
+	}
+
+	if (TransferFamily == UINT32_MAX)
+	{
+		TransferFamily = GraphicsFamily;
+		bTransferFallback = true;
+	}
+
+	GraphicsQueueFamilyIndex = GraphicsFamily;
+	PresentQueueFamilyIndex = PresentFamily;
+	ComputeQueueFamilyIndex = ComputeFamily;
+	TransferQueueFamilyIndex = TransferFamily;
+	bComputeNativeFallback = bComputeFallback;
+	bTransferNativeFallback = bTransferFallback;
+	return true;
 }
 
 bool FVulkanRHI::CheckDeviceExtensionSupport(VkPhysicalDevice InPhysicalDevice) const
@@ -519,11 +624,9 @@ bool FVulkanRHI::CheckDeviceExtensionSupport(VkPhysicalDevice InPhysicalDevice) 
 	return RequiredExtensions.empty();
 }
 
-bool FVulkanRHI::IsDeviceSuitable(VkPhysicalDevice InPhysicalDevice) const
+bool FVulkanRHI::IsDeviceSuitable(VkPhysicalDevice InPhysicalDevice)
 {
-	std::uint32_t GraphicsFamily = UINT32_MAX;
-	std::uint32_t PresentFamily = UINT32_MAX;
-	if (!FindQueueFamilies(InPhysicalDevice, GraphicsFamily, PresentFamily))
+	if (!FindQueueFamilies(InPhysicalDevice))
 	{
 		return false;
 	}
@@ -620,7 +723,7 @@ bool FVulkanRHI::PickPhysicalDevice()
 
 	PhysicalDevice = SelectedDevice;
 
-	if (!FindQueueFamilies(PhysicalDevice, GraphicsQueueFamilyIndex, PresentQueueFamilyIndex))
+	if (!FindQueueFamilies(PhysicalDevice))
 	{
 		CATTY_CORE_ERROR("FVulkanRHI::PickPhysicalDevice: queue families not found");
 		return false;
@@ -631,21 +734,67 @@ bool FVulkanRHI::PickPhysicalDevice()
 
 bool FVulkanRHI::CreateLogicalDevice()
 {
-	std::set<std::uint32_t> UniqueQueueFamilies =
+	std::uint32_t QueueFamilyCount = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties(PhysicalDevice, &QueueFamilyCount, nullptr);
+	std::vector<VkQueueFamilyProperties> QueueFamilies(QueueFamilyCount);
+	vkGetPhysicalDeviceQueueFamilyProperties(PhysicalDevice, &QueueFamilyCount, QueueFamilies.data());
+
+	std::map<std::uint32_t, std::uint32_t> FamilyQueueCounts;
+	auto RequireQueues = [&](std::uint32_t Family, std::uint32_t Count)
 	{
-		GraphicsQueueFamilyIndex,
-		PresentQueueFamilyIndex,
+		const std::uint32_t MaxCount = QueueFamilies[Family].queueCount;
+		const std::uint32_t Clamped = Count > MaxCount ? MaxCount : Count;
+		auto It = FamilyQueueCounts.find(Family);
+		if (It == FamilyQueueCounts.end() || It->second < Clamped)
+		{
+			FamilyQueueCounts[Family] = Clamped;
+		}
 	};
 
-	float QueuePriority = 1.0f;
+	GraphicsQueueIndex = 0;
+	ComputeQueueIndex = 0;
+	TransferQueueIndex = 0;
+
+	RequireQueues(GraphicsQueueFamilyIndex, 1);
+	RequireQueues(PresentQueueFamilyIndex, 1);
+
+	if (ComputeQueueFamilyIndex == GraphicsQueueFamilyIndex
+		&& QueueFamilies[GraphicsQueueFamilyIndex].queueCount >= 2)
+	{
+		RequireQueues(GraphicsQueueFamilyIndex, 2);
+		ComputeQueueIndex = 1;
+	}
+	else
+	{
+		RequireQueues(ComputeQueueFamilyIndex, 1);
+		ComputeQueueIndex = 0;
+	}
+
+	if (TransferQueueFamilyIndex == GraphicsQueueFamilyIndex)
+	{
+		TransferQueueIndex = 0;
+		RequireQueues(GraphicsQueueFamilyIndex, FamilyQueueCounts[GraphicsQueueFamilyIndex]);
+	}
+	else if (TransferQueueFamilyIndex == ComputeQueueFamilyIndex)
+	{
+		TransferQueueIndex = ComputeQueueIndex;
+		RequireQueues(ComputeQueueFamilyIndex, FamilyQueueCounts[ComputeQueueFamilyIndex]);
+	}
+	else
+	{
+		RequireQueues(TransferQueueFamilyIndex, 1);
+		TransferQueueIndex = 0;
+	}
+
+	std::vector<float> Priorities(4, 1.0f);
 	std::vector<VkDeviceQueueCreateInfo> QueueCreateInfos;
-	for (std::uint32_t QueueFamily : UniqueQueueFamilies)
+	for (const auto& Pair : FamilyQueueCounts)
 	{
 		VkDeviceQueueCreateInfo QueueCreateInfo{};
 		QueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		QueueCreateInfo.queueFamilyIndex = QueueFamily;
-		QueueCreateInfo.queueCount = 1;
-		QueueCreateInfo.pQueuePriorities = &QueuePriority;
+		QueueCreateInfo.queueFamilyIndex = Pair.first;
+		QueueCreateInfo.queueCount = Pair.second;
+		QueueCreateInfo.pQueuePriorities = Priorities.data();
 		QueueCreateInfos.push_back(QueueCreateInfo);
 	}
 
@@ -665,10 +814,31 @@ bool FVulkanRHI::CreateLogicalDevice()
 		return false;
 	}
 
-	vkGetDeviceQueue(Device, GraphicsQueueFamilyIndex, 0, &GraphicsQueue);
+	vkGetDeviceQueue(Device, GraphicsQueueFamilyIndex, GraphicsQueueIndex, &GraphicsVkQueue);
 	vkGetDeviceQueue(Device, PresentQueueFamilyIndex, 0, &PresentQueue);
+	vkGetDeviceQueue(Device, ComputeQueueFamilyIndex, ComputeQueueIndex, &ComputeVkQueue);
+	vkGetDeviceQueue(Device, TransferQueueFamilyIndex, TransferQueueIndex, &TransferVkQueue);
 
-	CATTY_CORE_INFO("Vulkan logical device created");
+	CATTY_CORE_INFO(
+		"Vulkan logical device created (G fam={} idx={}, C fam={} idx={} fallback={}, T fam={} idx={} fallback={})",
+		GraphicsQueueFamilyIndex,
+		GraphicsQueueIndex,
+		ComputeQueueFamilyIndex,
+		ComputeQueueIndex,
+		bComputeNativeFallback,
+		TransferQueueFamilyIndex,
+		TransferQueueIndex,
+		bTransferNativeFallback);
+
+	if (bTransferNativeFallback)
+	{
+		CATTY_CORE_INFO("Transfer: fallback to Graphics (no dedicated TRANSFER family)");
+	}
+	else
+	{
+		CATTY_CORE_INFO("Transfer: dedicated");
+	}
+
 	return true;
 }
 
@@ -1016,6 +1186,465 @@ bool FVulkanRHI::CreateSyncObjects()
 
 	CATTY_CORE_INFO("Vulkan sync objects created");
 	return true;
+}
+
+bool FVulkanRHI::CreateMemoryAllocatorAndManager()
+{
+	MemoryAllocator = std::make_unique<FVulkanMemoryAllocator>();
+	if (!MemoryAllocator->Initialize(Instance, PhysicalDevice, Device))
+	{
+		return false;
+	}
+
+	ResourceManager = std::make_unique<FRHIResourceManager>(*this);
+	return true;
+}
+
+bool FVulkanRHI::CreateLogicalQueuesAndPools()
+{
+	GraphicsQueue.Configure(ERHIQueueType::Graphics, GraphicsVkQueue, GraphicsQueueFamilyIndex, false);
+	ComputeQueue.Configure(ERHIQueueType::Compute, ComputeVkQueue, ComputeQueueFamilyIndex, bComputeNativeFallback);
+	TransferQueue.Configure(ERHIQueueType::Transfer, TransferVkQueue, TransferQueueFamilyIndex, bTransferNativeFallback);
+
+	auto CreatePool = [this](std::uint32_t Family, VkCommandPool& OutPool, const char* Name) -> bool
+	{
+		VkCommandPoolCreateInfo PoolInfo{};
+		PoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		PoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+		PoolInfo.queueFamilyIndex = Family;
+		if (!CheckVkResult(vkCreateCommandPool(Device, &PoolInfo, nullptr, &OutPool), Name))
+		{
+			return false;
+		}
+		return true;
+	};
+
+	if (!CreatePool(GraphicsQueueFamilyIndex, GraphicsCmdPool, "vkCreateCommandPool (graphics logical)"))
+	{
+		return false;
+	}
+
+	if (ComputeQueueFamilyIndex == GraphicsQueueFamilyIndex)
+	{
+		ComputeCmdPool = GraphicsCmdPool;
+	}
+	else if (!CreatePool(ComputeQueueFamilyIndex, ComputeCmdPool, "vkCreateCommandPool (compute)"))
+	{
+		return false;
+	}
+
+	if (TransferQueueFamilyIndex == GraphicsQueueFamilyIndex)
+	{
+		TransferCmdPool = GraphicsCmdPool;
+	}
+	else if (TransferQueueFamilyIndex == ComputeQueueFamilyIndex)
+	{
+		TransferCmdPool = ComputeCmdPool;
+	}
+	else if (!CreatePool(TransferQueueFamilyIndex, TransferCmdPool, "vkCreateCommandPool (transfer)"))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+FRHIResourceManager& FVulkanRHI::GetResourceManager()
+{
+	return *ResourceManager;
+}
+
+IRHIMemoryAllocator* FVulkanRHI::GetMemoryAllocator()
+{
+	return MemoryAllocator.get();
+}
+
+FRHIQueue& FVulkanRHI::GetGraphicsQueue()
+{
+	return GraphicsQueue;
+}
+
+FRHIQueue& FVulkanRHI::GetComputeQueue()
+{
+	return ComputeQueue;
+}
+
+FRHIQueue& FVulkanRHI::GetTransferQueue()
+{
+	return TransferQueue;
+}
+
+VkCommandPool FVulkanRHI::GetPoolForType(ERHICommandListType Type) const
+{
+	switch (Type)
+	{
+	case ERHICommandListType::Compute:
+		return ComputeCmdPool;
+	case ERHICommandListType::Transfer:
+		return TransferCmdPool;
+	case ERHICommandListType::Graphics:
+	default:
+		return GraphicsCmdPool;
+	}
+}
+
+FRHICommandList* FVulkanRHI::CreateCommandList(ERHICommandListType Type)
+{
+	VkCommandPool Pool = GetPoolForType(Type);
+	if (Pool == VK_NULL_HANDLE)
+	{
+		return nullptr;
+	}
+
+	VkCommandBufferAllocateInfo AllocateInfo{};
+	AllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	AllocateInfo.commandPool = Pool;
+	AllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	AllocateInfo.commandBufferCount = 1;
+
+	VkCommandBuffer CmdBuffer = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkAllocateCommandBuffers(Device, &AllocateInfo, &CmdBuffer), "vkAllocateCommandBuffers (logical)"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanCommandList(Type, Device, Pool, CmdBuffer);
+}
+
+void FVulkanRHI::DestroyCommandList(FRHICommandList* CmdList)
+{
+	if (CmdList == nullptr)
+	{
+		return;
+	}
+
+	auto* VulkanCL = static_cast<FVulkanCommandList*>(CmdList);
+	VkCommandBuffer Buf = VulkanCL->GetVkCommandBuffer();
+	VkCommandPool Pool = VulkanCL->GetVkCommandPool();
+	if (Device != VK_NULL_HANDLE && Pool != VK_NULL_HANDLE && Buf != VK_NULL_HANDLE)
+	{
+		vkFreeCommandBuffers(Device, Pool, 1, &Buf);
+	}
+	delete VulkanCL;
+}
+
+FRHIFence* FVulkanRHI::CreateFence(bool bSignaled)
+{
+	VkFenceCreateInfo FenceInfo{};
+	FenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	FenceInfo.flags = bSignaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0;
+
+	VkFence Fence = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateFence(Device, &FenceInfo, nullptr, &Fence), "vkCreateFence"))
+	{
+		return nullptr;
+	}
+	return new FVulkanFence(Device, Fence);
+}
+
+void FVulkanRHI::DestroyFence(FRHIFence* Fence)
+{
+	delete Fence;
+}
+
+void FVulkanRHI::WaitForFence(FRHIFence* Fence, std::uint64_t TimeoutNs)
+{
+	if (Fence == nullptr)
+	{
+		return;
+	}
+	VkFence Handle = static_cast<FVulkanFence*>(Fence)->GetVkFence();
+	vkWaitForFences(Device, 1, &Handle, VK_TRUE, TimeoutNs);
+}
+
+FRHISemaphore* FVulkanRHI::CreateGpuSemaphore()
+{
+	VkSemaphoreCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	VkSemaphore Semaphore = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateSemaphore(Device, &Info, nullptr, &Semaphore), "vkCreateSemaphore"))
+	{
+		return nullptr;
+	}
+	return new FVulkanSemaphore(Device, Semaphore);
+}
+
+void FVulkanRHI::DestroyGpuSemaphore(FRHISemaphore* Semaphore)
+{
+	delete Semaphore;
+}
+
+void FVulkanRHI::UpdateBuffer(FRHIBuffer* Buffer, std::uint64_t Offset, std::uint64_t Size, const void* Data)
+{
+	auto* VulkanBuffer = static_cast<FVulkanBuffer*>(Buffer);
+	if (VulkanBuffer == nullptr || Data == nullptr || MemoryAllocator == nullptr || !MemoryAllocator->IsValid())
+	{
+		return;
+	}
+
+	FRHIMemoryAllocation Opaque{};
+	Opaque.Native = VulkanBuffer->GetAllocation();
+	void* Mapped = MemoryAllocator->Map(Opaque);
+	if (Mapped == nullptr)
+	{
+		CATTY_CORE_ERROR("FVulkanRHI::UpdateBuffer: map failed");
+		return;
+	}
+
+	std::memcpy(static_cast<std::uint8_t*>(Mapped) + Offset, Data, static_cast<std::size_t>(Size));
+	MemoryAllocator->Unmap(Opaque);
+}
+
+void FVulkanRHI::UpdateDescriptorSets(const FRHIDescriptorWrite* /*Writes*/, std::uint32_t /*Count*/)
+{
+	// Skeleton stub.
+}
+
+VkBufferUsageFlags FVulkanRHI::ToVkBufferUsage(ERHIBufferUsage Usage)
+{
+	VkBufferUsageFlags Flags = 0;
+	if (RHIEnumHas(Usage, ERHIBufferUsage::Vertex))
+	{
+		Flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHIBufferUsage::Index))
+	{
+		Flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHIBufferUsage::Uniform))
+	{
+		Flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHIBufferUsage::Storage))
+	{
+		Flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHIBufferUsage::TransferSrc))
+	{
+		Flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHIBufferUsage::TransferDst))
+	{
+		Flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHIBufferUsage::Indirect))
+	{
+		Flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+	}
+	return Flags;
+}
+
+VkImageUsageFlags FVulkanRHI::ToVkImageUsage(ERHITextureUsage Usage)
+{
+	VkImageUsageFlags Flags = 0;
+	if (RHIEnumHas(Usage, ERHITextureUsage::Sampled))
+	{
+		Flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHITextureUsage::ColorAttachment))
+	{
+		Flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHITextureUsage::DepthStencil))
+	{
+		Flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHITextureUsage::Storage))
+	{
+		Flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHITextureUsage::TransferSrc))
+	{
+		Flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHITextureUsage::TransferDst))
+	{
+		Flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	}
+	if (RHIEnumHas(Usage, ERHITextureUsage::Transient))
+	{
+		Flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+	}
+	return Flags;
+}
+
+VkFormat FVulkanRHI::ToVkFormat(ERHIFormat Format)
+{
+	switch (Format)
+	{
+	case ERHIFormat::R8G8B8A8_UNORM:
+		return VK_FORMAT_R8G8B8A8_UNORM;
+	case ERHIFormat::B8G8R8A8_UNORM:
+		return VK_FORMAT_B8G8R8A8_UNORM;
+	case ERHIFormat::R32_SFLOAT:
+		return VK_FORMAT_R32_SFLOAT;
+	case ERHIFormat::R16G16_SFLOAT:
+		return VK_FORMAT_R16G16_SFLOAT;
+	case ERHIFormat::D24_UNORM_S8_UINT:
+		return VK_FORMAT_D24_UNORM_S8_UINT;
+	case ERHIFormat::D32_SFLOAT:
+		return VK_FORMAT_D32_SFLOAT;
+	default:
+		return VK_FORMAT_UNDEFINED;
+	}
+}
+
+VkFilter FVulkanRHI::ToVkFilter(ERHIFilter Filter)
+{
+	return Filter == ERHIFilter::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+}
+
+VkSamplerAddressMode FVulkanRHI::ToVkAddressMode(ERHIAddressMode Mode)
+{
+	switch (Mode)
+	{
+	case ERHIAddressMode::MirroredRepeat:
+		return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+	case ERHIAddressMode::ClampToEdge:
+		return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	case ERHIAddressMode::ClampToBorder:
+		return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	case ERHIAddressMode::Repeat:
+	default:
+		return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	}
+}
+
+FRHIBuffer* FVulkanRHI::CreateBuffer(const FRHIBufferDesc& Desc)
+{
+	if (MemoryAllocator == nullptr || !MemoryAllocator->IsValid() || Desc.Size == 0)
+	{
+		return nullptr;
+	}
+
+	VkBufferCreateInfo BufferInfo{};
+	BufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	BufferInfo.size = Desc.Size;
+	BufferInfo.usage = ToVkBufferUsage(Desc.Usage);
+	BufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VmaAllocationCreateInfo AllocInfo = FVulkanMemoryAllocator::MakeAllocationInfo(Desc.MemoryUsage);
+	VkBuffer Buffer = VK_NULL_HANDLE;
+	VmaAllocation Allocation = nullptr;
+	if (!MemoryAllocator->CreateBuffer(BufferInfo, AllocInfo, Buffer, Allocation))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanBuffer(Desc, Buffer, Allocation, MemoryAllocator.get());
+}
+
+void FVulkanRHI::DestroyBuffer(FRHIBuffer* Buffer)
+{
+	delete Buffer;
+}
+
+FRHITexture* FVulkanRHI::CreateTexture(const FRHITextureDesc& Desc)
+{
+	if (MemoryAllocator == nullptr || !MemoryAllocator->IsValid())
+	{
+		return nullptr;
+	}
+
+	VkImageCreateInfo ImageInfo{};
+	ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	ImageInfo.imageType = VK_IMAGE_TYPE_2D;
+	ImageInfo.format = ToVkFormat(Desc.Format);
+	ImageInfo.extent = { Desc.Extent.Width, Desc.Extent.Height, Desc.Extent.Depth };
+	ImageInfo.mipLevels = Desc.MipLevels;
+	ImageInfo.arrayLayers = Desc.ArrayLayers;
+	ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	ImageInfo.usage = ToVkImageUsage(Desc.Usage);
+	ImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	VmaAllocationCreateInfo AllocInfo = FVulkanMemoryAllocator::MakeAllocationInfo(Desc.MemoryUsage);
+	VkImage Image = VK_NULL_HANDLE;
+	VmaAllocation Allocation = nullptr;
+	if (!MemoryAllocator->CreateImage(ImageInfo, AllocInfo, Image, Allocation))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanTexture(Desc, Image, Allocation, MemoryAllocator.get());
+}
+
+void FVulkanRHI::DestroyTexture(FRHITexture* Texture)
+{
+	delete Texture;
+}
+
+FRHISampler* FVulkanRHI::CreateSampler(const FRHISamplerDesc& Desc)
+{
+	VkSamplerCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	Info.magFilter = ToVkFilter(Desc.MagFilter);
+	Info.minFilter = ToVkFilter(Desc.MinFilter);
+	Info.addressModeU = ToVkAddressMode(Desc.AddressU);
+	Info.addressModeV = ToVkAddressMode(Desc.AddressV);
+	Info.addressModeW = ToVkAddressMode(Desc.AddressW);
+	Info.mipLodBias = Desc.LodBias;
+	Info.minLod = Desc.MinLod;
+	Info.maxLod = Desc.MaxLod;
+
+	VkSampler Sampler = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateSampler(Device, &Info, nullptr, &Sampler), "vkCreateSampler"))
+	{
+		return nullptr;
+	}
+	return new FVulkanSampler(Desc, Device, Sampler);
+}
+
+void FVulkanRHI::DestroySampler(FRHISampler* Sampler)
+{
+	delete Sampler;
+}
+
+FRHIShaderModule* FVulkanRHI::CreateShaderModule(const FRHIShaderModuleDesc& Desc)
+{
+	if (Desc.Bytecode == nullptr || Desc.BytecodeSize == 0)
+	{
+		return nullptr;
+	}
+
+	VkShaderModuleCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	Info.codeSize = Desc.BytecodeSize;
+	Info.pCode = static_cast<const std::uint32_t*>(Desc.Bytecode);
+
+	VkShaderModule Module = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateShaderModule(Device, &Info, nullptr, &Module), "vkCreateShaderModule"))
+	{
+		return nullptr;
+	}
+	return new FVulkanShaderModule(Device, Module);
+}
+
+void FVulkanRHI::DestroyShaderModule(FRHIShaderModule* Module)
+{
+	delete Module;
+}
+
+FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipelineDesc& /*Desc*/)
+{
+	// Full PSO create is a follow-up; return a placeholder owning no VkPipeline.
+	return new FVulkanGraphicsPipeline(Device, VK_NULL_HANDLE);
+}
+
+void FVulkanRHI::DestroyGraphicsPipeline(FRHIGraphicsPipeline* Pipeline)
+{
+	delete Pipeline;
+}
+
+FRHIComputePipeline* FVulkanRHI::CreateComputePipeline(const FRHIComputePipelineDesc& /*Desc*/)
+{
+	return new FVulkanComputePipeline(Device, VK_NULL_HANDLE);
+}
+
+void FVulkanRHI::DestroyComputePipeline(FRHIComputePipeline* Pipeline)
+{
+	delete Pipeline;
 }
 
 bool FVulkanRHI::RecreateSwapchain()

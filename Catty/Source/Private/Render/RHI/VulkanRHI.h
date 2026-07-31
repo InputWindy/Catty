@@ -1,7 +1,12 @@
 #pragma once
 
 #include <Render/RHI/RHI.h>
+#include <Render/RHI/RHIResourceManager.h>
 
+#include "Render/RHI/VulkanCommandList.h"
+#include "Render/RHI/VulkanMemory.h"
+
+#include <memory>
 #include <vector>
 
 #include <vulkan/vulkan.h>
@@ -13,7 +18,7 @@ namespace Catty
 class FVulkanRHI final : public IRHI
 {
 public:
-	FVulkanRHI() = default;
+	FVulkanRHI();
 	~FVulkanRHI() override;
 
 	virtual bool Initialize(const FRHIInitDesc& Desc) override;
@@ -27,6 +32,39 @@ public:
 
 	[[nodiscard]] virtual bool IsInitialized() const override;
 
+	[[nodiscard]] virtual FRHIResourceManager& GetResourceManager() override;
+	[[nodiscard]] virtual IRHIMemoryAllocator* GetMemoryAllocator() override;
+
+	[[nodiscard]] virtual FRHIQueue& GetGraphicsQueue() override;
+	[[nodiscard]] virtual FRHIQueue& GetComputeQueue() override;
+	[[nodiscard]] virtual FRHIQueue& GetTransferQueue() override;
+
+	[[nodiscard]] virtual FRHICommandList* CreateCommandList(ERHICommandListType Type) override;
+	virtual void DestroyCommandList(FRHICommandList* CmdList) override;
+
+	[[nodiscard]] virtual FRHIFence* CreateFence(bool bSignaled) override;
+	virtual void DestroyFence(FRHIFence* Fence) override;
+	virtual void WaitForFence(FRHIFence* Fence, std::uint64_t TimeoutNs) override;
+
+	[[nodiscard]] virtual FRHISemaphore* CreateGpuSemaphore() override;
+	virtual void DestroyGpuSemaphore(FRHISemaphore* Semaphore) override;
+
+	virtual void UpdateBuffer(FRHIBuffer* Buffer, std::uint64_t Offset, std::uint64_t Size, const void* Data) override;
+	virtual void UpdateDescriptorSets(const FRHIDescriptorWrite* Writes, std::uint32_t Count) override;
+
+	[[nodiscard]] virtual FRHIBuffer* CreateBuffer(const FRHIBufferDesc& Desc) override;
+	virtual void DestroyBuffer(FRHIBuffer* Buffer) override;
+	[[nodiscard]] virtual FRHITexture* CreateTexture(const FRHITextureDesc& Desc) override;
+	virtual void DestroyTexture(FRHITexture* Texture) override;
+	[[nodiscard]] virtual FRHISampler* CreateSampler(const FRHISamplerDesc& Desc) override;
+	virtual void DestroySampler(FRHISampler* Sampler) override;
+	[[nodiscard]] virtual FRHIShaderModule* CreateShaderModule(const FRHIShaderModuleDesc& Desc) override;
+	virtual void DestroyShaderModule(FRHIShaderModule* Module) override;
+	[[nodiscard]] virtual FRHIGraphicsPipeline* CreateGraphicsPipeline(const FRHIGraphicsPipelineDesc& Desc) override;
+	virtual void DestroyGraphicsPipeline(FRHIGraphicsPipeline* Pipeline) override;
+	[[nodiscard]] virtual FRHIComputePipeline* CreateComputePipeline(const FRHIComputePipelineDesc& Desc) override;
+	virtual void DestroyComputePipeline(FRHIComputePipeline* Pipeline) override;
+
 	/** Begin command buffer + main swapchain render pass (clear). Leaves the pass open. */
 	void BeginMainPass(float R, float G, float B, float A);
 
@@ -36,7 +74,7 @@ public:
 	[[nodiscard]] VkInstance GetVkInstance() const { return Instance; }
 	[[nodiscard]] VkPhysicalDevice GetVkPhysicalDevice() const { return PhysicalDevice; }
 	[[nodiscard]] VkDevice GetVkDevice() const { return Device; }
-	[[nodiscard]] VkQueue GetGraphicsQueue() const { return GraphicsQueue; }
+	[[nodiscard]] VkQueue GetVkGraphicsQueue() const { return GraphicsVkQueue; }
 	[[nodiscard]] std::uint32_t GetGraphicsQueueFamilyIndex() const { return GraphicsQueueFamilyIndex; }
 	[[nodiscard]] VkRenderPass GetVkRenderPass() const { return RenderPass; }
 	[[nodiscard]] VkCommandBuffer GetVkCommandBuffer() const { return CommandBuffer; }
@@ -54,12 +92,21 @@ private:
 	bool CreateRenderPass();
 	bool CreateFramebuffers();
 	bool CreateCommandPoolAndBuffer();
+	bool CreateLogicalQueuesAndPools();
+	bool CreateMemoryAllocatorAndManager();
 	bool CreateSyncObjects();
 	bool RecreateSwapchain();
 
-	[[nodiscard]] bool IsDeviceSuitable(VkPhysicalDevice InPhysicalDevice) const;
-	[[nodiscard]] bool FindQueueFamilies(VkPhysicalDevice InPhysicalDevice, std::uint32_t& OutGraphicsFamily, std::uint32_t& OutPresentFamily) const;
+	[[nodiscard]] bool IsDeviceSuitable(VkPhysicalDevice InPhysicalDevice);
+	[[nodiscard]] bool FindQueueFamilies(VkPhysicalDevice InPhysicalDevice);
 	[[nodiscard]] bool CheckDeviceExtensionSupport(VkPhysicalDevice InPhysicalDevice) const;
+
+	[[nodiscard]] VkCommandPool GetPoolForType(ERHICommandListType Type) const;
+	[[nodiscard]] static VkBufferUsageFlags ToVkBufferUsage(ERHIBufferUsage Usage);
+	[[nodiscard]] static VkImageUsageFlags ToVkImageUsage(ERHITextureUsage Usage);
+	[[nodiscard]] static VkFormat ToVkFormat(ERHIFormat Format);
+	[[nodiscard]] static VkFilter ToVkFilter(ERHIFilter Filter);
+	[[nodiscard]] static VkSamplerAddressMode ToVkAddressMode(ERHIAddressMode Mode);
 
 	void* NativeWindowHandle = nullptr;
 	int FramebufferWidth = 0;
@@ -71,8 +118,15 @@ private:
 	VkSurfaceKHR Surface = VK_NULL_HANDLE;
 	VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
 	VkDevice Device = VK_NULL_HANDLE;
-	VkQueue GraphicsQueue = VK_NULL_HANDLE;
+
+	VkQueue GraphicsVkQueue = VK_NULL_HANDLE;
 	VkQueue PresentQueue = VK_NULL_HANDLE;
+	VkQueue ComputeVkQueue = VK_NULL_HANDLE;
+	VkQueue TransferVkQueue = VK_NULL_HANDLE;
+
+	FVulkanQueue GraphicsQueue;
+	FVulkanQueue ComputeQueue;
+	FVulkanQueue TransferQueue;
 
 	VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
 	VkFormat SwapchainImageFormat = VK_FORMAT_UNDEFINED;
@@ -83,8 +137,13 @@ private:
 
 	VkRenderPass RenderPass = VK_NULL_HANDLE;
 
+	/** Frame path command pool (graphics family). */
 	VkCommandPool CommandPool = VK_NULL_HANDLE;
 	VkCommandBuffer CommandBuffer = VK_NULL_HANDLE;
+
+	VkCommandPool GraphicsCmdPool = VK_NULL_HANDLE;
+	VkCommandPool ComputeCmdPool = VK_NULL_HANDLE;
+	VkCommandPool TransferCmdPool = VK_NULL_HANDLE;
 
 	VkSemaphore ImageAvailableSemaphore = VK_NULL_HANDLE;
 	VkSemaphore RenderFinishedSemaphore = VK_NULL_HANDLE;
@@ -92,6 +151,14 @@ private:
 
 	std::uint32_t GraphicsQueueFamilyIndex = 0;
 	std::uint32_t PresentQueueFamilyIndex = 0;
+	std::uint32_t ComputeQueueFamilyIndex = 0;
+	std::uint32_t TransferQueueFamilyIndex = 0;
+	std::uint32_t GraphicsQueueIndex = 0;
+	std::uint32_t ComputeQueueIndex = 0;
+	std::uint32_t TransferQueueIndex = 0;
+	bool bComputeNativeFallback = false;
+	bool bTransferNativeFallback = false;
+
 	std::uint32_t CurrentImageIndex = 0;
 
 	float ClearColorR = 0.0f;
@@ -100,6 +167,9 @@ private:
 	float ClearColorA = 1.0f;
 
 	bool bFramebufferResized = false;
+
+	std::unique_ptr<FVulkanMemoryAllocator> MemoryAllocator;
+	std::unique_ptr<FRHIResourceManager> ResourceManager;
 };
 
 } // namespace Catty

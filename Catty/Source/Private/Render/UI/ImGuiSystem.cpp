@@ -268,7 +268,7 @@ bool FImGuiSystem::Initialize(
 		InitInfo.PhysicalDevice = VulkanRHI->GetVkPhysicalDevice();
 		InitInfo.Device = VulkanRHI->GetVkDevice();
 		InitInfo.QueueFamily = VulkanRHI->GetGraphicsQueueFamilyIndex();
-		InitInfo.Queue = VulkanRHI->GetGraphicsQueue();
+		InitInfo.Queue = VulkanRHI->GetVkGraphicsQueue();
 		InitInfo.DescriptorPool = VK_NULL_HANDLE;
 		InitInfo.DescriptorPoolSize = static_cast<std::uint32_t>(
 			(std::max)(1, GCVarImGuiDescriptorPoolSize.GetValue()));
