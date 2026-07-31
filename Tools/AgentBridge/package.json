@@ -8,6 +8,8 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "demo": "node src/cli/demo.mjs",
+    "eval": "node evals/run-evals.mjs",
     "start": "node server.mjs",
     "test": "node --test \"tests/*.test.mjs\""
   },

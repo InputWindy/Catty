@@ -4,6 +4,7 @@ import {
   assertUuid,
 } from "../protocol/envelope.mjs";
 import { NullAuditLog } from "../logging/audit-log.mjs";
+import { applyToolResultsToEntityContext } from "../sessions/entity-context.mjs";
 
 const TOOL_CALL_FIELDS = new Set([
   "tool_call_id",
@@ -149,6 +150,13 @@ export class CommandExecutor {
     session.request_promises.set(request.request_id, execution);
     try {
       const result = await execution;
+      if (result.ok) {
+        applyToolResultsToEntityContext({
+          session,
+          tool_calls: request.tool_calls,
+          tool_results: result.tool_results,
+        });
+      }
       session.request_results.set(request.request_id, clone(result));
       await this.#writeAudit(request, result, started_at);
       return result;
