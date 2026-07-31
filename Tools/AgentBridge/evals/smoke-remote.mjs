@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createDefaultToolRegistry } from "../src/tools/definitions.mjs";
 import { RemoteWorldAdapter } from "../src/world/remote-world-adapter.mjs";
-import { startFakeCattyWorldServer } from "../tests/helpers/fake-catty-world-server.mjs";
+import { startFakeMahoWorldServer } from "../tests/helpers/fake-maho-world-server.mjs";
 
 function toolCall(tool_name, args) {
   return {
@@ -20,7 +20,7 @@ export async function main({
   let fake;
   let adapter;
   try {
-    fake = await startFakeCattyWorldServer();
+    fake = await startFakeMahoWorldServer();
     const session_id = randomUUID();
     const world_id = randomUUID();
     adapter = new RemoteWorldAdapter({

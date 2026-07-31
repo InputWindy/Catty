@@ -38,8 +38,8 @@ function planInput() {
 test("DeepSeek config uses explicit selection and API key precedence", () => {
   const config = resolveProviderConfig({
     env: {
-      CATTY_AI_PROVIDER: "deepseek",
-      CATTY_AI_API_KEY: "generic-key",
+      MAHO_AI_PROVIDER: "deepseek",
+      MAHO_AI_API_KEY: "generic-key",
       DEEPSEEK_API_KEY: "deepseek-key",
     },
   });
@@ -49,7 +49,7 @@ test("DeepSeek config uses explicit selection and API key precedence", () => {
   assert.equal(
     resolveProviderConfig({
       env: {
-        CATTY_AI_PROVIDER: "deepseek",
+        MAHO_AI_PROVIDER: "deepseek",
         DEEPSEEK_API_KEY: "deepseek-key",
       },
     }).api_key,
@@ -58,8 +58,8 @@ test("DeepSeek config uses explicit selection and API key precedence", () => {
   assert.equal(
     resolveProviderConfig({
       env: {
-        CATTY_AI_PROVIDER: "deepseek",
-        CATTY_AI_API_KEY: "   ",
+        MAHO_AI_PROVIDER: "deepseek",
+        MAHO_AI_API_KEY: "   ",
         DEEPSEEK_API_KEY: "deepseek-key",
       },
     }).api_key,
@@ -113,9 +113,9 @@ test("ProviderRegistry creates DeepSeek preset and sends thinking disabled", asy
   const registry = new ProviderRegistry({
     config: resolveProviderConfig({
       env: {
-        CATTY_AI_PROVIDER: "deepseek",
-        CATTY_AI_BASE_URL: fake.base_url,
-        CATTY_AI_MODEL: "deepseek-test-model",
+        MAHO_AI_PROVIDER: "deepseek",
+        MAHO_AI_BASE_URL: fake.base_url,
+        MAHO_AI_MODEL: "deepseek-test-model",
         DEEPSEEK_API_KEY: "test-key",
       },
     }),

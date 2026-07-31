@@ -1,4 +1,4 @@
-# Run via clean.bat / Tools/catty_python.bat — engine Tools/python only.
+# Run via clean.bat / Tools/maho_python.bat — engine Tools/python only.
 """
 One-click clean: remove generated/temp files, keep project essentials.
 
@@ -22,7 +22,7 @@ from pathlib import Path
 TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 
-from catty_tools import (  # noqa: E402
+from maho_tools import (  # noqa: E402
 	ENGINE_ROOT,
 	clean_project_tree,
 	collect_clean_targets,
@@ -64,30 +64,30 @@ def main(argv: list[str]) -> int:
 		root, ask, dry = _resolve_target(argv)
 		targets = collect_clean_targets(root)
 
-		print(f"[Catty] Clean root: {root}")
+		print(f"[Maho] Clean root: {root}")
 		if not targets:
-			print("[Catty] Nothing to clean.")
+			print("[Maho] Nothing to clean.")
 			return 0
 
-		print(f"[Catty] {len(targets)} path(s) to remove:")
+		print(f"[Maho] {len(targets)} path(s) to remove:")
 		for t in targets:
 			kind = "dir " if t.is_dir() else "file"
 			print(f"  - [{kind}] {t}")
 
 		if dry:
-			print("[Catty] Dry-run only (no changes).")
+			print("[Maho] Dry-run only (no changes).")
 			return 0
 
 		if ask:
 			answer = input("Proceed? [Y/n]: ").strip().lower()
 			if answer in {"n", "no"}:
-				print("[Catty] Cancelled.")
+				print("[Maho] Cancelled.")
 				return 1
 
 		removed = clean_project_tree(root, dry_run=False)
-		print(f"[Catty] Removed {len(removed)} path(s).")
-		print("[Catty] Kept: source, Build/, Tools/, Doc/, bats, configs.")
-		print("[Catty] Note: Catty/Source/Generated (reflect/Lua codegen) is wiped; rebuild regenerates it.")
+		print(f"[Maho] Removed {len(removed)} path(s).")
+		print("[Maho] Kept: source, Build/, Tools/, Doc/, bats, configs.")
+		print("[Maho] Note: Maho/Source/Generated (reflect/Lua codegen) is wiped; rebuild regenerates it.")
 		return 0
 	except Exception as ex:  # noqa: BLE001
 		print(f"[ERROR] {ex}")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Catty 引擎架构设计</title>
+<title>Maho 引擎架构设计</title>
 <style>
 :root {
 	--bg: #0f1218;
@@ -126,7 +126,7 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; }
 </head>
 <body>
 <header>
-	<h1>Catty 引擎架构设计</h1>
+	<h1>Maho 引擎架构设计</h1>
 	<div class="subtitle">
 		以 <code>FApp</code> 无意识 stage 管线为中枢：
 		<span class="pill pill-mod">Module = Stage 本体</span>
@@ -467,22 +467,22 @@ flowchart LR
 		<table>
 			<thead><tr><th>内容</th><th>路径</th></tr></thead>
 			<tbody>
-				<tr><td>FApp 管线</td><td><code>Catty/Source/Public/Catty/Core/Application/App.h</code>、<code>Private/Core/App.cpp</code></td></tr>
-				<tr><td>IModule / EModuleStage</td><td><code>Catty/Source/Public/Catty/Core/Module.h</code></td></tr>
-				<tr><td>引擎 Modules</td><td><code>Catty/Source/Public/Catty/Core/Modules/</code></td></tr>
-				<tr><td>FLayer / FScriptLayer</td><td><code>Catty/Source/Public/Catty/Core/Layer.h</code>、<code>Catty/Script/ScriptLayer.h</code></td></tr>
-				<tr><td>FScriptSystem</td><td><code>Catty/Source/Public/Catty/Script/ScriptSystem.h</code></td></tr>
-				<tr><td>多播 Delegate</td><td><code>Catty/Source/Public/Catty/Core/Delegate.h</code></td></tr>
-				<tr><td>EntryPoint</td><td><code>Catty/Source/Public/Catty/EntryPoint.h</code></td></tr>
-				<tr><td>GC / Object / Package / Resource</td><td><code>Catty/Source/Public/Catty/Resource/</code></td></tr>
-				<tr><td>通用池</td><td><code>Catty/Source/Public/Catty/Core/PoolAllocator.h</code></td></tr>
+				<tr><td>FApp 管线</td><td><code>Maho/Source/Public/Maho/Core/Application/App.h</code>、<code>Private/Core/App.cpp</code></td></tr>
+				<tr><td>IModule / EModuleStage</td><td><code>Maho/Source/Public/Maho/Core/Module.h</code></td></tr>
+				<tr><td>引擎 Modules</td><td><code>Maho/Source/Public/Maho/Core/Modules/</code></td></tr>
+				<tr><td>FLayer / FScriptLayer</td><td><code>Maho/Source/Public/Maho/Core/Layer.h</code>、<code>Maho/Script/ScriptLayer.h</code></td></tr>
+				<tr><td>FScriptSystem</td><td><code>Maho/Source/Public/Maho/Script/ScriptSystem.h</code></td></tr>
+				<tr><td>多播 Delegate</td><td><code>Maho/Source/Public/Maho/Core/Delegate.h</code></td></tr>
+				<tr><td>EntryPoint</td><td><code>Maho/Source/Public/Maho/EntryPoint.h</code></td></tr>
+				<tr><td>GC / Object / Package / Resource</td><td><code>Maho/Source/Public/Maho/Resource/</code></td></tr>
+				<tr><td>通用池</td><td><code>Maho/Source/Public/Maho/Core/PoolAllocator.h</code></td></tr>
 			</tbody>
 		</table>
 	</div>
 </section>
 
 </main>
-<footer>Catty Engine · 架构图由 Mermaid 渲染 · 符号对齐当前源码 · 2026-07</footer>
+<footer>Maho Engine · 架构图由 Mermaid 渲染 · 符号对齐当前源码 · 2026-07</footer>
 
 <script type="module">
 	import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";

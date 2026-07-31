@@ -10,8 +10,8 @@ test("provider selection priority preserves Mock, explicit, Cursor, and default 
   assert.equal(
     selectProviderId({
       env: {
-        CATTY_AGENT_MOCK: "1",
-        CATTY_AI_PROVIDER: "deepseek",
+        MAHO_AGENT_MOCK: "1",
+        MAHO_AI_PROVIDER: "deepseek",
         CURSOR_API_KEY: "cursor-key",
       },
     }),
@@ -20,7 +20,7 @@ test("provider selection priority preserves Mock, explicit, Cursor, and default 
   assert.equal(
     selectProviderId({
       env: {
-        CATTY_AI_PROVIDER: "deepseek",
+        MAHO_AI_PROVIDER: "deepseek",
         CURSOR_API_KEY: "cursor-key",
       },
     }),
@@ -35,7 +35,7 @@ test("provider selection priority preserves Mock, explicit, Cursor, and default 
 
 test("unknown providers return an explicit internal ProviderError", () => {
   assert.throws(
-    () => selectProviderId({ env: { CATTY_AI_PROVIDER: "missing" } }),
+    () => selectProviderId({ env: { MAHO_AI_PROVIDER: "missing" } }),
     (error) =>
       error instanceof ProviderError &&
       error.reason === "provider_not_found"
@@ -46,16 +46,16 @@ test("generic openai-compatible configuration requires all generic values", () =
   assert.throws(
     () =>
       resolveProviderConfig({
-        env: { CATTY_AI_PROVIDER: "openai-compatible" },
+        env: { MAHO_AI_PROVIDER: "openai-compatible" },
       }),
-    /CATTY_AI_MODEL/
+    /MAHO_AI_MODEL/
   );
   const config = resolveProviderConfig({
     env: {
-      CATTY_AI_PROVIDER: "openai-compatible",
-      CATTY_AI_BASE_URL: "http://127.0.0.1:1234/v1",
-      CATTY_AI_MODEL: "local-model",
-      CATTY_AI_API_KEY: "test-key",
+      MAHO_AI_PROVIDER: "openai-compatible",
+      MAHO_AI_BASE_URL: "http://127.0.0.1:1234/v1",
+      MAHO_AI_MODEL: "local-model",
+      MAHO_AI_API_KEY: "test-key",
     },
   });
   assert.equal(config.provider_id, "openai-compatible");
@@ -67,7 +67,7 @@ test("v0.3 rejects attempts to enable thinking mode", () => {
   assert.throws(
     () =>
       resolveProviderConfig({
-        env: { CATTY_AI_THINKING: "enabled" },
+        env: { MAHO_AI_THINKING: "enabled" },
       }),
     /Thinking mode is not supported/
   );

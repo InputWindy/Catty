@@ -31,8 +31,8 @@ function normalizeBaseUrl(base_url) {
   } catch {
     throw new ProviderError(
       providerErrorReasons.CONFIGURATION_MISSING,
-      "CATTY_AI_BASE_URL must be a valid HTTP or HTTPS URL",
-      { details: { field: "CATTY_AI_BASE_URL" } }
+      "MAHO_AI_BASE_URL must be a valid HTTP or HTTPS URL",
+      { details: { field: "MAHO_AI_BASE_URL" } }
     );
   }
   if (
@@ -44,8 +44,8 @@ function normalizeBaseUrl(base_url) {
   ) {
     throw new ProviderError(
       providerErrorReasons.CONFIGURATION_MISSING,
-      "CATTY_AI_BASE_URL must be a credential-free HTTP or HTTPS URL",
-      { details: { field: "CATTY_AI_BASE_URL" } }
+      "MAHO_AI_BASE_URL must be a credential-free HTTP or HTTPS URL",
+      { details: { field: "MAHO_AI_BASE_URL" } }
     );
   }
   parsed.pathname = parsed.pathname.replace(/\/+$/, "");
@@ -332,7 +332,7 @@ export class OpenAICompatibleProvider {
       throw new ProviderError(
         providerErrorReasons.CONFIGURATION_MISSING,
         `A model is required for Provider ${provider_id}`,
-        { provider: provider_id, details: { field: "CATTY_AI_MODEL" } }
+        { provider: provider_id, details: { field: "MAHO_AI_MODEL" } }
       );
     }
     if (typeof fetch_impl !== "function") {

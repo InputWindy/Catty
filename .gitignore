@@ -64,16 +64,16 @@ __pycache__/
 *.dwo
 
 # Reflect / Lua codegen (Tools/reflect_codegen.py).
-# All C++/JSON outputs live under Catty/Source/Generated/ — wiped by clean.bat.
+# All C++/JSON outputs live under Maho/Source/Generated/ — wiped by clean.bat.
 *.gen.h
 *.gen.cpp
 *.gen.json
-/Catty/Source/Generated/
+/Maho/Source/Generated/
 
 # Large UI libs are FetchContent'd — do not re-vendor into git.
-/Catty/ThirdParty/imgui/
-/Catty/ThirdParty/ImGuizmo/
-/Catty/ThirdParty/imgui-node-editor/
-/Catty/ThirdParty/implot/
-/Catty/ThirdParty/ImGuiFileDialog/
-/Catty/ThirdParty/IconFontCppHeaders/
+/Maho/ThirdParty/imgui/
+/Maho/ThirdParty/ImGuizmo/
+/Maho/ThirdParty/imgui-node-editor/
+/Maho/ThirdParty/implot/
+/Maho/ThirdParty/ImGuiFileDialog/
+/Maho/ThirdParty/IconFontCppHeaders/

@@ -8,10 +8,10 @@ only on the in-memory MockWorld. It does not connect to the C++ game World.
 
 Required:
 
-- `CATTY_AI_PROVIDER=deepseek`
-- either `CATTY_AI_API_KEY` or `DEEPSEEK_API_KEY`
+- `MAHO_AI_PROVIDER=deepseek`
+- either `MAHO_AI_API_KEY` or `DEEPSEEK_API_KEY`
 
-`CATTY_AI_API_KEY` takes precedence when both Key variables are set.
+`MAHO_AI_API_KEY` takes precedence when both Key variables are set.
 `DEEPSEEK_API_KEY` alone does not select the Provider.
 
 Defaults:
@@ -23,8 +23,8 @@ Defaults:
 - maximum ToolCalls: 16
 - thinking: disabled
 
-Override the model with `CATTY_AI_MODEL` and the endpoint with
-`CATTY_AI_BASE_URL`.
+Override the model with `MAHO_AI_MODEL` and the endpoint with
+`MAHO_AI_BASE_URL`.
 
 ## PowerShell
 
@@ -32,9 +32,9 @@ Set secrets only in the current process environment:
 
 ```powershell
 cd Tools\AgentBridge
-$env:CATTY_AI_PROVIDER = "deepseek"
+$env:MAHO_AI_PROVIDER = "deepseek"
 $env:DEEPSEEK_API_KEY = "replace_me"
-$env:CATTY_AI_MODEL = "deepseek-v4-flash"
+$env:MAHO_AI_MODEL = "deepseek-v4-flash"
 npm run demo
 ```
 
@@ -55,9 +55,9 @@ Remove-Item Env:DEEPSEEK_API_KEY
 
 ```sh
 cd Tools/AgentBridge
-export CATTY_AI_PROVIDER=deepseek
+export MAHO_AI_PROVIDER=deepseek
 export DEEPSEEK_API_KEY=replace_me
-export CATTY_AI_MODEL=deepseek-v4-flash
+export MAHO_AI_MODEL=deepseek-v4-flash
 npm run demo
 ```
 

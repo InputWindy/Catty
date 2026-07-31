@@ -21,7 +21,7 @@ test("configuration rejects non-loopback listen hosts", () => {
     () =>
       loadConfig({
         argv: ["node", "server.mjs"],
-        env: { CATTY_AGENT_HOST: "0.0.0.0" },
+        env: { MAHO_AGENT_HOST: "0.0.0.0" },
         logger: { error: () => {} },
       }),
     /loopback-only/

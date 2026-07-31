@@ -8,13 +8,13 @@
  * Project layer that owns and ticks FWorld.
  * Push as a normal layer (below editor overlays).
  */
-class FWorldLayer final : public Catty::FLayer
+class FWorldLayer final : public Maho::FLayer
 {
 public:
 	explicit FWorldLayer(std::string WorldName = "MainWorld");
 	~FWorldLayer() override = default;
 
-	virtual bool ExecuteStage(Catty::EEngineStage Stage) override;
+	virtual bool ExecuteStage(Maho::EEngineStage Stage) override;
 
 	[[nodiscard]] FWorld& GetWorld() { return World; }
 	[[nodiscard]] const FWorld& GetWorld() const { return World; }

@@ -26,7 +26,7 @@ test("real entrypoint key detection trims values and honors fallback order", () 
   assert.equal(hasDeepSeekKey({}), false);
   assert.equal(
     hasDeepSeekKey({
-      CATTY_AI_API_KEY: "   ",
+      MAHO_AI_API_KEY: "   ",
       DEEPSEEK_API_KEY: "fallback-key",
     }),
     true
@@ -102,8 +102,8 @@ test("DeepSeek smoke uses text-only request then ToolCall and finalization", asy
   const error_output = sink();
   const exit_code = await runDeepSeekSmoke({
     env: {
-      CATTY_AI_BASE_URL: fake.base_url,
-      CATTY_AI_MODEL: "deepseek-test-model",
+      MAHO_AI_BASE_URL: fake.base_url,
+      MAHO_AI_MODEL: "deepseek-test-model",
       DEEPSEEK_API_KEY: "test-key",
     },
     output,

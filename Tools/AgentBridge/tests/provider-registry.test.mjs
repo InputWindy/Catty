@@ -42,10 +42,10 @@ test("ProviderRegistry creates generic openai-compatible Provider", async () => 
   const registry = new ProviderRegistry({
     config: resolveProviderConfig({
       env: {
-        CATTY_AI_PROVIDER: "openai-compatible",
-        CATTY_AI_BASE_URL: "http://127.0.0.1:1234/v1",
-        CATTY_AI_MODEL: "generic-test-model",
-        CATTY_AI_API_KEY: "test-key",
+        MAHO_AI_PROVIDER: "openai-compatible",
+        MAHO_AI_BASE_URL: "http://127.0.0.1:1234/v1",
+        MAHO_AI_MODEL: "generic-test-model",
+        MAHO_AI_API_KEY: "test-key",
       },
     }),
   });

@@ -4,7 +4,7 @@ import test from "node:test";
 import { createDefaultToolRegistry } from "../src/tools/definitions.mjs";
 import { MockWorldAdapter } from "../src/world/mock-world-adapter.mjs";
 import { RemoteWorldAdapter } from "../src/world/remote-world-adapter.mjs";
-import { startFakeCattyWorldServer } from "./helpers/fake-catty-world-server.mjs";
+import { startFakeMahoWorldServer } from "./helpers/fake-maho-world-server.mjs";
 
 function createIdentity() {
   return {
@@ -52,7 +52,7 @@ async function createMockHarness() {
 }
 
 async function createRemoteHarness() {
-  const fake = await startFakeCattyWorldServer();
+  const fake = await startFakeMahoWorldServer();
   const tool_registry = createDefaultToolRegistry();
   const first = createIdentity();
   const second = createIdentity();

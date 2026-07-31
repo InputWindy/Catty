@@ -12,7 +12,7 @@ bool FWorld::Initialize(std::string InName)
 	Name = InName.empty() ? "MainWorld" : std::move(InName);
 	TickCount = 0;
 	bInitialized = true;
-	CATTY_INFO("FWorld initialized (\"{}\")", Name);
+	MAHO_INFO("FWorld initialized (\"{}\")", Name);
 	return true;
 }
 
@@ -32,7 +32,7 @@ void FWorld::Shutdown()
 		return;
 	}
 
-	CATTY_INFO("FWorld shut down (\"{}\", ticks={})", Name, TickCount);
+	MAHO_INFO("FWorld shut down (\"{}\", ticks={})", Name, TickCount);
 	Name.clear();
 	TickCount = 0;
 	bInitialized = false;

@@ -1,11 +1,11 @@
-# Catty design journal
+# Maho design journal
 
 Living status for **other AIs and humans**: what exists, why, known pitfalls, and what is still missing.  
 Update this when a subsystem meaningfully changes. Module-level detail also lives in each `CONTRACT.md`.
 
 ---
 
-## RHI (`Catty/Source/Public/Render/RHI/`)
+## RHI (`Maho/Source/Public/Render/RHI/`)
 
 **Status (2026-07):** Public abstraction + Vulkan skeleton shipped; clear/ImGui path still works via `GetVk*`.
 
@@ -13,7 +13,7 @@ Update this when a subsystem meaningfully changes. Module-level detail also live
   - Public: `RHIEnums.h`, `RHIResources.h`, `RHICommandList.h`, `RHIResourceManager.h`, extended `IRHI`
   - Logical queues always: `GetGraphicsQueue()` / `GetComputeQueue()` / `GetTransferQueue()` (never null)
   - Transfer may map to Graphics (or Compute) when no dedicated TRANSFER family — upper layer must not branch on hardware
-  - VMA via vendored `Catty/ThirdParty/VulkanMemoryAllocator` + `FVulkanMemoryAllocator`
+  - VMA via vendored `Maho/ThirdParty/VulkanMemoryAllocator` + `FVulkanMemoryAllocator`
   - Manager `Acquire*` / `Release` with Desc free-list; Create* used by Manager
   - Command list record + queue `Submit` skeleton (CopyBuffer, barriers, Draw/Dispatch stubs)
 - **Not done**
@@ -25,27 +25,27 @@ Update this when a subsystem meaningfully changes. Module-level detail also live
 - **Pitfalls**
   - Win32 macros rename `CreateSemaphore` → use `CreateGpuSemaphore` / `DestroyGpuSemaphore`
   - `FVulkanRHI::GetVkGraphicsQueue()` is the Vk escape hatch; `IRHI::GetGraphicsQueue()` returns `FRHIQueue&`
-  - Do not confuse external Unreal Engine study notes with this RHI — Catty RHI contracts live only under `Catty/Source/Public/Render/RHI/`
+  - Do not confuse external Unreal Engine study notes with this RHI — Maho RHI contracts live only under `Maho/Source/Public/Render/RHI/`
 - **Key files**
   - Public: `RHI.h`, `RHI*`, `CONTRACT.md`
   - Private: `VulkanRHI.*`, `VulkanMemory.*`, `VulkanCommandList.*`, `VulkanResources.*`, `RHIResourceManager.cpp`
 - **Next**
   - Real Hello-Triangle PSO + Transfer upload path using only Public APIs
 
-Contract: [`../../Catty/Source/Public/Render/RHI/CONTRACT.md`](../../Catty/Source/Public/Render/RHI/CONTRACT.md)
+Contract: [`../../Maho/Source/Public/Render/RHI/CONTRACT.md`](../../Maho/Source/Public/Render/RHI/CONTRACT.md)
 
 ---
 
 ## Extensions / app frame
 
 **Status:** Built-ins are `*System` (`FPlatformSystem`, `FRenderSystem`, …), priority `System | Layer | Overlay`.  
-`FRenderServer` orchestrates stages on Game; `FRHIServer` owns the RHI thread (`CattyRHI`).
+`FRenderServer` orchestrates stages on Game; `FRHIServer` owns the RHI thread (`MahoRHI`).
 
 - **Pitfalls**
-  - Older docs may still say `F*Module` / `IModule` / `Public/Catty/` — trust code + [`Catty/Plugins/README.md`](../../Catty/Plugins/README.md)
+  - Older docs may still say `F*Module` / `IModule` / `Public/Maho/` — trust code + [`Maho/Plugins/README.md`](../../Maho/Plugins/README.md)
   - Games register extensions from **generated** `Source/Generated/<Game>App.cpp` (regenerate via `.cproject`)
 
-Contract: [`../../Catty/Source/Public/Core/Extension/CONTRACT.md`](../../Catty/Source/Public/Core/Extension/CONTRACT.md)
+Contract: [`../../Maho/Source/Public/Core/Extension/CONTRACT.md`](../../Maho/Source/Public/Core/Extension/CONTRACT.md)
 
 ---
 
@@ -58,7 +58,7 @@ Contract: [`../../Catty/Source/Public/Core/Extension/CONTRACT.md`](../../Catty/S
   - Cycles: one side non-owning raw observer (no WeakRef type in current design)
   - `FObjectRef` / `FObjectWeakRef` naming in older notes — current rule is strong `FObjectRef` + raw observer for cycles (see Object CONTRACT)
 
-Contract: [`../../Catty/Source/Public/Core/Object/CONTRACT.md`](../../Catty/Source/Public/Core/Object/CONTRACT.md)
+Contract: [`../../Maho/Source/Public/Core/Object/CONTRACT.md`](../../Maho/Source/Public/Core/Object/CONTRACT.md)
 
 ---
 
@@ -75,8 +75,8 @@ Do not collapse these three.
 ### UTexture CPU IO (2026-07)
 
 - **Done:** `UTexture` base + `UTexture2D` / `3D` / `Cube` / `CubeArray` / `2DArray`; `EResourceType` texture variants; Private `TextureImageCodec` Import/Export via `TResourceIOTraits`.
-- **Raster:** Win32 **WIC** (png/jpg/… → RGBA8). `CATTY_WITH_OPENIMAGEIO` default **OFF** (FetchContent deferred).
-- **KTX2:** **libktx** when KTX-Software sources are present (`CATTY_KTX_SOURCE_DIR` or `Intermediate/_deps/ktx_software-src`; optional `CATTY_FETCH_LIBKTX=ON`). Needs Git Bash (`BASH_EXECUTABLE`) and `enable_language(C)`. Without sources, configure still succeeds (WIC-only). OIIO does not stably decode KTX2.
+- **Raster:** Win32 **WIC** (png/jpg/… → RGBA8). `MAHO_WITH_OPENIMAGEIO` default **OFF** (FetchContent deferred).
+- **KTX2:** **libktx** when KTX-Software sources are present (`MAHO_KTX_SOURCE_DIR` or `Intermediate/_deps/ktx_software-src`; optional `MAHO_FETCH_LIBKTX=ON`). Needs Git Bash (`BASH_EXECUTABLE`) and `enable_language(C)`. Without sources, configure still succeeds (WIC-only). OIIO does not stably decode KTX2.
 - **Path hints:** `.cube.` / `.cubemap.` / `.cubearray.` / `.3d.` / `.2darray.` select subtype when TypeHint unknown; plain `.ktx2` defaults to `UTexture2D`.
 - **Not done:** Render-thread GPU snapshot / `FRHITexture` upload from `UTexture` pixels; OIIO wired build.
 - **Pitfalls:** Game `U*` must never hold GPU handles; cube KTX without a name hint may import as `UTexture2D` (dimension warn).
@@ -96,7 +96,7 @@ Not on `FRHICommandList`. Planned migration later; do not “fix” in drive-by 
 
 Region registry for editor chrome contributions (menus, dual toolbars, dock panels, viewport overlays, blocking modals).
 
-- **Law:** [`../../Catty/Source/Public/Core/Editor/CONTRACT.md`](../../Catty/Source/Public/Core/Editor/CONTRACT.md)
+- **Law:** [`../../Maho/Source/Public/Core/Editor/CONTRACT.md`](../../Maho/Source/Public/Core/Editor/CONTRACT.md)
 - Shell (`FEditorLayer`) owns geometry / DockSpace; `FEditorUIRegistry` owns contributions + Catalog separators
 - Temporary Details = `DockPanel` + `bTransient` + `OpenDockPanel` — **not** Modal
 - DockSpace uses `ImGuiDockNodeFlags_NoDockingOverCentralNode`; central keeps `NoTabBar|NoUndocking`

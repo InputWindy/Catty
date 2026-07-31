@@ -7,7 +7,7 @@ import {
   runDemo,
 } from "../src/cli/demo.mjs";
 import { Readable, Writable } from "node:stream";
-import { startFakeCattyWorldServer } from "./helpers/fake-catty-world-server.mjs";
+import { startFakeMahoWorldServer } from "./helpers/fake-maho-world-server.mjs";
 
 test("CLI natural language, world, and entity commands use the active Core", async () => {
   const state = createDemoState();
@@ -88,7 +88,7 @@ test("CLI startup defaults to MockProvider and never requires a real key", async
     env: {},
   });
   assert.equal(exit_code, 0);
-  assert.match(text, /Catty Agent Core v0\.4/);
+  assert.match(text, /Maho Agent Core v0\.4/);
   assert.match(text, /Provider: mock/);
   assert.match(text, /Mode: Mock/);
   assert.match(text, /Thinking: disabled/);
@@ -98,7 +98,7 @@ test("CLI startup defaults to MockProvider and never requires a real key", async
 
 test("CLI uses remote only when explicitly selected and closes cleanly", async (t) => {
   const secret = "cli-remote-test-secret";
-  const fake = await startFakeCattyWorldServer({
+  const fake = await startFakeMahoWorldServer({
     auth_token: secret,
   });
   t.after(() => fake.close());
@@ -113,10 +113,10 @@ test("CLI uses remote only when explicitly selected and closes cleanly", async (
     input: Readable.from([]),
     output,
     env: {
-      CATTY_WORLD_ADAPTER: "remote",
-      CATTY_WORLD_BASE_URL: fake.base_url,
-      CATTY_WORLD_AUTH_TOKEN: secret,
-      CATTY_WORLD_TIMEOUT_MS: "1000",
+      MAHO_WORLD_ADAPTER: "remote",
+      MAHO_WORLD_BASE_URL: fake.base_url,
+      MAHO_WORLD_AUTH_TOKEN: secret,
+      MAHO_WORLD_TIMEOUT_MS: "1000",
     },
   });
 

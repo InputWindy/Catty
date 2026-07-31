@@ -47,8 +47,8 @@ export async function createRealProviderCore({
   const config = resolveProviderConfig({
     env: {
       ...env,
-      CATTY_AGENT_MOCK: "0",
-      CATTY_AI_PROVIDER: "deepseek",
+      MAHO_AGENT_MOCK: "0",
+      MAHO_AI_PROVIDER: "deepseek",
     },
     cwd,
   });
@@ -134,7 +134,7 @@ export async function createRealProviderCore({
 
 export function hasDeepSeekKey(env = process.env) {
   return Boolean(
-    String(env.CATTY_AI_API_KEY || "").trim() ||
+    String(env.MAHO_AI_API_KEY || "").trim() ||
       String(env.DEEPSEEK_API_KEY || "").trim()
   );
 }

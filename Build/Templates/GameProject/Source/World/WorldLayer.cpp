@@ -6,21 +6,21 @@
 #include <utility>
 
 FWorldLayer::FWorldLayer(std::string InWorldName)
-	: Catty::FLayer("WorldLayer")
+	: Maho::FLayer("WorldLayer")
 	, WorldName(std::move(InWorldName))
 {
 }
 
-bool FWorldLayer::ExecuteStage(Catty::EEngineStage Stage)
+bool FWorldLayer::ExecuteStage(Maho::EEngineStage Stage)
 {
 	switch (Stage)
 	{
-	case Catty::EEngineStage::Attach:
+	case Maho::EEngineStage::Attach:
 		if (!bWorldReady)
 		{
 			if (!World.Initialize(WorldName))
 			{
-				CATTY_ERROR("FWorldLayer Attach: FWorld failed");
+				MAHO_ERROR("FWorldLayer Attach: FWorld failed");
 			}
 			else
 			{
@@ -28,17 +28,17 @@ bool FWorldLayer::ExecuteStage(Catty::EEngineStage Stage)
 			}
 		}
 		break;
-	case Catty::EEngineStage::Detach:
+	case Maho::EEngineStage::Detach:
 		if (bWorldReady)
 		{
 			World.Shutdown();
 			bWorldReady = false;
 		}
 		break;
-	case Catty::EEngineStage::Update:
-		if (bWorldReady && Catty::GApp)
+	case Maho::EEngineStage::Update:
+		if (bWorldReady && Maho::GApp)
 		{
-			World.Tick(Catty::GApp->GetDeltaSeconds());
+			World.Tick(Maho::GApp->GetDeltaSeconds());
 		}
 		break;
 	default:

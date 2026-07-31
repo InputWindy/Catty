@@ -5,7 +5,7 @@
 
 /**
  * Project gameplay world (entities / levels later).
- * Owned by FWorldLayer — not part of the Catty engine.
+ * Owned by FWorldLayer — not part of the Maho engine.
  */
 class FWorld
 {

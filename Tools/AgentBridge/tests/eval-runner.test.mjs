@@ -19,7 +19,7 @@ test("the checked-in behavior evaluation suite passes", async () => {
 
 test("the evaluation command returns nonzero when any scenario fails", async (t) => {
   const temporary_dir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "catty-eval-test-")
+    path.join(os.tmpdir(), "maho-eval-test-")
   );
   t.after(() => fs.rm(temporary_dir, { recursive: true, force: true }));
   const case_file = path.join(temporary_dir, "intentional-failure.json");

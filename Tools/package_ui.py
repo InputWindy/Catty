@@ -1,6 +1,6 @@
-# Run via Tools/catty_pythonw.bat / launch_package.vbs — engine Tools/python only.
+# Run via Tools/maho_pythonw.bat / launch_package.vbs — engine Tools/python only.
 """
-Catty package UI — pick platform / config and ship to Packaged/<Platform>/.
+Maho package UI — pick platform / config and ship to Packaged/<Platform>/.
 
 Logs go to the UI (no console). Launched by:
   - Engine: Tools/package.bat → launch_package.vbs → pythonw
@@ -18,7 +18,7 @@ from tkinter import filedialog, messagebox, ttk
 TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 
-from catty_tools import (  # noqa: E402
+from maho_tools import (  # noqa: E402
 	ENGINE_ROOT,
 	OperationCancelled,
 	generate_engine_workspace,
@@ -58,7 +58,7 @@ def _default_cproject_from_argv(argv: list[str]) -> Path | None:
 class PackageApp(tk.Tk):
 	def __init__(self, initial_cproject: Path | None = None) -> None:
 		super().__init__()
-		self.title("Catty — Package")
+		self.title("Maho — Package")
 		self.geometry("720x640")
 		self.minsize(600, 520)
 
@@ -76,7 +76,7 @@ class PackageApp(tk.Tk):
 		self._build()
 		self.protocol("WM_DELETE_WINDOW", self._on_close_request)
 		self._refresh_summary()
-		self.log_line("[Catty] UI ready.")
+		self.log_line("[Maho] UI ready.")
 
 	def _build(self) -> None:
 		pad = {"padx": 12, "pady": 6}
@@ -177,7 +177,7 @@ class PackageApp(tk.Tk):
 			return
 		path = filedialog.askopenfilename(
 			title="Select .cproject",
-			filetypes=[("Catty Project", "*.cproject"), ("All", "*.*")],
+			filetypes=[("Maho Project", "*.cproject"), ("All", "*.*")],
 			initialdir=str(ENGINE_ROOT),
 		)
 		if path:
@@ -269,7 +269,7 @@ class PackageApp(tk.Tk):
 			return
 
 		ok = messagebox.askyesno(
-			"Catty",
+			"Maho",
 			"Packaging is still running.\n\n"
 			"Cancel the package operation?",
 			icon=messagebox.WARNING,
@@ -280,7 +280,7 @@ class PackageApp(tk.Tk):
 		self._close_after_abort = True
 		self._cancel_event.set()
 		self._kill_active_proc()
-		self.log_line("[Catty] Abort requested — stopping package…")
+		self.log_line("[Maho] Abort requested — stopping package…")
 		self.status.configure(text="Cancelling…")
 
 	def _finish_package_ui(self, *, aborted: bool, status: str = "Ready") -> None:
@@ -296,7 +296,7 @@ class PackageApp(tk.Tk):
 
 		platform = self.var_platform.get()
 		if not dict(_PLATFORMS).get(platform, False):
-			messagebox.showerror("Catty", f"Platform '{platform}' is not implemented yet.\nUse Win64.")
+			messagebox.showerror("Maho", f"Platform '{platform}' is not implemented yet.\nUse Win64.")
 			return
 
 		cproject_str = self.var_cproject.get().strip()
@@ -304,7 +304,7 @@ class PackageApp(tk.Tk):
 		if cproject_str:
 			cproject = Path(cproject_str).expanduser().resolve()
 			if not cproject.is_file():
-				messagebox.showerror("Catty", f".cproject not found:\n{cproject}")
+				messagebox.showerror("Maho", f".cproject not found:\n{cproject}")
 				return
 
 		config = self.var_config.get()
@@ -315,7 +315,7 @@ class PackageApp(tk.Tk):
 		self._close_after_abort = False
 		self._proc_holder.clear()
 		self._set_busy(True, "Packaging…")
-		self.log_line("[Catty] Packaging started…")
+		self.log_line("[Maho] Packaging started…")
 
 		threading.Thread(
 			target=self._run_package_worker,
@@ -337,7 +337,7 @@ class PackageApp(tk.Tk):
 
 			if cproject is not None:
 				if regen or not (cproject.parent / "Intermediate" / "CMakeCache.txt").is_file():
-					self.log_line("[Catty] Generating project files…")
+					self.log_line("[Maho] Generating project files…")
 					generate_from_cproject(
 						cproject,
 						log=self.log_line,
@@ -348,7 +348,7 @@ class PackageApp(tk.Tk):
 				label = read_cproject(cproject).get("ProjectName", cproject.stem)
 			else:
 				if regen or not (ENGINE_ROOT / "Intermediate" / "CMakeCache.txt").is_file():
-					self.log_line("[Catty] Generating engine workspace…")
+					self.log_line("[Maho] Generating engine workspace…")
 					generate_engine_workspace(
 						ENGINE_ROOT,
 						log=self.log_line,
@@ -356,12 +356,12 @@ class PackageApp(tk.Tk):
 						proc_holder=self._proc_holder,
 					)
 				project_dir = ENGINE_ROOT
-				label = "CattyWorkspace"
+				label = "MahoWorkspace"
 
 			if self._cancel_event.is_set():
 				raise OperationCancelled("Cancelled")
 
-			# Platform folder name must match CattyDirectories (Win64 today).
+			# Platform folder name must match MahoDirectories (Win64 today).
 			run_package(
 				project_dir,
 				config=config,
@@ -371,17 +371,17 @@ class PackageApp(tk.Tk):
 				proc_holder=self._proc_holder,
 			)
 			out_dir = project_dir / "Packaged" / platform
-			self.log_line(f"[Catty] Package finished for {label}.")
+			self.log_line(f"[Maho] Package finished for {label}.")
 
 			def done_ok() -> None:
 				self._finish_package_ui(aborted=False, status=f"Done → {out_dir}")
-				messagebox.showinfo("Catty", f"Package finished for {label}\n\n{out_dir}")
+				messagebox.showinfo("Maho", f"Package finished for {label}\n\n{out_dir}")
 				if open_folder and out_dir.is_dir():
 					open_in_file_manager(out_dir)
 
 			self.after(0, done_ok)
 		except OperationCancelled:
-			self.log_line("[Catty] Packaging aborted by user.")
+			self.log_line("[Maho] Packaging aborted by user.")
 			self.after(0, lambda: self._finish_package_ui(aborted=True, status="Cancelled"))
 		except Exception as ex:  # noqa: BLE001
 			err = str(ex)
@@ -389,7 +389,7 @@ class PackageApp(tk.Tk):
 
 			def done_err(e: str = err) -> None:
 				self._finish_package_ui(aborted=False, status="Failed")
-				messagebox.showerror("Catty", e)
+				messagebox.showerror("Maho", e)
 
 			self.after(0, done_err)
 

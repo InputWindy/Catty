@@ -290,7 +290,7 @@ export async function runDemo({
   const adapter_metadata =
     state.active_session.adapter.getMetadata();
   output.write(
-    `Catty Agent Core v0.4\nProvider: ${metadata.provider}\nModel: ${metadata.model}\nMode: ${metadata.real ? "real" : "Mock"}\nThinking: disabled\nWorld adapter: ${adapter_metadata.adapter}\nAdapter readiness: ${adapter_metadata.ready ? "ready" : "not ready"}${adapter_metadata.remote ? `\nRemote base URL: ${adapter_metadata.base_url}` : ""}\nType /help for commands.\n\n`
+    `Maho Agent Core v0.4\nProvider: ${metadata.provider}\nModel: ${metadata.model}\nMode: ${metadata.real ? "real" : "Mock"}\nThinking: disabled\nWorld adapter: ${adapter_metadata.adapter}\nAdapter readiness: ${adapter_metadata.ready ? "ready" : "not ready"}${adapter_metadata.remote ? `\nRemote base URL: ${adapter_metadata.base_url}` : ""}\nType /help for commands.\n\n`
   );
   reader.on("SIGINT", () => {
     output.write("\nBye.\n");

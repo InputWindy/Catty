@@ -1,5 +1,5 @@
 /**
- * Catty editor Agent bridge.
+ * Maho editor Agent bridge.
  *
  *   node server.mjs --port 8765 --cwd <projectRoot> [--api-key-file path]
  */
@@ -79,7 +79,7 @@ const router = createRouter({
   on_shutdown: () => {
     setTimeout(() => {
       shutdown().catch((error) => {
-        console.error("[CattyAgentBridge] shutdown failed", error);
+        console.error("[MahoAgentBridge] shutdown failed", error);
         process.exit(1);
       });
     }, 50);
@@ -91,7 +91,7 @@ server.listen(config.port, config.host, () => {
   const provider_metadata = providerRegistry.getMetadata();
   const world_metadata = worldAdapterFactory.getMetadata();
   console.log(
-    `[CattyAgentBridge] listening on ${config.host}:${config.port} cwd=${config.cwd} provider=${provider_metadata.provider} model=${provider_metadata.model} mode=${provider_metadata.real ? "real" : "mock"} thinking=${provider_metadata.thinking} world_adapter=${world_metadata.adapter}${world_metadata.base_url ? ` world_base_url=${world_metadata.base_url}` : ""}`
+    `[MahoAgentBridge] listening on ${config.host}:${config.port} cwd=${config.cwd} provider=${provider_metadata.provider} model=${provider_metadata.model} mode=${provider_metadata.real ? "real" : "mock"} thinking=${provider_metadata.thinking} world_adapter=${world_metadata.adapter}${world_metadata.base_url ? ` world_base_url=${world_metadata.base_url}` : ""}`
   );
 });
 

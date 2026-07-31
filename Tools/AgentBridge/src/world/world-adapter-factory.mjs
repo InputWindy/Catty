@@ -33,7 +33,7 @@ function configError(message, field, details = {}) {
 }
 
 function parseTimeout(env) {
-  const raw = trimmed(env.CATTY_WORLD_TIMEOUT_MS);
+  const raw = trimmed(env.MAHO_WORLD_TIMEOUT_MS);
   if (!raw) {
     return worldAdapterConfigDefaults.timeout_ms;
   }
@@ -44,15 +44,15 @@ function parseTimeout(env) {
     value > 300_000
   ) {
     throw configError(
-      "CATTY_WORLD_TIMEOUT_MS must be an integer from 1 through 300000",
-      "CATTY_WORLD_TIMEOUT_MS"
+      "MAHO_WORLD_TIMEOUT_MS must be an integer from 1 through 300000",
+      "MAHO_WORLD_TIMEOUT_MS"
     );
   }
   return value;
 }
 
 function parseNonLoopback(env) {
-  const raw = trimmed(env.CATTY_WORLD_ALLOW_NON_LOOPBACK);
+  const raw = trimmed(env.MAHO_WORLD_ALLOW_NON_LOOPBACK);
   if (!raw || raw === "0") {
     return false;
   }
@@ -60,8 +60,8 @@ function parseNonLoopback(env) {
     return true;
   }
   throw configError(
-    "CATTY_WORLD_ALLOW_NON_LOOPBACK must be 0 or 1",
-    "CATTY_WORLD_ALLOW_NON_LOOPBACK"
+    "MAHO_WORLD_ALLOW_NON_LOOPBACK must be 0 or 1",
+    "MAHO_WORLD_ALLOW_NON_LOOPBACK"
   );
 }
 
@@ -69,22 +69,22 @@ export function resolveWorldAdapterConfig({
   env = process.env,
 } = {}) {
   const adapter_id =
-    trimmed(env.CATTY_WORLD_ADAPTER).toLowerCase() ||
+    trimmed(env.MAHO_WORLD_ADAPTER).toLowerCase() ||
     worldAdapterConfigDefaults.adapter_id;
   if (!WORLD_ADAPTER_IDS.includes(adapter_id)) {
     throw configError(
       `Unknown WorldAdapter: ${adapter_id}`,
-      "CATTY_WORLD_ADAPTER"
+      "MAHO_WORLD_ADAPTER"
     );
   }
 
   const config = {
     adapter_id,
     base_url:
-      trimmed(env.CATTY_WORLD_BASE_URL) ||
+      trimmed(env.MAHO_WORLD_BASE_URL) ||
       worldAdapterConfigDefaults.base_url,
     timeout_ms: parseTimeout(env),
-    auth_token: trimmed(env.CATTY_WORLD_AUTH_TOKEN),
+    auth_token: trimmed(env.MAHO_WORLD_AUTH_TOKEN),
     allow_non_loopback: parseNonLoopback(env),
   };
   if (adapter_id === "remote") {
@@ -158,7 +158,7 @@ export class WorldAdapterFactory {
     } else {
       throw configError(
         `Unknown WorldAdapter: ${this.config.adapter_id}`,
-        "CATTY_WORLD_ADAPTER"
+        "MAHO_WORLD_ADAPTER"
       );
     }
     this.adapters.add(adapter);

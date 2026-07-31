@@ -1,6 +1,6 @@
-# Catty
+# Maho
 
-UE 风格 C++ 引擎（`Catty` DLL）+ 工具链：用 `.cproject`（类似 `.uproject`）创建、生成、打包游戏工程。
+UE 风格 C++ 引擎（`Maho` DLL）+ 工具链：用 `.cproject`（类似 `.uproject`）创建、生成、打包游戏工程。
 
 ## 安装
 
@@ -26,7 +26,7 @@ createProject.bat
 2. 得到 `Parent/Name/Name.cproject`  
 3. 双击 `.cproject` → 生成同级 `.sln` → 用 Visual Studio 打开  
 
-也可在引擎根用 `Tools\generateProject.bat`（无参数）生成引擎工作区 `CattyWorkspace.sln`。
+也可在引擎根用 `Tools\generateProject.bat`（无参数）生成引擎工作区 `MahoWorkspace.sln`。
 
 ## 打包
 
@@ -45,18 +45,18 @@ clean.bat --ask
 clean.bat --dry-run
 ```
 
-会删除 `Intermediate` / `Binaries` / `Packaged` / `Cached` / `Saved`，以及 `Catty/Source/Generated/`（reflect / Lua codegen）。**不删** `Tools/python`。
+会删除 `Intermediate` / `Binaries` / `Packaged` / `Cached` / `Saved`，以及 `Maho/Source/Generated/`（reflect / Lua codegen）。**不删** `Tools/python`。
 
 ---
 
 ## 目录结构
 
 ```text
-Catty/                          # 引擎仓库根
+Maho/                          # 引擎仓库根
 ├── setup.bat                   # 安装局部 Python
 ├── createProject.bat           # 新建游戏项目（GUI）
 ├── clean.bat                   # 清理中间产物
-├── Catty/                      # 引擎模块（DLL 源码）
+├── Maho/                      # 引擎模块（DLL 源码）
 │   ├── Source/
 │   │   ├── Public/             # 对外头文件
 │   │   ├── Private/            # 实现
@@ -68,8 +68,8 @@ Catty/                          # 引擎仓库根
 │   └── object_reflect_codegen.bat  # UObject 反射表生成
 │   └── package.bat             # 打包 GUI
 │   └── generateProject.bat     # .cproject / 工作区 → .sln
-├── Catty/ThirdParty/           # 引擎第三方依赖（fonts / nlohmann / …）
-├── Doc/                        # Catty 文档
+├── Maho/ThirdParty/           # 引擎第三方依赖（fonts / nlohmann / …）
+├── Doc/                        # Maho 文档
 │   └── Engine/                 # 引擎 API / 架构 / Agent 规范与进度
 └── README.md
 ```
@@ -98,7 +98,7 @@ MyGame/
 | [Doc/Engine/CODING_STANDARDS.md](Doc/Engine/CODING_STANDARDS.md) | C++ 编码规范（全文） |
 | [Doc/Engine/DESIGN_JOURNAL.md](Doc/Engine/DESIGN_JOURNAL.md) | 子系统做到哪一步、设计意图与踩坑 |
 | [Doc/Engine/ObjectReflectAPI.html](Doc/Engine/ObjectReflectAPI.html) | Object / Struct / Enum 反射 C++ API（codegen 同步类型目录） |
-| [Doc/Engine/LuaAPI.html](Doc/Engine/LuaAPI.html) | Lua API（手工 `catty.*`；Object usertype 另案） |
+| [Doc/Engine/LuaAPI.html](Doc/Engine/LuaAPI.html) | Lua API（手工 `maho.*`；Object usertype 另案） |
 | [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html) | 引擎架构（FApp / Extension / RHI 等；若与代码冲突以代码与 CONTRACT 为准） |
 
 用浏览器或 Cursor **Live Preview** 打开 HTML 即可。Markdown（`AGENTS.md` / `CONTRACT.md` / `DESIGN_JOURNAL.md`）直接给 Agent 读。

@@ -27,9 +27,9 @@ test("WorldAdapterFactory defaults to an isolated MockWorldAdapter", async () =>
 test("WorldAdapterFactory creates remote only after explicit selection", async () => {
   const config = resolveWorldAdapterConfig({
     env: {
-      CATTY_WORLD_ADAPTER: "remote",
-      CATTY_WORLD_BASE_URL: "http://localhost:8770",
-      CATTY_WORLD_TIMEOUT_MS: "1234",
+      MAHO_WORLD_ADAPTER: "remote",
+      MAHO_WORLD_BASE_URL: "http://localhost:8770",
+      MAHO_WORLD_TIMEOUT_MS: "1234",
     },
   });
   const factory = new WorldAdapterFactory({
@@ -51,7 +51,7 @@ test("unknown adapters and invalid remote configuration never fall back to mock"
   assert.throws(
     () =>
       resolveWorldAdapterConfig({
-        env: { CATTY_WORLD_ADAPTER: "missing" },
+        env: { MAHO_WORLD_ADAPTER: "missing" },
       }),
     (error) =>
       error instanceof WorldAdapterError &&
@@ -61,8 +61,8 @@ test("unknown adapters and invalid remote configuration never fall back to mock"
     () =>
       resolveWorldAdapterConfig({
         env: {
-          CATTY_WORLD_ADAPTER: "remote",
-          CATTY_WORLD_BASE_URL: "not a URL",
+          MAHO_WORLD_ADAPTER: "remote",
+          MAHO_WORLD_BASE_URL: "not a URL",
         },
       }),
     (error) =>
@@ -80,8 +80,8 @@ test("remote URL policy allows loopback and guards non-loopback with opt-in plus
     assert.equal(
       resolveWorldAdapterConfig({
         env: {
-          CATTY_WORLD_ADAPTER: "remote",
-          CATTY_WORLD_BASE_URL: base_url,
+          MAHO_WORLD_ADAPTER: "remote",
+          MAHO_WORLD_BASE_URL: base_url,
         },
       }).loopback,
       true
@@ -92,8 +92,8 @@ test("remote URL policy allows loopback and guards non-loopback with opt-in plus
     () =>
       resolveWorldAdapterConfig({
         env: {
-          CATTY_WORLD_ADAPTER: "remote",
-          CATTY_WORLD_BASE_URL: "https://world.example",
+          MAHO_WORLD_ADAPTER: "remote",
+          MAHO_WORLD_BASE_URL: "https://world.example",
         },
       }),
     (error) => error.reason === "non_loopback_rejected"
@@ -102,9 +102,9 @@ test("remote URL policy allows loopback and guards non-loopback with opt-in plus
     () =>
       resolveWorldAdapterConfig({
         env: {
-          CATTY_WORLD_ADAPTER: "remote",
-          CATTY_WORLD_BASE_URL: "https://world.example",
-          CATTY_WORLD_ALLOW_NON_LOOPBACK: "1",
+          MAHO_WORLD_ADAPTER: "remote",
+          MAHO_WORLD_BASE_URL: "https://world.example",
+          MAHO_WORLD_ALLOW_NON_LOOPBACK: "1",
         },
       }),
     (error) => error.reason === "auth_required"
@@ -112,10 +112,10 @@ test("remote URL policy allows loopback and guards non-loopback with opt-in plus
   const secret = "world-secret-must-not-leak";
   const allowed = resolveWorldAdapterConfig({
     env: {
-      CATTY_WORLD_ADAPTER: "remote",
-      CATTY_WORLD_BASE_URL: "https://world.example",
-      CATTY_WORLD_ALLOW_NON_LOOPBACK: "1",
-      CATTY_WORLD_AUTH_TOKEN: secret,
+      MAHO_WORLD_ADAPTER: "remote",
+      MAHO_WORLD_BASE_URL: "https://world.example",
+      MAHO_WORLD_ALLOW_NON_LOOPBACK: "1",
+      MAHO_WORLD_AUTH_TOKEN: secret,
     },
   });
   const factory = new WorldAdapterFactory({

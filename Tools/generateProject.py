@@ -1,6 +1,6 @@
-# Run via Tools/generateProject.bat / catty_python.bat — engine Tools/python only.
+# Run via Tools/generateProject.bat / maho_python.bat — engine Tools/python only.
 """
-Generate Visual Studio solution for a Catty project.
+Generate Visual Studio solution for a Maho project.
 
 Usage:
   Tools\\generateProject.bat
@@ -15,7 +15,7 @@ from pathlib import Path
 TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 
-from catty_tools import (  # noqa: E402
+from maho_tools import (  # noqa: E402
 	ENGINE_ROOT,
 	generate_engine_workspace,
 	generate_from_cproject,
@@ -34,10 +34,10 @@ def main(argv: list[str]) -> int:
 				return 1
 			sln = generate_from_cproject(target)
 		else:
-			print("[Catty] No .cproject given — generating engine workspace SLN")
+			print("[Maho] No .cproject given — generating engine workspace SLN")
 			sln = generate_engine_workspace(ENGINE_ROOT)
 
-		print("[Catty] Done. Open the .sln in Visual Studio:")
+		print("[Maho] Done. Open the .sln in Visual Studio:")
 		print(f"        {sln}")
 		return 0
 	except Exception as ex:  # noqa: BLE001

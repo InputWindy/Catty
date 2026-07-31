@@ -49,7 +49,7 @@ function resolveApiKey(args, logger, env) {
       return fs.readFileSync(args.api_key_file, "utf8").trim();
     } catch (error) {
       logger.error(
-        "[CattyAgentBridge] failed to read api-key-file:",
+        "[MahoAgentBridge] failed to read api-key-file:",
         error?.message || error
       );
     }
@@ -65,8 +65,8 @@ export function loadConfig({
 } = {}) {
   const args = parseArgs(argv);
   const api_key = resolveApiKey(args, logger, env);
-  const host = String(env.CATTY_AGENT_HOST || "127.0.0.1").trim();
-  const port = parsePort(args.port ?? env.CATTY_AGENT_PORT ?? DEFAULT_PORT);
+  const host = String(env.MAHO_AGENT_HOST || "127.0.0.1").trim();
+  const port = parsePort(args.port ?? env.MAHO_AGENT_PORT ?? DEFAULT_PORT);
   const resolved_cwd = path.resolve(args.cwd || cwd);
   const ai = resolveProviderConfig({
     env,
@@ -76,7 +76,7 @@ export function loadConfig({
   const world = resolveWorldAdapterConfig({ env });
 
   if (!["127.0.0.1", "::1"].includes(host)) {
-    throw new Error("CATTY_AGENT_HOST must resolve to a loopback-only host");
+    throw new Error("MAHO_AGENT_HOST must resolve to a loopback-only host");
   }
 
   return {
@@ -87,7 +87,7 @@ export function loadConfig({
     force_mock: ai.provider_id === "mock",
     ai,
     world,
-    data_dir: path.resolve(env.CATTY_AGENT_DATA_DIR || path.join(BRIDGE_ROOT, ".runtime")),
+    data_dir: path.resolve(env.MAHO_AGENT_DATA_DIR || path.join(BRIDGE_ROOT, ".runtime")),
     body_limit_bytes: DEFAULT_BODY_LIMIT_BYTES,
   };
 }

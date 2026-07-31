@@ -1,6 +1,6 @@
-# Catty AgentBridge
+# Maho AgentBridge
 
-AgentBridge is a loopback-only Node.js service used by the existing Catty editor
+AgentBridge is a loopback-only Node.js service used by the existing Maho editor
 Agent panel. It preserves the legacy chat API and Agent Protocol v1 while
 providing Agent Core v0.4 with a selectable `WorldAdapter`.
 
@@ -30,7 +30,7 @@ natural language
   -> CommandExecutor
   -> WorldAdapterFactory
        -> MockWorldAdapter -> MockWorld + UndoJournal
-       -> RemoteWorldAdapter -> Catty World Adapter Protocol v1
+       -> RemoteWorldAdapter -> Maho World Adapter Protocol v1
   -> authoritative ToolResult + ChangeSet
   -> HTTP response + JSONL audit log
 ```
@@ -84,8 +84,8 @@ does not run `npm audit fix --force` or upgrade unrelated dependencies.
 
 Selection order is deterministic:
 
-1. `CATTY_AGENT_MOCK=1` forces MockProvider.
-2. `CATTY_AI_PROVIDER` selects an explicit Provider.
+1. `MAHO_AGENT_MOCK=1` forces MockProvider.
+2. `MAHO_AI_PROVIDER` selects an explicit Provider.
 3. Without an explicit Provider, legacy `CURSOR_API_KEY` selects Cursor.
 4. Otherwise AgentBridge uses MockProvider.
 
@@ -109,20 +109,20 @@ API configuration.
 World selection is independent of Provider selection:
 
 - `mock` is the default and requires no network service.
-- `remote` is selected only by `CATTY_WORLD_ADAPTER=remote`.
+- `remote` is selected only by `MAHO_WORLD_ADAPTER=remote`.
 - A selected remote adapter never falls back to mock after configuration,
   health, transport, protocol, validation, or execution failures.
 
 The remote protocol is a development integration boundary, not a public
 Internet API. Remote URLs are restricted to `127.0.0.1`, `localhost`, or
 `::1` by default.
-A non-loopback URL requires both `CATTY_WORLD_ALLOW_NON_LOOPBACK=1` and a
-non-empty `CATTY_WORLD_AUTH_TOKEN`. The token is sent only as a bearer
+A non-loopback URL requires both `MAHO_WORLD_ALLOW_NON_LOOPBACK=1` and a
+non-empty `MAHO_WORLD_AUTH_TOKEN`. The token is sent only as a bearer
 authorization header and is excluded from metadata, CLI output, and audit
 records.
 
 See [World Adapter Architecture](docs/WORLD_ADAPTER_ARCHITECTURE.md) and
-[Catty World Adapter Protocol v1](docs/CATTY_WORLD_ADAPTER_PROTOCOL_V1.md).
+[Maho World Adapter Protocol v1](docs/MAHO_WORLD_ADAPTER_PROTOCOL_V1.md).
 
 ## Run
 
@@ -142,7 +142,7 @@ node server.mjs --port 8765 --cwd C:\path\to\MyGame
 Force deterministic Mock mode:
 
 ```powershell
-$env:CATTY_AGENT_MOCK = "1"
+$env:MAHO_AGENT_MOCK = "1"
 npm start
 ```
 
@@ -174,8 +174,8 @@ Remote CLI demo against the included fake server:
 npm run world:fake
 
 # Window 2
-$env:CATTY_WORLD_ADAPTER = "remote"
-$env:CATTY_WORLD_BASE_URL = "http://127.0.0.1:8770"
+$env:MAHO_WORLD_ADAPTER = "remote"
+$env:MAHO_WORLD_BASE_URL = "http://127.0.0.1:8770"
 npm run demo
 ```
 
@@ -195,7 +195,7 @@ process. Startup prints Provider, model, Mock/real mode, and
 Select DeepSeek:
 
 ```powershell
-$env:CATTY_AI_PROVIDER = "deepseek"
+$env:MAHO_AI_PROVIDER = "deepseek"
 $env:DEEPSEEK_API_KEY = "replace_me"
 npm run demo
 ```
@@ -203,7 +203,7 @@ npm run demo
 Select Cursor:
 
 ```powershell
-$env:CATTY_AI_PROVIDER = "cursor"
+$env:MAHO_AI_PROVIDER = "cursor"
 $env:CURSOR_API_KEY = "replace_me"
 npm run demo
 ```
@@ -211,10 +211,10 @@ npm run demo
 Select a generic OpenAI-compatible endpoint:
 
 ```powershell
-$env:CATTY_AI_PROVIDER = "openai-compatible"
-$env:CATTY_AI_BASE_URL = "https://provider.example/v1"
-$env:CATTY_AI_MODEL = "provider-model"
-$env:CATTY_AI_API_KEY = "replace_me"
+$env:MAHO_AI_PROVIDER = "openai-compatible"
+$env:MAHO_AI_BASE_URL = "https://provider.example/v1"
+$env:MAHO_AI_MODEL = "provider-model"
+$env:MAHO_AI_API_KEY = "replace_me"
 npm run demo
 ```
 
@@ -285,37 +285,37 @@ are rejected without bypassing the existing JSON Schemas.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CATTY_AGENT_HOST` | `127.0.0.1` | Listen host; only `127.0.0.1` and `::1` are accepted |
-| `CATTY_AGENT_PORT` | `8765` | Listen port; `--port` takes precedence |
-| `CATTY_AGENT_MOCK` | automatic | `1` forces MockProvider |
-| `CATTY_AGENT_DATA_DIR` | `Tools/AgentBridge/.runtime` | JSONL audit/runtime directory |
-| `CATTY_WORLD_ADAPTER` | `mock` | World adapter ID: `mock` or explicit `remote` |
-| `CATTY_WORLD_BASE_URL` | `http://127.0.0.1:8770` | Credential-free remote base URL |
-| `CATTY_WORLD_TIMEOUT_MS` | `5000` | Per-remote-world-request timeout |
-| `CATTY_WORLD_AUTH_TOKEN` | empty | Optional bearer token; required for non-loopback |
-| `CATTY_WORLD_ALLOW_NON_LOOPBACK` | `0` | Set to `1` only with a bearer token |
+| `MAHO_AGENT_HOST` | `127.0.0.1` | Listen host; only `127.0.0.1` and `::1` are accepted |
+| `MAHO_AGENT_PORT` | `8765` | Listen port; `--port` takes precedence |
+| `MAHO_AGENT_MOCK` | automatic | `1` forces MockProvider |
+| `MAHO_AGENT_DATA_DIR` | `Tools/AgentBridge/.runtime` | JSONL audit/runtime directory |
+| `MAHO_WORLD_ADAPTER` | `mock` | World adapter ID: `mock` or explicit `remote` |
+| `MAHO_WORLD_BASE_URL` | `http://127.0.0.1:8770` | Credential-free remote base URL |
+| `MAHO_WORLD_TIMEOUT_MS` | `5000` | Per-remote-world-request timeout |
+| `MAHO_WORLD_AUTH_TOKEN` | empty | Optional bearer token; required for non-loopback |
+| `MAHO_WORLD_ALLOW_NON_LOOPBACK` | `0` | Set to `1` only with a bearer token |
 | `CURSOR_API_KEY` | empty | Cursor SDK key; absence selects Mock mode |
-| `CATTY_AI_PROVIDER` | selection rules above | `mock`, `deepseek`, `openai-compatible`, or `cursor` |
-| `CATTY_AI_API_KEY` | empty | Generic Key; takes precedence over `DEEPSEEK_API_KEY` for DeepSeek |
-| `CATTY_AI_BASE_URL` | Provider preset | Required for generic OpenAI-compatible |
-| `CATTY_AI_MODEL` | Provider preset | Required for generic OpenAI-compatible |
-| `CATTY_AI_TIMEOUT_MS` | `30000` | Per-model-request timeout |
-| `CATTY_AI_MAX_RETRIES` | `1` | Retry count after the first model request |
-| `CATTY_AI_TEMPERATURE` | `0` | Chat Completions temperature |
-| `CATTY_AI_FINALIZE` | `true` | Enable one supported finalization request |
-| `CATTY_AI_MAX_TOOL_CALLS` | `16` | Maximum planned ToolCalls |
+| `MAHO_AI_PROVIDER` | selection rules above | `mock`, `deepseek`, `openai-compatible`, or `cursor` |
+| `MAHO_AI_API_KEY` | empty | Generic Key; takes precedence over `DEEPSEEK_API_KEY` for DeepSeek |
+| `MAHO_AI_BASE_URL` | Provider preset | Required for generic OpenAI-compatible |
+| `MAHO_AI_MODEL` | Provider preset | Required for generic OpenAI-compatible |
+| `MAHO_AI_TIMEOUT_MS` | `30000` | Per-model-request timeout |
+| `MAHO_AI_MAX_RETRIES` | `1` | Retry count after the first model request |
+| `MAHO_AI_TEMPERATURE` | `0` | Chat Completions temperature |
+| `MAHO_AI_FINALIZE` | `true` | Enable one supported finalization request |
+| `MAHO_AI_MAX_TOOL_CALLS` | `16` | Maximum planned ToolCalls |
 | `DEEPSEEK_API_KEY` | empty | DeepSeek compatibility Key |
 
 The legacy Cursor SDK JSONL store remains under
 `<--cwd>/Saved/Agent/cursor-sdk-store` to avoid changing the existing editor
-behavior. Agent Core audit data uses `CATTY_AGENT_DATA_DIR`.
+behavior. Agent Core audit data uses `MAHO_AGENT_DATA_DIR`.
 `Tools/AgentBridge/.runtime/` is ignored by Git.
 
 Request bodies are limited to 1 MiB by default. The server never listens on a
 non-loopback address.
 
-Generic OpenAI-compatible mode requires all of `CATTY_AI_BASE_URL`,
-`CATTY_AI_MODEL`, and `CATTY_AI_API_KEY`. It receives no DeepSeek-specific
+Generic OpenAI-compatible mode requires all of `MAHO_AI_BASE_URL`,
+`MAHO_AI_MODEL`, and `MAHO_AI_API_KEY`. It receives no DeepSeek-specific
 fields. DeepSeek defaults to `https://api.deepseek.com` and
 `deepseek-v4-flash`, both overridable by generic variables. Agent Core v0.4
 always disables thinking mode.
@@ -367,8 +367,8 @@ documented in [docs/AGENT_PROTOCOL_V1.md](docs/AGENT_PROTOCOL_V1.md).
 Start the service in one PowerShell window:
 
 ```powershell
-$env:CATTY_AGENT_MOCK = "1"
-$env:CATTY_AGENT_PORT = "8765"
+$env:MAHO_AGENT_MOCK = "1"
+$env:MAHO_AGENT_PORT = "8765"
 npm start
 ```
 

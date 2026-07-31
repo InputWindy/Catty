@@ -13,7 +13,7 @@ export async function main({
 } = {}) {
   if (!hasDeepSeekKey(env)) {
     error_output.write(
-      "DeepSeek smoke test requires CATTY_AI_API_KEY or DEEPSEEK_API_KEY. Set one in the process environment; no network request was made.\n"
+      "DeepSeek smoke test requires MAHO_AI_API_KEY or DEEPSEEK_API_KEY. Set one in the process environment; no network request was made.\n"
     );
     return 1;
   }
@@ -24,7 +24,7 @@ export async function main({
     const metadata = core.provider.getMetadata();
     const text_session = core.createSession();
     const text_message =
-      "Reply briefly that the Catty DeepSeek smoke test is online.";
+      "Reply briefly that the Maho DeepSeek smoke test is online.";
     const text = await core.provider.finalize({
       request_id: randomUUID(),
       session_id: text_session.session_id,

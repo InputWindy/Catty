@@ -1,10 +1,10 @@
-# Catty Agent Protocol v1
+# Maho Agent Protocol v1
 
 [English](AGENT_PROTOCOL_V1.md)
 
 ## 1. 范围与约定
 
-`protocol_version` 为 `"1.0"`。所有由 Catty 定义的对外 JSON 字段名均使用
+`protocol_version` 为 `"1.0"`。所有由 Maho 定义的对外 JSON 字段名均使用
 `snake_case`。`additionalProperties` 等 JSON Schema 关键字保留标准拼写。
 
 服务只监听回环地址。v1 仅操作内存中的 `MockWorld`；真实 C++ 世界对象或指针

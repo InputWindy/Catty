@@ -80,8 +80,8 @@ preset, or Provider implementation.
 
 Selection order:
 
-1. `CATTY_AGENT_MOCK=1` forces MockProvider.
-2. Explicit `CATTY_AI_PROVIDER` wins.
+1. `MAHO_AGENT_MOCK=1` forces MockProvider.
+2. Explicit `MAHO_AI_PROVIDER` wins.
 3. Legacy `CURSOR_API_KEY` selects Cursor when no explicit Provider exists.
 4. MockProvider is the default.
 

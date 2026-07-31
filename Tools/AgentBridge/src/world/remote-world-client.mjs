@@ -26,8 +26,8 @@ export function normalizeRemoteWorldBaseUrl(
   } catch {
     throw new WorldAdapterError(
       worldAdapterErrorReasons.INVALID_BASE_URL,
-      "CATTY_WORLD_BASE_URL must be a valid HTTP or HTTPS URL",
-      { details: { field: "CATTY_WORLD_BASE_URL" } }
+      "MAHO_WORLD_BASE_URL must be a valid HTTP or HTTPS URL",
+      { details: { field: "MAHO_WORLD_BASE_URL" } }
     );
   }
   if (
@@ -39,8 +39,8 @@ export function normalizeRemoteWorldBaseUrl(
   ) {
     throw new WorldAdapterError(
       worldAdapterErrorReasons.INVALID_BASE_URL,
-      "CATTY_WORLD_BASE_URL must be a credential-free HTTP or HTTPS URL without query or fragment",
-      { details: { field: "CATTY_WORLD_BASE_URL" } }
+      "MAHO_WORLD_BASE_URL must be a credential-free HTTP or HTTPS URL without query or fragment",
+      { details: { field: "MAHO_WORLD_BASE_URL" } }
     );
   }
 
@@ -48,10 +48,10 @@ export function normalizeRemoteWorldBaseUrl(
   if (!loopback && !allow_non_loopback) {
     throw new WorldAdapterError(
       worldAdapterErrorReasons.NON_LOOPBACK_REJECTED,
-      "Non-loopback world URLs require CATTY_WORLD_ALLOW_NON_LOOPBACK=1",
+      "Non-loopback world URLs require MAHO_WORLD_ALLOW_NON_LOOPBACK=1",
       {
         details: {
-          field: "CATTY_WORLD_ALLOW_NON_LOOPBACK",
+          field: "MAHO_WORLD_ALLOW_NON_LOOPBACK",
           endpoint_origin: parsed.origin,
         },
       }
@@ -60,10 +60,10 @@ export function normalizeRemoteWorldBaseUrl(
   if (!loopback && !String(auth_token || "").trim()) {
     throw new WorldAdapterError(
       worldAdapterErrorReasons.AUTH_REQUIRED,
-      "Non-loopback world URLs require CATTY_WORLD_AUTH_TOKEN",
+      "Non-loopback world URLs require MAHO_WORLD_AUTH_TOKEN",
       {
         details: {
-          field: "CATTY_WORLD_AUTH_TOKEN",
+          field: "MAHO_WORLD_AUTH_TOKEN",
           endpoint_origin: parsed.origin,
         },
       }

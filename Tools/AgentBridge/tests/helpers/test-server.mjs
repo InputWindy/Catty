@@ -17,7 +17,7 @@ import {
 
 export async function startLegacyTestServer(overrides = {}) {
   const temporary_dir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "catty-agent-test-")
+    path.join(os.tmpdir(), "maho-agent-test-")
   );
   const config = {
     host: "127.0.0.1",

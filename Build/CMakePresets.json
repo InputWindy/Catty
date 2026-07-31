@@ -14,7 +14,7 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/../Intermediate",
       "cacheVariables": {
-        "CATTY_BUILD_SHARED": "ON"
+        "MAHO_BUILD_SHARED": "ON"
       }
     }
   ],

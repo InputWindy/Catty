@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Catty Lua API Reference</title>
+<title>Maho Lua API Reference</title>
 <style>
 :root {
 	--bg: #0f1218;
@@ -185,9 +185,9 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 </head>
 <body>
 <header>
-	<h1>Catty Lua API</h1>
+	<h1>Maho Lua API</h1>
 	<div class="subtitle">
-		<code class="inline">catty.*</code>：手工核心 API + <strong>codegen 具名 usertype</strong>（由 Object Reflect 扫描生成）。
+		<code class="inline">maho.*</code>：手工核心 API + <strong>codegen 具名 usertype</strong>（由 Object Reflect 扫描生成）。
 		玩法脚本应使用 <code class="inline">pkg:get_name()</code> 这类真实方法，而不是按名 Invoke。
 		· <a href="ObjectReflectAPI.html">Object Reflect C++ API</a>
 		· <a href="引擎架构设计.html">引擎架构设计</a>
@@ -199,88 +199,88 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 	<h2>Directory</h2>
 	<div class="sec">Core</div>
 	<ul>
-		<li><a href="#catty.log">log / cvar</a></li>
-		<li><a href="#catty.resources">resources</a></li>
+		<li><a href="#maho.log">log / cvar</a></li>
+		<li><a href="#maho.resources">resources</a></li>
 	</ul>
-<!-- @@CATTY_LUA_USERTYPE_TOC_BEGIN@@ -->
+<!-- @@MAHO_LUA_USERTYPE_TOC_BEGIN@@ -->
 	<div class="sec">Usertypes</div>
 	<ul>
-		<li><a href="#catty.object">catty.object</a></li>
-		<li><a href="#catty.package">catty.package</a></li>
-		<li><a href="#catty.resource">catty.resource</a></li>
+		<li><a href="#maho.object">maho.object</a></li>
+		<li><a href="#maho.package">maho.package</a></li>
+		<li><a href="#maho.resource">maho.resource</a></li>
 	</ul>
-<!-- @@CATTY_LUA_USERTYPE_TOC_END@@ -->
+<!-- @@MAHO_LUA_USERTYPE_TOC_END@@ -->
 </nav>
 
 <main>
-<section class="card" id="catty.log">
+<section class="card" id="maho.log">
 	<h2>log / cvar</h2>
 	<div class="body">
 		<article class="fn">
-			<div class="fn-head"><h3 class="fn-name">catty.log*</h3><span class="tag tag-api">core</span></div>
+			<div class="fn-head"><h3 class="fn-name">maho.log*</h3><span class="tag tag-api">core</span></div>
 			<div class="fn-body">
-				<code class="sig">catty.log / log_warn / log_error(msg)
-catty.get_cvar_int/float/bool/string(name [, default])
-catty.set_cvar_int/float/bool/string(name, value)</code>
+				<code class="sig">maho.log / log_warn / log_error(msg)
+maho.get_cvar_int/float/bool/string(name [, default])
+maho.set_cvar_int/float/bool/string(name, value)</code>
 			</div>
 		</article>
 	</div>
 </section>
 
-<section class="card" id="catty.resources">
+<section class="card" id="maho.resources">
 	<h2>ResourceManager（ILuaBindable）</h2>
 	<div class="body">
-		<p>由 <code>FResourceSystem::BindLua</code> 在 <code>OnLuaReady</code> 时挂到 <code>catty.*</code>。返回值多为 codegen usertype（<code>catty.package</code> / <code>catty.resource</code> / <code>catty.object</code>）。</p>
+		<p>由 <code>FResourceSystem::BindLua</code> 在 <code>OnLuaReady</code> 时挂到 <code>maho.*</code>。返回值多为 codegen usertype（<code>maho.package</code> / <code>maho.resource</code> / <code>maho.object</code>）。</p>
 		<article class="fn">
 			<div class="fn-head"><h3 class="fn-name">enums / constants</h3><span class="tag tag-api">api</span></div>
 			<div class="fn-body">
-				<code class="sig">catty.package_flags.none|transient|persistent
-catty.resource_type.unknown|raw|texture|mesh|material|shader|audio|data
-catty.resource_load_state.invalid|pending|ready|failed
-catty.transient_package_name</code>
+				<code class="sig">maho.package_flags.none|transient|persistent
+maho.resource_type.unknown|raw|texture|mesh|material|shader|audio|data
+maho.resource_load_state.invalid|pending|ready|failed
+maho.transient_package_name</code>
 			</div>
 		</article>
 		<article class="fn">
 			<div class="fn-head"><h3 class="fn-name">catalog / create</h3><span class="tag tag-api">api</span></div>
 			<div class="fn-body">
-				<code class="sig">catty.is_resource_manager_initialized() -> bool
-catty.get_transient_package() -> package
-catty.create_package(name [, flags]) -> package
-catty.find_package(name) -> package
-catty.unload_package(name) -> bool
-catty.create_resource(package, object_name, source_path [, type]) -> object
-catty.create_resource(source_path [, type [, object_name]]) -> object
-catty.find_object(package_name, object_name) -> object
-catty.find_object(package, object_name) -> object</code>
+				<code class="sig">maho.is_resource_manager_initialized() -> bool
+maho.get_transient_package() -> package
+maho.create_package(name [, flags]) -> package
+maho.find_package(name) -> package
+maho.unload_package(name) -> bool
+maho.create_resource(package, object_name, source_path [, type]) -> object
+maho.create_resource(source_path [, type [, object_name]]) -> object
+maho.find_object(package_name, object_name) -> object
+maho.find_object(package, object_name) -> object</code>
 			</div>
 		</article>
 		<article class="fn">
 			<div class="fn-head"><h3 class="fn-name">persistence / async</h3><span class="tag tag-api">api</span></div>
 			<div class="fn-body">
-				<code class="sig">catty.save_package(package [, file_path [, pretty [, save_deps]]]) -> bool
-catty.load_package(file_path) -> package
-catty.get_load_state(object) -> number
-catty.is_ready(object) -> bool
-catty.flush(object)
-catty.flush_all()</code>
+				<code class="sig">maho.save_package(package [, file_path [, pretty [, save_deps]]]) -> bool
+maho.load_package(file_path) -> package
+maho.get_load_state(object) -> number
+maho.is_ready(object) -> bool
+maho.flush(object)
+maho.flush_all()</code>
 			</div>
 		</article>
 	</div>
 </section>
 
-<!-- @@CATTY_LUA_USERTYPE_BODY_BEGIN@@ -->
+<!-- @@MAHO_LUA_USERTYPE_BODY_BEGIN@@ -->
 <section class="card" id="usertypes">
 	<h2>Usertypes（codegen）</h2>
 	<div class="body">
-		<p>由 <code>object_reflect_codegen.py</code> 根据 <code>CATTY_OBJECT</code> 扫描生成具名 sol2 绑定；方法/属性为 snake_case，对应 C++ 反射成员。实例可由 <code>catty.get_transient_package</code> / <code>find_*</code> / <code>create_*</code>（FResourceSystem::BindLua）或 C++ 推进 Lua；其它系统实现 <code>ILuaBindable</code> 经 <code>Bind</code> / <code>OnLuaReady</code> 挂接。</p>
+		<p>由 <code>object_reflect_codegen.py</code> 根据 <code>MAHO_OBJECT</code> 扫描生成具名 sol2 绑定；方法/属性为 snake_case，对应 C++ 反射成员。实例可由 <code>maho.get_transient_package</code> / <code>find_*</code> / <code>create_*</code>（FResourceSystem::BindLua）或 C++ 推进 Lua；其它系统实现 <code>ILuaBindable</code> 经 <code>Bind</code> / <code>OnLuaReady</code> 挂接。</p>
 
-		<article class="fn" id="catty.object">
+		<article class="fn" id="maho.object">
 			<div class="fn-head">
-				<h3 class="fn-name">catty.object</h3>
+				<h3 class="fn-name">maho.object</h3>
 				<span class="tag tag-reflect">usertype</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">Catty::UObject</code>
+				<code class="sig">Maho::UObject</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Lua</th><th>C++</th><th>Type</th></tr></thead>
@@ -305,13 +305,13 @@ catty.flush_all()</code>
 			</div>
 		</article>
 
-		<article class="fn" id="catty.package">
+		<article class="fn" id="maho.package">
 			<div class="fn-head">
-				<h3 class="fn-name">catty.package</h3>
+				<h3 class="fn-name">maho.package</h3>
 				<span class="tag tag-reflect">usertype</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">Catty::UPackage · extends catty.object</code>
+				<code class="sig">Maho::UPackage · extends maho.object</code>
 				<h4>Functions</h4>
 				<table>
 					<thead><tr><th>Lua</th><th>C++</th><th>Signature</th></tr></thead>
@@ -328,13 +328,13 @@ catty.flush_all()</code>
 			</div>
 		</article>
 
-		<article class="fn" id="catty.resource">
+		<article class="fn" id="maho.resource">
 			<div class="fn-head">
-				<h3 class="fn-name">catty.resource</h3>
+				<h3 class="fn-name">maho.resource</h3>
 				<span class="tag tag-reflect">usertype</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">Catty::UResource · extends catty.object</code>
+				<code class="sig">Maho::UResource · extends maho.object</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Lua</th><th>C++</th><th>Type</th></tr></thead>
@@ -359,7 +359,7 @@ catty.flush_all()</code>
 
 	</div>
 </section>
-<!-- @@CATTY_LUA_USERTYPE_BODY_END@@ -->
+<!-- @@MAHO_LUA_USERTYPE_BODY_END@@ -->
 
 </main>
 </div>

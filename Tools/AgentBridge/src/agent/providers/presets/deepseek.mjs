@@ -16,13 +16,13 @@ export function createDeepSeekProvider(config) {
     throw new ProviderError(
       providerErrorReasons.CONFIGURATION_MISSING,
       "DeepSeek thinking mode is not supported by Agent Core v0.3",
-      { provider: "deepseek", details: { field: "CATTY_AI_THINKING" } }
+      { provider: "deepseek", details: { field: "MAHO_AI_THINKING" } }
     );
   }
   if (!config.api_key) {
     throw new ProviderError(
       providerErrorReasons.API_KEY_MISSING,
-      "CATTY_AI_API_KEY or DEEPSEEK_API_KEY is required for Provider deepseek",
+      "MAHO_AI_API_KEY or DEEPSEEK_API_KEY is required for Provider deepseek",
       { provider: "deepseek" }
     );
   }

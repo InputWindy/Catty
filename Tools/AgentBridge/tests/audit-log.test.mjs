@@ -7,7 +7,7 @@ import test from "node:test";
 import { AuditLog } from "../src/logging/audit-log.mjs";
 
 test("JSONL audit records required fields without API keys or authorization", async (t) => {
-  const data_dir = await fs.mkdtemp(path.join(os.tmpdir(), "catty-audit-test-"));
+  const data_dir = await fs.mkdtemp(path.join(os.tmpdir(), "maho-audit-test-"));
   t.after(() => fs.rm(data_dir, { recursive: true, force: true }));
   const audit_log = new AuditLog({ data_dir });
   const secret_value = "cursor-secret-value-for-test";

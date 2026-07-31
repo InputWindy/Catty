@@ -1,8 +1,8 @@
-# Catty Agent Protocol v1
+# Maho Agent Protocol v1
 
 ## 1. Scope and conventions
 
-`protocol_version` is `"1.0"`. All Catty-defined external JSON field names use
+`protocol_version` is `"1.0"`. All Maho-defined external JSON field names use
 `snake_case`. JSON Schema keywords such as `additionalProperties` retain their
 standard spelling.
 

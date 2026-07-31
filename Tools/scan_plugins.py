@@ -1,4 +1,4 @@
-# Run via Tools/scan_plugins.bat / catty_python.bat — engine Tools/python only.
+# Run via Tools/scan_plugins.bat / maho_python.bat — engine Tools/python only.
 """
 Scan .cplugin manifests and resolve module dependency order for compilation.
 
@@ -18,7 +18,7 @@ from pathlib import Path
 TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 
-from catty_tools import (  # noqa: E402
+from maho_tools import (  # noqa: E402
 	DEFAULT_ENGINE_PLUGINS_DIR,
 	ENGINE_ROOT,
 	parse_cproject_plugin_overrides,
@@ -30,7 +30,7 @@ from catty_tools import (  # noqa: E402
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Scan Catty .cplugin files and emit a module build-order JSON.",
+		description="Scan Maho .cplugin files and emit a module build-order JSON.",
 	)
 	parser.add_argument(
 		"--engine-root",
@@ -43,7 +43,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 		type=Path,
 		action="append",
 		default=None,
-		help="Extra / override plugin root (repeatable). Default: <engine>/Catty/Plugins",
+		help="Extra / override plugin root (repeatable). Default: <engine>/Maho/Plugins",
 	)
 	parser.add_argument(
 		"--cproject",
@@ -89,7 +89,7 @@ def main(argv: list[str]) -> int:
 		elif args.plugins_dir:
 			roots = [p.expanduser().resolve() for p in args.plugins_dir]
 		else:
-			roots = [(engine_root / "Catty" / "Plugins").resolve()]
+			roots = [(engine_root / "Maho" / "Plugins").resolve()]
 			if not roots[0].is_dir():
 				roots = [DEFAULT_ENGINE_PLUGINS_DIR.resolve()]
 
@@ -108,17 +108,17 @@ def main(argv: list[str]) -> int:
 		out_path = args.out.expanduser().resolve()
 		out_path.parent.mkdir(parents=True, exist_ok=True)
 		out_path.write_text(text, encoding="utf-8", newline="\n")
-		print(f"[Catty] Wrote {out_path}")
+		print(f"[Maho] Wrote {out_path}")
 	else:
 		sys.stdout.write(text)
 
 	print(
-		f"[Catty] Plugins={len(result['Plugins'])} Modules={len(result['Modules'])} "
+		f"[Maho] Plugins={len(result['Plugins'])} Modules={len(result['Modules'])} "
 		f"BuildOrder={', '.join(result['BuildOrder']) or '(none)'}"
 	)
 
 	if args.check:
-		print("[Catty] plugin scan OK")
+		print("[Maho] plugin scan OK")
 	return 0
 
 

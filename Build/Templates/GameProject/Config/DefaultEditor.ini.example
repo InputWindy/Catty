@@ -1,4 +1,4 @@
-; Catty editor settings template (copy to DefaultEditor.ini and fill ApiKey).
+; Maho editor settings template (copy to DefaultEditor.ini and fill ApiKey).
 ; DefaultEditor.ini should stay local / gitignored.
 
 [Agent]

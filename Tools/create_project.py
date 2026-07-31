@@ -1,5 +1,5 @@
-# Run via Tools/catty_python.bat (or Tools/*.bat) — engine Tools/python only.
-"""Catty new-project UI (createProject.bat). Logs go to the UI, not a console window."""
+# Run via Tools/maho_python.bat (or Tools/*.bat) — engine Tools/python only.
+"""Maho new-project UI (createProject.bat). Logs go to the UI, not a console window."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 
-from catty_tools import (  # noqa: E402
+from maho_tools import (  # noqa: E402
 	ENGINE_ROOT,
 	OperationCancelled,
 	create_project,
@@ -27,13 +27,13 @@ from catty_tools import (  # noqa: E402
 class CreateProjectApp(tk.Tk):
 	def __init__(self) -> None:
 		super().__init__()
-		self.title("Catty — New Project")
+		self.title("Maho — New Project")
 		self.geometry("720x620")
 		self.minsize(640, 520)
 		self.resizable(True, True)
 
 		self.var_name = tk.StringVar(value="MyGame")
-		self.var_parent = tk.StringVar(value=str(Path.home() / "Documents" / "CattyProjects"))
+		self.var_parent = tk.StringVar(value=str(Path.home() / "Documents" / "MahoProjects"))
 		self.var_engine = tk.StringVar(value=str(ENGINE_ROOT))
 		self.var_author = tk.StringVar(value="")
 		self.var_desc = tk.StringVar(value="")
@@ -49,7 +49,7 @@ class CreateProjectApp(tk.Tk):
 
 		self._build()
 		self.protocol("WM_DELETE_WINDOW", self._on_close_request)
-		self.log_line("[Catty] UI ready.")
+		self.log_line("[Maho] UI ready.")
 		# Defer registry work so the window paints first; run off the UI thread.
 		self.after(100, self._auto_associate_cproject_async)
 
@@ -58,7 +58,7 @@ class CreateProjectApp(tk.Tk):
 		frm = ttk.Frame(self, padding=12)
 		frm.pack(fill=tk.BOTH, expand=True)
 
-		ttk.Label(frm, text="Create a new Catty game project", font=("Segoe UI", 12, "bold")).grid(
+		ttk.Label(frm, text="Create a new Maho game project", font=("Segoe UI", 12, "bold")).grid(
 			row=0, column=0, columnspan=3, sticky="w", **pad
 		)
 
@@ -205,9 +205,9 @@ class CreateProjectApp(tk.Tk):
 			return
 		try:
 			shutil.rmtree(project_dir, ignore_errors=False)
-			self.log_line(f"[Catty] Deleted incomplete project: {project_dir}")
+			self.log_line(f"[Maho] Deleted incomplete project: {project_dir}")
 		except Exception as ex:  # noqa: BLE001
-			self.log_line(f"[Catty] Failed to delete {project_dir}: {ex}")
+			self.log_line(f"[Maho] Failed to delete {project_dir}: {ex}")
 
 	def _on_close_request(self) -> None:
 		if not self._creating:
@@ -215,7 +215,7 @@ class CreateProjectApp(tk.Tk):
 			return
 
 		ok = messagebox.askyesno(
-			"Catty",
+			"Maho",
 			"Project creation is still running.\n\n"
 			"Abort creation and delete the target project folder?",
 			icon=messagebox.WARNING,
@@ -226,7 +226,7 @@ class CreateProjectApp(tk.Tk):
 		self._close_after_abort = True
 		self._cancel_event.set()
 		self._kill_active_proc()
-		self.log_line("[Catty] Abort requested — stopping and deleting project…")
+		self.log_line("[Maho] Abort requested — stopping and deleting project…")
 
 	def _finish_create_ui(self, *, aborted: bool) -> None:
 		if aborted and self._close_after_abort:
@@ -244,16 +244,16 @@ class CreateProjectApp(tk.Tk):
 				self.after(
 					0,
 					lambda: messagebox.showinfo(
-						"Catty",
+						"Maho",
 						"Associated .cproject with Tools/generateProject.bat for the current Windows user.\n"
 						"You may need to sign out/in once for Explorer to refresh icons.",
 					),
 				)
 		except Exception as ex:  # noqa: BLE001
 			err = str(ex)
-			self.log_line(f"[Catty] Associate failed: {err}")
+			self.log_line(f"[Maho] Associate failed: {err}")
 			if show_dialog:
-				self.after(0, lambda e=err: messagebox.showerror("Catty", e))
+				self.after(0, lambda e=err: messagebox.showerror("Maho", e))
 		finally:
 			self._associate_busy = False
 
@@ -263,17 +263,17 @@ class CreateProjectApp(tk.Tk):
 		if self._associate_busy:
 			return
 		self._associate_busy = True
-		self.log_line("[Catty] Registering .cproject association (background)…")
+		self.log_line("[Maho] Registering .cproject association (background)…")
 		threading.Thread(target=self._run_associate, kwargs={"show_dialog": False}, daemon=True).start()
 
 	def _associate_async(self) -> None:
 		if self._creating:
 			return
 		if self._associate_busy:
-			self.log_line("[Catty] Association already running…")
+			self.log_line("[Maho] Association already running…")
 			return
 		self._associate_busy = True
-		self.log_line("[Catty] Re-associating .cproject…")
+		self.log_line("[Maho] Re-associating .cproject…")
 		threading.Thread(target=self._run_associate, kwargs={"show_dialog": True}, daemon=True).start()
 
 	def _create(self) -> None:
@@ -289,17 +289,17 @@ class CreateProjectApp(tk.Tk):
 		want_open = self.var_open_folder.get()
 
 		if not is_valid_project_name(name):
-			messagebox.showerror("Catty", "Invalid project name.\nUse Letter + A-Z a-z 0-9 _")
+			messagebox.showerror("Maho", "Invalid project name.\nUse Letter + A-Z a-z 0-9 _")
 			return
 		if not parent:
-			messagebox.showerror("Catty", "Parent folder is required.")
+			messagebox.showerror("Maho", "Parent folder is required.")
 			return
-		if not (engine / "Catty").is_dir():
-			messagebox.showerror("Catty", f"Engine root must contain Catty/:\n{engine}")
+		if not (engine / "Maho").is_dir():
+			messagebox.showerror("Maho", f"Engine root must contain Maho/:\n{engine}")
 			return
 		if not (engine / "Tools" / "python" / "python.exe").is_file():
 			messagebox.showerror(
-				"Catty",
+				"Maho",
 				f"Engine local Python missing.\nRun setup.bat in:\n{engine}",
 			)
 			return
@@ -309,7 +309,7 @@ class CreateProjectApp(tk.Tk):
 		self._proc_holder.clear()
 		self._project_dir = None
 		self._set_creating(True)
-		self.log_line(f"[Catty] Creating project '{name}' …")
+		self.log_line(f"[Maho] Creating project '{name}' …")
 
 		def work() -> None:
 			project_dir: Path | None = None
@@ -321,14 +321,14 @@ class CreateProjectApp(tk.Tk):
 				cproject = create_project(name, parent, engine, description=desc, author=author)
 				project_dir = cproject.parent
 				self._project_dir = project_dir
-				self.log_line(f"[Catty] Wrote {cproject}")
+				self.log_line(f"[Maho] Wrote {cproject}")
 
 				if self._cancel_event.is_set():
 					raise OperationCancelled("Cancelled")
 
 				sln_msg = ""
 				if want_sln:
-					self.log_line("[Catty] Generating .sln (cmake; may take a moment)…")
+					self.log_line("[Maho] Generating .sln (cmake; may take a moment)…")
 					sln = generate_from_cproject(
 						cproject,
 						log=self.log_line,
@@ -336,23 +336,23 @@ class CreateProjectApp(tk.Tk):
 						proc_holder=self._proc_holder,
 					)
 					sln_msg = f"\nSLN: {sln}"
-					self.log_line(f"[Catty] SLN: {sln}")
+					self.log_line(f"[Maho] SLN: {sln}")
 
 				if self._cancel_event.is_set():
 					raise OperationCancelled("Cancelled")
 
 				if want_open:
 					open_in_file_manager(cproject.parent)
-				self.log_line("[Catty] Project create finished successfully.")
+				self.log_line("[Maho] Project create finished successfully.")
 
 				def done_ok() -> None:
 					self._finish_create_ui(aborted=False)
-					messagebox.showinfo("Catty", f"Project created:\n{cproject}{sln_msg}")
+					messagebox.showinfo("Maho", f"Project created:\n{cproject}{sln_msg}")
 
 				self.after(0, done_ok)
 			except OperationCancelled:
 				aborted = True
-				self.log_line("[Catty] Creation aborted by user.")
+				self.log_line("[Maho] Creation aborted by user.")
 				self._delete_project_dir(project_dir or self._project_dir)
 				self.after(0, lambda: self._finish_create_ui(aborted=True))
 			except Exception as ex:  # noqa: BLE001
@@ -361,7 +361,7 @@ class CreateProjectApp(tk.Tk):
 
 				def done_err(e: str = err) -> None:
 					self._finish_create_ui(aborted=False)
-					messagebox.showerror("Catty", e)
+					messagebox.showerror("Maho", e)
 
 				self.after(0, done_err)
 

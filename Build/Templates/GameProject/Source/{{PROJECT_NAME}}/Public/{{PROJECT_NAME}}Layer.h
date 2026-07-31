@@ -8,13 +8,13 @@
  * Default game Layer created with the project.
  * Hand-written — do not put RegisterExtension lists here (those live in Source/Generated/*App.cpp).
  */
-class F{{PROJECT_NAME}}Layer final : public Catty::FLayer
+class F{{PROJECT_NAME}}Layer final : public Maho::FLayer
 {
 public:
 	explicit F{{PROJECT_NAME}}Layer(std::string InName = "{{PROJECT_NAME}}")
-		: Catty::FLayer(std::move(InName))
+		: Maho::FLayer(std::move(InName))
 	{
 	}
 
-	bool ExecuteStage(Catty::EEngineStage Stage) override;
+	bool ExecuteStage(Maho::EEngineStage Stage) override;
 };

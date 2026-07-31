@@ -13,12 +13,12 @@ script = tools & "\create_project.py"
 
 If Not fso.FileExists(pyw) Then
 	MsgBox "Local Python not found." & vbCrLf & vbCrLf & _
-		"Run setup.bat first in:" & vbCrLf & root, 16, "Catty"
+		"Run setup.bat first in:" & vbCrLf & root, 16, "Maho"
 	WScript.Quit 1
 End If
 
 If Not fso.FileExists(script) Then
-	MsgBox "Missing script:" & vbCrLf & script, 16, "Catty"
+	MsgBox "Missing script:" & vbCrLf & script, 16, "Maho"
 	WScript.Quit 1
 End If
 

@@ -84,10 +84,10 @@ function parseBoolean(env, name, default_value) {
 }
 
 export function selectProviderId({ env = process.env, legacy_api_key = "" } = {}) {
-  if (env.CATTY_AGENT_MOCK === "1") {
+  if (env.MAHO_AGENT_MOCK === "1") {
     return "mock";
   }
-  const explicit = trimmed(env.CATTY_AI_PROVIDER).toLowerCase();
+  const explicit = trimmed(env.MAHO_AI_PROVIDER).toLowerCase();
   if (explicit) {
     if (!PROVIDER_IDS.includes(explicit)) {
       throw configError(
@@ -130,39 +130,39 @@ export function resolveProviderConfig({
   const provider_id = selectProviderId({ env, legacy_api_key });
   const timeout_ms = parseInteger(
     env,
-    "CATTY_AI_TIMEOUT_MS",
+    "MAHO_AI_TIMEOUT_MS",
     providerConfigDefaults.timeout_ms,
     { minimum: 1, maximum: 300_000 }
   );
   const max_retries = parseInteger(
     env,
-    "CATTY_AI_MAX_RETRIES",
+    "MAHO_AI_MAX_RETRIES",
     providerConfigDefaults.max_retries,
     { minimum: 0, maximum: 10 }
   );
   const temperature = parseNumber(
     env,
-    "CATTY_AI_TEMPERATURE",
+    "MAHO_AI_TEMPERATURE",
     providerConfigDefaults.temperature,
     { minimum: 0, maximum: 2 }
   );
   const finalize = parseBoolean(
     env,
-    "CATTY_AI_FINALIZE",
+    "MAHO_AI_FINALIZE",
     providerConfigDefaults.finalize
   );
   const max_tool_calls = parseInteger(
     env,
-    "CATTY_AI_MAX_TOOL_CALLS",
+    "MAHO_AI_MAX_TOOL_CALLS",
     providerConfigDefaults.max_tool_calls,
     { minimum: 1, maximum: 100 }
   );
-  const thinking = trimmed(env.CATTY_AI_THINKING).toLowerCase();
+  const thinking = trimmed(env.MAHO_AI_THINKING).toLowerCase();
   if (thinking && !["disabled", "false", "0", "off"].includes(thinking)) {
     throw configError(
       providerErrorReasons.CONFIGURATION_MISSING,
       "Thinking mode is not supported by Agent Core v0.3",
-      { field: "CATTY_AI_THINKING" }
+      { field: "MAHO_AI_THINKING" }
     );
   }
 
@@ -180,7 +180,7 @@ export function resolveProviderConfig({
   if (provider_id === "mock") {
     return {
       ...common,
-      model: trimmed(env.CATTY_AI_MODEL) || providerConfigDefaults.mock_model,
+      model: trimmed(env.MAHO_AI_MODEL) || providerConfigDefaults.mock_model,
       base_url: null,
       api_key: "",
       finalize: false,
@@ -190,7 +190,7 @@ export function resolveProviderConfig({
   if (provider_id === "cursor") {
     return {
       ...common,
-      model: trimmed(env.CATTY_AI_MODEL) || providerConfigDefaults.cursor_model,
+      model: trimmed(env.MAHO_AI_MODEL) || providerConfigDefaults.cursor_model,
       base_url: null,
       api_key: requireValue(
         trimmed(legacy_api_key || env.CURSOR_API_KEY),
@@ -205,18 +205,18 @@ export function resolveProviderConfig({
     return {
       ...common,
       model: requireValue(
-        trimmed(env.CATTY_AI_MODEL),
-        "CATTY_AI_MODEL",
+        trimmed(env.MAHO_AI_MODEL),
+        "MAHO_AI_MODEL",
         provider_id
       ),
       base_url: requireValue(
-        trimmed(env.CATTY_AI_BASE_URL),
-        "CATTY_AI_BASE_URL",
+        trimmed(env.MAHO_AI_BASE_URL),
+        "MAHO_AI_BASE_URL",
         provider_id
       ),
       api_key: requireValue(
-        trimmed(env.CATTY_AI_API_KEY),
-        "CATTY_AI_API_KEY",
+        trimmed(env.MAHO_AI_API_KEY),
+        "MAHO_AI_API_KEY",
         provider_id
       ),
       real: true,
@@ -225,10 +225,10 @@ export function resolveProviderConfig({
 
   return {
     ...common,
-    model: trimmed(env.CATTY_AI_MODEL),
-    base_url: trimmed(env.CATTY_AI_BASE_URL),
+    model: trimmed(env.MAHO_AI_MODEL),
+    base_url: trimmed(env.MAHO_AI_BASE_URL),
     api_key:
-      trimmed(env.CATTY_AI_API_KEY) || trimmed(env.DEEPSEEK_API_KEY),
+      trimmed(env.MAHO_AI_API_KEY) || trimmed(env.DEEPSEEK_API_KEY),
     real: true,
   };
 }

@@ -481,7 +481,7 @@ export class CommandExecutor {
       });
     } catch (error) {
       console.error(
-        "[CattyAgentBridge] audit log write failed:",
+        "[MahoAgentBridge] audit log write failed:",
         error?.message || error
       );
     }

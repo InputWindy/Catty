@@ -5,7 +5,7 @@ import { CommandExecutor } from "../src/execution/command-executor.mjs";
 import { SessionManager } from "../src/sessions/session-manager.mjs";
 import { createDefaultToolRegistry } from "../src/tools/definitions.mjs";
 import { WorldAdapterFactory } from "../src/world/world-adapter-factory.mjs";
-import { startFakeCattyWorldServer } from "./helpers/fake-catty-world-server.mjs";
+import { startFakeMahoWorldServer } from "./helpers/fake-maho-world-server.mjs";
 
 async function createCore(fake) {
   const tool_registry = createDefaultToolRegistry();
@@ -57,7 +57,7 @@ function spawnRequest(session) {
 }
 
 test("EntityContext stays unchanged when a remote execute response is uncorrelated", async (t) => {
-  const fake = await startFakeCattyWorldServer({
+  const fake = await startFakeMahoWorldServer({
     response_handler({ phase, default_response }) {
       if (phase === "execute") {
         default_response.body.tool_results[0].tool_call_id =
@@ -88,7 +88,7 @@ test("EntityContext stays unchanged when a remote execute response is uncorrelat
 
 test("EntityContext stays unchanged if the authoritative post-execution snapshot is invalid", async (t) => {
   let snapshot_count = 0;
-  const fake = await startFakeCattyWorldServer({
+  const fake = await startFakeMahoWorldServer({
     response_handler({ phase, default_response }) {
       if (phase === "snapshot") {
         snapshot_count += 1;

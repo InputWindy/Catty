@@ -12,7 +12,7 @@ export async function main({
 } = {}) {
   if (!hasDeepSeekKey(env)) {
     error_output.write(
-      "DeepSeek eval requires CATTY_AI_API_KEY or DEEPSEEK_API_KEY. No network request was made.\n"
+      "DeepSeek eval requires MAHO_AI_API_KEY or DEEPSEEK_API_KEY. No network request was made.\n"
     );
     return 1;
   }

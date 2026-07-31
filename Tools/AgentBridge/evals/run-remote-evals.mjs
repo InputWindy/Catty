@@ -3,19 +3,19 @@ import {
   WorldAdapterFactory,
   resolveWorldAdapterConfig,
 } from "../src/world/world-adapter-factory.mjs";
-import { startFakeCattyWorldServer } from "../tests/helpers/fake-catty-world-server.mjs";
+import { startFakeMahoWorldServer } from "../tests/helpers/fake-maho-world-server.mjs";
 import { runEvaluations } from "./eval-runner.mjs";
 
 export async function main({
   output = process.stdout,
   error_output = process.stderr,
 } = {}) {
-  const fake = await startFakeCattyWorldServer();
+  const fake = await startFakeMahoWorldServer();
   try {
     const config = resolveWorldAdapterConfig({
       env: {
-        CATTY_WORLD_ADAPTER: "remote",
-        CATTY_WORLD_BASE_URL: fake.base_url,
+        MAHO_WORLD_ADAPTER: "remote",
+        MAHO_WORLD_BASE_URL: fake.base_url,
       },
     });
     const summary = await runEvaluations({

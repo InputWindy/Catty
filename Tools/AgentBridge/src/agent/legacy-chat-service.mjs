@@ -1,6 +1,6 @@
 const SYSTEM_PREAMBLE =
-  "You are the Catty engine in-editor Agent. Help the user write and refine Lua " +
-  "game scripts for Catty (catty.log / cvars / packages / resources, Scripts/*.lua). " +
+  "You are the Maho engine in-editor Agent. Help the user write and refine Lua " +
+  "game scripts for Maho (maho.log / cvars / packages / resources, Scripts/*.lua). " +
   "Do not rewrite engine C++ unless explicitly asked. Prefer complete, runnable Lua. " +
   "Keep answers concise unless the user asks for detail.\n\nUser message:\n";
 
@@ -21,7 +21,7 @@ export class LegacyChatService {
 
   async initialize() {
     console.log(
-      `[CattyAgentBridge] provider=${
+      `[MahoAgentBridge] provider=${
         this.config.ai?.provider_id || (this.config.force_mock ? "mock" : "cursor")
       } legacyMock=${this.isMock()}`
     );
@@ -100,7 +100,7 @@ export class LegacyChatService {
           "(Mock Agent — set CURSOR_API_KEY for a real Cursor Agent)\n\n" +
           "You said:\n> " +
           message +
-          "\n\nExample Lua:\n```lua\ncatty.log(\"hello from Agent\")\n```";
+          "\n\nExample Lua:\n```lua\nmaho.log(\"hello from Agent\")\n```";
         this.pushEvent("assistant", reply);
         this.status = this.config.force_mock
           ? "mock (no CURSOR_API_KEY)"

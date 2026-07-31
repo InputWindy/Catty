@@ -1,8 +1,8 @@
-﻿# Run via Tools/object_reflect_codegen.bat / catty_python.bat — engine Tools/python only.
+﻿# Run via Tools/object_reflect_codegen.bat / maho_python.bat — engine Tools/python only.
 """
 UObject / struct / enum runtime reflection codegen.
 
-Scans CATTY_OBJECT / CATTY_STRUCT / CATTY_ENUM (+ CATTY_PROPERTY / CATTY_FUNCTION)
+Scans MAHO_OBJECT / MAHO_STRUCT / MAHO_ENUM (+ MAHO_PROPERTY / MAHO_FUNCTION)
 and emits:
   - ObjectReflectTypes.gen.h
   - ObjectReflectTypes.gen.cpp
@@ -25,10 +25,10 @@ TOOLS_DIR = Path(__file__).resolve().parent
 ENGINE_ROOT = TOOLS_DIR.parent
 sys.path.insert(0, str(TOOLS_DIR))
 
-import catty_tools  # noqa: E402,F401
+import maho_tools  # noqa: E402,F401
 
-_DEFAULT_ROOTS = [ENGINE_ROOT / "Catty" / "Source"]
-_DEFAULT_GEN_DIR = ENGINE_ROOT / "Catty" / "Source" / "Generated"
+_DEFAULT_ROOTS = [ENGINE_ROOT / "Maho" / "Source"]
+_DEFAULT_GEN_DIR = ENGINE_ROOT / "Maho" / "Source" / "Generated"
 _DEFAULT_OUT_H = _DEFAULT_GEN_DIR / "ObjectReflectTypes.gen.h"
 _DEFAULT_OUT_CPP = _DEFAULT_GEN_DIR / "ObjectReflectTypes.gen.cpp"
 _DEFAULT_OUT_JSON = _DEFAULT_GEN_DIR / "ObjectReflectCatalog.gen.json"
@@ -39,27 +39,27 @@ _DEFAULT_OUT_LUA_HTML = ENGINE_ROOT / "Doc" / "Engine" / "LuaAPI.html"
 _DEFAULT_OUT_RESOURCE_H = _DEFAULT_GEN_DIR / "ResourceTypes.gen.h"
 _DEFAULT_OUT_RESOURCE_CPP = _DEFAULT_GEN_DIR / "ResourceTypes.gen.cpp"
 
-_HTML_TOC_BEGIN = "<!-- @@CATTY_OBJECT_REFLECT_TOC_BEGIN@@ -->"
-_HTML_TOC_END = "<!-- @@CATTY_OBJECT_REFLECT_TOC_END@@ -->"
-_HTML_BODY_BEGIN = "<!-- @@CATTY_OBJECT_REFLECT_BODY_BEGIN@@ -->"
-_HTML_BODY_END = "<!-- @@CATTY_OBJECT_REFLECT_BODY_END@@ -->"
+_HTML_TOC_BEGIN = "<!-- @@MAHO_OBJECT_REFLECT_TOC_BEGIN@@ -->"
+_HTML_TOC_END = "<!-- @@MAHO_OBJECT_REFLECT_TOC_END@@ -->"
+_HTML_BODY_BEGIN = "<!-- @@MAHO_OBJECT_REFLECT_BODY_BEGIN@@ -->"
+_HTML_BODY_END = "<!-- @@MAHO_OBJECT_REFLECT_BODY_END@@ -->"
 
-_LUA_HTML_TOC_BEGIN = "<!-- @@CATTY_LUA_USERTYPE_TOC_BEGIN@@ -->"
-_LUA_HTML_TOC_END = "<!-- @@CATTY_LUA_USERTYPE_TOC_END@@ -->"
-_LUA_HTML_BODY_BEGIN = "<!-- @@CATTY_LUA_USERTYPE_BODY_BEGIN@@ -->"
-_LUA_HTML_BODY_END = "<!-- @@CATTY_LUA_USERTYPE_BODY_END@@ -->"
+_LUA_HTML_TOC_BEGIN = "<!-- @@MAHO_LUA_USERTYPE_TOC_BEGIN@@ -->"
+_LUA_HTML_TOC_END = "<!-- @@MAHO_LUA_USERTYPE_TOC_END@@ -->"
+_LUA_HTML_BODY_BEGIN = "<!-- @@MAHO_LUA_USERTYPE_BODY_BEGIN@@ -->"
+_LUA_HTML_BODY_END = "<!-- @@MAHO_LUA_USERTYPE_BODY_END@@ -->"
 
 _SOURCE_SUFFIXES = {".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp"}
 _SKIP_DIR_NAMES = {".git", "Intermediate", "Binaries", "ThirdParty", "_deps", "Generated"}
 
-_RE_OBJECT = re.compile(r"\bCATTY_OBJECT\s*\(")
-_RE_STRUCT = re.compile(r"\bCATTY_STRUCT\s*\(")
-_RE_ENUM = re.compile(r"\bCATTY_ENUM\s*\(")
-_RE_PROPERTY = re.compile(r"\bCATTY_PROPERTY\s*\(")
-_RE_FUNCTION = re.compile(r"\bCATTY_FUNCTION\s*\(")
+_RE_OBJECT = re.compile(r"\bMAHO_OBJECT\s*\(")
+_RE_STRUCT = re.compile(r"\bMAHO_STRUCT\s*\(")
+_RE_ENUM = re.compile(r"\bMAHO_ENUM\s*\(")
+_RE_PROPERTY = re.compile(r"\bMAHO_PROPERTY\s*\(")
+_RE_FUNCTION = re.compile(r"\bMAHO_FUNCTION\s*\(")
 _RE_CLASS = re.compile(r"\b(class|struct)\b")
-_RE_GENERATED_BODY = re.compile(r"\bCATTY_GENERATED_BODY\s*\(")
-_RE_GENERATED_STRUCT_BODY = re.compile(r"\bCATTY_GENERATED_STRUCT_BODY\s*\(")
+_RE_GENERATED_BODY = re.compile(r"\bMAHO_GENERATED_BODY\s*\(")
+_RE_GENERATED_STRUCT_BODY = re.compile(r"\bMAHO_GENERATED_STRUCT_BODY\s*\(")
 
 
 @dataclass
@@ -78,7 +78,7 @@ class FMember:
 
 @dataclass
 class FTypeEntry:
-	TypeName: str  # Catty::UObject
+	TypeName: str  # Maho::UObject
 	ShortName: str
 	Bases: list[str] = field(default_factory=list)
 	Super: str = ""  # qualified UObject subclass super, or ""
@@ -262,7 +262,7 @@ def _map_property_kind(cpp_type: str) -> tuple[str, bool, str]:
 		"std::string": ("String", True, ""),
 		"string": ("String", True, ""),
 		"FObjectRef": ("ObjectRef", True, ""),
-		"Catty::FObjectRef": ("ObjectRef", True, ""),
+		"Maho::FObjectRef": ("ObjectRef", True, ""),
 		"EResourceType": ("EnumInt32", True, ""),
 		"EObjectFlags": ("EnumInt32", True, ""),
 		"EPackageFlags": ("EnumInt32", True, ""),
@@ -493,7 +493,7 @@ def _scan_class_body(body: str, *, b_allow_functions: bool) -> list[FMember]:
 	return members
 
 
-def _qualify_type(name: str, default_ns: str = "Catty") -> str:
+def _qualify_type(name: str, default_ns: str = "Maho") -> str:
 	name = name.strip()
 	if "::" in name:
 		return name
@@ -517,7 +517,7 @@ def _read_type_name_after_class(text: str, i: int, rel: str, macro: str) -> tupl
 		ident, ni = _read_ident(text, i)
 		if not ident:
 			raise ValueError(f"{rel}: {macro} missing type name")
-		if ident == "CATTY_API" or ident.startswith("CATTY_"):
+		if ident == "MAHO_API" or ident.startswith("MAHO_"):
 			i = ni
 			continue
 		if ident == "final":
@@ -571,10 +571,10 @@ def _scan_reflected_type(
 
 	if b_object:
 		if not _RE_GENERATED_BODY.search(body):
-			print(f"[WARN] {rel}: {type_short} missing CATTY_GENERATED_BODY()")
+			print(f"[WARN] {rel}: {type_short} missing MAHO_GENERATED_BODY()")
 	else:
 		if not _RE_GENERATED_STRUCT_BODY.search(body):
-			print(f"[WARN] {rel}: {type_short} missing CATTY_GENERATED_STRUCT_BODY()")
+			print(f"[WARN] {rel}: {type_short} missing MAHO_GENERATED_STRUCT_BODY()")
 
 	# FGCSystem pool: class declares `static constexpr int PoolSize = N;`
 	# TearDown is virtual UObject::OnPoolTearDown (codegen registers that path).
@@ -582,7 +582,7 @@ def _scan_reflected_type(
 	pool_m = _RE_POOL_SIZE.search(body)
 	if pool_m:
 		if not b_object:
-			raise ValueError(f"{rel}: PoolSize only valid on CATTY_OBJECT types")
+			raise ValueError(f"{rel}: PoolSize only valid on MAHO_OBJECT types")
 		gc_pooled_slots = int(pool_m.group(1))
 		if gc_pooled_slots < 1:
 			raise ValueError(f"{rel}: {type_short}::PoolSize must be >= 1")
@@ -592,7 +592,7 @@ def _scan_reflected_type(
 	if b_object:
 		for b in bases:
 			bq = _qualify_type(b)
-			if bq == "Catty::UObject" or _short_name(bq).startswith("U"):
+			if bq == "Maho::UObject" or _short_name(bq).startswith("U"):
 				super_q = bq
 				break
 		if not super_q and bases:
@@ -690,7 +690,7 @@ def _scan_enum(text: str, m: re.Match[str], path: Path, repo_root: Path, rel: st
 	i = _skip_ws(text, after_macro)
 	ident, ni = _read_ident(text, i)
 	if ident != "enum":
-		raise ValueError(f"{rel}:{_line_number(text, m.start())}: CATTY_ENUM must precede enum")
+		raise ValueError(f"{rel}:{_line_number(text, m.start())}: MAHO_ENUM must precede enum")
 	i = ni
 	i = _skip_ws(text, i)
 	b_scoped = False
@@ -701,7 +701,7 @@ def _scan_enum(text: str, m: re.Match[str], path: Path, repo_root: Path, rel: st
 		i = _skip_ws(text, i)
 		ident, ni = _read_ident(text, i)
 	if not ident:
-		raise ValueError(f"{rel}: CATTY_ENUM missing enum name")
+		raise ValueError(f"{rel}: MAHO_ENUM missing enum name")
 	type_short = ident
 	i = ni
 	underlying = ""
@@ -754,14 +754,14 @@ def scan_file(path: Path, repo_root: Path) -> tuple[list[FTypeEntry], list[FType
 		if _is_preprocessor_define(text, m.start()):
 			continue
 		objects.append(
-			_scan_reflected_type(text, m, path, repo_root, rel, macro="CATTY_OBJECT", b_object=True)
+			_scan_reflected_type(text, m, path, repo_root, rel, macro="MAHO_OBJECT", b_object=True)
 		)
 
 	for m in _RE_STRUCT.finditer(text):
 		if _is_preprocessor_define(text, m.start()):
 			continue
 		structs.append(
-			_scan_reflected_type(text, m, path, repo_root, rel, macro="CATTY_STRUCT", b_object=False)
+			_scan_reflected_type(text, m, path, repo_root, rel, macro="MAHO_STRUCT", b_object=False)
 		)
 
 	for m in _RE_ENUM.finditer(text):
@@ -794,31 +794,31 @@ def scan_roots(
 			o, s, e = scan_file(path, repo_root)
 			for entry in o:
 				if entry.TypeName in seen_obj:
-					raise ValueError(f"Duplicate CATTY_OBJECT type: {entry.TypeName}")
+					raise ValueError(f"Duplicate MAHO_OBJECT type: {entry.TypeName}")
 				seen_obj.add(entry.TypeName)
 				objects.append(entry)
 			for entry in s:
 				if entry.TypeName in seen_struct:
-					raise ValueError(f"Duplicate CATTY_STRUCT type: {entry.TypeName}")
+					raise ValueError(f"Duplicate MAHO_STRUCT type: {entry.TypeName}")
 				seen_struct.add(entry.TypeName)
 				structs.append(entry)
 			for entry in e:
 				if entry.TypeName in seen_enum:
-					raise ValueError(f"Duplicate CATTY_ENUM type: {entry.TypeName}")
+					raise ValueError(f"Duplicate MAHO_ENUM type: {entry.TypeName}")
 				seen_enum.add(entry.TypeName)
 				enums.append(entry)
 
 	names = {e.TypeName for e in objects}
 	for e in objects:
-		if e.Super and e.Super not in names and e.Super != "Catty::UObject":
-			if e.Super.endswith("UObject") and "Catty::UObject" in names:
-				e.Super = "Catty::UObject"
+		if e.Super and e.Super not in names and e.Super != "Maho::UObject":
+			if e.Super.endswith("UObject") and "Maho::UObject" in names:
+				e.Super = "Maho::UObject"
 			elif e.Super not in names:
-				print(f"[WARN] {e.TypeName}: Super {e.Super} not a CATTY_OBJECT type")
-	if objects and "Catty::UObject" not in names:
-		raise ValueError("CATTY_OBJECT subclasses require Catty::UObject to be annotated")
+				print(f"[WARN] {e.TypeName}: Super {e.Super} not a MAHO_OBJECT type")
+	if objects and "Maho::UObject" not in names:
+		raise ValueError("MAHO_OBJECT subclasses require Maho::UObject to be annotated")
 
-	objects.sort(key=lambda e: (0 if e.TypeName == "Catty::UObject" else 1, e.TypeName))
+	objects.sort(key=lambda e: (0 if e.TypeName == "Maho::UObject" else 1, e.TypeName))
 	structs.sort(key=lambda e: e.TypeName)
 	enums.sort(key=lambda e: e.TypeName)
 	return objects, structs, enums
@@ -841,7 +841,7 @@ def render_header() -> str:
 		"",
 		'#include <Core/Object/ObjectReflect.h>',
 		"",
-		"namespace Catty",
+		"namespace Maho",
 		"{",
 		"",
 		"class FGCSystem;",
@@ -849,10 +849,10 @@ def render_header() -> str:
 		"/** Ensure generated object/struct/enum types are registered (idempotent). */",
 		"void EnsureObjectReflectRegistered();",
 		"",
-		"/** Register CATTY_OBJECT types that declare PoolSize onto FGCSystem (FGCSystem::Initialize). */",
+		"/** Register MAHO_OBJECT types that declare PoolSize onto FGCSystem (FGCSystem::Initialize). */",
 		"void RegisterGeneratedGCPooledTypes(FGCSystem& GC);",
 		"",
-		"} // namespace Catty",
+		"} // namespace Maho",
 		"",
 	]
 	return "\n".join(lines)
@@ -1065,7 +1065,7 @@ def render_cpp(
 	for inc in includes:
 		lines.append(f'#include <{inc}>')
 	lines.append("")
-	lines.append("namespace Catty")
+	lines.append("namespace Maho")
 	lines.append("{")
 	lines.append("")
 
@@ -1321,7 +1321,7 @@ def render_cpp(
 	lines.append("static FObjectReflectAutoRegister GObjectReflectAutoRegister;")
 	lines.append("} // namespace")
 	lines.append("")
-	lines.append("} // namespace Catty")
+	lines.append("} // namespace Maho")
 	lines.append("")
 	return "\n".join(lines)
 
@@ -1656,7 +1656,7 @@ def render_lua_header(objects: list[FTypeEntry]) -> str:
 		"#define SOL_ALL_SAFETIES_ON 1",
 		"#include <sol/sol.hpp>",
 		"",
-		"namespace Catty",
+		"namespace Maho",
 		"{",
 		"",
 		"/** Lua userdata handle for reflected UObject instances. */",
@@ -1682,18 +1682,18 @@ def render_lua_header(objects: list[FTypeEntry]) -> str:
 		"void RegisterGeneratedLuaObjectBindings(sol::state& Lua);",
 		"",
 		"/** Push the most-derived Lua usertype for an FObjectRef (never pushes FObjectRef itself). */",
-		"CATTY_API [[nodiscard]] sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref);",
+		"MAHO_API [[nodiscard]] sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref);",
 		"",
-		"CATTY_API [[nodiscard]] FLua_UObject MakeLuaObject(FObjectRef Ref);",
+		"MAHO_API [[nodiscard]] FLua_UObject MakeLuaObject(FObjectRef Ref);",
 	]
 	for e in objects:
 		if e.ShortName == "UObject":
 			continue
 		w = _lua_wrapper_name(e.ShortName)
-		lines.append(f"CATTY_API [[nodiscard]] {w} MakeLua_{e.ShortName}(FObjectRef Ref);")
+		lines.append(f"MAHO_API [[nodiscard]] {w} MakeLua_{e.ShortName}(FObjectRef Ref);")
 	lines += [
 		"",
-		"} // namespace Catty",
+		"} // namespace Maho",
 		"",
 	]
 	return "\n".join(lines)
@@ -1711,7 +1711,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 	lines: list[str] = [
 		"//*****************************************************************************",
 		"// LuaReflectBindings.gen.cpp — GENERATED by Tools/object_reflect_codegen.py.",
-		"// Named sol2 usertypes from CATTY_OBJECT reflection metadata.",
+		"// Named sol2 usertypes from MAHO_OBJECT reflection metadata.",
 		"//*****************************************************************************",
 		"",
 		'#include <LuaReflectBindings.gen.h>',
@@ -1727,10 +1727,10 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		lines.append(f'#include <{inc}>')
 	lines += [
 		"",
-		"namespace Catty",
+		"namespace Maho",
 		"{",
 		"",
-		"CATTY_API FLua_UObject MakeLuaObject(FObjectRef Ref)",
+		"MAHO_API FLua_UObject MakeLuaObject(FObjectRef Ref)",
 		"{",
 		"\treturn FLua_UObject{ std::move(Ref) };",
 		"}",
@@ -1740,7 +1740,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		if e.ShortName == "UObject":
 			continue
 		w = _lua_wrapper_name(e.ShortName)
-		lines.append(f"CATTY_API {w} MakeLua_{e.ShortName}(FObjectRef Ref)")
+		lines.append(f"MAHO_API {w} MakeLua_{e.ShortName}(FObjectRef Ref)")
 		lines.append("{")
 		lines.append(f"\t{w} Out;")
 		lines.append("\tOut.Ref = std::move(Ref);")
@@ -1749,7 +1749,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		lines.append("")
 
 	# Prefer most-derived wrap when known
-	lines.append("CATTY_API sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref)")
+	lines.append("MAHO_API sol::object LuaWrapObjectRef(sol::state_view Lua, FObjectRef Ref)")
 	lines.append("{")
 	lines.append("\tif (!Ref)")
 	lines.append("\t{")
@@ -1779,7 +1779,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 	lines.append("{")
 	lines.append("\tEnsureObjectReflectRegistered();")
 	lines.append("")
-	lines.append("\tsol::table CattyTable = Lua[\"catty\"];")
+	lines.append("\tsol::table MahoTable = Lua[\"maho\"];")
 	lines.append("")
 
 	# Register each usertype
@@ -1789,7 +1789,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		props = [m for m in e.Members if m.Kind == "property" and m.bSupported]
 		funcs = [m for m in e.Members if m.Kind == "function" and m.bSupported]
 
-		lines.append(f"\t// --- {e.TypeName} => catty.{uname} ---")
+		lines.append(f"\t// --- {e.TypeName} => maho.{uname} ---")
 		if e.ShortName == "UObject" or not e.Super:
 			lines.append(f"\tsol::usertype<{w}> UT_{e.ShortName} = Lua.new_usertype<{w}>(")
 			lines.append(f'\t\t"{uname}",')
@@ -1902,16 +1902,16 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 				lines.append(f'\t\t(void)Obj->CallFunction("{mem.Name}", {pack_ptr}, {n}, nullptr);')
 			lines.append("\t};")
 
-		lines.append(f'\tCattyTable["{uname}"] = UT_{e.ShortName};')
+		lines.append(f'\tMahoTable["{uname}"] = UT_{e.ShortName};')
 		lines.append("")
 
-	lines.append('\tCattyTable["wrap_object"] = [](sol::this_state L, FLua_UObject Handle) -> sol::object')
+	lines.append('\tMahoTable["wrap_object"] = [](sol::this_state L, FLua_UObject Handle) -> sol::object')
 	lines.append("\t{")
 	lines.append("\t\treturn LuaWrapObjectRef(sol::state_view(L), std::move(Handle.Ref));")
 	lines.append("\t};")
 	lines.append("}")
 	lines.append("")
-	lines.append("} // namespace Catty")
+	lines.append("} // namespace Maho")
 	lines.append("")
 	return "\n".join(lines)
 
@@ -1924,7 +1924,7 @@ def render_lua_api_toc(objects: list[FTypeEntry]) -> str:
 	]
 	for e in objects:
 		uname = _lua_usertype_name(e.ShortName)
-		lines.append(f'\t\t<li><a href="#catty.{uname}">catty.{uname}</a></li>')
+		lines.append(f'\t\t<li><a href="#maho.{uname}">maho.{uname}</a></li>')
 	lines.append("\t</ul>")
 	lines.append(_LUA_HTML_TOC_END)
 	return "\n".join(lines)
@@ -1936,9 +1936,9 @@ def render_lua_api_body(objects: list[FTypeEntry]) -> str:
 		'<section class="card" id="usertypes">',
 		"\t<h2>Usertypes（codegen）</h2>",
 		'\t<div class="body">',
-		"\t\t<p>由 <code>object_reflect_codegen.py</code> 根据 <code>CATTY_OBJECT</code> 扫描生成具名 sol2 绑定；"
+		"\t\t<p>由 <code>object_reflect_codegen.py</code> 根据 <code>MAHO_OBJECT</code> 扫描生成具名 sol2 绑定；"
 		"方法/属性为 snake_case，对应 C++ 反射成员。"
-		"实例可由 <code>catty.get_transient_package</code> / <code>find_*</code> / <code>create_*</code>（FResourceSystem::BindLua）"
+		"实例可由 <code>maho.get_transient_package</code> / <code>find_*</code> / <code>create_*</code>（FResourceSystem::BindLua）"
 		"或 C++ 推进 Lua；其它系统实现 <code>ILuaBindable</code> 经 <code>Bind</code> / <code>OnLuaReady</code> 挂接。</p>",
 		"",
 	]
@@ -1947,10 +1947,10 @@ def render_lua_api_body(objects: list[FTypeEntry]) -> str:
 		super_txt = ""
 		if e.Super:
 			super_short = e.Super.rsplit("::", 1)[-1]
-			super_txt = f" · extends catty.{_lua_usertype_name(super_short)}"
-		lines.append(f'\t\t<article class="fn" id="catty.{uname}">')
+			super_txt = f" · extends maho.{_lua_usertype_name(super_short)}"
+		lines.append(f'\t\t<article class="fn" id="maho.{uname}">')
 		lines.append('\t\t\t<div class="fn-head">')
-		lines.append(f'\t\t\t\t<h3 class="fn-name">catty.{uname}</h3>')
+		lines.append(f'\t\t\t\t<h3 class="fn-name">maho.{uname}</h3>')
 		lines.append('\t\t\t\t<span class="tag tag-reflect">usertype</span>')
 		lines.append("\t\t\t</div>")
 		lines.append('\t\t\t<div class="fn-body">')
@@ -2046,7 +2046,7 @@ def sync_api_html(
 
 
 def main(argv: list[str]) -> int:
-	parser = argparse.ArgumentParser(description="Catty object/struct/enum reflection codegen")
+	parser = argparse.ArgumentParser(description="Maho object/struct/enum reflection codegen")
 	parser.add_argument("--root", action="append", dest="roots", default=None)
 	parser.add_argument("--out-h", type=Path, default=_DEFAULT_OUT_H)
 	parser.add_argument("--out-cpp", type=Path, default=_DEFAULT_OUT_CPP)
@@ -2081,10 +2081,10 @@ def main(argv: list[str]) -> int:
 	resource_cpp = render_resource_cpp(resource_types)
 
 	print(
-		f"[Catty] reflect scan: {len(objects)} object(s), {len(structs)} struct(s), "
+		f"[Maho] reflect scan: {len(objects)} object(s), {len(structs)} struct(s), "
 		f"{len(enums)} enum(s) from {len(roots)} root(s)"
 	)
-	print(f"[Catty] resource scan: {len(resource_types)} TResourceIOTraits specialization(s)")
+	print(f"[Maho] resource scan: {len(resource_types)} TResourceIOTraits specialization(s)")
 
 	outputs = (
 		(args.out_h, header),
@@ -2109,29 +2109,29 @@ def main(argv: list[str]) -> int:
 	changed = False
 	for path, content in outputs:
 		if write_if_changed(path, content):
-			print(f"[Catty] wrote {path}")
+			print(f"[Maho] wrote {path}")
 			changed = True
 		else:
-			print(f"[Catty] up-to-date {path}")
+			print(f"[Maho] up-to-date {path}")
 
 	if not args.no_html:
 		try:
 			if sync_api_html(args.out_html, objects, structs, enums):
-				print(f"[Catty] wrote {args.out_html}")
+				print(f"[Maho] wrote {args.out_html}")
 				changed = True
 			elif args.out_html.is_file():
-				print(f"[Catty] up-to-date {args.out_html}")
+				print(f"[Maho] up-to-date {args.out_html}")
 			if sync_lua_api_html(args.out_lua_html, objects):
-				print(f"[Catty] wrote {args.out_lua_html}")
+				print(f"[Maho] wrote {args.out_lua_html}")
 				changed = True
 			elif args.out_lua_html.is_file():
-				print(f"[Catty] up-to-date {args.out_lua_html}")
+				print(f"[Maho] up-to-date {args.out_lua_html}")
 		except ValueError as ex:
 			print(f"[ERROR] API html sync failed: {ex}", file=sys.stderr)
 			return 1
 
 	if not changed:
-		print("[Catty] object reflect codegen: nothing changed")
+		print("[Maho] object reflect codegen: nothing changed")
 	return 0
 
 
@@ -2140,7 +2140,7 @@ def main(argv: list[str]) -> int:
 # ---------------------------------------------------------------------------
 
 _RE_RESOURCE_TRAITS = re.compile(
-	r"template\s*<>\s*struct\s+TResourceIOTraits\s*<\s*((?:Catty::)?[A-Za-z_]\w*)\s*>"
+	r"template\s*<>\s*struct\s+TResourceIOTraits\s*<\s*((?:Maho::)?[A-Za-z_]\w*)\s*>"
 )
 _RE_GET_TYPE = re.compile(r"return\s+EResourceType::(\w+)\s*;")
 _RE_TYPE_NAMES = re.compile(
@@ -2148,14 +2148,14 @@ _RE_TYPE_NAMES = re.compile(
 	re.DOTALL,
 )
 _RE_CLASS_POOL = re.compile(
-	r"\bclass\s+(?:CATTY_API\s+)?(\w+)\s*(?:final\s*)?(?::[^{]+)?\{",
+	r"\bclass\s+(?:MAHO_API\s+)?(\w+)\s*(?:final\s*)?(?::[^{]+)?\{",
 	re.DOTALL,
 )
 
 
 @dataclass
 class FResourceSystemTypeEntry:
-	TypeName: str  # Catty::UTextureResource
+	TypeName: str  # Maho::UTextureResource
 	ShortName: str
 	EnumName: str  # Texture / Raw
 	TypeNames: list[str] = field(default_factory=list)
@@ -2226,7 +2226,7 @@ def scan_resource_types(
 			for m in _RE_RESOURCE_TRAITS.finditer(text):
 				type_tok = m.group(1)
 				short = _short_name(type_tok)
-				qualified = type_tok if "::" in type_tok else f"Catty::{short}"
+				qualified = type_tok if "::" in type_tok else f"Maho::{short}"
 
 				brace = text.find("{", m.end())
 				if brace < 0:
@@ -2249,7 +2249,7 @@ def scan_resource_types(
 				# Class may live in another header (e.g. Resource.h); search all later if needed.
 				include_path = ""
 				if "Public/" in rel.replace("\\", "/"):
-					# Catty/Source/Public/Core/... → Core/...
+					# Maho/Source/Public/Core/... → Core/...
 					idx = rel.replace("\\", "/").find("/Public/")
 					if idx >= 0:
 						include_path = rel.replace("\\", "/")[idx + len("/Public/") :]
@@ -2321,19 +2321,19 @@ def render_resource_header() -> str:
 			"",
 			"#include <string>",
 			"",
-			"namespace Catty",
+			"namespace Maho",
 			"{",
 			"",
 			"class FGCSystem;",
 			"class FResourceSystem;",
 			"",
-			"/** Register UResource IO + any non-CATTY_OBJECT pools onto Manager/GC. */",
+			"/** Register UResource IO + any non-MAHO_OBJECT pools onto Manager/GC. */",
 			"void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);",
 			"",
 			"[[nodiscard]] EResourceType ResourceTypeFromString(const std::string& Name);",
 			"[[nodiscard]] bool TryResourceTypeFromClassName(const std::string& ClassName, EResourceType& OutType);",
 			"",
-			"} // namespace Catty",
+			"} // namespace Maho",
 			"",
 		]
 	)
@@ -2354,7 +2354,7 @@ def render_resource_cpp(entries: list[FResourceSystemTypeEntry]) -> str:
 		"#include <cstring>",
 		"#include <memory>",
 		"",
-		"namespace Catty",
+		"namespace Maho",
 		"{",
 		"",
 		"void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC)",
@@ -2430,7 +2430,7 @@ def render_resource_cpp(entries: list[FResourceSystemTypeEntry]) -> str:
 		lines.append("\treturn false;")
 	lines.append("}")
 	lines.append("")
-	lines.append("} // namespace Catty")
+	lines.append("} // namespace Maho")
 	lines.append("")
 	return "\n".join(lines)
 

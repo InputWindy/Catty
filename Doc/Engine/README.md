@@ -1,6 +1,6 @@
 # Doc/Engine
 
-Catty engine documentation for humans and AI agents.
+Maho engine documentation for humans and AI agents.
 
 UE source-study books are **not** in this repository anymore.
 

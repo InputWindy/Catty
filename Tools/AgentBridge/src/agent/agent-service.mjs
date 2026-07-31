@@ -474,7 +474,7 @@ export class AgentService {
       });
     } catch (error) {
       console.error(
-        "[CattyAgentBridge] audit log write failed:",
+        "[MahoAgentBridge] audit log write failed:",
         error?.message || error
       );
     }
@@ -531,7 +531,7 @@ export class AgentService {
       });
     } catch (audit_error) {
       console.error(
-        "[CattyAgentBridge] audit log write failed:",
+        "[MahoAgentBridge] audit log write failed:",
         audit_error?.message || audit_error
       );
     }

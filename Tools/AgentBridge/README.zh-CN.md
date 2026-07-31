@@ -1,8 +1,8 @@
-# Catty AgentBridge
+# Maho AgentBridge
 
 [English](README.md)
 
-AgentBridge 是一个仅监听回环地址的 Node.js 服务，供现有 Catty 编辑器的
+AgentBridge 是一个仅监听回环地址的 Node.js 服务，供现有 Maho 编辑器的
 Agent 面板使用。它既保留旧版聊天 API，也提供基于内存 `MockWorld` 的独立
 Agent Core v0.1。
 
@@ -68,7 +68,7 @@ node server.mjs --port 8765 --cwd C:\path\to\MyGame
 强制使用行为确定的 Mock 模式：
 
 ```powershell
-$env:CATTY_AGENT_MOCK = "1"
+$env:MAHO_AGENT_MOCK = "1"
 npm start
 ```
 
@@ -83,15 +83,15 @@ npm start
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CATTY_AGENT_HOST` | `127.0.0.1` | 监听地址；只接受 `127.0.0.1` 和 `::1` |
-| `CATTY_AGENT_PORT` | `8765` | 监听端口；`--port` 优先级更高 |
-| `CATTY_AGENT_MOCK` | 自动 | 设置为 `1` 时强制使用 MockProvider |
-| `CATTY_AGENT_DATA_DIR` | `Tools/AgentBridge/.runtime` | JSONL 审计日志和运行数据目录 |
+| `MAHO_AGENT_HOST` | `127.0.0.1` | 监听地址；只接受 `127.0.0.1` 和 `::1` |
+| `MAHO_AGENT_PORT` | `8765` | 监听端口；`--port` 优先级更高 |
+| `MAHO_AGENT_MOCK` | 自动 | 设置为 `1` 时强制使用 MockProvider |
+| `MAHO_AGENT_DATA_DIR` | `Tools/AgentBridge/.runtime` | JSONL 审计日志和运行数据目录 |
 | `CURSOR_API_KEY` | 空 | Cursor SDK Key；未提供时选择 Mock 模式 |
 
 为了避免改变现有编辑器行为，旧版 Cursor SDK JSONL 存储仍位于
 `<--cwd>/Saved/Agent/cursor-sdk-store`。Agent Core 审计数据使用
-`CATTY_AGENT_DATA_DIR`。`Tools/AgentBridge/.runtime/` 已被 Git 忽略。
+`MAHO_AGENT_DATA_DIR`。`Tools/AgentBridge/.runtime/` 已被 Git 忽略。
 
 请求体默认限制为 1 MiB。服务器绝不会监听非回环地址。
 
@@ -122,8 +122,8 @@ Agent Core v1 API：
 在一个 PowerShell 窗口中启动服务：
 
 ```powershell
-$env:CATTY_AGENT_MOCK = "1"
-$env:CATTY_AGENT_PORT = "8765"
+$env:MAHO_AGENT_MOCK = "1"
+$env:MAHO_AGENT_PORT = "8765"
 npm start
 ```
 

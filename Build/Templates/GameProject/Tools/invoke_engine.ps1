@@ -35,7 +35,7 @@ if ([System.IO.Path]::IsPathRooted($engineRaw)) {
 
 $localPy = Join-Path $engine "Tools\python\python.exe"
 if (-not (Test-Path -LiteralPath $localPy)) {
-	Write-Error "Engine local Python missing: $localPy`nRun setup.bat in the Catty engine root first."
+	Write-Error "Engine local Python missing: $localPy`nRun setup.bat in the Maho engine root first."
 	exit 1
 }
 
@@ -51,10 +51,10 @@ if ($Action -eq "package") {
 	exit $p.ExitCode
 }
 
-# clean — console CLI via catty_python.bat
-$cattyPython = Join-Path $engine "Tools\catty_python.bat"
-if (-not (Test-Path -LiteralPath $cattyPython)) {
-	Write-Error "Missing $cattyPython"
+# clean — console CLI via maho_python.bat
+$mahoPython = Join-Path $engine "Tools\maho_python.bat"
+if (-not (Test-Path -LiteralPath $mahoPython)) {
+	Write-Error "Missing $mahoPython"
 	exit 1
 }
 
@@ -76,6 +76,6 @@ if ($PassThrough) {
 	$scriptArgs += $PassThrough
 }
 $quoted = ($scriptArgs | ForEach-Object { Quote-Arg $_ }) -join " "
-$cmdline = "`"$cattyPython`" $quoted"
+$cmdline = "`"$mahoPython`" $quoted"
 cmd.exe /c $cmdline
 exit $LASTEXITCODE

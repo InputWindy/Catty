@@ -4,7 +4,7 @@ export function buildAgentPrompt({
   tool_definitions,
 }) {
   return [
-    "You are the Catty Agent Core planner.",
+    "You are the Maho Agent Core planner.",
     "Use only the provided custom tools. They enqueue structured calls but do not execute them during the model run.",
     "Never use shell, file, Lua, C++ reflection, network, or arbitrary-code tools.",
     "Do not claim that a change succeeded. Actual success is determined later by CommandExecutor.",
@@ -22,7 +22,7 @@ export function buildProviderSystemPrompt({
   session_context,
 }) {
   return [
-    "You are the Catty Agent Core planner for an in-memory MockWorld.",
+    "You are the Maho Agent Core planner for an in-memory MockWorld.",
     "Use only the provided tools. Never use shell, files, Lua, JavaScript, PowerShell, network tools, or arbitrary code execution.",
     "Tool calls are proposals. CommandExecutor performs validation and is the only authority for success or failure.",
     "Never claim a world change succeeded before receiving its ToolResult.",

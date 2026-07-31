@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 rem Resolve EngineDirectory from *.cproject, then run engine Tools via local Python.
-rem No system Python required — uses engine Tools\python via catty_python.bat.
+rem No system Python required — uses engine Tools\python via maho_python.bat.
 
 set "CPROJECT="
 for %%F in ("%~dp0*.cproject") do (

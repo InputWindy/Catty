@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
-rem Bootstrap Catty local Python under Tools\python (not added to PATH).
+rem Bootstrap Maho local Python under Tools\python (not added to PATH).
 rem Usage:
 rem   setup.bat           install if missing
 rem   setup.bat --force   wipe and reinstall
@@ -18,7 +18,7 @@ set "STATUS=OK"
 set "ALREADY=0"
 
 if /I "%~1"=="--force" (
-	echo [Catty] --force: removing existing install...
+	echo [Maho] --force: removing existing install...
 	echo         %PY_DIR%
 	if exist "%PY_DIR%" rmdir /s /q "%PY_DIR%"
 )
@@ -29,8 +29,8 @@ if exist "%PY_EXE%" (
 		set "ALREADY=1"
 		goto :success
 	)
-	echo [Catty] Existing Tools\python looks broken ^(python.exe present but tkinter check failed^).
-	echo [Catty] Removing and reinstalling...
+	echo [Maho] Existing Tools\python looks broken ^(python.exe present but tkinter check failed^).
+	echo [Maho] Removing and reinstalling...
 	if exist "%PY_DIR%" rmdir /s /q "%PY_DIR%"
 )
 
@@ -48,7 +48,7 @@ if errorlevel 1 (
 )
 
 if not exist "%INSTALLER%" (
-	echo [Catty] Downloading Python %PY_VER% installer...
+	echo [Maho] Downloading Python %PY_VER% installer...
 	echo         %URL%
 	echo         -^> %INSTALLER%
 	where curl >nul 2>&1
@@ -81,12 +81,12 @@ if not exist "%INSTALLER%" (
 		echo ======================================================================
 		goto :finish
 	)
-	echo [Catty] Download OK.
+	echo [Maho] Download OK.
 )
 
-echo [Catty] Installing Python %PY_VER% into:
+echo [Maho] Installing Python %PY_VER% into:
 echo         %PY_DIR%
-echo [Catty] Options: PrependPath=0 ^(will NOT modify system PATH^), Include_tcltk=1, Include_pip=1
+echo [Maho] Options: PrependPath=0 ^(will NOT modify system PATH^), Include_tcltk=1, Include_pip=1
 "%INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%PY_DIR%" PrependPath=0 Include_launcher=0 Include_test=0 Include_doc=0 Shortcuts=0 AssociateFiles=0 Include_pip=1 Include_tcltk=1
 set "INST_EC=%ERRORLEVEL%"
 if not "%INST_EC%"=="0" (
@@ -117,7 +117,7 @@ if not exist "%PY_EXE%" (
 	goto :finish
 )
 
-echo catty-local> "%PY_DIR%\.catty_managed"
+echo maho-local> "%PY_DIR%\.maho_managed"
 
 "%PY_EXE%" -c "import tkinter, sys; print(sys.version.split()[0])" 2>nul
 if errorlevel 1 (
@@ -138,9 +138,9 @@ if errorlevel 1 (
 echo.
 echo ======================================================================
 if "!ALREADY!"=="1" (
-	echo  [SUCCESS] Catty local Python is already installed and verified.
+	echo  [SUCCESS] Maho local Python is already installed and verified.
 ) else (
-	echo  [SUCCESS] Catty local Python installed and verified successfully.
+	echo  [SUCCESS] Maho local Python installed and verified successfully.
 )
 echo ----------------------------------------------------------------------
 echo  Version : Python %PY_VER%  ^(tkinter OK^)
@@ -154,9 +154,9 @@ set "ERR=0"
 :finish
 echo.
 if "!STATUS!"=="FAILED" (
-	echo [Catty] Setup did NOT succeed. See [FAILED] details above.
+	echo [Maho] Setup did NOT succeed. See [FAILED] details above.
 ) else (
-	echo [Catty] Setup finished successfully. You can close this window.
+	echo [Maho] Setup finished successfully. You can close this window.
 )
 pause
 exit /b !ERR!

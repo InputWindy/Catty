@@ -4,7 +4,7 @@ import test from "node:test";
 import { createDefaultToolRegistry } from "../src/tools/definitions.mjs";
 import { RemoteWorldAdapter } from "../src/world/remote-world-adapter.mjs";
 import { WorldAdapterError } from "../src/world/world-adapter-errors.mjs";
-import { startFakeCattyWorldServer } from "./helpers/fake-catty-world-server.mjs";
+import { startFakeMahoWorldServer } from "./helpers/fake-maho-world-server.mjs";
 
 function toolCall(tool_name, args = {}) {
   return {
@@ -55,7 +55,7 @@ function transactionInput(core, tool_calls, overrides = {}) {
 }
 
 test("RemoteWorldAdapter validates health and performs snapshot, execute, and undo", async (t) => {
-  const fake = await startFakeCattyWorldServer();
+  const fake = await startFakeMahoWorldServer();
   t.after(() => fake.close());
   const core = createRemote(fake);
   t.after(() => core.adapter.close());
@@ -96,7 +96,7 @@ test("RemoteWorldAdapter validates health and performs snapshot, execute, and un
 });
 
 test("RemoteWorldAdapter preserves atomic rollback, dry_run, and world idempotency", async (t) => {
-  const fake = await startFakeCattyWorldServer();
+  const fake = await startFakeMahoWorldServer();
   t.after(() => fake.close());
   const core = createRemote(fake);
   t.after(() => core.adapter.close());
@@ -146,7 +146,7 @@ test("RemoteWorldAdapter preserves atomic rollback, dry_run, and world idempoten
 });
 
 test("RemoteWorldAdapter rejects incompatible protocol and insufficient capabilities", async (t) => {
-  const incompatible = await startFakeCattyWorldServer({
+  const incompatible = await startFakeMahoWorldServer({
     response_handler({ phase, default_response }) {
       if (phase === "health") {
         default_response.body.adapter_protocol_version = "2.0";
@@ -164,7 +164,7 @@ test("RemoteWorldAdapter rejects incompatible protocol and insufficient capabili
   );
   await first.adapter.close();
 
-  const insufficient = await startFakeCattyWorldServer({
+  const insufficient = await startFakeMahoWorldServer({
     capabilities: { supports_undo: false },
   });
   t.after(() => insufficient.close());
@@ -180,7 +180,7 @@ test("RemoteWorldAdapter rejects incompatible protocol and insufficient capabili
 
 test("RemoteWorldAdapter rejects response correlation mismatches and missing fields", async (t) => {
   for (const field of ["request_id", "session_id", "world_id"]) {
-    const fake = await startFakeCattyWorldServer({
+    const fake = await startFakeMahoWorldServer({
       response_handler({ phase, default_response }) {
         if (phase === "snapshot") {
           default_response.body[field] = randomUUID();
@@ -200,7 +200,7 @@ test("RemoteWorldAdapter rejects response correlation mismatches and missing fie
     await fake.close();
   }
 
-  const missing = await startFakeCattyWorldServer({
+  const missing = await startFakeMahoWorldServer({
     response_handler({ phase, default_response }) {
       if (phase === "snapshot") {
         delete default_response.body.entities;
@@ -221,7 +221,7 @@ test("RemoteWorldAdapter rejects response correlation mismatches and missing fie
 
 test("RemoteWorldAdapter maps auth, HTTP, non-JSON, and connection failures without leaking tokens", async (t) => {
   const secret = "remote-world-secret";
-  const authenticated = await startFakeCattyWorldServer({
+  const authenticated = await startFakeMahoWorldServer({
     auth_token: secret,
   });
   t.after(() => authenticated.close());
@@ -246,7 +246,7 @@ test("RemoteWorldAdapter maps auth, HTTP, non-JSON, and connection failures with
   );
   await accepted.adapter.close();
 
-  const invalid_json = await startFakeCattyWorldServer({
+  const invalid_json = await startFakeMahoWorldServer({
     response_handler({ phase, default_response }) {
       return phase === "health"
         ? { ...default_response, raw: "not-json" }
@@ -261,7 +261,7 @@ test("RemoteWorldAdapter maps auth, HTTP, non-JSON, and connection failures with
   );
   await invalid.adapter.close();
 
-  const temporary = await startFakeCattyWorldServer();
+  const temporary = await startFakeMahoWorldServer();
   const unavailable_url = temporary.base_url;
   await temporary.close();
   const unavailable = createRemote({ base_url: unavailable_url });
@@ -285,7 +285,7 @@ test("RemoteWorldAdapter maps HTTP 409 and 500 without retrying", async () => {
       retryable: true,
     },
   ]) {
-    const fake = await startFakeCattyWorldServer({
+    const fake = await startFakeMahoWorldServer({
       response_handler({ phase, default_response }) {
         return phase === "health"
           ? {
@@ -322,7 +322,7 @@ test("RemoteWorldAdapter rejects malformed execute correlation and result cardin
       body.tool_results = [];
     },
   ]) {
-    const fake = await startFakeCattyWorldServer({
+    const fake = await startFakeMahoWorldServer({
       response_handler({ phase, default_response }) {
         if (phase === "execute") {
           mutate(default_response.body);
@@ -347,7 +347,7 @@ test("RemoteWorldAdapter rejects malformed execute correlation and result cardin
 });
 
 test("RemoteWorldAdapter distinguishes timeout, external cancellation, and shutdown cancellation", async (t) => {
-  const delayed = await startFakeCattyWorldServer({
+  const delayed = await startFakeMahoWorldServer({
     response_handler({ phase, default_response }) {
       return phase === "health"
         ? { ...default_response, delay_ms: 200 }
@@ -385,7 +385,7 @@ test("RemoteWorldAdapter distinguishes timeout, external cancellation, and shutd
 });
 
 test("RemoteWorldAdapter reports an interrupted response as a connection failure", async () => {
-  const fake = await startFakeCattyWorldServer({
+  const fake = await startFakeMahoWorldServer({
     response_handler({ phase, default_response }) {
       return phase === "snapshot"
         ? { ...default_response, destroy: true }
@@ -409,7 +409,7 @@ test("RemoteWorldAdapter rejects non-finite numbers and prototype pollution in r
     '{"ok":true,"adapter_protocol_version":"1.0","server_name":"fake","server_version":"1","capabilities":{"supports_atomic_transactions":true,"supports_dry_run":true,"supports_undo":true,"supports_idempotency":true,"max_tool_calls":1e400,"supported_tools":[]}}',
     '{"ok":true,"adapter_protocol_version":"1.0","server_name":"fake","server_version":"1","capabilities":{"supports_atomic_transactions":true,"supports_dry_run":true,"supports_undo":true,"supports_idempotency":true,"max_tool_calls":16,"supported_tools":[],"__proto__":{"polluted":true}}}',
   ]) {
-    const fake = await startFakeCattyWorldServer({
+    const fake = await startFakeMahoWorldServer({
       response_handler({ phase, default_response }) {
         return phase === "health"
           ? { ...default_response, raw }

@@ -1,15 +1,15 @@
-# Catty C++ coding standards
+# Maho C++ coding standards
 
 Vendor-neutral **source of truth** for style. Cursor `.cursor/rules/ue-coding-style.mdc` must stay a short projection of this file.
 
-Aligned with Unreal Engine habits. Applies to all Catty engine and game C++ in this ecosystem.
+Aligned with Unreal Engine habits. Applies to all Maho engine and game C++ in this ecosystem.
 
 ## Braces (Allman)
 
 Opening `{` and closing `}` on their **own lines**, same column:
 
 ```cpp
-namespace Catty
+namespace Maho
 {
 	class FGameApp
 	{
@@ -22,7 +22,7 @@ namespace Catty
 Forbidden (K&R / Java style):
 
 ```cpp
-namespace catty {
+namespace maho {
 	class GameApp {
 	};
 }
@@ -39,8 +39,8 @@ Use Allman for `if` / `for` / `while` / `switch` / functions / classes / namespa
 - `bool` members/locals: `b` prefix (`bInitialized`)
 - Members: PascalCase — **no** `m_` / `_` prefix
 - Functions: PascalCase (`Initialize`, `Tick`)
-- Namespaces: PascalCase (`Catty`)
-- Macros / export: `CATTY_API`, `CATTY_EXPORTS`, …
+- Namespaces: PascalCase (`Maho`)
+- Macros / export: `MAHO_API`, `MAHO_EXPORTS`, …
 
 ## Headers vs sources
 
@@ -53,9 +53,9 @@ Use Allman for `if` / `for` / `while` / `switch` / functions / classes / namespa
 
 - Indent with **Tab**
 - Pointers/refs: `Type* Ptr`, `Type& Ref` (`*` / `&` with the type)
-- Public headers under `Source/Public` (`Core/`, `Render/`, …) — **no** extra `Public/Catty/` nest
+- Public headers under `Source/Public` (`Core/`, `Render/`, …) — **no** extra `Public/Maho/` nest
 - Do not abuse `using namespace` in headers
-- Game entry: `#include <Catty.h>` + `#include <EntryPoint.h>`, subclass `Catty::FApp`, implement `CreateApplication()`
+- Game entry: `#include <Maho.h>` + `#include <EntryPoint.h>`, subclass `Maho::FApp`, implement `CreateApplication()`
 
 ## Include form
 
@@ -70,5 +70,5 @@ Use Allman for `if` / `for` / `while` / `switch` / functions / classes / namespa
 
 ## Related hard constraints
 
-- Object refs: [`../../Catty/Source/Public/Core/Object/CONTRACT.md`](../../Catty/Source/Public/Core/Object/CONTRACT.md)
-- RHI surface: [`../../Catty/Source/Public/Render/RHI/CONTRACT.md`](../../Catty/Source/Public/Render/RHI/CONTRACT.md)
+- Object refs: [`../../Maho/Source/Public/Core/Object/CONTRACT.md`](../../Maho/Source/Public/Core/Object/CONTRACT.md)
+- RHI surface: [`../../Maho/Source/Public/Render/RHI/CONTRACT.md`](../../Maho/Source/Public/Render/RHI/CONTRACT.md)

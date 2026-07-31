@@ -1,9 +1,9 @@
 {
-  "name": "catty-agent-bridge",
+  "name": "maho-agent-bridge",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Local generic AI Provider bridge for the Catty editor Agent panel",
+  "description": "Local generic AI Provider bridge for the Maho editor Agent panel",
   "engines": {
     "node": ">=22.13"
   },

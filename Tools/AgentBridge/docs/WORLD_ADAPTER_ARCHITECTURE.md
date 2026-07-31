@@ -124,7 +124,7 @@ tests and local development.
 ## RemoteWorldAdapter
 
 RemoteWorldAdapter uses the
-[Catty World Adapter Protocol v1](CATTY_WORLD_ADAPTER_PROTOCOL_V1.md). It:
+[Maho World Adapter Protocol v1](MAHO_WORLD_ADAPTER_PROTOCOL_V1.md). It:
 
 - validates health, version, capabilities, every response DTO, and correlation;
 - sends the auth token only in `Authorization: Bearer ...`;
@@ -143,15 +143,15 @@ requires both explicit opt-in and a bearer token.
 
 ## Selection and configuration
 
-World selection is independent from `CATTY_AI_PROVIDER`:
+World selection is independent from `MAHO_AI_PROVIDER`:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CATTY_WORLD_ADAPTER` | `mock` | `mock` or explicit `remote` |
-| `CATTY_WORLD_BASE_URL` | `http://127.0.0.1:8770` | Remote base URL |
-| `CATTY_WORLD_TIMEOUT_MS` | `5000` | Request timeout, 1-300000 ms |
-| `CATTY_WORLD_AUTH_TOKEN` | empty | Bearer token |
-| `CATTY_WORLD_ALLOW_NON_LOOPBACK` | `0` | Explicit non-loopback opt-in |
+| `MAHO_WORLD_ADAPTER` | `mock` | `mock` or explicit `remote` |
+| `MAHO_WORLD_BASE_URL` | `http://127.0.0.1:8770` | Remote base URL |
+| `MAHO_WORLD_TIMEOUT_MS` | `5000` | Request timeout, 1-300000 ms |
+| `MAHO_WORLD_AUTH_TOKEN` | empty | Bearer token |
+| `MAHO_WORLD_ALLOW_NON_LOOPBACK` | `0` | Explicit non-loopback opt-in |
 
 Unknown adapter IDs and invalid configurations fail startup. A remote failure
 never changes the configured adapter ID.
@@ -205,7 +205,7 @@ health, snapshot, spawn, transform, undo, and final authoritative state.
 ## Current limits
 
 - No production C++ or game-world adapter is included.
-- FakeCattyWorldServer is test and local-development scaffolding.
+- FakeMahoWorldServer is test and local-development scaffolding.
 - State is not persisted by the included mock/fake implementations.
 - Undo remains limited to the latest successful write transaction.
 - There is no streaming, WebSocket transport, distributed transaction,
@@ -223,7 +223,7 @@ size, cancellation, correlation, lifecycle, and audit-safety tests.
 
 ## Future C++ integration
 
-A production Catty adapter remains future work. The game process must remain
+A production Maho adapter remains future work. The game process must remain
 the sole world authority and expose only DTO snapshots and command results. An
 HTTP handler must enqueue validated transactions into a bounded, thread-safe
 main-thread command queue. World lookup, entity validation, transaction

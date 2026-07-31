@@ -1,4 +1,4 @@
-# Run via Tools/catty_python.bat / package.bat — engine Tools/python only.
+# Run via Tools/maho_python.bat / package.bat — engine Tools/python only.
 """
 Build Release and install into Packaged/<Platform>/.
 
@@ -16,7 +16,7 @@ from pathlib import Path
 TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 
-from catty_tools import (  # noqa: E402
+from maho_tools import (  # noqa: E402
 	ENGINE_ROOT,
 	generate_engine_workspace,
 	generate_from_cproject,
@@ -56,10 +56,10 @@ def main(argv: list[str]) -> int:
 		else:
 			generate_engine_workspace(ENGINE_ROOT)
 			project_dir = ENGINE_ROOT
-			label = "CattyWorkspace"
+			label = "MahoWorkspace"
 
 		run_package(project_dir, config=config, platform=platform)
-		print(f"[Catty] Package finished for {label} ({config} / {platform})")
+		print(f"[Maho] Package finished for {label} ({config} / {platform})")
 		return 0
 	except Exception as ex:  # noqa: BLE001
 		print(f"[ERROR] {ex}")
