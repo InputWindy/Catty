@@ -1,13 +1,13 @@
 # Catty AgentBridge
 
 AgentBridge is a loopback-only Node.js service used by the existing Catty editor
-Agent panel. It preserves the legacy chat API and provides Agent Core v0.2,
+Agent panel. It preserves the legacy chat API and provides Agent Core v0.3,
 backed by an in-memory `MockWorld`.
 
-The v0.2 theme is **Agent behavior, evaluation, and CLI demo**. It adds
-deterministic multi-turn entity references, bounded natural-language behavior,
-a repeatable network-free evaluation suite, and an interactive CLI while
-keeping all Agent Core v0.1 HTTP and protocol behavior compatible.
+The v0.3 theme is **Generic AI Provider Architecture and DeepSeek
+Integration**. Real model planning is no longer coupled to Cursor SDK:
+MockProvider, DeepSeek, generic OpenAI-compatible Chat Completions, and the
+optional CursorProvider implement one internal Provider contract.
 
 Agent Core does **not** connect to the C++ game world in this version. It does
 not expose shell commands, file tools, Lua execution, C++ reflection, pointers,
@@ -15,12 +15,15 @@ WebSockets, rendering, physics, or multiplayer features.
 
 ## Architecture
 
-The v0.2 request path is:
+The v0.3 request path is:
 
 ```text
 natural language
   -> AgentService
-  -> MockProvider or CursorProvider + Session reference context
+  -> ProviderRegistry
+       -> MockProvider
+       -> OpenAICompatibleProvider -> DeepSeek preset
+       -> CursorProvider
   -> structured ToolCall
   -> ToolRegistry + Ajv validation
   -> CommandExecutor
@@ -33,10 +36,18 @@ natural language
 the HTTP router, starts the server, and coordinates shutdown. Business logic is
 under `src/`.
 
+Provider code can only plan ToolCalls. It cannot modify MockWorld.
+`CommandExecutor` remains the only execution path, and ToolResult remains the
+only authority for success.
+
 The existing `@cursor/sdk` dependency is retained. Version 1.0.26 exposes
 `customTools`; `CursorProvider` uses those callbacks only to capture internal
 ToolCalls and runs the SDK in plan mode. The callback does not modify
-`MockWorld`. `CommandExecutor` remains the only authority for tool success.
+`MockWorld`. The SDK is dynamically imported only when Cursor is selected.
+
+OpenAICompatibleProvider uses the Node.js 22 built-in `fetch` and standard Chat
+Completions `/chat/completions`; no additional HTTP SDK is required. DeepSeek
+is a preset over this implementation, not a separate network stack.
 
 Ajv is a direct dependency because tool contracts are published and compiled
 as JSON Schema. Every v1 tool argument schema rejects additional properties.
@@ -53,9 +64,37 @@ npm test
 npm run eval
 ```
 
-All tests use `node:test`, random loopback ports, independent Sessions, and
-MockProvider. No Cursor API key, network service, C++ game, or MyGame checkout
-is required.
+All default tests use `node:test`, random loopback ports, local fake HTTP
+servers, independent Sessions, and MockWorld. No DeepSeek/Cursor API key,
+external network service, C++ game, or MyGame checkout is required.
+
+The install currently reports 3 dependency advisories (2 moderate and 1 high).
+They require separate analysis; this version does not run
+`npm audit fix --force` or upgrade unrelated dependencies.
+
+## Provider selection
+
+Selection order is deterministic:
+
+1. `CATTY_AGENT_MOCK=1` forces MockProvider.
+2. `CATTY_AI_PROVIDER` selects an explicit Provider.
+3. Without an explicit Provider, legacy `CURSOR_API_KEY` selects Cursor.
+4. Otherwise AgentBridge uses MockProvider.
+
+`DEEPSEEK_API_KEY` alone never selects DeepSeek. Real Provider failures never
+fall back to Mock, because fallback would hide configuration, authentication,
+or model failures.
+
+Supported Provider IDs:
+
+- `mock` — deterministic and offline; the default.
+- `deepseek` — the DeepSeek preset over OpenAICompatibleProvider.
+- `openai-compatible` — a caller-configured Chat Completions endpoint.
+- `cursor` — the retained optional Cursor SDK implementation.
+
+See [AI Provider Architecture](docs/AI_PROVIDER_ARCHITECTURE.md) for the
+contract and lifecycle, and [DeepSeek Setup](docs/DEEPSEEK_SETUP.md) for real
+API configuration.
 
 ## Run
 
@@ -79,8 +118,9 @@ $env:CATTY_AGENT_MOCK = "1"
 npm start
 ```
 
-Without `CURSOR_API_KEY`, Mock mode is selected automatically. `--api-key` and
-`--api-key-file` are retained for compatibility with the existing C++ client.
+Without an explicit Provider or `CURSOR_API_KEY`, Mock mode is selected
+automatically. `--api-key` and `--api-key-file` are retained for compatibility
+with the existing C++ client and select Cursor.
 Their precedence is:
 
 1. `--api-key`
@@ -89,9 +129,10 @@ Their precedence is:
 
 ## CLI demo
 
-The CLI creates its own in-memory Session, MockWorld, MockProvider,
-ToolRegistry, CommandExecutor, and AgentService. It does not start the HTTP
-server or occupy a port:
+The CLI creates its own in-memory Session, MockWorld, ToolRegistry,
+CommandExecutor, AgentService, and selected Provider. It does not start the
+HTTP server or occupy a port. With no Provider environment variables it remains
+fully offline:
 
 ```powershell
 cd Tools\AgentBridge
@@ -108,7 +149,36 @@ Enter natural-language commands directly. Built-in commands are:
 - `/exit`
 
 Ctrl+C exits normally. Command errors are displayed without crashing the
-process.
+process. Startup prints Provider, model, Mock/real mode, and
+`Thinking: disabled`; it never prints a Key.
+
+Select DeepSeek:
+
+```powershell
+$env:CATTY_AI_PROVIDER = "deepseek"
+$env:DEEPSEEK_API_KEY = "replace_me"
+npm run demo
+```
+
+Select Cursor:
+
+```powershell
+$env:CATTY_AI_PROVIDER = "cursor"
+$env:CURSOR_API_KEY = "replace_me"
+npm run demo
+```
+
+Select a generic OpenAI-compatible endpoint:
+
+```powershell
+$env:CATTY_AI_PROVIDER = "openai-compatible"
+$env:CATTY_AI_BASE_URL = "https://provider.example/v1"
+$env:CATTY_AI_MODEL = "provider-model"
+$env:CATTY_AI_API_KEY = "replace_me"
+npm run demo
+```
+
+Do not place real Key values in checked-in files or shell history.
 
 ## Behavior evaluations
 
@@ -180,6 +250,16 @@ are rejected without bypassing the existing JSON Schemas.
 | `CATTY_AGENT_MOCK` | automatic | `1` forces MockProvider |
 | `CATTY_AGENT_DATA_DIR` | `Tools/AgentBridge/.runtime` | JSONL audit/runtime directory |
 | `CURSOR_API_KEY` | empty | Cursor SDK key; absence selects Mock mode |
+| `CATTY_AI_PROVIDER` | selection rules above | `mock`, `deepseek`, `openai-compatible`, or `cursor` |
+| `CATTY_AI_API_KEY` | empty | Generic Key; takes precedence over `DEEPSEEK_API_KEY` for DeepSeek |
+| `CATTY_AI_BASE_URL` | Provider preset | Required for generic OpenAI-compatible |
+| `CATTY_AI_MODEL` | Provider preset | Required for generic OpenAI-compatible |
+| `CATTY_AI_TIMEOUT_MS` | `30000` | Per-model-request timeout |
+| `CATTY_AI_MAX_RETRIES` | `1` | Retry count after the first model request |
+| `CATTY_AI_TEMPERATURE` | `0` | Chat Completions temperature |
+| `CATTY_AI_FINALIZE` | `true` | Enable one supported finalization request |
+| `CATTY_AI_MAX_TOOL_CALLS` | `16` | Maximum planned ToolCalls |
+| `DEEPSEEK_API_KEY` | empty | DeepSeek compatibility Key |
 
 The legacy Cursor SDK JSONL store remains under
 `<--cwd>/Saved/Agent/cursor-sdk-store` to avoid changing the existing editor
@@ -188,6 +268,32 @@ behavior. Agent Core audit data uses `CATTY_AGENT_DATA_DIR`.
 
 Request bodies are limited to 1 MiB by default. The server never listens on a
 non-loopback address.
+
+Generic OpenAI-compatible mode requires all of `CATTY_AI_BASE_URL`,
+`CATTY_AI_MODEL`, and `CATTY_AI_API_KEY`. It receives no DeepSeek-specific
+fields. DeepSeek defaults to `https://api.deepseek.com` and
+`deepseek-v4-flash`, both overridable by generic variables. Agent Core v0.3
+always disables thinking mode.
+
+## Offline and real-network commands
+
+These commands are offline and never make a real model request:
+
+```powershell
+npm test
+npm run eval
+```
+
+These commands are explicit, optional real DeepSeek network operations and may
+incur API charges:
+
+```powershell
+npm run smoke:deepseek
+npm run eval:deepseek
+```
+
+Both real commands exit nonzero before any request when no DeepSeek Key is
+configured. They are not part of `npm test`, `npm run eval`, or default CI.
 
 ## APIs
 
@@ -265,7 +371,9 @@ Invoke-RestMethod -Method Post -Uri "$base/shutdown" `
 - The UndoJournal stores a complete pre-transaction MockWorld snapshot.
   This is intentionally temporary and must be replaced by a real world adapter
   and engine-native change/undo mechanism when C++ integration is designed.
-- Agent Core v0.2 still has no C++ World adapter or game integration.
+- Agent Core v0.3 still has no C++ World adapter or game integration.
 - Session state and reference context are not persisted.
-- CursorProvider keeps its v0.1 integration path; this release performs no real
-  Cursor API network testing.
+- Provider finalization is limited to one text-only request; it cannot produce
+  another executable ToolCall.
+- Thinking mode, streaming, recursive agent loops, automatic Provider routing,
+  and automatic fallback are not supported.

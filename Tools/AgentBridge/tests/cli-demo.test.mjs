@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   createDemoState,
   handleDemoInput,
+  runDemo,
 } from "../src/cli/demo.mjs";
+import { Readable, Writable } from "node:stream";
 
 test("CLI natural language, world, and entity commands use the active Core", async () => {
   const state = createDemoState();
@@ -62,4 +64,24 @@ test("CLI reports command errors without throwing", async () => {
   const result = await handleDemoInput(state, "生成一个立方体");
   assert.equal(result.exit, false);
   assert.equal(result.output, "Error: simulated failure");
+});
+
+test("CLI startup defaults to MockProvider and never requires a real key", async () => {
+  let text = "";
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      text += chunk.toString();
+      callback();
+    },
+  });
+  const exit_code = await runDemo({
+    input: Readable.from([]),
+    output,
+    env: {},
+  });
+  assert.equal(exit_code, 0);
+  assert.match(text, /Catty Agent Core v0\.3/);
+  assert.match(text, /Provider: mock/);
+  assert.match(text, /Mode: Mock/);
+  assert.match(text, /Thinking: disabled/);
 });

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import readline from "node:readline";
 import { pathToFileURL } from "node:url";
 import { AgentService } from "../agent/agent-service.mjs";
+import { resolveProviderConfig } from "../agent/provider-config.mjs";
+import { ProviderRegistry } from "../agent/provider-registry.mjs";
 import { MockProvider } from "../agent/providers/mock-provider.mjs";
 import { CommandExecutor } from "../execution/command-executor.mjs";
 import { UndoJournal } from "../history/undo-journal.mjs";
@@ -17,20 +19,34 @@ const HELP_TEXT = `Commands:
   /reset     Start a new independent Session
   /exit      Exit the demo`;
 
-class RecordingMockProvider {
-  constructor() {
-    this.name = "mock";
-    this.provider = new MockProvider();
+class RecordingProvider {
+  constructor(provider) {
+    this.name = provider.name;
+    this.model = provider.model;
+    this.capabilities = provider.capabilities;
+    this.finalization_enabled = provider.finalization_enabled;
+    this.provider = provider;
     this.last_output = null;
   }
 
-  async run(input) {
-    this.last_output = await this.provider.run(input);
+  getMetadata() {
+    return this.provider.getMetadata();
+  }
+
+  async plan(input) {
+    this.last_output = await this.provider.plan(input);
     return this.last_output;
+  }
+
+  async finalize(input) {
+    return this.provider.finalize(input);
   }
 }
 
-export function createDemoState() {
+export function createDemoState({
+  provider: selected_provider = new MockProvider(),
+  provider_registry = null,
+} = {}) {
   const session_manager = new SessionManager();
   const tool_registry = createDefaultToolRegistry();
   const undo_journal = new UndoJournal();
@@ -41,12 +57,13 @@ export function createDemoState() {
     undo_journal,
     audit_log,
   });
-  const provider = new RecordingMockProvider();
+  const provider = new RecordingProvider(selected_provider);
   const agent_service = new AgentService({
     session_manager,
     tool_registry,
     command_executor,
     provider,
+    provider_registry,
     audit_log,
   });
   return {
@@ -58,6 +75,19 @@ export function createDemoState() {
     agent_service,
     active_session: session_manager.createSession(),
   };
+}
+
+export async function createConfiguredDemoState({
+  env = process.env,
+  cwd = process.cwd(),
+} = {}) {
+  const config = resolveProviderConfig({ env, cwd });
+  const provider_registry = new ProviderRegistry({ config });
+  const selected_provider = await provider_registry.initialize();
+  return createDemoState({
+    provider: selected_provider,
+    provider_registry,
+  });
 }
 
 export function formatWorld(snapshot) {
@@ -176,8 +206,16 @@ export async function handleDemoInput(state, input) {
 export async function runDemo({
   input = process.stdin,
   output = process.stdout,
+  env = process.env,
+  cwd = process.cwd(),
 } = {}) {
-  const state = createDemoState();
+  let state;
+  try {
+    state = await createConfiguredDemoState({ env, cwd });
+  } catch (error) {
+    output.write(`Provider configuration error: ${error?.message || String(error)}\n`);
+    return 1;
+  }
   const interactive = Boolean(input.isTTY && output.isTTY);
   const reader = readline.createInterface({
     input,
@@ -186,8 +224,9 @@ export async function runDemo({
     crlfDelay: Infinity,
   });
 
+  const metadata = state.provider.getMetadata();
   output.write(
-    "Catty Agent Core v0.2\nProvider: mock\nType /help for commands.\n\n"
+    `Catty Agent Core v0.3\nProvider: ${metadata.provider}\nModel: ${metadata.model}\nMode: ${metadata.real ? "real" : "Mock"}\nThinking: disabled\nType /help for commands.\n\n`
   );
   reader.on("SIGINT", () => {
     output.write("\nBye.\n");
@@ -215,6 +254,7 @@ export async function runDemo({
     return 1;
   } finally {
     reader.close();
+    await state.provider_registry?.close();
   }
   return 0;
 }

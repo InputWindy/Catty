@@ -9,8 +9,7 @@ import { loadConfig } from "./src/config.mjs";
 import { createRouter } from "./src/api/router.mjs";
 import { AgentService } from "./src/agent/agent-service.mjs";
 import { LegacyChatService } from "./src/agent/legacy-chat-service.mjs";
-import { CursorProvider } from "./src/agent/providers/cursor-provider.mjs";
-import { MockProvider } from "./src/agent/providers/mock-provider.mjs";
+import { ProviderRegistry } from "./src/agent/provider-registry.mjs";
 import { CommandExecutor } from "./src/execution/command-executor.mjs";
 import { UndoJournal } from "./src/history/undo-journal.mjs";
 import { AuditLog } from "./src/logging/audit-log.mjs";
@@ -18,15 +17,16 @@ import { SessionManager } from "./src/sessions/session-manager.mjs";
 import { createDefaultToolRegistry } from "./src/tools/definitions.mjs";
 
 const config = loadConfig();
-const legacyChatService = new LegacyChatService(config);
+const providerRegistry = new ProviderRegistry({ config: config.ai });
+const provider = await providerRegistry.initialize();
+const legacyChatService = new LegacyChatService(config, {
+  agent: providerRegistry.getLegacyAgent(),
+});
 await legacyChatService.initialize();
 const sessionManager = new SessionManager();
 const toolRegistry = createDefaultToolRegistry();
 const undoJournal = new UndoJournal();
 const auditLog = new AuditLog({ data_dir: config.data_dir });
-const provider = legacyChatService.isMock()
-  ? new MockProvider()
-  : new CursorProvider({ agent: legacyChatService.getAgent() });
 const commandExecutor = new CommandExecutor({
   session_manager: sessionManager,
   tool_registry: toolRegistry,
@@ -58,6 +58,7 @@ async function shutdown({ exit = true } = {}) {
     server.close(resolve);
   });
   await legacyChatService.close();
+  await providerRegistry.close();
 
   if (exit) {
     process.exit(0);
@@ -82,8 +83,9 @@ const router = createRouter({
 
 server = http.createServer(router);
 server.listen(config.port, config.host, () => {
+  const provider_metadata = providerRegistry.getMetadata();
   console.log(
-    `[CattyAgentBridge] listening on ${config.host}:${config.port} cwd=${config.cwd} mock=${legacyChatService.isMock()}`
+    `[CattyAgentBridge] listening on ${config.host}:${config.port} cwd=${config.cwd} provider=${provider_metadata.provider} model=${provider_metadata.model} mode=${provider_metadata.real ? "real" : "mock"} thinking=${provider_metadata.thinking}`
   );
 });
 

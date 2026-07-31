@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Local Cursor SDK bridge for Catty editor Agent panel",
+  "description": "Local generic AI Provider bridge for the Catty editor Agent panel",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
     "demo": "node src/cli/demo.mjs",
     "eval": "node evals/run-evals.mjs",
+    "eval:deepseek": "node evals/run-deepseek-evals.mjs",
+    "smoke:deepseek": "node evals/smoke-deepseek.mjs",
     "start": "node server.mjs",
     "test": "node --test \"tests/*.test.mjs\""
   },

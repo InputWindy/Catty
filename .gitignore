@@ -35,6 +35,9 @@ __pycache__/
 /Tools/**/__pycache__/
 /Tools/AgentBridge/node_modules/
 /Tools/AgentBridge/.runtime/
+/Tools/AgentBridge/.env
+/Tools/AgentBridge/.env.local
+!/Tools/AgentBridge/.env.example
 
 # Object / binary artifacts
 *.d

@@ -3,61 +3,22 @@ import {
   assertProtocolVersion,
   assertUuid,
 } from "../protocol/envelope.mjs";
+import {
+  createProviderOutput,
+  validateProviderOutput,
+} from "./provider-contract.mjs";
+import {
+  createAssistantToolMessage,
+  createPlanMessages,
+  createToolResultMessage,
+} from "./normalized-messages.mjs";
+import { buildProviderSystemPrompt } from "./prompt-builder.mjs";
+import {
+  ProviderError,
+  providerErrorToAgentError,
+} from "./providers/provider-errors.mjs";
 
-function validateProviderOutput(output) {
-  if (
-    !output ||
-    typeof output !== "object" ||
-    Array.isArray(output) ||
-    typeof output.assistant_message !== "string" ||
-    !Array.isArray(output.tool_calls)
-  ) {
-    throw new AgentError(
-      "MODEL_OUTPUT_INVALID",
-      "Provider output must contain assistant_message and tool_calls"
-    );
-  }
-  for (const [index, tool_call] of output.tool_calls.entries()) {
-    if (
-      !tool_call ||
-      typeof tool_call !== "object" ||
-      Array.isArray(tool_call)
-    ) {
-      throw new AgentError(
-        "MODEL_OUTPUT_INVALID",
-        "Provider returned an invalid ToolCall",
-        { tool_call_index: index }
-      );
-    }
-    const valid_shape =
-      typeof tool_call.tool_call_id === "string" &&
-      typeof tool_call.tool_name === "string" &&
-      tool_call.tool_name.length > 0 &&
-      Number.isSafeInteger(tool_call.expected_revision) &&
-      tool_call.expected_revision >= 0 &&
-      typeof tool_call.dry_run === "boolean" &&
-      tool_call.args &&
-      typeof tool_call.args === "object" &&
-      !Array.isArray(tool_call.args);
-    if (!valid_shape) {
-      throw new AgentError(
-        "MODEL_OUTPUT_INVALID",
-        "Provider ToolCall is missing required structured fields",
-        { tool_call_index: index }
-      );
-    }
-    try {
-      assertUuid(tool_call.tool_call_id, `tool_calls[${index}].tool_call_id`);
-    } catch {
-      throw new AgentError(
-        "MODEL_OUTPUT_INVALID",
-        "Provider ToolCall tool_call_id must be a UUID",
-        { tool_call_index: index }
-      );
-    }
-  }
-  return output;
-}
+const SESSION_MESSAGE_LIMIT = 40;
 
 export class AgentService {
   constructor({
@@ -72,6 +33,17 @@ export class AgentService {
     this.command_executor = command_executor;
     this.provider = provider;
     this.audit_log = audit_log;
+  }
+
+  getProviderMetadata() {
+    if (typeof this.provider.getMetadata === "function") {
+      return structuredClone(this.provider.getMetadata());
+    }
+    return {
+      provider: this.provider.name || "legacy",
+      model: this.provider.model || "legacy",
+      ready: true,
+    };
   }
 
   async run(request) {
@@ -176,25 +148,45 @@ export class AgentService {
 
   async #runProviderAndTools(request, session, world, started_at) {
     let provider_output;
+    const tool_definitions = this.tool_registry.listDefinitions();
+    const normalized_messages = createPlanMessages({
+      system_message: buildProviderSystemPrompt({
+        world_snapshot: world.snapshot(),
+        tool_definitions,
+        session_context: session.entity_context,
+      }),
+      session_messages: session.normalized_messages,
+      user_message: request.message.trim(),
+    });
+    const provider_input = {
+      request_id: request.request_id,
+      session_id: request.session_id,
+      user_message: request.message.trim(),
+      normalized_messages,
+      world_snapshot: world.snapshot(),
+      session_context: structuredClone(session.entity_context),
+      tool_definitions,
+      signal: request.signal,
+    };
     try {
-      provider_output = validateProviderOutput(
-        await this.provider.run({
-          message: request.message.trim(),
-          world_snapshot: world.snapshot(),
-          tool_definitions: this.tool_registry.listDefinitions(),
-          session_context: structuredClone(session.entity_context),
-        })
-      );
+      provider_output = await this.#plan(provider_input);
+      await this.#writeProviderAudit({
+        request,
+        output: provider_output,
+        phase: "plan",
+        finalization_used: false,
+        finalization_failed: false,
+      });
     } catch (error) {
-      const agent_error =
-        error instanceof AgentError
-          ? error
-          : new AgentError(
-              "MODEL_OUTPUT_INVALID",
-              error?.message || String(error)
-            );
+      const agent_error = this.#providerAgentError(error);
       const result = this.#failure(request, agent_error, world);
-      await this.#writeAgentOnlyAudit(request, result, [], started_at);
+      await this.#writeProviderAudit({
+        request,
+        error,
+        phase: "plan",
+        finalization_used: false,
+        finalization_failed: false,
+      });
       return result;
     }
 
@@ -209,31 +201,198 @@ export class AgentService {
         error: null,
         replayed: false,
       };
+      this.#appendSessionMessages(session, [
+        { role: "user", content: request.message.trim() },
+        {
+          role: "assistant",
+          content: provider_output.assistant_message,
+          tool_calls: [],
+        },
+      ]);
       await this.#writeAgentOnlyAudit(request, result, [], started_at);
       return result;
     }
 
+    const executable_tool_calls = provider_output.tool_calls.map(
+      (tool_call) => ({
+        ...structuredClone(tool_call),
+        expected_revision: world.revision,
+        dry_run: false,
+      })
+    );
     const execution = await this.command_executor.executeBatch({
       protocol_version: request.protocol_version,
       request_id: request.request_id,
       session_id: request.session_id,
       world_id: world.world_id,
-      tool_calls: provider_output.tool_calls,
+      tool_calls: executable_tool_calls,
       provider: this.provider.name,
       user_message: request.message.trim(),
     });
-    return {
+
+    const assistant_tool_message =
+      createAssistantToolMessage(provider_output);
+    const tool_messages = provider_output.tool_calls.map(
+      (tool_call, index) =>
+        createToolResultMessage(
+          tool_call,
+          execution.tool_results[index] || {
+            ok: false,
+            error: execution.error,
+          }
+        )
+    );
+    const finalization_messages = [
+      ...normalized_messages,
+      assistant_tool_message,
+      ...tool_messages,
+    ];
+    const finalization_used = Boolean(
+      this.provider.capabilities?.supports_finalization &&
+      this.provider.finalization_enabled !== false &&
+      typeof this.provider.finalize === "function"
+    );
+    let finalization_output = null;
+    let finalization_failed = false;
+    if (finalization_used) {
+      try {
+        finalization_output = validateProviderOutput(
+          await this.provider.finalize({
+            ...provider_input,
+            normalized_messages: finalization_messages,
+            world_snapshot: world.snapshot(),
+            session_context: structuredClone(session.entity_context),
+          }),
+          {
+            expected_provider: this.provider.name,
+            expected_model: this.provider.model,
+            max_tool_calls: 0,
+            phase: "finalize",
+          }
+        );
+        await this.#writeProviderAudit({
+          request,
+          output: finalization_output,
+          phase: "finalize",
+          finalization_used: true,
+          finalization_failed: false,
+        });
+      } catch (error) {
+        finalization_failed = true;
+        await this.#writeProviderAudit({
+          request,
+          error,
+          phase: "finalize",
+          finalization_used: true,
+          finalization_failed: true,
+        });
+      }
+    }
+
+    const assistant_message = execution.ok
+      ? finalization_output?.assistant_message?.trim() ||
+        (finalization_failed
+          ? this.#deterministicExecutionReply(execution)
+          : provider_output.assistant_message)
+      : `操作未完成：${execution.error.message}`;
+    const result = {
       ok: execution.ok,
       request_id: request.request_id,
-      assistant_message: execution.ok
-        ? provider_output.assistant_message
-        : `操作未完成：${execution.error.message}`,
+      assistant_message,
       tool_results: execution.tool_results,
       world_revision: execution.world_revision,
       undo_token: execution.undo_token,
       error: execution.error,
       replayed: execution.replayed,
     };
+    this.#appendSessionMessages(session, [
+      { role: "user", content: request.message.trim() },
+      assistant_tool_message,
+      ...tool_messages,
+      {
+        role: "assistant",
+        content: assistant_message,
+        tool_calls: [],
+      },
+    ]);
+    return result;
+  }
+
+  async #plan(input) {
+    let raw_output;
+    if (typeof this.provider.plan === "function") {
+      raw_output = await this.provider.plan(input);
+    } else if (typeof this.provider.run === "function") {
+      const legacy = await this.provider.run({
+        message: input.user_message,
+        world_snapshot: input.world_snapshot,
+        tool_definitions: input.tool_definitions,
+        session_context: input.session_context,
+      });
+      raw_output = createProviderOutput({
+        provider: this.provider.name || "legacy",
+        model: this.provider.model || "legacy",
+        assistant_message: legacy?.assistant_message,
+        tool_calls: Array.isArray(legacy?.tool_calls)
+          ? legacy.tool_calls.map((tool_call) => ({
+              tool_call_id: tool_call.tool_call_id,
+              tool_name: tool_call.tool_name,
+              args: tool_call.args,
+            }))
+          : legacy?.tool_calls,
+        finish_reason: legacy?.tool_calls?.length ? "tool_calls" : "stop",
+        provider_metadata: {
+          phase: "plan",
+          attempt_count: 1,
+          duration_ms: 0,
+          http_status: null,
+        },
+      });
+    } else {
+      throw new AgentError(
+        "MODEL_OUTPUT_INVALID",
+        "Selected Provider does not implement plan()"
+      );
+    }
+    return validateProviderOutput(raw_output, {
+      expected_provider: this.provider.name,
+      expected_model: this.provider.model,
+      max_tool_calls: this.provider.max_tool_calls ?? 16,
+      phase: "plan",
+    });
+  }
+
+  #providerAgentError(error) {
+    if (error instanceof AgentError) {
+      return error;
+    }
+    if (error instanceof ProviderError) {
+      return providerErrorToAgentError(error);
+    }
+    return new AgentError(
+      "MODEL_OUTPUT_INVALID",
+      error?.message || String(error)
+    );
+  }
+
+  #deterministicExecutionReply(execution) {
+    if (!execution.ok) {
+      return `操作未完成：${execution.error.message}`;
+    }
+    const successful_count = execution.tool_results.filter(
+      (tool_result) => tool_result.ok
+    ).length;
+    return `操作已完成：${successful_count} 个工具调用已由 CommandExecutor 验证成功。`;
+  }
+
+  #appendSessionMessages(session, messages) {
+    session.normalized_messages.push(...structuredClone(messages));
+    if (session.normalized_messages.length > SESSION_MESSAGE_LIMIT) {
+      session.normalized_messages.splice(
+        0,
+        session.normalized_messages.length - SESSION_MESSAGE_LIMIT
+      );
+    }
   }
 
   #failure(request, error, world) {
@@ -255,6 +414,8 @@ export class AgentService {
         request_id: request.request_id,
         session_id: request.session_id,
         provider: this.provider.name,
+        model: this.provider.model || null,
+        request_phase: "agent",
         user_message: request.message,
         before_revision: result.world_revision,
         after_revision: result.world_revision,
@@ -267,6 +428,63 @@ export class AgentService {
       console.error(
         "[CattyAgentBridge] audit log write failed:",
         error?.message || error
+      );
+    }
+  }
+
+  async #writeProviderAudit({
+    request,
+    output = null,
+    error = null,
+    phase,
+    finalization_used,
+    finalization_failed,
+  }) {
+    const metadata = output?.provider_metadata || {};
+    const provider_error =
+      error instanceof ProviderError ? error : null;
+    try {
+      await this.audit_log.write({
+        request_id: request.request_id,
+        session_id: request.session_id,
+        provider: output?.provider || this.provider.name,
+        model: output?.model || this.provider.model || null,
+        request_phase: phase,
+        attempt_count:
+          metadata.attempt_count ?? provider_error?.attempt_count ?? 0,
+        duration_ms: metadata.duration_ms ?? 0,
+        http_status:
+          metadata.http_status ?? provider_error?.http_status ?? null,
+        finish_reason: output?.finish_reason ?? null,
+        tool_call_count: output?.tool_calls?.length ?? 0,
+        input_tokens: output?.usage?.input_tokens ?? null,
+        output_tokens: output?.usage?.output_tokens ?? null,
+        total_tokens: output?.usage?.total_tokens ?? null,
+        cached_input_tokens:
+          output?.usage?.cached_input_tokens ?? null,
+        finalization_used,
+        finalization_failed,
+        timeout: metadata.timeout ?? provider_error?.timeout ?? false,
+        cancelled:
+          metadata.cancelled ?? provider_error?.cancelled ?? false,
+        user_message: request.message,
+        before_revision: null,
+        after_revision: null,
+        tool_calls: output?.tool_calls || [],
+        tool_results: [],
+        error:
+          error instanceof AgentError
+            ? error.toJSON()
+            : provider_error
+              ? providerErrorToAgentError(provider_error).toJSON()
+              : error
+                ? { message: error?.message || String(error) }
+                : null,
+      });
+    } catch (audit_error) {
+      console.error(
+        "[CattyAgentBridge] audit log write failed:",
+        audit_error?.message || audit_error
       );
     }
   }

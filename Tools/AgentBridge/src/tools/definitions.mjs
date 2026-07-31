@@ -51,7 +51,7 @@ export function createDefaultToolRegistry() {
   registry.register({
     name: "world.query_entities",
     description:
-      "Query MockWorld entities by exact name, entity type, or primitive type.",
+      "Query or list MockWorld entities. Omit filters to list all entities, or filter by exact name, entity type, or primitive type.",
     schema: {
       type: "object",
       properties: {
@@ -252,4 +252,3 @@ export function createDefaultToolRegistry() {
 
   return registry;
 }
-
