@@ -38,7 +38,7 @@ public:
 	FRHIResource& operator=(const FRHIResource&) = delete;
 
 	[[nodiscard]] virtual const char* GetTypeName() const = 0;
-	[[nodiscard]] virtual ERHIResourceKind GetKind() const = 0;
+	[[nodiscard]] virtual ERHIResourceType GetType() const = 0;
 	[[nodiscard]] const std::string& GetDebugName() const { return DebugName; }
 
 protected:
@@ -61,7 +61,7 @@ class MAHO_API FRHIBuffer : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIBuffer"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::Buffer; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::Buffer; }
 	[[nodiscard]] virtual const FRHIBufferDesc& GetDesc() const = 0;
 };
 
@@ -87,7 +87,7 @@ class MAHO_API FRHITexture : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHITexture"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::Texture; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::Texture; }
 	[[nodiscard]] virtual const FRHITextureDesc& GetDesc() const = 0;
 };
 
@@ -105,7 +105,7 @@ class MAHO_API FRHITextureView : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHITextureView"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::TextureView; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::TextureView; }
 };
 
 struct FRHISamplerDesc
@@ -124,7 +124,7 @@ class MAHO_API FRHISampler : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHISampler"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::Sampler; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::Sampler; }
 	[[nodiscard]] virtual const FRHISamplerDesc& GetDesc() const = 0;
 };
 
@@ -139,7 +139,7 @@ class MAHO_API FRHIShaderModule : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIShaderModule"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::ShaderModule; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::ShaderModule; }
 };
 
 struct FRHIDescriptorBinding
@@ -159,7 +159,7 @@ class MAHO_API FRHIDescriptorSetLayout : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIDescriptorSetLayout"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::DescriptorSetLayout; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::DescriptorSetLayout; }
 };
 
 struct FRHIPushConstantRange
@@ -179,7 +179,7 @@ class MAHO_API FRHIPipelineLayout : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIPipelineLayout"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::PipelineLayout; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::PipelineLayout; }
 };
 
 struct FRHIVertexAttribute
@@ -210,7 +210,7 @@ class MAHO_API FRHIGraphicsPipeline : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIGraphicsPipeline"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::GraphicsPipeline; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::GraphicsPipeline; }
 };
 
 struct FRHIComputePipelineDesc
@@ -223,7 +223,7 @@ class MAHO_API FRHIComputePipeline : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIComputePipeline"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::ComputePipeline; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::ComputePipeline; }
 };
 
 struct FRHIDescriptorPoolSize
@@ -242,56 +242,56 @@ class MAHO_API FRHIDescriptorPool : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIDescriptorPool"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::DescriptorPool; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::DescriptorPool; }
 };
 
 class MAHO_API FRHIDescriptorSet : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIDescriptorSet"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::DescriptorSet; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::DescriptorSet; }
 };
 
 class MAHO_API FRHIFramebuffer : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIFramebuffer"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::Framebuffer; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::Framebuffer; }
 };
 
 class MAHO_API FRHIRenderPass : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIRenderPass"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::RenderPass; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::RenderPass; }
 };
 
 class MAHO_API FRHICommandPool : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHICommandPool"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::CommandPool; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::CommandPool; }
 };
 
 class MAHO_API FRHIFence : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIFence"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::Fence; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::Fence; }
 };
 
 class MAHO_API FRHISemaphore : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHISemaphore"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::Semaphore; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::Semaphore; }
 };
 
 class MAHO_API FRHIQueryPool : public FRHIResource
 {
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIQueryPool"; }
-	[[nodiscard]] ERHIResourceKind GetKind() const override { return ERHIResourceKind::QueryPool; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::QueryPool; }
 };
 
 struct FRHIDescriptorWrite

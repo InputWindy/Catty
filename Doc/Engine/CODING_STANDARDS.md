@@ -35,12 +35,26 @@ Use Allman for `if` / `for` / `while` / `switch` / functions / classes / namespa
 - `UObject` and subclasses: `U` prefix (`UObject`, `UPackage`, `UResource`, …)
 - Other types: `F` prefix (`FApp`, `FConfig`, `FObjectRef`, `FRHIResourceManager`, …)
 - Interfaces: `I` prefix (`IRHI`, `IEngineExtension`)
-- Enums: `E` prefix (`ERHIQueueType`, `EExtensionPriority`)
+- Enums: `E` prefix (`ERHIQueueType`, `ERHIResourceType`, `EExtensionPriority`)
 - `bool` members/locals: `b` prefix (`bInitialized`)
 - Members: PascalCase — **no** `m_` / `_` prefix
 - Functions: PascalCase (`Initialize`, `Tick`)
 - Namespaces: PascalCase (`Maho`)
 - Macros / export: `MAHO_API`, `MAHO_EXPORTS`, …
+
+### Kind must not replace Type (**mandatory**)
+
+When naming a discriminator for “what sort of thing this is”, use **`Type`**, never **`Kind`**.
+
+| Forbidden | Required |
+|-----------|----------|
+| `ERHIResourceKind` | `ERHIResourceType` |
+| `GetKind()` | `GetType()` |
+| member `Kind` meaning type tag | member `Type` |
+
+Same rule for new enums / accessors / fields (`EFooKind`, `ResourceKind`, `Kind` as type tag). Do not introduce `Kind` as a synonym for `Type` to “sound nicer” or avoid a name clash — pick a clearer name (`EFooClass`, `EFooCategory`, …) if `Type` is already taken in that scope.
+
+Allowed: unrelated English uses that are not a type-tag API (e.g. log string `"refusing menu …"`), and third-party / generated code you do not own.
 
 ## Headers vs sources
 

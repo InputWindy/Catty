@@ -47,7 +47,7 @@ private:
 	struct FPooledEntry
 	{
 		FRHIResource* Resource = nullptr;
-		ERHIResourceKind Kind = ERHIResourceKind::Unknown;
+		ERHIResourceType Type = ERHIResourceType::Unknown;
 	};
 
 	IRHI& Device;

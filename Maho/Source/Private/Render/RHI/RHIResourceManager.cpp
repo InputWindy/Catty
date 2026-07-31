@@ -22,7 +22,7 @@ FRHITexture* FRHIResourceManager::AcquireTexture(const FRHITextureDesc& Desc, co
 	if (Key != nullptr && Key[0] != '\0')
 	{
 		const auto It = Named.find(Key);
-		if (It != Named.end() && It->second != nullptr && It->second->GetKind() == ERHIResourceKind::Texture)
+		if (It != Named.end() && It->second != nullptr && It->second->GetType() == ERHIResourceType::Texture)
 		{
 			++It->second->RefCount;
 			return static_cast<FRHITexture*>(It->second);
@@ -32,7 +32,7 @@ FRHITexture* FRHIResourceManager::AcquireTexture(const FRHITextureDesc& Desc, co
 	for (std::size_t Index = 0; Index < FreeList.size(); ++Index)
 	{
 		FPooledEntry& Entry = FreeList[Index];
-		if (Entry.Kind != ERHIResourceKind::Texture || Entry.Resource == nullptr)
+		if (Entry.Type != ERHIResourceType::Texture || Entry.Resource == nullptr)
 		{
 			continue;
 		}
@@ -80,7 +80,7 @@ FRHIBuffer* FRHIResourceManager::AcquireBuffer(const FRHIBufferDesc& Desc, const
 	if (Key != nullptr && Key[0] != '\0')
 	{
 		const auto It = Named.find(Key);
-		if (It != Named.end() && It->second != nullptr && It->second->GetKind() == ERHIResourceKind::Buffer)
+		if (It != Named.end() && It->second != nullptr && It->second->GetType() == ERHIResourceType::Buffer)
 		{
 			++It->second->RefCount;
 			return static_cast<FRHIBuffer*>(It->second);
@@ -90,7 +90,7 @@ FRHIBuffer* FRHIResourceManager::AcquireBuffer(const FRHIBufferDesc& Desc, const
 	for (std::size_t Index = 0; Index < FreeList.size(); ++Index)
 	{
 		FPooledEntry& Entry = FreeList[Index];
-		if (Entry.Kind != ERHIResourceKind::Buffer || Entry.Resource == nullptr)
+		if (Entry.Type != ERHIResourceType::Buffer || Entry.Resource == nullptr)
 		{
 			continue;
 		}
@@ -136,7 +136,7 @@ FRHISampler* FRHIResourceManager::AcquireSampler(const FRHISamplerDesc& Desc, co
 	if (Key != nullptr && Key[0] != '\0')
 	{
 		const auto It = Named.find(Key);
-		if (It != Named.end() && It->second != nullptr && It->second->GetKind() == ERHIResourceKind::Sampler)
+		if (It != Named.end() && It->second != nullptr && It->second->GetType() == ERHIResourceType::Sampler)
 		{
 			++It->second->RefCount;
 			return static_cast<FRHISampler*>(It->second);
@@ -164,7 +164,7 @@ FRHIShaderModule* FRHIResourceManager::AcquireShaderModule(const FRHIShaderModul
 	if (Key != nullptr && Key[0] != '\0')
 	{
 		const auto It = Named.find(Key);
-		if (It != Named.end() && It->second != nullptr && It->second->GetKind() == ERHIResourceKind::ShaderModule)
+		if (It != Named.end() && It->second != nullptr && It->second->GetType() == ERHIResourceType::ShaderModule)
 		{
 			++It->second->RefCount;
 			return static_cast<FRHIShaderModule*>(It->second);
@@ -192,7 +192,7 @@ FRHIGraphicsPipeline* FRHIResourceManager::AcquireGraphicsPipeline(const FRHIGra
 	if (Key != nullptr && Key[0] != '\0')
 	{
 		const auto It = Named.find(Key);
-		if (It != Named.end() && It->second != nullptr && It->second->GetKind() == ERHIResourceKind::GraphicsPipeline)
+		if (It != Named.end() && It->second != nullptr && It->second->GetType() == ERHIResourceType::GraphicsPipeline)
 		{
 			++It->second->RefCount;
 			return static_cast<FRHIGraphicsPipeline*>(It->second);
@@ -220,7 +220,7 @@ FRHIComputePipeline* FRHIResourceManager::AcquireComputePipeline(const FRHICompu
 	if (Key != nullptr && Key[0] != '\0')
 	{
 		const auto It = Named.find(Key);
-		if (It != Named.end() && It->second != nullptr && It->second->GetKind() == ERHIResourceKind::ComputePipeline)
+		if (It != Named.end() && It->second != nullptr && It->second->GetType() == ERHIResourceType::ComputePipeline)
 		{
 			++It->second->RefCount;
 			return static_cast<FRHIComputePipeline*>(It->second);
@@ -284,24 +284,24 @@ void FRHIResourceManager::Release(FRHIResource* Resource, bool bImmediate)
 
 	if (bImmediate)
 	{
-		switch (Resource->GetKind())
+		switch (Resource->GetType())
 		{
-		case ERHIResourceKind::Buffer:
+		case ERHIResourceType::Buffer:
 			Device.DestroyBuffer(static_cast<FRHIBuffer*>(Resource));
 			break;
-		case ERHIResourceKind::Texture:
+		case ERHIResourceType::Texture:
 			Device.DestroyTexture(static_cast<FRHITexture*>(Resource));
 			break;
-		case ERHIResourceKind::Sampler:
+		case ERHIResourceType::Sampler:
 			Device.DestroySampler(static_cast<FRHISampler*>(Resource));
 			break;
-		case ERHIResourceKind::ShaderModule:
+		case ERHIResourceType::ShaderModule:
 			Device.DestroyShaderModule(static_cast<FRHIShaderModule*>(Resource));
 			break;
-		case ERHIResourceKind::GraphicsPipeline:
+		case ERHIResourceType::GraphicsPipeline:
 			Device.DestroyGraphicsPipeline(static_cast<FRHIGraphicsPipeline*>(Resource));
 			break;
-		case ERHIResourceKind::ComputePipeline:
+		case ERHIResourceType::ComputePipeline:
 			Device.DestroyComputePipeline(static_cast<FRHIComputePipeline*>(Resource));
 			break;
 		default:
@@ -313,7 +313,7 @@ void FRHIResourceManager::Release(FRHIResource* Resource, bool bImmediate)
 
 	FPooledEntry Entry;
 	Entry.Resource = Resource;
-	Entry.Kind = Resource->GetKind();
+	Entry.Type = Resource->GetType();
 	FreeList.push_back(Entry);
 }
 
@@ -326,24 +326,24 @@ void FRHIResourceManager::FlushUnused()
 			continue;
 		}
 
-		switch (Entry.Kind)
+		switch (Entry.Type)
 		{
-		case ERHIResourceKind::Buffer:
+		case ERHIResourceType::Buffer:
 			Device.DestroyBuffer(static_cast<FRHIBuffer*>(Entry.Resource));
 			break;
-		case ERHIResourceKind::Texture:
+		case ERHIResourceType::Texture:
 			Device.DestroyTexture(static_cast<FRHITexture*>(Entry.Resource));
 			break;
-		case ERHIResourceKind::Sampler:
+		case ERHIResourceType::Sampler:
 			Device.DestroySampler(static_cast<FRHISampler*>(Entry.Resource));
 			break;
-		case ERHIResourceKind::ShaderModule:
+		case ERHIResourceType::ShaderModule:
 			Device.DestroyShaderModule(static_cast<FRHIShaderModule*>(Entry.Resource));
 			break;
-		case ERHIResourceKind::GraphicsPipeline:
+		case ERHIResourceType::GraphicsPipeline:
 			Device.DestroyGraphicsPipeline(static_cast<FRHIGraphicsPipeline*>(Entry.Resource));
 			break;
-		case ERHIResourceKind::ComputePipeline:
+		case ERHIResourceType::ComputePipeline:
 			Device.DestroyComputePipeline(static_cast<FRHIComputePipeline*>(Entry.Resource));
 			break;
 		default:

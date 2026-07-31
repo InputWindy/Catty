@@ -25,7 +25,7 @@ enum class ERHICommandListType : std::uint8_t
 	Transfer = 2,
 };
 
-enum class ERHIResourceKind : std::uint16_t
+enum class ERHIResourceType : std::uint16_t
 {
 	Unknown = 0,
 	Buffer,
