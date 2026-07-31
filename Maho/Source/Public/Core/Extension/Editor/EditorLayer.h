@@ -6,6 +6,7 @@
 #include <Core/Sequencer/EngineExtension.h>
 #include <Core/System/Log.h>
 #include <Core/Sequencer/EngineStage.h>
+#include <Render/UI/ImGuiSystem.h>
 
 #include <cstdint>
 #include <deque>
@@ -74,9 +75,16 @@ private:
 	void DrawSequenceGraphPanel(FApp& App);
 	void DrawPlotPanel();
 	void DrawTransientDetailsPanel();
+	void DrawWallpaperPanel();
 	void DrawFileDialogs();
 	void EnsureSequenceGraphNodeLayout();
 	void EnsureSequenceGraphNodeLayout(const std::vector<IEngineExtension*>& Extensions);
+
+	void ProcessWallpaperFileDrops(FApp& App);
+	[[nodiscard]] bool TryApplyWallpaperFromPath(FApp& App, const std::string& Path);
+	void ClearWallpaper(FApp& App);
+	void EnsureDefaultWallpaper(FApp& App);
+	[[nodiscard]] static std::string ResolveDefaultWallpaperPath();
 
 	void EnsureContentMounts();
 	void SelectContentFolder(const std::string& VirtualPath);
@@ -105,6 +113,7 @@ private:
 	bool bShowBlueprintPanel = true;
 	bool bShowSequenceGraphPanel = true;
 	bool bShowPlotPanel = true;
+	bool bShowWallpaperPanel = true;
 	bool bShowTransientDetails = false;
 	bool bShowDummyDockA = false;
 	bool bShowDummyDockB = false;
@@ -160,6 +169,16 @@ private:
 	bool bSequenceGraphEditorInited = false;
 	bool bSequenceGraphLayoutApplied = false;
 	bool bEditorMounted = false;
+
+	/** Desktop wallpaper shown behind translucent dock panels. */
+	FImGuiTextureHandle WallpaperTexture;
+	std::string WallpaperSourcePath;
+	float WallpaperDropMinX = 0.0f;
+	float WallpaperDropMinY = 0.0f;
+	float WallpaperDropMaxX = 0.0f;
+	float WallpaperDropMaxY = 0.0f;
+	bool bWallpaperDropRectValid = false;
+	bool bDefaultWallpaperAttempted = false;
 };
 
 } // namespace Maho

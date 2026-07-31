@@ -111,17 +111,58 @@ bool FGlfwPlatformWindow::Initialize(const FPlatformWindowDesc& Desc)
 		return false;
 	}
 
+	glfwSetWindowUserPointer(Handle, this);
+	glfwSetDropCallback(Handle, &FGlfwPlatformWindow::OnGlfwDrop);
+
 	MAHO_CORE_INFO("FGlfwPlatformWindow created: \"{}\" {}x{}", Desc.Title, Desc.Width, Desc.Height);
 	return true;
+}
+
+void FGlfwPlatformWindow::OnGlfwDrop(GLFWwindow* Window, int PathCount, const char** Paths)
+{
+	if (!Window || PathCount <= 0 || !Paths)
+	{
+		return;
+	}
+
+	auto* Self = static_cast<FGlfwPlatformWindow*>(glfwGetWindowUserPointer(Window));
+	if (!Self)
+	{
+		return;
+	}
+
+	std::lock_guard<std::mutex> Lock(Self->DropMutex);
+	Self->PendingDroppedPaths.reserve(Self->PendingDroppedPaths.size() + static_cast<std::size_t>(PathCount));
+	for (int Index = 0; Index < PathCount; ++Index)
+	{
+		if (Paths[Index] && Paths[Index][0] != '\0')
+		{
+			Self->PendingDroppedPaths.emplace_back(Paths[Index]);
+		}
+	}
+}
+
+void FGlfwPlatformWindow::DrainDroppedFilePaths(std::vector<std::string>& OutPaths)
+{
+	OutPaths.clear();
+	std::lock_guard<std::mutex> Lock(DropMutex);
+	OutPaths.swap(PendingDroppedPaths);
 }
 
 void FGlfwPlatformWindow::Destroy()
 {
 	if (Handle)
 	{
+		glfwSetDropCallback(Handle, nullptr);
+		glfwSetWindowUserPointer(Handle, nullptr);
 		glfwDestroyWindow(Handle);
 		Handle = nullptr;
 		MAHO_CORE_INFO("FGlfwPlatformWindow OS window destroyed");
+	}
+
+	{
+		std::lock_guard<std::mutex> Lock(DropMutex);
+		PendingDroppedPaths.clear();
 	}
 
 	bRuntimeOwned = false;

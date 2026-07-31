@@ -301,9 +301,10 @@ list(LENGTH MAHO_IMGUI_EXT_SOURCES _MAHO_IMGUI_EXT_COUNT)
 message(STATUS "Maho: ImGui extensions: ${_MAHO_IMGUI_EXT_COUNT} source file(s)")
 unset(_MAHO_IMGUI_EXT_COUNT)
 
-# Engine fonts stay in-repo (binary assets copied next to the binary at build).
+# Engine fonts / editor assets stay in-repo (copied next to the binary at build).
 set(_MAHO_TP "${_MAHO_REPO_ROOT}/Maho/ThirdParty")
 set(MAHO_ENGINE_FONTS_DIR "${_MAHO_TP}/fonts" CACHE INTERNAL "Engine icon/UI fonts")
+set(MAHO_ENGINE_EDITOR_DIR "${_MAHO_TP}/editor" CACHE INTERNAL "Engine editor assets (wallpaper, …)")
 
 # ---------------------------------------------------------------------------
 # Lua 5.4 (static) + sol2 (header-only bindings)

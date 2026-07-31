@@ -2,6 +2,9 @@
 
 #include <Core/System/PlatformWindow.h>
 
+#include <mutex>
+#include <vector>
+
 struct GLFWwindow;
 
 namespace Maho
@@ -29,6 +32,7 @@ public:
 
 	virtual void PollEvents() override;
 	[[nodiscard]] virtual double GetTimeSeconds() const override;
+	virtual void DrainDroppedFilePaths(std::vector<std::string>& OutPaths) override;
 
 	/** Process-wide glfwInit / glfwTerminate helpers used by the factory. */
 	[[nodiscard]] static bool EnsureRuntimeInitialized();
@@ -36,8 +40,12 @@ public:
 	[[nodiscard]] static bool IsRuntimeInitialized();
 
 private:
+	static void OnGlfwDrop(GLFWwindow* Window, int PathCount, const char** Paths);
+
 	GLFWwindow* Handle = nullptr;
 	bool bRuntimeOwned = false;
+	std::mutex DropMutex;
+	std::vector<std::string> PendingDroppedPaths;
 };
 
 } // namespace Maho

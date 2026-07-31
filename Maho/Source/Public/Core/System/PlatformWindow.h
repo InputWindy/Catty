@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace Maho
 {
@@ -88,6 +89,15 @@ public:
 
 	/** Seconds since backend runtime init. */
 	[[nodiscard]] virtual double GetTimeSeconds() const = 0;
+
+	/**
+	 * Drain OS file-drop paths queued since the last call (e.g. GLFW drop callback).
+	 * Empty by default for backends that do not support drops.
+	 */
+	virtual void DrainDroppedFilePaths(std::vector<std::string>& OutPaths)
+	{
+		OutPaths.clear();
+	}
 
 protected:
 	FPlatformWindow() = default;

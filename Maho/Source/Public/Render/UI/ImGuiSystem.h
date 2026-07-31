@@ -2,13 +2,27 @@
 
 #include <Core/Export.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
+#include <unordered_map>
 
 namespace Maho
 {
 
 class FPlatformWindow;
 class FRHIServer;
+class FRHITexture;
+class FRHISampler;
+
+/** Opaque ImGui texture id (VkDescriptorSet on Vulkan). */
+struct FImGuiTextureHandle
+{
+	void* Id = nullptr;
+
+	[[nodiscard]] bool IsValid() const { return Id != nullptr; }
+	void Reset() { Id = nullptr; }
+};
 
 /**
  * Dear ImGui lifecycle helper (GLFW + Vulkan backends).
@@ -54,10 +68,37 @@ public:
 	/** True when Escape was pressed and ImGui is not capturing keyboard input. */
 	[[nodiscard]] bool PollExitRequest() const;
 
+	/**
+	 * Upload RGBA8 pixels into a Vulkan image and register it with ImGui_ImplVulkan_AddTexture.
+	 * Blocks on FRHIServer::Flush. Game-thread call.
+	 */
+	[[nodiscard]] bool CreateRgba8Texture(
+		FRHIServer& RHIServer,
+		std::uint32_t Width,
+		std::uint32_t Height,
+		const std::uint8_t* Pixels,
+		std::size_t PixelByteCount,
+		FImGuiTextureHandle& OutHandle);
+
+	/** Unregister and free GPU resources for a texture created by CreateRgba8Texture. */
+	void DestroyTexture(FRHIServer& RHIServer, FImGuiTextureHandle& Handle);
+
 private:
+	struct FOwnedGpuTexture
+	{
+		FRHITexture* Texture = nullptr;
+		FRHISampler* Sampler = nullptr;
+		void* ImageView = nullptr; // VkImageView
+		void* DescriptorSet = nullptr; // VkDescriptorSet / ImTextureID
+	};
+
+	void DestroyTextureOnRHI(FRHIServer& RHIServer, FOwnedGpuTexture& Owned);
+	void DestroyAllTextures(FRHIServer& RHIServer);
+
 	bool bInitialized = false;
 	/** Owns storage for ImGuiIO::IniFilename (ImGui keeps a raw const char*). */
 	std::string IniFilePath;
+	std::unordered_map<void*, FOwnedGpuTexture> OwnedTextures;
 };
 
 } // namespace Maho

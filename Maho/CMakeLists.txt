@@ -154,6 +154,18 @@ endif()
 if(MAHO_HAS_ASSIMP)
 	target_link_libraries(Maho PRIVATE assimp)
 	target_compile_definitions(Maho PRIVATE MAHO_WITH_ASSIMP=1)
+	# Shared Assimp (or leftover shared build) must sit next to Maho.dll / the game exe.
+	get_target_property(_MAHO_ASSIMP_TYPE assimp TYPE)
+	if(_MAHO_ASSIMP_TYPE STREQUAL "SHARED_LIBRARY")
+		add_custom_command(TARGET Maho POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"$<TARGET_FILE:assimp>"
+				"$<TARGET_FILE_DIR:Maho>"
+			COMMENT "Copy Assimp runtime DLL"
+			VERBATIM
+		)
+	endif()
+	unset(_MAHO_ASSIMP_TYPE)
 endif()
 
 # Re-export ImGui include paths / defs so game TUs can #include <imgui.h> against Maho.dll.
@@ -234,6 +246,17 @@ if(DEFINED MAHO_ENGINE_FONTS_DIR AND IS_DIRECTORY "${MAHO_ENGINE_FONTS_DIR}")
 		VERBATIM
 	)
 	maho_install_directory("${MAHO_ENGINE_FONTS_DIR}" "Engine/Fonts")
+endif()
+if(DEFINED MAHO_ENGINE_EDITOR_DIR AND IS_DIRECTORY "${MAHO_ENGINE_EDITOR_DIR}")
+	add_custom_command(TARGET Maho POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Maho>/Engine/Editor"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${MAHO_ENGINE_EDITOR_DIR}"
+			"$<TARGET_FILE_DIR:Maho>/Engine/Editor"
+		COMMENT "Copy engine Editor assets"
+		VERBATIM
+	)
+	maho_install_directory("${MAHO_ENGINE_EDITOR_DIR}" "Engine/Editor")
 endif()
 
 # Preserve -DMAHO_ENGINE_ROOT from game projects (repo root). Never overwrite with Maho/.

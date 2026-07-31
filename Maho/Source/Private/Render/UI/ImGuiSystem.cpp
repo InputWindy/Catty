@@ -3,8 +3,10 @@
 #include <Core/System/Console.h>
 #include <Core/System/Log.h>
 #include <Core/System/PlatformWindow.h>
+#include <Render/RHI/RHIResourceManager.h>
 #include <Render/RHI/RHIServer.h>
 #include <Render/UI/ImGuiTheme.h>
+#include "Render/RHI/VulkanResources.h"
 #include "Render/RHI/VulkanRHI.h"
 
 #include <IconsFontAwesome6.h>
@@ -20,6 +22,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 #if defined(_WIN32)
@@ -37,8 +40,8 @@ namespace
 
 static TAutoConsoleVariable GCVarImGuiDescriptorPoolSize(
 	"r.ImGui.DescriptorPoolSize",
-	16,
-	"ImGui Vulkan descriptor pool size");
+	64,
+	"ImGui Vulkan descriptor pool size (font + ImGui_ImplVulkan_AddTexture slots)");
 
 void CheckImGuiVkResult(VkResult Result)
 {
@@ -252,10 +255,9 @@ bool FImGuiSystem::Initialize(
 	ApplyMahoNightTheme();
 	if (IO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 	{
-		// Match platform windows to solid hosted panels (Dear ImGui example guidance).
+		// Keep theme WindowBg alpha (desktop wallpaper shows through docked panels).
 		ImGuiStyle& Style = ImGui::GetStyle();
 		Style.WindowRounding = 0.0f;
-		Style.Colors[ImGuiCol_WindowBg].w = 1.0f;
 	}
 
 	GLFWwindow* GlfwWindow = static_cast<GLFWwindow*>(ToolkitHandle);
@@ -313,6 +315,7 @@ void FImGuiSystem::Shutdown(FRHIServer& RHIServer)
 	}
 
 	RHIServer.Flush();
+	DestroyAllTextures(RHIServer);
 
 	RHIServer.Enqueue([](FThreadedServer& /*Server*/)
 	{
@@ -380,6 +383,257 @@ bool FImGuiSystem::PollExitRequest() const
 
 	const ImGuiIO& IO = ImGui::GetIO();
 	return !IO.WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_Escape);
+}
+
+void FImGuiSystem::DestroyTextureOnRHI(FRHIServer& RHIServer, FOwnedGpuTexture& Owned)
+{
+	IRHI* RHI = RHIServer.GetRHI();
+	FVulkanRHI* VulkanRHI = RHIServer.GetVulkanRHI();
+	if (!RHI || !VulkanRHI)
+	{
+		Owned = {};
+		return;
+	}
+
+	if (Owned.DescriptorSet)
+	{
+		ImGui_ImplVulkan_RemoveTexture(static_cast<VkDescriptorSet>(Owned.DescriptorSet));
+		Owned.DescriptorSet = nullptr;
+	}
+	if (Owned.ImageView)
+	{
+		vkDestroyImageView(VulkanRHI->GetVkDevice(), static_cast<VkImageView>(Owned.ImageView), nullptr);
+		Owned.ImageView = nullptr;
+	}
+	if (Owned.Sampler)
+	{
+		RHI->GetResourceManager().Release(Owned.Sampler, true);
+		Owned.Sampler = nullptr;
+	}
+	if (Owned.Texture)
+	{
+		RHI->GetResourceManager().Release(Owned.Texture, true);
+		Owned.Texture = nullptr;
+	}
+}
+
+void FImGuiSystem::DestroyAllTextures(FRHIServer& RHIServer)
+{
+	if (OwnedTextures.empty())
+	{
+		return;
+	}
+
+	RHIServer.Enqueue(
+		[this, &RHIServer](FThreadedServer& /*Server*/)
+		{
+			for (auto& Pair : OwnedTextures)
+			{
+				DestroyTextureOnRHI(RHIServer, Pair.second);
+			}
+			OwnedTextures.clear();
+		});
+	RHIServer.Flush();
+}
+
+void FImGuiSystem::DestroyTexture(FRHIServer& RHIServer, FImGuiTextureHandle& Handle)
+{
+	if (!Handle.IsValid())
+	{
+		return;
+	}
+
+	const auto It = OwnedTextures.find(Handle.Id);
+	if (It == OwnedTextures.end())
+	{
+		Handle.Reset();
+		return;
+	}
+
+	FOwnedGpuTexture Owned = It->second;
+	OwnedTextures.erase(It);
+	Handle.Reset();
+
+	RHIServer.Enqueue(
+		[this, &RHIServer, Owned](FThreadedServer& /*Server*/) mutable
+		{
+			DestroyTextureOnRHI(RHIServer, Owned);
+		});
+	RHIServer.Flush();
+}
+
+bool FImGuiSystem::CreateRgba8Texture(
+	FRHIServer& RHIServer,
+	std::uint32_t Width,
+	std::uint32_t Height,
+	const std::uint8_t* Pixels,
+	std::size_t PixelByteCount,
+	FImGuiTextureHandle& OutHandle)
+{
+	OutHandle.Reset();
+	if (!bInitialized || !Pixels || Width == 0 || Height == 0)
+	{
+		return false;
+	}
+
+	const std::size_t Expected =
+		static_cast<std::size_t>(Width) * static_cast<std::size_t>(Height) * 4u;
+	if (PixelByteCount < Expected)
+	{
+		MAHO_CORE_ERROR(
+			"FImGuiSystem::CreateRgba8Texture: pixel buffer too small ({} < {})",
+			PixelByteCount,
+			Expected);
+		return false;
+	}
+
+	if (!RHIServer.HasRHI() || !RHIServer.GetVulkanRHI())
+	{
+		MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: Vulkan RHI unavailable");
+		return false;
+	}
+
+	std::vector<std::uint8_t> PixelCopy(Pixels, Pixels + Expected);
+	FOwnedGpuTexture Created{};
+	std::atomic<bool> bOk{false};
+
+	RHIServer.Enqueue(
+		[this, &RHIServer, Width, Height, PixelCopy = std::move(PixelCopy), &Created, &bOk](
+			FThreadedServer& /*Server*/) mutable
+		{
+			IRHI* RHI = RHIServer.GetRHI();
+			FVulkanRHI* VulkanRHI = RHIServer.GetVulkanRHI();
+			if (!RHI || !VulkanRHI)
+			{
+				return;
+			}
+
+			FRHITextureDesc Desc{};
+			Desc.Format = ERHIFormat::R8G8B8A8_UNORM;
+			Desc.Dimension = ERHITextureDimension::Tex2D;
+			Desc.Extent = { Width, Height, 1 };
+			Desc.MipLevels = 1;
+			Desc.ArrayLayers = 1;
+			Desc.Usage = ERHITextureUsage::Sampled | ERHITextureUsage::TransferDst;
+			Desc.MemoryUsage = ERHIMemoryUsage::GPUOnly;
+
+			FRHIResourceManager& Manager = RHI->GetResourceManager();
+			Created.Texture = Manager.AcquireTexture(Desc, "ImGui.Rgba8");
+			if (!Created.Texture)
+			{
+				MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: AcquireTexture failed");
+				return;
+			}
+
+			FRHIBufferDesc StagingDesc{};
+			StagingDesc.Size = PixelCopy.size();
+			StagingDesc.Usage = ERHIBufferUsage::TransferSrc;
+			StagingDesc.MemoryUsage = ERHIMemoryUsage::CPUToGPU;
+			FRHIBuffer* Staging = Manager.AcquireBuffer(StagingDesc);
+			if (!Staging)
+			{
+				Manager.Release(Created.Texture, true);
+				Created.Texture = nullptr;
+				MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: staging buffer failed");
+				return;
+			}
+
+			RHI->UpdateBuffer(Staging, 0, StagingDesc.Size, PixelCopy.data());
+
+			FRHICommandList* CmdList = RHI->CreateCommandList(ERHICommandListType::Transfer);
+			if (!CmdList)
+			{
+				Manager.Release(Staging, true);
+				Manager.Release(Created.Texture, true);
+				Created.Texture = nullptr;
+				MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: CreateCommandList failed");
+				return;
+			}
+
+			CmdList->Begin();
+			CmdList->TransitionTexture(Created.Texture, ERHIResourceState::Common, ERHIResourceState::CopyDst);
+			CmdList->CopyBufferToTexture(Staging, Created.Texture, 0);
+			CmdList->TransitionTexture(
+				Created.Texture,
+				ERHIResourceState::CopyDst,
+				ERHIResourceState::ShaderResource);
+			CmdList->End();
+
+			FRHIFence* Fence = RHI->CreateFence(false);
+			FRHICommandList* Lists[] = { CmdList };
+			RHI->GetTransferQueue().Submit(Lists, 1, nullptr, 0, nullptr, 0, Fence);
+			if (Fence)
+			{
+				RHI->WaitForFence(Fence);
+				RHI->DestroyFence(Fence);
+			}
+			RHI->DestroyCommandList(CmdList);
+			Manager.Release(Staging, true);
+
+			auto* VkTex = static_cast<FVulkanTexture*>(Created.Texture);
+			VkImageViewCreateInfo ViewInfo{};
+			ViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			ViewInfo.image = VkTex->GetVkImage();
+			ViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			ViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+			ViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			ViewInfo.subresourceRange.baseMipLevel = 0;
+			ViewInfo.subresourceRange.levelCount = 1;
+			ViewInfo.subresourceRange.baseArrayLayer = 0;
+			ViewInfo.subresourceRange.layerCount = 1;
+
+			VkImageView ImageView = VK_NULL_HANDLE;
+			if (vkCreateImageView(VulkanRHI->GetVkDevice(), &ViewInfo, nullptr, &ImageView) != VK_SUCCESS)
+			{
+				Manager.Release(Created.Texture, true);
+				Created.Texture = nullptr;
+				MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: vkCreateImageView failed");
+				return;
+			}
+			Created.ImageView = ImageView;
+
+			FRHISamplerDesc SamplerDesc{};
+			SamplerDesc.MagFilter = ERHIFilter::Linear;
+			SamplerDesc.MinFilter = ERHIFilter::Linear;
+			SamplerDesc.AddressU = ERHIAddressMode::ClampToEdge;
+			SamplerDesc.AddressV = ERHIAddressMode::ClampToEdge;
+			SamplerDesc.AddressW = ERHIAddressMode::ClampToEdge;
+			Created.Sampler = Manager.AcquireSampler(SamplerDesc);
+			if (!Created.Sampler)
+			{
+				vkDestroyImageView(VulkanRHI->GetVkDevice(), ImageView, nullptr);
+				Created.ImageView = nullptr;
+				Manager.Release(Created.Texture, true);
+				Created.Texture = nullptr;
+				MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: AcquireSampler failed");
+				return;
+			}
+
+			auto* VkSampler = static_cast<FVulkanSampler*>(Created.Sampler);
+			VkDescriptorSet Set = ImGui_ImplVulkan_AddTexture(
+				VkSampler->GetVkSampler(),
+				ImageView,
+				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			if (!Set)
+			{
+				DestroyTextureOnRHI(RHIServer, Created);
+				MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: ImGui_ImplVulkan_AddTexture failed");
+				return;
+			}
+
+			Created.DescriptorSet = Set;
+			bOk.store(true);
+		});
+	RHIServer.Flush();
+
+	if (!bOk.load() || !Created.DescriptorSet)
+	{
+		return false;
+	}
+
+	OutHandle.Id = Created.DescriptorSet;
+	OwnedTextures.emplace(OutHandle.Id, Created);
+	return true;
 }
 
 } // namespace Maho

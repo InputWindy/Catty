@@ -68,7 +68,7 @@ void ApplyMahoNightTheme()
 	const ImVec4 MenuBar = Rgba(12, 12, 14);
 	const ImVec4 TabWell = Rgba(14, 14, 16);       // deepest chassis / dock gutters / tab strip bg
 	const ImVec4 TabIdle = Rgba(30, 31, 35);       // unselected tab face
-	const ImVec4 Panel = Rgba(38, 39, 43);         // panel body + selected tab
+	const ImVec4 Panel = Rgba(38, 39, 43, 0.72f);  // translucent so desktop wallpaper shows through
 	const ImVec4 Well = Rgba(26, 27, 30);
 	const ImVec4 Raised = Rgba(52, 54, 60);
 	const ImVec4 Hover = Rgba(66, 70, 78);
@@ -95,9 +95,9 @@ void ApplyMahoNightTheme()
 	Colors[ImGuiCol_FrameBg] = Well;
 	Colors[ImGuiCol_FrameBgHovered] = Raised;
 	Colors[ImGuiCol_FrameBgActive] = Pressed;
-	Colors[ImGuiCol_TitleBg] = TabWell;
-	Colors[ImGuiCol_TitleBgActive] = TabWell;
-	Colors[ImGuiCol_TitleBgCollapsed] = TabWell;
+	Colors[ImGuiCol_TitleBg] = Rgba(14, 14, 16, 0.75f);
+	Colors[ImGuiCol_TitleBgActive] = Rgba(14, 14, 16, 0.75f);
+	Colors[ImGuiCol_TitleBgCollapsed] = Rgba(14, 14, 16, 0.75f);
 	Colors[ImGuiCol_MenuBarBg] = MenuBar;
 	Colors[ImGuiCol_ScrollbarBg] = TabWell;
 	Colors[ImGuiCol_ScrollbarGrab] = Raised;
@@ -127,7 +127,7 @@ void ApplyMahoNightTheme()
 	Colors[ImGuiCol_TabDimmedSelected] = Panel;
 	Colors[ImGuiCol_TabDimmedSelectedOverline] = Rgba(70, 148, 235, 0.45f);
 	Colors[ImGuiCol_DockingPreview] = AccentSoft;
-	Colors[ImGuiCol_DockingEmptyBg] = TabWell;
+	Colors[ImGuiCol_DockingEmptyBg] = Rgba(14, 14, 16, 0.0f); // let editor wallpaper show in empty dock areas
 	Colors[ImGuiCol_PlotLines] = Rgba(150, 165, 190);
 	Colors[ImGuiCol_PlotLinesHovered] = AccentHover;
 	Colors[ImGuiCol_PlotHistogram] = Accent;

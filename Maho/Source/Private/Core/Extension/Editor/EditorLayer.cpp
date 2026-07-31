@@ -5,9 +5,13 @@
 #include <Core/System/Console.h>
 #include <Core/Editor/AgentChatClient.h>
 #include <Core/Editor/EditorUIRegistry.h>
+#include <Core/Extension/Platform/Platform.h>
+#include <Core/Extension/Render/Render.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
 #include <Render/UI/ImGuiExtensions.h>
+
+#include "Core/Extension/Resource/TextureImageCodec.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -17,8 +21,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #if defined(_WIN32)
 #	ifndef NOMINMAX
@@ -26,6 +32,11 @@
 #	endif
 #	include <Windows.h>
 #endif
+
+#if !defined(MAHO_ENGINE_ROOT)
+#	define MAHO_ENGINE_ROOT ""
+#endif
+
 namespace ed = ax::NodeEditor;
 
 namespace Maho
@@ -93,6 +104,7 @@ constexpr const char* kWinAgent = ICON_FA_COMMENTS " Agent";
 constexpr const char* kWinBlueprint = ICON_FA_DIAGRAM_PROJECT " Blueprint";
 constexpr const char* kWinSequenceGraph = ICON_FA_SHARE_NODES " Sequence Graph";
 constexpr const char* kWinPlot = ICON_FA_CHART_LINE " Plot";
+constexpr const char* kWinWallpaper = ICON_FA_IMAGE " Wallpaper";
 constexpr const char* kWinTransientDetails = ICON_FA_SLIDERS "  Temporary Details";
 constexpr const char* kModalBusyTitle = "Busy";
 
@@ -395,6 +407,11 @@ void FEditorLayer::UnmountEditor()
 
 	UIRegistry.Clear();
 
+	if (GApp)
+	{
+		ClearWallpaper(*GApp);
+	}
+
 	if (AgentChat)
 	{
 		AgentChat->Stop();
@@ -616,6 +633,18 @@ void FEditorLayer::RegisterBuiltinUIContributions()
 		[this](FEditorUIDrawContext&)
 		{
 			DrawAgentPanel();
+		} });
+	UIRegistry.RegisterDockPanel({
+		CatTools,
+		"dock.wallpaper",
+		kWinWallpaper,
+		&bShowWallpaperPanel,
+		true,
+		false,
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			DrawWallpaperPanel();
 		} });
 	UIRegistry.RegisterDockPanel({
 		CatTools,
@@ -1010,6 +1039,8 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 		}
 	}
 
+	EnsureDefaultWallpaper(App);
+	ProcessWallpaperFileDrops(App);
 	DrawDockSpace(App);
 	DrawMainViewportPanel();
 	{
@@ -1205,6 +1236,7 @@ void FEditorLayer::EnsureDefaultDockLayout(std::uint32_t DockspaceId)
 	ImGui::DockBuilderDockWindow(kWinContent, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinOutput, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinAgent, DockBottom);
+	ImGui::DockBuilderDockWindow(kWinWallpaper, DockBottom);
 	ImGui::DockBuilderDockWindow(kWinSequenceGraph, DockBottom);
 	if (ImGuiDockNode* Central = ImGui::DockBuilderGetNode(DockMain))
 	{
@@ -1375,12 +1407,25 @@ void FEditorLayer::DrawDockSpace(FApp& App)
 	// Fixed main docking space for all editor windows
 	ImGui::SetCursorPos(ImVec2(OuterPad, ImGui::GetCursorPosY() + OuterPad));
 	const ImVec2 DockAvail = ImGui::GetContentRegionAvail();
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, DockChassis);
+	const bool bHasWallpaper = WallpaperTexture.IsValid();
+	ImGui::PushStyleColor(
+		ImGuiCol_ChildBg,
+		bHasWallpaper ? ImVec4(0.0f, 0.0f, 0.0f, 0.0f) : DockChassis);
 	ImGui::BeginChild(
 		"##EditorDockHost",
 		ImVec2(DockAvail.x - OuterPad, DockAvail.y - OuterPad),
 		ImGuiChildFlags_None,
 		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
+
+	if (bHasWallpaper)
+	{
+		const ImVec2 HostMin = ImGui::GetWindowPos();
+		const ImVec2 HostSize = ImGui::GetWindowSize();
+		ImGui::GetWindowDrawList()->AddImage(
+			reinterpret_cast<ImTextureID>(WallpaperTexture.Id),
+			HostMin,
+			ImVec2(HostMin.x + HostSize.x, HostMin.y + HostSize.y));
+	}
 
 	const ImVec4 BackupBorder = Style.Colors[ImGuiCol_Border];
 	Style.Colors[ImGuiCol_Border] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -1451,6 +1496,269 @@ void FEditorLayer::DrawTransientDetailsPanel()
 	ImGui::TextUnformatted("Temporary Details (DockPanel, not Modal).");
 	ImGui::TextDisabled("Opened via Debug → Open Temporary Details / OpenDockPanel.");
 	ImGui::End();
+}
+
+void FEditorLayer::DrawWallpaperPanel()
+{
+	if (!BeginEditorDockPanel(kWinWallpaper, &bShowWallpaperPanel))
+	{
+		bWallpaperDropRectValid = false;
+		ImGui::End();
+		return;
+	}
+
+	ImGui::TextUnformatted("Desktop wallpaper");
+	ImGui::TextDisabled("Drag an image file from the OS onto the preview below.");
+	if (!WallpaperSourcePath.empty())
+	{
+		ImGui::TextWrapped("%s", WallpaperSourcePath.c_str());
+	}
+	if (ImGui::Button("Clear Wallpaper") && GApp)
+	{
+		ClearWallpaper(*GApp);
+	}
+
+	ImGui::Separator();
+	const ImVec2 Avail = ImGui::GetContentRegionAvail();
+	const ImVec2 PreviewSize(ImMax(Avail.x, 64.0f), ImMax(Avail.y, 64.0f));
+	const ImVec2 Cursor = ImGui::GetCursorScreenPos();
+	ImDrawList* DrawList = ImGui::GetWindowDrawList();
+	DrawList->AddRectFilled(
+		Cursor,
+		ImVec2(Cursor.x + PreviewSize.x, Cursor.y + PreviewSize.y),
+		IM_COL32(20, 21, 24, 255));
+
+	if (WallpaperTexture.IsValid())
+	{
+		ImGui::Image(reinterpret_cast<ImTextureID>(WallpaperTexture.Id), PreviewSize);
+	}
+	else
+	{
+		ImGui::InvisibleButton("##WallpaperDropTarget", PreviewSize);
+		const ImVec2 TextSize = ImGui::CalcTextSize("Drop image here");
+		DrawList->AddText(
+			ImVec2(
+				Cursor.x + (PreviewSize.x - TextSize.x) * 0.5f,
+				Cursor.y + (PreviewSize.y - TextSize.y) * 0.5f),
+			IM_COL32(160, 164, 172, 255),
+			"Drop image here");
+	}
+
+	const ImVec2 Min = ImGui::GetItemRectMin();
+	const ImVec2 Max = ImGui::GetItemRectMax();
+	WallpaperDropMinX = Min.x;
+	WallpaperDropMinY = Min.y;
+	WallpaperDropMaxX = Max.x;
+	WallpaperDropMaxY = Max.y;
+	bWallpaperDropRectValid = (Max.x > Min.x) && (Max.y > Min.y);
+
+	if (bWallpaperDropRectValid && ImGui::IsItemHovered())
+	{
+		DrawList->AddRect(Min, Max, IM_COL32(70, 148, 235, 220), 0.0f, 0, 2.0f);
+	}
+
+	ImGui::End();
+}
+
+void FEditorLayer::ClearWallpaper(FApp& App)
+{
+	WallpaperSourcePath.clear();
+	bWallpaperDropRectValid = false;
+	if (!WallpaperTexture.IsValid())
+	{
+		return;
+	}
+
+	if (FRenderSystem* Render = App.GetExtension<FRenderSystem>())
+	{
+		Render->GetRenderServer().GetImGui().DestroyTexture(
+			Render->GetRenderServer().GetRHIServer(),
+			WallpaperTexture);
+	}
+	else
+	{
+		WallpaperTexture.Reset();
+	}
+}
+
+std::string FEditorLayer::ResolveDefaultWallpaperPath()
+{
+	namespace fs = std::filesystem;
+	constexpr const char* kFileName = "DefaultWallpaper.webp";
+
+	std::error_code ErrorCode;
+	const fs::path Candidates[] = {
+		fs::current_path() / "Engine" / "Editor" / kFileName,
+		fs::path(MAHO_ENGINE_ROOT) / "Maho" / "ThirdParty" / "editor" / kFileName,
+		fs::path(MAHO_ENGINE_ROOT) / "ThirdParty" / "editor" / kFileName,
+	};
+
+#if defined(_WIN32)
+	{
+		HMODULE Module = nullptr;
+		if (GetModuleHandleExW(
+				GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+				reinterpret_cast<LPCWSTR>(&FEditorLayer::ResolveDefaultWallpaperPath),
+				&Module)
+			&& Module != nullptr)
+		{
+			wchar_t Buffer[MAX_PATH]{};
+			const DWORD Length = GetModuleFileNameW(Module, Buffer, MAX_PATH);
+			if (Length > 0 && Length < MAX_PATH)
+			{
+				const fs::path BesideBinary =
+					fs::path(Buffer).parent_path() / "Engine" / "Editor" / kFileName;
+				if (fs::exists(BesideBinary, ErrorCode) && !ErrorCode)
+				{
+					return BesideBinary.string();
+				}
+			}
+		}
+	}
+#endif
+
+	for (const fs::path& Candidate : Candidates)
+	{
+		const fs::path Normalized = Candidate.lexically_normal();
+		if (fs::exists(Normalized, ErrorCode) && !ErrorCode)
+		{
+			return Normalized.string();
+		}
+	}
+	return {};
+}
+
+void FEditorLayer::EnsureDefaultWallpaper(FApp& App)
+{
+	if (bDefaultWallpaperAttempted || WallpaperTexture.IsValid())
+	{
+		return;
+	}
+	bDefaultWallpaperAttempted = true;
+
+	const std::string Path = ResolveDefaultWallpaperPath();
+	if (Path.empty())
+	{
+		MAHO_CORE_WARN("Editor: default wallpaper missing (Engine/Editor/DefaultWallpaper.webp)");
+		return;
+	}
+
+	TryApplyWallpaperFromPath(App, Path);
+}
+
+bool FEditorLayer::TryApplyWallpaperFromPath(FApp& App, const std::string& Path)
+{
+	const std::string Ext = TextureImageCodec::GetExtensionLower(Path);
+	if (!TextureImageCodec::IsRasterExtension(Ext) && !TextureImageCodec::IsKtx2Extension(Ext))
+	{
+		AppendOutput("Wallpaper: unsupported image type '" + Ext + "'", spdlog::level::warn);
+		return false;
+	}
+
+	std::ifstream File(Path, std::ios::binary);
+	if (!File)
+	{
+		AppendOutput("Wallpaper: failed to open '" + Path + "'", spdlog::level::err);
+		return false;
+	}
+	File.seekg(0, std::ios::end);
+	const std::streamoff EndPos = File.tellg();
+	if (EndPos <= 0)
+	{
+		AppendOutput("Wallpaper: empty file '" + Path + "'", spdlog::level::err);
+		return false;
+	}
+	File.seekg(0, std::ios::beg);
+	std::vector<std::uint8_t> Bytes(static_cast<std::size_t>(EndPos));
+	if (!File.read(reinterpret_cast<char*>(Bytes.data()), static_cast<std::streamsize>(Bytes.size())))
+	{
+		AppendOutput("Wallpaper: failed to read '" + Path + "'", spdlog::level::err);
+		return false;
+	}
+
+	FDecodedImage Decoded;
+	if (!TextureImageCodec::DecodeFromMemory(Bytes.data(), Bytes.size(), Path, Decoded))
+	{
+		AppendOutput("Wallpaper: decode failed '" + Path + "'", spdlog::level::err);
+		return false;
+	}
+	if (Decoded.Dimension != ETextureDimension::Tex2D
+		|| Decoded.Format != ETexturePixelFormat::RGBA8
+		|| Decoded.Width == 0
+		|| Decoded.Height == 0
+		|| Decoded.Pixels.empty())
+	{
+		AppendOutput("Wallpaper: need RGBA8 2D image '" + Path + "'", spdlog::level::err);
+		return false;
+	}
+
+	FRenderSystem* Render = App.GetExtension<FRenderSystem>();
+	if (!Render)
+	{
+		AppendOutput("Wallpaper: RenderSystem unavailable", spdlog::level::err);
+		return false;
+	}
+
+	FImGuiSystem& ImGuiSys = Render->GetRenderServer().GetImGui();
+	FRHIServer& RHIServer = Render->GetRenderServer().GetRHIServer();
+	if (WallpaperTexture.IsValid())
+	{
+		ImGuiSys.DestroyTexture(RHIServer, WallpaperTexture);
+	}
+
+	FImGuiTextureHandle NewHandle;
+	if (!ImGuiSys.CreateRgba8Texture(
+			RHIServer,
+			Decoded.Width,
+			Decoded.Height,
+			Decoded.Pixels.data(),
+			Decoded.Pixels.size(),
+			NewHandle))
+	{
+		AppendOutput("Wallpaper: GPU upload failed '" + Path + "'", spdlog::level::err);
+		return false;
+	}
+
+	WallpaperTexture = NewHandle;
+	WallpaperSourcePath = Path;
+	AppendOutput("Wallpaper applied: " + Path);
+	return true;
+}
+
+void FEditorLayer::ProcessWallpaperFileDrops(FApp& App)
+{
+	FPlatformSystem* Platform = App.GetExtension<FPlatformSystem>();
+	if (!Platform || !Platform->GetWindow())
+	{
+		return;
+	}
+
+	std::vector<std::string> Dropped;
+	Platform->GetWindow()->DrainDroppedFilePaths(Dropped);
+	if (Dropped.empty())
+	{
+		return;
+	}
+
+	const ImVec2 Mouse = ImGui::GetIO().MousePos;
+	const bool bOverDrop =
+		bWallpaperDropRectValid
+		&& Mouse.x >= WallpaperDropMinX
+		&& Mouse.y >= WallpaperDropMinY
+		&& Mouse.x <= WallpaperDropMaxX
+		&& Mouse.y <= WallpaperDropMaxY;
+	if (!bOverDrop)
+	{
+		return;
+	}
+
+	for (const std::string& Path : Dropped)
+	{
+		if (TryApplyWallpaperFromPath(App, Path))
+		{
+			break;
+		}
+	}
 }
 
 void FEditorLayer::DrawContentBrowser()
