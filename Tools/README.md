@@ -19,8 +19,13 @@ Engine-local tooling. Root only exposes thin user-facing `.bat` launchers.
 
 ## Local Python
 
-Installed by root `setup.bat` into `Tools/python/`（gitignore，含 `_cache/` 安装包缓存）。Do not put on PATH; always go through `maho_python.bat` / `maho_pythonw.bat` / `launch_*.vbs`. Users clone the repo then run `setup.bat` themselves.
+Installed by root `setup.bat` into `%LOCALAPPDATA%\Maho\python\tooling\` (outside the repo — **survives engine folder rename**).  
+`Tools/python/` is a **junction** to that directory (gitignore). Cache: `Tools/_cache/`.
 
-All `Tools/*.py` scripts **refuse** a system Python at startup (`maho_tools.ensure_engine_python`). Launch only via the bats above.
+Prefer `venv` from a host Python (no MSI registration). Official python.org installer is only a fallback, and always targets LocalAppData — never the engine tree.
+
+Do not put on PATH; always use `maho_python.bat` / `maho_pythonw.bat` / `launch_*.vbs`. After cloning or renaming the engine tree, run `setup.bat` to recreate the junction if needed.
+
+All `Tools/*.py` scripts **refuse** a system Python at startup (`maho_tools.ensure_engine_python`).
 
 Templates remain under `Build/Templates/GameProject/`.

@@ -2,55 +2,116 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
-rem Bootstrap Maho local Python under Tools\python (not added to PATH).
+rem Bootstrap Maho local Python (not added to PATH).
 rem Usage:
-rem   setup.bat           install if missing
-rem   setup.bat --force   wipe and reinstall
+rem   setup.bat           install / repair Tools\python junction
+rem   setup.bat --force   wipe and recreate
+rem
+rem Why NOT install python.org into the engine tree:
+rem   The Windows installer registers TargetDir in HKCU/ARP. If that path is
+rem   under the repo and you rename/delete the folder, the next silent install
+rem   becomes "Modify", exits 0, and writes nothing. Bumping 3.12-^>3.13 only
+rem   repeats the same failure once THAT version is poisoned too.
+rem
+rem Stable layout ^(rename-safe^):
+rem   %LOCALAPPDATA%\Maho\python\tooling\   real files ^(outside the repo^)
+rem   <engine>\Tools\python\                junction -^> tooling
+rem
+rem Bootstrap order:
+rem   1) venv from any host Python with tkinter  — no Burn/MSI registration
+rem   2) else python.org installer into tooling  — after purging ghost ARP
+rem Renaming the engine folder: re-run setup.bat only to recreate the junction.
 
-set "PY_DIR=%~dp0Tools\python"
-set "PY_EXE=%PY_DIR%\python.exe"
-set "CACHE=%~dp0Tools\_cache"
-set "PY_VER=3.12.8"
+set "ROOT=%~dp0"
+set "PY_LINK=%ROOT%Tools\python"
+set "CACHE=%ROOT%Tools\_cache"
+set "PY_HOME=%LOCALAPPDATA%\Maho\python\tooling"
+set "PY_EXE=%PY_HOME%\python.exe"
+set "PY_EXE_VENV=%PY_HOME%\Scripts\python.exe"
+rem Installer fallback version only ^(unused when venv succeeds^).
+set "PY_VER=3.13.13"
 set "INSTALLER=%CACHE%\python-%PY_VER%-amd64.exe"
 set "URL=https://www.python.org/ftp/python/%PY_VER%/python-%PY_VER%-amd64.exe"
+set "INSTALL_LOG=%CACHE%\python-install.log"
+set "PURGE_PS1=%ROOT%Tools\purge_stale_python_install.ps1"
 set "ERR=0"
 set "STATUS=OK"
 set "ALREADY=0"
 
 if /I "%~1"=="--force" (
-	echo [Maho] --force: removing existing install...
-	echo         %PY_DIR%
-	if exist "%PY_DIR%" rmdir /s /q "%PY_DIR%"
-)
-
-if exist "%PY_EXE%" (
-	"%PY_EXE%" -c "import tkinter, sys; print(sys.version.split()[0])" 2>nul
-	if not errorlevel 1 (
-		set "ALREADY=1"
-		goto :success
+	echo [Maho] --force: removing Tools\python link and LocalAppData tooling...
+	call :remove_python_link
+	if exist "%PY_HOME%" (
+		echo         %PY_HOME%
+		rmdir /s /q "%PY_HOME%"
 	)
-	echo [Maho] Existing Tools\python looks broken ^(python.exe present but tkinter check failed^).
-	echo [Maho] Removing and reinstalling...
-	if exist "%PY_DIR%" rmdir /s /q "%PY_DIR%"
+	rem Previous layout used a versioned folder — drop it too.
+	if exist "%LOCALAPPDATA%\Maho\python\3.13.13" (
+		echo         %LOCALAPPDATA%\Maho\python\3.13.13
+		rmdir /s /q "%LOCALAPPDATA%\Maho\python\3.13.13"
+	)
+	if exist "%LOCALAPPDATA%\Maho\python\3.12.8" (
+		rmdir /s /q "%LOCALAPPDATA%\Maho\python\3.12.8"
+	)
 )
 
-if not exist "%CACHE%" mkdir "%CACHE%"
+rem Only treat as "already OK" when the stable LocalAppData home works.
+call :resolve_home_python
+if defined LOCAL_PY (
+	"%LOCAL_PY%" -c "import tkinter, sys; print(sys.version.split()[0])" 2>nul
+	if not errorlevel 1 (
+		call :ensure_python_link
+		if not errorlevel 1 (
+			set "ALREADY=1"
+			goto :success
+		)
+	)
+	echo [Maho] Existing tooling looks broken. Recreating...
+	call :remove_python_link
+	if exist "%PY_HOME%" rmdir /s /q "%PY_HOME%"
+)
+
+if not exist "%LOCALAPPDATA%\Maho\python" mkdir "%LOCALAPPDATA%\Maho\python" 2>nul
+if not exist "%CACHE%" mkdir "%CACHE%" 2>nul
+
+echo [Maho] Prefer venv into stable LocalAppData path ^(no engine-tree registration^):
+echo         %PY_HOME%
+set "HOST_PY="
+call :find_host_python
+if defined HOST_PY goto :do_venv
+
+echo [Maho] No host Python with tkinter — trying python.org installer into tooling...
+goto :do_installer
+
+:do_venv
+echo [Maho] Host: %HOST_PY%
+if exist "%PY_HOME%" rmdir /s /q "%PY_HOME%"
+"%HOST_PY%" -m venv "%PY_HOME%"
 if errorlevel 1 (
-	set "STATUS=FAILED"
-	set "ERR=1"
-	echo.
-	echo ======================================================================
-	echo  [FAILED] Could not create cache directory:
-	echo           %CACHE%
-	echo  Reason : mkdir failed ^(check permissions / disk space^).
-	echo ======================================================================
-	goto :finish
+	echo [Maho] venv failed — trying python.org installer...
+	goto :do_installer
 )
+call :resolve_home_python
+if not defined LOCAL_PY (
+	echo [Maho] venv missing python.exe — trying installer...
+	goto :do_installer
+)
+"%LOCAL_PY%" -c "import tkinter, sys; print(sys.version.split()[0])" 2>nul
+if errorlevel 1 (
+	echo [Maho] venv lacks tkinter — trying installer...
+	if exist "%PY_HOME%" rmdir /s /q "%PY_HOME%"
+	goto :do_installer
+)
+echo maho-local-venv> "%PY_HOME%\.maho_managed"
+call :ensure_python_link
+if errorlevel 1 goto :fail_link
+goto :success
 
+:do_installer
+if not exist "%CACHE%" mkdir "%CACHE%"
 if not exist "%INSTALLER%" (
 	echo [Maho] Downloading Python %PY_VER% installer...
 	echo         %URL%
-	echo         -^> %INSTALLER%
 	where curl >nul 2>&1
 	if errorlevel 1 (
 		powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -58,95 +119,73 @@ if not exist "%INSTALLER%" (
 	) else (
 		curl.exe -L --fail -o "%INSTALLER%" "%URL%"
 	)
-	if errorlevel 1 (
-		set "STATUS=FAILED"
-		set "ERR=1"
-		echo.
-		echo ======================================================================
-		echo  [FAILED] Download Python installer failed.
-		echo  URL    : %URL%
-		echo  Target : %INSTALLER%
-		echo  Reason : curl/powershell exited with error ^(network / firewall / URL^).
-		echo  Tip    : Check network, then re-run setup.bat
-		echo ======================================================================
-		goto :finish
-	)
-	if not exist "%INSTALLER%" (
-		set "STATUS=FAILED"
-		set "ERR=1"
-		echo.
-		echo ======================================================================
-		echo  [FAILED] Download reported OK but installer file is missing.
-		echo  Expected: %INSTALLER%
-		echo ======================================================================
-		goto :finish
-	)
+	if errorlevel 1 goto :fail_no_python
+	if not exist "%INSTALLER%" goto :fail_no_python
 	echo [Maho] Download OK.
 )
 
-echo [Maho] Installing Python %PY_VER% into:
-echo         %PY_DIR%
-echo [Maho] Options: PrependPath=0 ^(will NOT modify system PATH^), Include_tcltk=1, Include_pip=1
-"%INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%PY_DIR%" PrependPath=0 Include_launcher=0 Include_test=0 Include_doc=0 Shortcuts=0 AssociateFiles=0 Include_pip=1 Include_tcltk=1
-set "INST_EC=%ERRORLEVEL%"
-if not "%INST_EC%"=="0" (
-	set "STATUS=FAILED"
-	set "ERR=1"
-	echo.
-	echo ======================================================================
-	echo  [FAILED] Python installer returned error code %INST_EC%.
-	echo  Installer: %INSTALLER%
-	echo  Target   : %PY_DIR%
-	echo  Reason   : Silent install failed ^(permissions, antivirus, or corrupt installer^).
-	echo  Tip      : Delete Tools\_cache and re-run setup.bat --force
-	echo             Or run the installer EXE manually to see its UI error.
-	echo ======================================================================
-	goto :finish
+echo [Maho] Purging stale python.org %PY_VER% registration ^(ghost ARP / dead paths^)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PURGE_PS1%" -Version "%PY_VER%"
+
+echo [Maho] Installing into %PY_HOME% ^(still NOT under the engine tree^)
+if exist "%INSTALL_LOG%" del /q "%INSTALL_LOG%" >nul 2>&1
+if exist "%PY_HOME%" rmdir /s /q "%PY_HOME%"
+"%INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%PY_HOME%" PrependPath=0 Include_launcher=0 Include_test=0 Include_doc=0 Shortcuts=0 AssociateFiles=0 Include_pip=1 Include_tcltk=1 /log "%INSTALL_LOG%"
+
+call :resolve_home_python
+if not defined LOCAL_PY (
+	echo [Maho] Installer left no python.exe — see %INSTALL_LOG%
+	echo [Maho] Often HKLM leftovers of the same version force Modify mode.
+	echo [Maho] Fix: Settings -^> Apps, uninstall broken "Python %PY_VER%", then setup.bat --force
+	goto :fail_no_python
 )
-
-if not exist "%PY_EXE%" (
-	set "STATUS=FAILED"
-	set "ERR=1"
-	echo.
-	echo ======================================================================
-	echo  [FAILED] Installer exited 0 but python.exe was not created.
-	echo  Expected: %PY_EXE%
-	echo  Reason  : TargetDir may be wrong, or install was blocked after exit.
-	echo  Tip     : Re-run setup.bat --force ; check folder permissions.
-	echo ======================================================================
-	goto :finish
-)
-
-echo maho-local> "%PY_DIR%\.maho_managed"
-
-"%PY_EXE%" -c "import tkinter, sys; print(sys.version.split()[0])" 2>nul
+"%LOCAL_PY%" -c "import tkinter, sys; print(sys.version.split()[0])" 2>nul
 if errorlevel 1 (
 	set "STATUS=FAILED"
 	set "ERR=1"
-	echo.
-	echo ======================================================================
-	echo  [FAILED] python.exe exists but verification failed.
-	echo  Path   : %PY_EXE%
-	echo  Reason : Cannot import tkinter ^(Tcl/Tk missing or broken install^).
-	echo           createProject.bat / package UI need tkinter.
-	echo  Tip    : setup.bat --force
-	echo ======================================================================
+	echo [FAILED] tkinter import failed for %LOCAL_PY%
 	goto :finish
 )
+echo maho-local> "%PY_HOME%\.maho_managed"
+call :ensure_python_link
+if errorlevel 1 goto :fail_link
+goto :success
+
+:fail_link
+set "STATUS=FAILED"
+set "ERR=1"
+echo [FAILED] Could not create Tools\python junction.
+goto :finish
+
+:fail_no_python
+set "STATUS=FAILED"
+set "ERR=1"
+echo.
+echo ======================================================================
+echo  [FAILED] Could not bootstrap Maho Python tooling.
+echo  Wanted  : %PY_HOME%
+echo  Need    : a host Python 3.10+ with tkinter ^(miniconda / python.org^),
+echo            OR a clean python.org silent install into LocalAppData.
+echo ======================================================================
+goto :finish
 
 :success
+call :ensure_python_link
+call :resolve_local_python
 echo.
 echo ======================================================================
 if "!ALREADY!"=="1" (
 	echo  [SUCCESS] Maho local Python is already installed and verified.
 ) else (
-	echo  [SUCCESS] Maho local Python installed and verified successfully.
+	echo  [SUCCESS] Maho local Python ready.
 )
 echo ----------------------------------------------------------------------
-echo  Version : Python %PY_VER%  ^(tkinter OK^)
-echo  Path    : %PY_EXE%
-echo  Note    : Private to this engine — NOT added to system PATH.
-echo  Next    : Run createProject.bat to create a game project.
+echo  Real  : %PY_HOME%
+echo  Link  : %PY_LINK%
+echo  Exe   : %LOCAL_PY%
+echo  Note  : Files live under LocalAppData. Renaming the engine folder is OK;
+echo          re-run setup.bat afterwards only to recreate Tools\python junction.
+echo  Next  : Run createProject.bat
 echo ======================================================================
 set "STATUS=OK"
 set "ERR=0"
@@ -160,3 +199,99 @@ if "!STATUS!"=="FAILED" (
 )
 pause
 exit /b !ERR!
+
+rem ---------------------------------------------------------------------------
+:resolve_home_python
+set "LOCAL_PY="
+if exist "%PY_EXE%" set "LOCAL_PY=%PY_EXE%"
+if not defined LOCAL_PY if exist "%PY_EXE_VENV%" set "LOCAL_PY=%PY_EXE_VENV%"
+exit /b 0
+
+:resolve_local_python
+set "LOCAL_PY="
+if exist "%PY_LINK%\python.exe" set "LOCAL_PY=%PY_LINK%\python.exe"
+if not defined LOCAL_PY if exist "%PY_LINK%\Scripts\python.exe" set "LOCAL_PY=%PY_LINK%\Scripts\python.exe"
+if not defined LOCAL_PY call :resolve_home_python
+exit /b 0
+
+:remove_python_link
+rem Dangling junctions fail "if exist" but still block mklink — always try rmdir.
+rem Junction / symlink: rmdir (no /s) removes the link only.
+rmdir "%PY_LINK%" >nul 2>&1
+rem Real directory (legacy install under the tree): wipe contents.
+if exist "%PY_LINK%" rmdir /s /q "%PY_LINK%" >nul 2>&1
+rem Last resort ^(locked / odd reparse^).
+if exist "%PY_LINK%" (
+	powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+		"Remove-Item -LiteralPath '%PY_LINK%' -Force -Recurse -ErrorAction SilentlyContinue"
+)
+exit /b 0
+
+:ensure_python_link
+if not exist "%PY_HOME%\python.exe" if not exist "%PY_HOME%\Scripts\python.exe" (
+	echo [Maho] Cannot link Tools\python — install missing at:
+	echo         %PY_HOME%
+	exit /b 1
+)
+if exist "%PY_LINK%\python.exe" exit /b 0
+if exist "%PY_LINK%\Scripts\python.exe" exit /b 0
+call :remove_python_link
+if not exist "%ROOT%Tools" mkdir "%ROOT%Tools"
+echo [Maho] Linking Tools\python =^> %PY_HOME%
+mklink /J "%PY_LINK%" "%PY_HOME%"
+if errorlevel 1 (
+	echo [FAILED] mklink /J failed — Tools\python still present after remove.
+	exit /b 1
+)
+exit /b 0
+
+:find_host_python
+set "HOST_PY="
+if exist "D:\miniconda\python.exe" (
+	"D:\miniconda\python.exe" -c "import tkinter" 2>nul
+	if not errorlevel 1 (
+		set "HOST_PY=D:\miniconda\python.exe"
+		exit /b 0
+	)
+)
+if exist "%LocalAppData%\Programs\Python\Python313\python.exe" (
+	"%LocalAppData%\Programs\Python\Python313\python.exe" -c "import tkinter" 2>nul
+	if not errorlevel 1 (
+		set "HOST_PY=%LocalAppData%\Programs\Python\Python313\python.exe"
+		exit /b 0
+	)
+)
+if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
+	"%LocalAppData%\Programs\Python\Python312\python.exe" -c "import tkinter" 2>nul
+	if not errorlevel 1 (
+		set "HOST_PY=%LocalAppData%\Programs\Python\Python312\python.exe"
+		exit /b 0
+	)
+)
+where py >nul 2>&1
+if not errorlevel 1 (
+	py -3 -c "import tkinter" 2>nul
+	if not errorlevel 1 (
+		for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do (
+			echo %%P | findstr /I /C:"WindowsApps" >nul
+			if errorlevel 1 (
+				set "HOST_PY=%%P"
+				exit /b 0
+			)
+		)
+	)
+)
+where python >nul 2>&1
+if not errorlevel 1 (
+	for /f "delims=" %%P in ('where python 2^>nul') do (
+		echo %%P | findstr /I /C:"WindowsApps" >nul
+		if errorlevel 1 (
+			"%%P" -c "import tkinter" 2>nul
+			if not errorlevel 1 (
+				set "HOST_PY=%%P"
+				exit /b 0
+			)
+		)
+	)
+)
+exit /b 0

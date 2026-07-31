@@ -10,7 +10,11 @@ UE 风格 C++ 引擎（`Maho` DLL）+ 工具链：用 `.cproject`（类似 `.upr
 setup.bat
 ```
 
-会在 `Tools/python/` 安装**引擎私有** Python（不写系统 PATH，不进 git）。之后所有工具只走局部解释器；直接用系统 `python` 跑 `Tools/*.py` 会被拒绝。
+会在 `%LOCALAPPDATA%\Maho\python\tooling\` 放置**引擎私有** Python（不写系统 PATH，不进 git），并在仓库里创建 `Tools/python` → 该目录的 **junction**。
+
+这样设计是为了：**改引擎文件夹名字不会弄坏安装**（python.org 若装进仓库目录，注册表仍指向旧路径，下次 setup 会假成功）。有本机 Python 时优先 `venv`（不走 MSI）；否则才用官方安装器装到 LocalAppData。改名/挪仓库后若 junction 断了，再跑一次 `setup.bat` 即可。
+
+之后所有工具只走局部解释器；直接用系统 `python` 跑 `Tools/*.py` 会被拒绝。
 
 ```bat
 setup.bat --force   :: 损坏时强制重装

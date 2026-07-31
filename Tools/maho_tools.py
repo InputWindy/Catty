@@ -21,23 +21,32 @@ ENGINE_PYTHON_DIR = (ENGINE_ROOT / "Tools" / "python").resolve()
 
 def ensure_engine_python() -> None:
 	"""
-	Require the engine-local interpreter under Tools/python (from setup.bat).
-	Refuse system / PATH Python so tool scripts stay reproducible.
+	Require the Maho-managed interpreter (setup.bat), not an arbitrary system Python.
+	Real files live under %LOCALAPPDATA%\\Maho\\python\\<ver>\\; Tools\\python is a junction.
 	Set MAHO_ALLOW_SYSTEM_PYTHON=1 only for emergency debugging.
 	"""
 	if os.environ.get("MAHO_ALLOW_SYSTEM_PYTHON") == "1":
 		return
 
 	exe = Path(sys.executable).resolve()
-	try:
-		exe.relative_to(ENGINE_PYTHON_DIR)
-		return
-	except ValueError:
-		pass
+	allowed_roots: list[Path] = []
+	if ENGINE_PYTHON_DIR.is_dir():
+		allowed_roots.append(ENGINE_PYTHON_DIR.resolve())
+	local_app = os.environ.get("LOCALAPPDATA")
+	if local_app:
+		allowed_roots.append((Path(local_app) / "Maho" / "python").resolve())
+
+	for root in allowed_roots:
+		try:
+			exe.relative_to(root)
+			return
+		except ValueError:
+			continue
 
 	msg = (
 		"This Maho tool must run with the engine-local Python, not a system install.\n\n"
-		f"Expected under:\n  {ENGINE_PYTHON_DIR}\n\n"
+		f"Expected under:\n  {ENGINE_PYTHON_DIR}\n"
+		f"  (junction → %LOCALAPPDATA%\\Maho\\python\\<ver>)\n\n"
 		f"Current interpreter:\n  {exe}\n\n"
 		"Fix:\n"
 		"  1) Run setup.bat in the Maho engine root\n"
@@ -58,7 +67,7 @@ def ensure_engine_python() -> None:
 		except Exception:
 			pass
 
-	raise SystemExit(1)
+	raise SystemExit(2)
 
 
 # Enforce on every import of maho_tools (all tool entry scripts go through here,
