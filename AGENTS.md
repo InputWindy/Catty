@@ -56,6 +56,7 @@ Full text: [`Doc/Engine/CODING_STANDARDS.md`](Doc/Engine/CODING_STANDARDS.md) an
 | RHI | [`Catty/Source/Public/Render/RHI/CONTRACT.md`](Catty/Source/Public/Render/RHI/CONTRACT.md) | DESIGN_JOURNAL → RHI |
 | Object / GC refs | [`Catty/Source/Public/Core/Object/CONTRACT.md`](Catty/Source/Public/Core/Object/CONTRACT.md) | Object |
 | Extensions | [`Catty/Source/Public/Core/Extension/CONTRACT.md`](Catty/Source/Public/Core/Extension/CONTRACT.md) | Extension |
+| Editor UI | [`Catty/Source/Public/Core/Editor/CONTRACT.md`](Catty/Source/Public/Core/Editor/CONTRACT.md) | Editor UI |
 
 **Where are we now?** Read [`Doc/Engine/DESIGN_JOURNAL.md`](Doc/Engine/DESIGN_JOURNAL.md) first, then the module `CONTRACT.md` `Status` / `Pitfalls` sections.
 

@@ -14,6 +14,8 @@ After the repo-root [`AGENTS.md`](../../AGENTS.md), use this folder for **engine
 | [`ObjectReflectAPI.html`](ObjectReflectAPI.html) | Reflect C++ API |
 | [`LuaAPI.html`](LuaAPI.html) | Lua `catty.*` API |
 
+Module contracts live next to code (`Catty/Source/Public/**/CONTRACT.md`), including Editor UI: [`../../Catty/Source/Public/Core/Editor/CONTRACT.md`](../../Catty/Source/Public/Core/Editor/CONTRACT.md).
+
 ## Typical workflows
 
 ### Change engine C++

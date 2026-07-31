@@ -4,6 +4,7 @@
 #include <Core/System/ConfigFile.h>
 #include <Core/System/Console.h>
 #include <Core/Editor/AgentChatClient.h>
+#include <Core/Editor/EditorUIRegistry.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
 #include <Render/UI/ImGuiExtensions.h>
@@ -68,6 +69,22 @@ namespace
 }
 #endif
 
+/** Hide dock-node title-bar close (far-right X); tab close still works when p_open != nullptr. */
+void ApplyDockTabOnlyCloseClass()
+{
+	ImGuiWindowClass Class;
+	Class.DockNodeFlagsOverrideSet = static_cast<ImGuiDockNodeFlags>(
+		static_cast<int>(ImGuiDockNodeFlags_NoWindowMenuButton)
+		| static_cast<int>(ImGuiDockNodeFlags_NoCloseButton));
+	ImGui::SetNextWindowClass(&Class);
+}
+
+[[nodiscard]] bool BeginEditorDockPanel(const char* Title, bool* bOpen, ImGuiWindowFlags Flags = 0)
+{
+	ApplyDockTabOnlyCloseClass();
+	return ImGui::Begin(Title, bOpen, Flags);
+}
+
 // Dock / window titles must stay in sync with DockBuilderDockWindow.
 constexpr const char* kWinMainViewport = ICON_FA_MAP "  MyGame";
 constexpr const char* kWinContent = ICON_FA_FOLDER_TREE " Content Browser";
@@ -76,6 +93,8 @@ constexpr const char* kWinAgent = ICON_FA_COMMENTS " Agent";
 constexpr const char* kWinBlueprint = ICON_FA_DIAGRAM_PROJECT " Blueprint";
 constexpr const char* kWinSequenceGraph = ICON_FA_SHARE_NODES " Sequence Graph";
 constexpr const char* kWinPlot = ICON_FA_CHART_LINE " Plot";
+constexpr const char* kWinTransientDetails = ICON_FA_SLIDERS "  Temporary Details";
+constexpr const char* kModalBusyTitle = "Busy";
 
 [[nodiscard]] const char* EngineStageLabel(EEngineStage Stage)
 {
@@ -361,6 +380,9 @@ void FEditorLayer::MountEditor()
 	NodeEditorContext = ed::CreateEditor(&Config);
 	bBlueprintInited = NodeEditorContext != nullptr;
 #endif
+
+	RegisterBuiltinUIContributions();
+	RegisterDummyUIContributions();
 }
 
 void FEditorLayer::UnmountEditor()
@@ -370,6 +392,8 @@ void FEditorLayer::UnmountEditor()
 		return;
 	}
 	bEditorMounted = false;
+
+	UIRegistry.Clear();
 
 	if (AgentChat)
 	{
@@ -389,6 +413,552 @@ void FEditorLayer::UnmountEditor()
 		NodeEditorContext = nullptr;
 		bBlueprintInited = false;
 	}
+}
+
+FEditorUIDrawContext FEditorLayer::MakeUIDrawContext(FApp& App)
+{
+	FEditorUIDrawContext Ctx;
+	Ctx.App = &App;
+	Ctx.Editor = this;
+	Ctx.Registry = &UIRegistry;
+	return Ctx;
+}
+
+void FEditorLayer::RegisterBuiltinUIContributions()
+{
+	UIRegistry.Clear();
+
+	const FEditorUICatalog CatFileOps{ "FileOps", 10 };
+	const FEditorUICatalog CatTransform{ "Transform", 20 };
+	const FEditorUICatalog CatPlay{ "Play", 30 };
+	const FEditorUICatalog CatBrowser{ "Browser", 10 };
+	const FEditorUICatalog CatLog{ "Log", 20 };
+	const FEditorUICatalog CatTools{ "Tools", 30 };
+	const FEditorUICatalog CatDetails{ "Details", 40 };
+	const FEditorUICatalog CatSystem{ "System", 10 };
+	const FEditorUICatalog CatDebug{ "Debug", 100 };
+	const FEditorUICatalog CatWindow{ "Window", 20 };
+	const FEditorUICatalog CatHelp{ "Help", 30 };
+
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarPrimary,
+		CatFileOps,
+		"builtin.tb1.save",
+		0,
+		[](FEditorUIDrawContext&)
+		{
+			ImGui::Button(ICON_FA_FLOPPY_DISK "##Tb1Save");
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarPrimary,
+		CatFileOps,
+		"builtin.tb1.open",
+		1,
+		[](FEditorUIDrawContext&)
+		{
+			ImGui::Button(ICON_FA_FOLDER_OPEN "##Tb1Open");
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarPrimary,
+		CatFileOps,
+		"builtin.tb1.search",
+		2,
+		[](FEditorUIDrawContext&)
+		{
+			ImGui::Button(ICON_FA_MAGNIFYING_GLASS "##Tb1Search");
+		} });
+
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatTransform,
+		"builtin.tb2.select",
+		0,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			if (ImGui::Button(ICON_FA_ARROW_POINTER "##Tb2Select", BtnSize))
+			{
+				ViewportTool = EViewportTool::Select;
+			}
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatTransform,
+		"builtin.tb2.translate",
+		1,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			if (ImGui::Button(ICON_FA_UP_DOWN_LEFT_RIGHT "##Tb2Translate", BtnSize))
+			{
+				ViewportTool = EViewportTool::Translate;
+				GizmoOperation = static_cast<int>(ImGuizmo::TRANSLATE);
+			}
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatTransform,
+		"builtin.tb2.rotate",
+		2,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			if (ImGui::Button(ICON_FA_ARROW_ROTATE_RIGHT "##Tb2Rotate", BtnSize))
+			{
+				ViewportTool = EViewportTool::Rotate;
+				GizmoOperation = static_cast<int>(ImGuizmo::ROTATE);
+			}
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatTransform,
+		"builtin.tb2.scale",
+		3,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			if (ImGui::Button(ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER "##Tb2Scale", BtnSize))
+			{
+				ViewportTool = EViewportTool::Scale;
+				GizmoOperation = static_cast<int>(ImGuizmo::SCALE);
+			}
+		} });
+
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatPlay,
+		"builtin.tb2.play",
+		0,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			const bool bCanPlay = PlayState == EPlayState::Stopped || PlayState == EPlayState::Paused;
+			ImGui::BeginDisabled(!bCanPlay);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.86f, 0.42f, 1.0f));
+			if (ImGui::Button(ICON_FA_PLAY "##Tb2Play", BtnSize))
+			{
+				PlayState = EPlayState::Playing;
+				AppendOutput("PIE: Play");
+			}
+			ImGui::PopStyleColor();
+			ImGui::EndDisabled();
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatPlay,
+		"builtin.tb2.step",
+		1,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			const bool bCanStep = PlayState != EPlayState::Stopped;
+			ImGui::BeginDisabled(!bCanStep);
+			if (ImGui::Button(ICON_FA_FORWARD_STEP "##Tb2Step", BtnSize))
+			{
+				PlayState = EPlayState::Paused;
+				AppendOutput("PIE: Step / Pause");
+			}
+			ImGui::EndDisabled();
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatPlay,
+		"builtin.tb2.stop",
+		2,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			const bool bCanStop = PlayState != EPlayState::Stopped;
+			ImGui::BeginDisabled(!bCanStop);
+			if (ImGui::Button(ICON_FA_STOP "##Tb2Stop", BtnSize))
+			{
+				PlayState = EPlayState::Stopped;
+				AppendOutput("PIE: Stop");
+			}
+			ImGui::EndDisabled();
+		} });
+
+	UIRegistry.RegisterDockPanel({
+		CatBrowser,
+		"dock.content",
+		kWinContent,
+		&bShowContentBrowser,
+		true,
+		false,
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			DrawContentBrowser();
+		} });
+	UIRegistry.RegisterDockPanel({
+		CatLog,
+		"dock.output",
+		kWinOutput,
+		&bShowOutputPanel,
+		true,
+		false,
+		0,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			if (Ctx.App)
+			{
+				DrawOutputPanel(*Ctx.App);
+			}
+		} });
+	UIRegistry.RegisterDockPanel({
+		CatTools,
+		"dock.agent",
+		kWinAgent,
+		&bShowAgentPanel,
+		true,
+		false,
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			DrawAgentPanel();
+		} });
+	UIRegistry.RegisterDockPanel({
+		CatTools,
+		"dock.sequence",
+		kWinSequenceGraph,
+		&bShowSequenceGraphPanel,
+		true,
+		false,
+		1,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			if (Ctx.App)
+			{
+				DrawSequenceGraphPanel(*Ctx.App);
+			}
+		} });
+#if CATTY_EDITOR_EXTRA_PANELS
+	UIRegistry.RegisterDockPanel({
+		CatTools,
+		"dock.blueprint",
+		kWinBlueprint,
+		&bShowBlueprintPanel,
+		true,
+		false,
+		2,
+		[this](FEditorUIDrawContext&)
+		{
+			DrawBlueprintPanel();
+		} });
+	UIRegistry.RegisterDockPanel({
+		CatTools,
+		"dock.plot",
+		kWinPlot,
+		&bShowPlotPanel,
+		true,
+		false,
+		3,
+		[this](FEditorUIDrawContext&)
+		{
+			DrawPlotPanel();
+		} });
+#endif
+	UIRegistry.RegisterDockPanel({
+		CatDetails,
+		"dock.temp_details",
+		kWinTransientDetails,
+		&bShowTransientDetails,
+		false,
+		true,
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			DrawTransientDetailsPanel();
+		} });
+
+	UIRegistry.RegisterModal({
+		CatSystem,
+		"modal.busy",
+		kModalBusyTitle,
+		0,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			ImGui::TextUnformatted("Blocking work in progress…");
+			ImGui::Spacing();
+			if (ImGui::Button("Close", ImVec2(120.0f, 0.0f)) && Ctx.Registry)
+			{
+				Ctx.Registry->CloseModal("modal.busy");
+			}
+		} });
+
+	UIRegistry.RegisterMenuItem({
+		CatWindow,
+		"menu.window.output_autoscroll",
+		ICON_FA_SCROLL "  Output Auto-Scroll",
+		10,
+		[this](FEditorUIDrawContext&)
+		{
+			ImGui::MenuItem(ICON_FA_SCROLL "  Output Auto-Scroll", nullptr, &bAutoScrollOutput);
+		} });
+	UIRegistry.RegisterMenuItem({
+		CatWindow,
+		"menu.window.agent_autoscroll",
+		ICON_FA_SCROLL "  Agent Auto-Scroll",
+		11,
+		[this](FEditorUIDrawContext&)
+		{
+			ImGui::MenuItem(ICON_FA_SCROLL "  Agent Auto-Scroll", nullptr, &bAutoScrollAgent);
+		} });
+	UIRegistry.RegisterMenuItem({
+		CatWindow,
+		"menu.window.reset_dock",
+		ICON_FA_TABLE_CELLS_LARGE "  Reset Dock Layout",
+		20,
+		[this](FEditorUIDrawContext&)
+		{
+			if (ImGui::MenuItem(ICON_FA_TABLE_CELLS_LARGE "  Reset Dock Layout"))
+			{
+				bBuildDefaultLayout = true;
+			}
+		} });
+
+	UIRegistry.RegisterMenuItem({
+		CatDebug,
+		"menu.debug.toggle_dummy",
+		"Show Dummy UI",
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			ImGui::MenuItem("Show Dummy UI", nullptr, &bShowDummyUI);
+		} });
+	UIRegistry.RegisterMenuItem({
+		CatDebug,
+		"menu.debug.open_details",
+		"Open Temporary Details",
+		1,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			if (ImGui::MenuItem("Open Temporary Details") && Ctx.Registry)
+			{
+				Ctx.Registry->OpenDockPanel("dock.temp_details");
+			}
+		} });
+	UIRegistry.RegisterMenuItem({
+		CatDebug,
+		"menu.debug.open_busy",
+		"Open Busy Modal",
+		2,
+		[](FEditorUIDrawContext& Ctx)
+		{
+			if (ImGui::MenuItem("Open Busy Modal") && Ctx.Registry)
+			{
+				Ctx.Registry->OpenModal("modal.busy");
+			}
+		} });
+
+#if CATTY_EDITOR_DEMO_CONTENT
+	UIRegistry.RegisterMenuItem({
+		CatHelp,
+		"menu.help.cvar",
+		ICON_FA_CIRCLE_INFO "  CVar help",
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			if (ImGui::MenuItem(ICON_FA_CIRCLE_INFO "  CVar help"))
+			{
+				AppendOutput("Commands: `Dump` | `Name` | `Name Value` | `help`");
+			}
+		} });
+	UIRegistry.RegisterMenuItem({
+		CatWindow,
+		"menu.window.imgui_demo",
+		ICON_FA_TABLE_CELLS "  ImGui Demo",
+		30,
+		[this](FEditorUIDrawContext&)
+		{
+			ImGui::MenuItem(ICON_FA_TABLE_CELLS "  ImGui Demo", nullptr, &bShowDemoWindow);
+		} });
+	UIRegistry.RegisterMenuItem({
+		CatWindow,
+		"menu.window.implot_demo",
+		ICON_FA_CHART_AREA "  ImPlot Demo",
+		31,
+		[this](FEditorUIDrawContext&)
+		{
+			ImGui::MenuItem(ICON_FA_CHART_AREA "  ImPlot Demo", nullptr, &bShowImPlotDemo);
+		} });
+#else
+	(void)CatHelp;
+#endif
+}
+
+void FEditorLayer::RegisterDummyUIContributions()
+{
+	const FEditorUICatalog CatDummy{ "Dummy", 900 };
+
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarPrimary,
+		CatDummy,
+		"dummy.tb1.a",
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			ImGui::Button("DumA##Tb1");
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarPrimary,
+		CatDummy,
+		"dummy.tb1.b",
+		1,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			ImGui::Button("DumB##Tb1");
+		} });
+
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatDummy,
+		"dummy.tb2.a",
+		0,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			ImGui::Button("A##Tb2Dum", BtnSize);
+		} });
+	UIRegistry.RegisterToolbarItem({
+		EEditorUIRegion::ToolbarSecondary,
+		CatDummy,
+		"dummy.tb2.b",
+		1,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			const ImVec2 BtnSize(Ctx.ToolbarButtonSize, Ctx.ToolbarButtonSize);
+			ImGui::Button("B##Tb2Dum", BtnSize);
+		} });
+
+	UIRegistry.RegisterMenuItem({
+		CatDummy,
+		"dummy.menu.a",
+		"Dummy Menu A",
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			ImGui::MenuItem("Dummy Menu A");
+		} });
+	UIRegistry.RegisterMenuItem({
+		CatDummy,
+		"dummy.menu.b",
+		"Dummy Menu B",
+		1,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			ImGui::MenuItem("Dummy Menu B");
+		} });
+
+	UIRegistry.RegisterDockPanel({
+		CatDummy,
+		"dummy.dock.a",
+		ICON_FA_CUBE "  Dummy Dock A",
+		&bShowDummyDockA,
+		false,
+		true,
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			if (!BeginEditorDockPanel(ICON_FA_CUBE "  Dummy Dock A", &bShowDummyDockA))
+			{
+				ImGui::End();
+				return;
+			}
+			ImGui::TextUnformatted("Dummy dock panel A (Catalog Dummy).");
+			ImGui::End();
+		} });
+	UIRegistry.RegisterDockPanel({
+		CatDummy,
+		"dummy.dock.b",
+		ICON_FA_CUBES "  Dummy Dock B",
+		&bShowDummyDockB,
+		false,
+		true,
+		1,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			if (!BeginEditorDockPanel(ICON_FA_CUBES "  Dummy Dock B", &bShowDummyDockB))
+			{
+				ImGui::End();
+				return;
+			}
+			ImGui::TextUnformatted("Dummy dock panel B (Catalog Dummy).");
+			ImGui::End();
+		} });
+
+	UIRegistry.RegisterViewportOverlay({
+		CatDummy,
+		"dummy.viewport.a",
+		0,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			ImGui::SetCursorPos(ImVec2(12.0f, 12.0f));
+			ImGui::TextDisabled("Dummy Overlay A");
+		} });
+	UIRegistry.RegisterViewportOverlay({
+		CatDummy,
+		"dummy.viewport.b",
+		1,
+		[this](FEditorUIDrawContext&)
+		{
+			if (!bShowDummyUI)
+			{
+				return;
+			}
+			ImGui::SetCursorPos(ImVec2(12.0f, 28.0f));
+			ImGui::TextDisabled("Dummy Overlay B");
+		} });
+
+	UIRegistry.RegisterMenuItem({
+		FEditorUICatalog{ "Debug", 100 },
+		"menu.debug.open_dummy_docks",
+		"Open Dummy Docks",
+		3,
+		[this](FEditorUIDrawContext& Ctx)
+		{
+			if (ImGui::MenuItem("Open Dummy Docks") && Ctx.Registry)
+			{
+				Ctx.Registry->OpenDockPanel("dummy.dock.a");
+				Ctx.Registry->OpenDockPanel("dummy.dock.b");
+			}
+		} });
 }
 
 bool FEditorLayer::ExecuteStage(EEngineStage Stage)
@@ -442,31 +1012,12 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 
 	DrawDockSpace(App);
 	DrawMainViewportPanel();
-	if (bShowContentBrowser)
 	{
-		DrawContentBrowser();
-	}
-	if (bShowOutputPanel)
-	{
-		DrawOutputPanel(App);
-	}
-	if (bShowAgentPanel)
-	{
-		DrawAgentPanel();
-	}
-	if (bShowSequenceGraphPanel)
-	{
-		DrawSequenceGraphPanel(App);
+		FEditorUIDrawContext Ctx = MakeUIDrawContext(App);
+		UIRegistry.DrawDockPanels(Ctx);
+		UIRegistry.DrawModals(Ctx);
 	}
 #if CATTY_EDITOR_EXTRA_PANELS
-	if (bShowBlueprintPanel)
-	{
-		DrawBlueprintPanel();
-	}
-	if (bShowPlotPanel)
-	{
-		DrawPlotPanel();
-	}
 	DrawFileDialogs();
 #endif
 
@@ -486,7 +1037,6 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 
 void FEditorLayer::DrawMenuItems(FApp& App, float RowH)
 {
-	(void)App;
 	// Full-row-height menu buttons (BeginMenu in a MenuBar only hits on text height).
 	auto DrawTopLevelMenu = [&](const char* Id, const char* Label, auto&& FillMenu)
 	{
@@ -514,11 +1064,20 @@ void FEditorLayer::DrawMenuItems(FApp& App, float RowH)
 			ImGui::GetColorU32(ImGuiCol_Text),
 			Label);
 
+		// Align popup to the menu button's left edge (not mouse cursor).
+		ImGui::SetNextWindowPos(ImVec2(P0.x, P0.y + BtnSize.y));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 10.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 6.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.5f, 0.5f));
+		// Theme sets Separator alpha=0 for invisible dock gutters; menus need a visible line.
+		ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(1.0f, 1.0f, 1.0f, 0.22f));
 		if (ImGui::BeginPopup(Id))
 		{
 			FillMenu();
 			ImGui::EndPopup();
 		}
+		ImGui::PopStyleColor();
+		ImGui::PopStyleVar(3);
 		ImGui::PopID();
 		ImGui::SameLine(0.0f, 0.0f);
 	};
@@ -553,42 +1112,32 @@ void FEditorLayer::DrawMenuItems(FApp& App, float RowH)
 				GApp->OnRequestExit();
 			}
 		}
+		FEditorUIDrawContext Ctx = MakeUIDrawContext(App);
+		UIRegistry.DrawMenuPopup("File", Ctx);
 	});
 
 	DrawTopLevelMenu("MenuWindow", "Window", [&]()
 	{
-		ImGui::MenuItem(kWinContent, nullptr, &bShowContentBrowser);
-		ImGui::MenuItem(kWinOutput, nullptr, &bShowOutputPanel);
-		ImGui::MenuItem(kWinAgent, nullptr, &bShowAgentPanel);
-		ImGui::MenuItem(kWinSequenceGraph, nullptr, &bShowSequenceGraphPanel);
-#if CATTY_EDITOR_EXTRA_PANELS
-		ImGui::MenuItem(kWinBlueprint, nullptr, &bShowBlueprintPanel);
-		ImGui::MenuItem(kWinPlot, nullptr, &bShowPlotPanel);
-#endif
+		FEditorUIDrawContext Ctx = MakeUIDrawContext(App);
+		UIRegistry.DrawDockPanelMenuToggles(Ctx);
 		ImGui::Separator();
-		ImGui::MenuItem(ICON_FA_SCROLL "  Output Auto-Scroll", nullptr, &bAutoScrollOutput);
-		ImGui::MenuItem(ICON_FA_SCROLL "  Agent Auto-Scroll", nullptr, &bAutoScrollAgent);
-#if CATTY_EDITOR_DEMO_CONTENT
-		ImGui::Separator();
-		ImGui::MenuItem(ICON_FA_TABLE_CELLS "  ImGui Demo", nullptr, &bShowDemoWindow);
-		ImGui::MenuItem(ICON_FA_CHART_AREA "  ImPlot Demo", nullptr, &bShowImPlotDemo);
-#endif
-		ImGui::Separator();
-		if (ImGui::MenuItem(ICON_FA_TABLE_CELLS_LARGE "  Reset Dock Layout"))
-		{
-			bBuildDefaultLayout = true;
-		}
+		UIRegistry.DrawMenuPopup("Window", Ctx);
 	});
 
-	DrawTopLevelMenu("MenuHelp", "Help", [&]()
+	for (const FEditorUICatalog& Catalog : UIRegistry.GetMenuCatalogs())
 	{
-#if CATTY_EDITOR_DEMO_CONTENT
-		if (ImGui::MenuItem(ICON_FA_CIRCLE_INFO "  CVar help"))
+		if (Catalog.Name == "File" || Catalog.Name == "Window")
 		{
-			AppendOutput("Commands: `Dump` | `Name` | `Name Value` | `help`");
+			continue;
 		}
-#endif
-	});
+		const std::string MenuName = Catalog.Name;
+		const std::string MenuId = std::string("MenuDyn_") + MenuName;
+		DrawTopLevelMenu(MenuId.c_str(), MenuName.c_str(), [&, MenuName]()
+		{
+			FEditorUIDrawContext Ctx = MakeUIDrawContext(App);
+			UIRegistry.DrawMenuPopup(MenuName, Ctx);
+		});
+	}
 }
 
 void FEditorLayer::DrawBrandBlock(float Size)
@@ -619,151 +1168,26 @@ void FEditorLayer::DrawBrandBlock(float Size)
 
 void FEditorLayer::DrawToolbarPrimary()
 {
-	// Always-on placeholder icons for the dark toolbar (row under the menu).
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.0f, 0.0f));
-	ImGui::Button(ICON_FA_FLOPPY_DISK "##Tb1Save");
-	ImGui::SameLine();
-	ImGui::Button(ICON_FA_FOLDER_OPEN "##Tb1Open");
-	ImGui::SameLine();
-	ImGui::Button(ICON_FA_MAGNIFYING_GLASS "##Tb1Search");
+	if (GApp)
+	{
+		FEditorUIDrawContext Ctx = MakeUIDrawContext(*GApp);
+		UIRegistry.DrawToolbar(EEditorUIRegion::ToolbarPrimary, Ctx);
+	}
 	ImGui::PopStyleVar();
-
-#if CATTY_EDITOR_DEMO_CONTENT
-	ImGui::SameLine();
-	ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-	ImGui::SameLine();
-	const bool bCanPlay = PlayState == EPlayState::Stopped || PlayState == EPlayState::Paused;
-	const bool bCanPause = PlayState == EPlayState::Playing;
-	const bool bCanStop = PlayState != EPlayState::Stopped;
-
-	ImGui::BeginDisabled(!bCanPlay);
-	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.42f, 0.28f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.52f, 0.34f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.12f, 0.34f, 0.22f, 1.0f));
-	if (ImGui::Button(ICON_FA_PLAY " Play"))
-	{
-		PlayState = EPlayState::Playing;
-		AppendOutput("PIE: Play");
-	}
-	ImGui::PopStyleColor(3);
-	ImGui::EndDisabled();
-	ImGui::SameLine();
-	ImGui::BeginDisabled(!bCanPause);
-	if (ImGui::Button(ICON_FA_PAUSE " Pause"))
-	{
-		PlayState = EPlayState::Paused;
-		AppendOutput("PIE: Pause");
-	}
-	ImGui::EndDisabled();
-	ImGui::SameLine();
-	ImGui::BeginDisabled(!bCanStop);
-	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.42f, 0.18f, 0.18f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.54f, 0.22f, 0.22f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.34f, 0.14f, 0.14f, 1.0f));
-	if (ImGui::Button(ICON_FA_STOP " Stop"))
-	{
-		PlayState = EPlayState::Stopped;
-		AppendOutput("PIE: Stop");
-	}
-	ImGui::PopStyleColor(3);
-	ImGui::EndDisabled();
-	ImGui::SameLine();
-	ImGui::TextDisabled("|  %s", PlayStateLabel(PlayState));
-	ImGui::SameLine();
-	ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-	ImGui::SameLine();
-	ImGui::RadioButton(ICON_FA_UP_DOWN_LEFT_RIGHT " Translate", &GizmoOperation, static_cast<int>(ImGuizmo::TRANSLATE));
-	ImGui::SameLine();
-	ImGui::RadioButton(ICON_FA_ROTATE " Rotate", &GizmoOperation, static_cast<int>(ImGuizmo::ROTATE));
-	ImGui::SameLine();
-	ImGui::RadioButton(ICON_FA_EXPAND " Scale", &GizmoOperation, static_cast<int>(ImGuizmo::SCALE));
-#endif
 }
 
 void FEditorLayer::DrawToolbarSecondary()
 {
-	// Flush buttons within a group; dark chassis gutters between groups.
-	// Buttons fill the toolbar strip height (no vertical inset).
-	const ImU32 ChassisGutter = IM_COL32(14, 14, 16, 255);
-	const float GutterW = 6.0f;
 	const float BtnH = ImGui::GetContentRegionAvail().y;
-	const ImVec2 BtnSize(BtnH, BtnH);
-
-	auto DrawGroupGutter = [ChassisGutter, GutterW, BtnH]()
-	{
-		ImGui::SameLine(0.0f, 0.0f);
-		const ImVec2 P0 = ImGui::GetCursorScreenPos();
-		ImGui::GetWindowDrawList()->AddRectFilled(
-			P0,
-			ImVec2(P0.x + GutterW, P0.y + BtnH),
-			ChassisGutter);
-		ImGui::Dummy(ImVec2(GutterW, BtnH));
-		ImGui::SameLine(0.0f, 0.0f);
-	};
-
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-
-	if (ImGui::Button(ICON_FA_ARROW_POINTER "##Tb2Select", BtnSize))
+	if (GApp)
 	{
-		ViewportTool = EViewportTool::Select;
+		FEditorUIDrawContext Ctx = MakeUIDrawContext(*GApp);
+		Ctx.ToolbarButtonSize = BtnH;
+		UIRegistry.DrawToolbar(EEditorUIRegion::ToolbarSecondary, Ctx);
 	}
-	ImGui::SameLine(0.0f, 0.0f);
-	if (ImGui::Button(ICON_FA_UP_DOWN_LEFT_RIGHT "##Tb2Translate", BtnSize))
-	{
-		ViewportTool = EViewportTool::Translate;
-		GizmoOperation = static_cast<int>(ImGuizmo::TRANSLATE);
-	}
-	ImGui::SameLine(0.0f, 0.0f);
-	if (ImGui::Button(ICON_FA_ARROW_ROTATE_RIGHT "##Tb2Rotate", BtnSize))
-	{
-		ViewportTool = EViewportTool::Rotate;
-		GizmoOperation = static_cast<int>(ImGuizmo::ROTATE);
-	}
-	ImGui::SameLine(0.0f, 0.0f);
-	if (ImGui::Button(ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER "##Tb2Scale", BtnSize))
-	{
-		ViewportTool = EViewportTool::Scale;
-		GizmoOperation = static_cast<int>(ImGuizmo::SCALE);
-	}
-
-	DrawGroupGutter();
-
-	const bool bCanPlay = PlayState == EPlayState::Stopped || PlayState == EPlayState::Paused;
-	const bool bCanStep = PlayState != EPlayState::Stopped;
-	const bool bCanStop = PlayState != EPlayState::Stopped;
-
-	ImGui::BeginDisabled(!bCanPlay);
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.86f, 0.42f, 1.0f));
-	if (ImGui::Button(ICON_FA_PLAY "##Tb2Play", BtnSize))
-	{
-		PlayState = EPlayState::Playing;
-		AppendOutput("PIE: Play");
-	}
-	ImGui::PopStyleColor();
-	ImGui::EndDisabled();
-	ImGui::SameLine(0.0f, 0.0f);
-	ImGui::BeginDisabled(!bCanStep);
-	if (ImGui::Button(ICON_FA_FORWARD_STEP "##Tb2Step", BtnSize))
-	{
-		PlayState = EPlayState::Paused;
-		AppendOutput("PIE: Step / Pause");
-	}
-	ImGui::EndDisabled();
-	ImGui::SameLine(0.0f, 0.0f);
-	ImGui::BeginDisabled(!bCanStop);
-	if (ImGui::Button(ICON_FA_STOP "##Tb2Stop", BtnSize))
-	{
-		PlayState = EPlayState::Stopped;
-		AppendOutput("PIE: Stop");
-	}
-	ImGui::EndDisabled();
-	ImGui::SameLine(0.0f, 0.0f);
-	ImGui::Button(ICON_FA_EJECT "##Tb2Possess", BtnSize);
-
-	DrawGroupGutter();
-	ImGui::Button(ICON_FA_ELLIPSIS_VERTICAL "##Tb2More", BtnSize);
-
 	ImGui::PopStyleVar(2);
 }
 
@@ -967,7 +1391,7 @@ void FEditorLayer::DrawDockSpace(FApp& App)
 		EnsureDefaultDockLayout(DockspaceId);
 		bBuildDefaultLayout = false;
 	}
-	ImGui::DockSpace(DockspaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+	ImGui::DockSpace(DockspaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_NoDockingOverCentralNode);
 
 	Style.Colors[ImGuiCol_Border] = BackupBorder;
 	ImGui::EndChild();
@@ -1009,6 +1433,23 @@ void FEditorLayer::DrawMainViewportPanel()
 		}
 	}
 	ImGui::Dummy(Canvas);
+	if (GApp)
+	{
+		FEditorUIDrawContext Ctx = MakeUIDrawContext(*GApp);
+		UIRegistry.DrawViewportOverlays(Ctx);
+	}
+	ImGui::End();
+}
+
+void FEditorLayer::DrawTransientDetailsPanel()
+{
+	if (!BeginEditorDockPanel(kWinTransientDetails, &bShowTransientDetails))
+	{
+		ImGui::End();
+		return;
+	}
+	ImGui::TextUnformatted("Temporary Details (DockPanel, not Modal).");
+	ImGui::TextDisabled("Opened via Debug → Open Temporary Details / OpenDockPanel.");
 	ImGui::End();
 }
 
@@ -1557,7 +1998,7 @@ void FEditorLayer::EnsureSequenceGraphNodeLayout(const std::vector<IEngineExtens
 
 void FEditorLayer::DrawSequenceGraphPanel(FApp& App)
 {
-	if (!ImGui::Begin(kWinSequenceGraph, &bShowSequenceGraphPanel))
+	if (!BeginEditorDockPanel(kWinSequenceGraph, &bShowSequenceGraphPanel))
 	{
 		ImGui::End();
 		return;
@@ -1792,7 +2233,7 @@ void FEditorLayer::DrawSequenceGraphPanel(FApp& App)
 
 void FEditorLayer::DrawBlueprintPanel()
 {
-	if (!ImGui::Begin(kWinBlueprint, &bShowBlueprintPanel))
+	if (!BeginEditorDockPanel(kWinBlueprint, &bShowBlueprintPanel))
 	{
 		ImGui::End();
 		return;
@@ -1841,7 +2282,11 @@ void FEditorLayer::DrawBlueprintPanel()
 
 void FEditorLayer::DrawPlotPanel()
 {
-	ImGui::Begin(kWinPlot, &bShowPlotPanel);
+	if (!BeginEditorDockPanel(kWinPlot, &bShowPlotPanel))
+	{
+		ImGui::End();
+		return;
+	}
 #if CATTY_EDITOR_DEMO_CONTENT
 	static float Values[90] = {};
 	static int Offset = 0;

@@ -234,6 +234,7 @@ bool FImGuiSystem::Initialize(
 	ImGuiIO& IO = ImGui::GetIO();
 	IO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	IO.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	IO.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
 	{
 		namespace fs = std::filesystem;
@@ -249,6 +250,13 @@ bool FImGuiSystem::Initialize(
 
 	ImGui::StyleColorsDark();
 	ApplyCattyNightTheme();
+	if (IO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+	{
+		// Match platform windows to solid hosted panels (Dear ImGui example guidance).
+		ImGuiStyle& Style = ImGui::GetStyle();
+		Style.WindowRounding = 0.0f;
+		Style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+	}
 
 	GLFWwindow* GlfwWindow = static_cast<GLFWwindow*>(ToolkitHandle);
 	if (!ImGui_ImplGlfw_InitForVulkan(GlfwWindow, true))
@@ -293,7 +301,7 @@ bool FImGuiSystem::Initialize(
 	}
 
 	bInitialized = true;
-	CATTY_CORE_INFO("FImGuiSystem initialized (GLFW + Vulkan, docking)");
+	CATTY_CORE_INFO("FImGuiSystem initialized (GLFW + Vulkan, docking + viewports)");
 	return true;
 }
 
@@ -342,6 +350,25 @@ void FImGuiSystem::EndFrame()
 	}
 
 	ImGui::Render();
+}
+
+void FImGuiSystem::UpdateAndRenderPlatformWindows()
+{
+	if (!bInitialized)
+	{
+		return;
+	}
+
+	const ImGuiIO& IO = ImGui::GetIO();
+	if ((IO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) == 0)
+	{
+		return;
+	}
+
+	// GLFW CreateWindow must stay on the game/main thread; Vulkan create/render for
+	// secondary viewports also run here after FRHIServer::Flush so the RHI thread is idle.
+	ImGui::UpdatePlatformWindows();
+	ImGui::RenderPlatformWindowsDefault();
 }
 
 bool FImGuiSystem::PollExitRequest() const

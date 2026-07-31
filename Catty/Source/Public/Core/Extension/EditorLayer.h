@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Editor/AgentChatClient.h>
+#include <Core/Editor/EditorUIRegistry.h>
 #include <Core/Export.h>
 #include <Core/Sequencer/EngineExtension.h>
 #include <Core/System/Log.h>
@@ -21,6 +22,7 @@ class FAgentChatClient;
 /**
  * Engine editor shell (UE-inspired, ImGui docking + extensions).
  * Games RegisterExtension with Priority Overlay when GAME_WITH_EDITOR is enabled.
+ * Chrome geometry stays here; region contributions live in FEditorUIRegistry.
  */
 class CATTY_API FEditorLayer final : public FLayer
 {
@@ -45,9 +47,16 @@ public:
 
 	bool ExecuteStage(EEngineStage Stage) override;
 
+	[[nodiscard]] FEditorUIRegistry& GetUIRegistry() { return UIRegistry; }
+	[[nodiscard]] const FEditorUIRegistry& GetUIRegistry() const { return UIRegistry; }
+	[[nodiscard]] bool IsDummyUIEnabled() const { return bShowDummyUI; }
+
 private:
 	void MountEditor();
 	void UnmountEditor();
+	void RegisterBuiltinUIContributions();
+	void RegisterDummyUIContributions();
+	[[nodiscard]] FEditorUIDrawContext MakeUIDrawContext(FApp& App);
 
 	void DrawMenuItems(FApp& App, float RowH);
 	void DrawBrandBlock(float Size);
@@ -64,6 +73,7 @@ private:
 	void DrawBlueprintPanel();
 	void DrawSequenceGraphPanel(FApp& App);
 	void DrawPlotPanel();
+	void DrawTransientDetailsPanel();
 	void DrawFileDialogs();
 	void EnsureSequenceGraphNodeLayout();
 	void EnsureSequenceGraphNodeLayout(const std::vector<IEngineExtension*>& Extensions);
@@ -83,15 +93,21 @@ private:
 	void AppendAgentBubble(EAgentChatRole Role, std::string Text);
 	void SendAgentMessage(std::string Text);
 
+	FEditorUIRegistry UIRegistry;
+
 	EPlayState PlayState = EPlayState::Stopped;
 	bool bShowDemoWindow = false;
 	bool bShowImPlotDemo = false;
+	bool bShowDummyUI = true;
 	bool bShowContentBrowser = true;
 	bool bShowOutputPanel = true;
 	bool bShowAgentPanel = true;
 	bool bShowBlueprintPanel = true;
 	bool bShowSequenceGraphPanel = true;
 	bool bShowPlotPanel = true;
+	bool bShowTransientDetails = false;
+	bool bShowDummyDockA = false;
+	bool bShowDummyDockB = false;
 	bool bAutoScrollOutput = true;
 	bool bAutoScrollAgent = true;
 	bool bBuildDefaultLayout = true;

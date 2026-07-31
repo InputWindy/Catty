@@ -186,6 +186,13 @@ void FRenderServer::ExecuteRenderStages()
 				RHIServer.SubmitRenderUI(*ImGuiDrawDataRing, PendingImGuiSlotIndex);
 			}
 			RHIServer.SubmitEndFrameAndFence(CurrentFrameIndex);
+
+			if (ImGui.IsInitialized())
+			{
+				// Drain RHI so secondary viewport Vulkan create/render can run on Game safely.
+				RHIServer.Flush();
+				ImGui.UpdateAndRenderPlatformWindows();
+			}
 		}
 	}
 }
