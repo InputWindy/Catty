@@ -438,6 +438,111 @@ else()
 endif()
 unset(_CATTY_VENDORED_VMA)
 
+# -----------------------------------------------------------------------------
+# KTX-Software (libktx) — KTX2 Import/Export for UTexture* (Game CPU path)
+# OpenImageIO remains the preferred raster codec upgrade; Win32 uses WIC until then.
+#
+# Enable when sources are available:
+#   -DCATTY_KTX_SOURCE_DIR=<checkout>   OR pre-populate Intermediate/_deps/ktx_software-src
+#   -DCATTY_FETCH_LIBKTX=ON             to FetchContent from GitHub (needs network)
+# Without sources, configure succeeds; KTX2 path is compile-disabled (WIC still works).
+# -----------------------------------------------------------------------------
+option(CATTY_WITH_LIBKTX "Build with libktx when KTX-Software sources are available" ON)
+option(CATTY_FETCH_LIBKTX "FetchContent KTX-Software from GitHub (slow / needs network)" OFF)
+set(CATTY_HAS_LIBKTX 0)
+set(CATTY_KTX_SOURCE_DIR "" CACHE PATH "Pre-cloned KTX-Software root (optional)")
+if(CATTY_WITH_LIBKTX)
+	set(KTX_FEATURE_TOOLS OFF CACHE BOOL "" FORCE)
+	set(KTX_FEATURE_DOC OFF CACHE BOOL "" FORCE)
+	set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
+	set(KTX_FEATURE_GL_UPLOAD OFF CACHE BOOL "" FORCE)
+	set(KTX_FEATURE_VK_UPLOAD OFF CACHE BOOL "" FORCE)
+	set(KTX_FEATURE_STATIC_LIBRARY ON CACHE BOOL "" FORCE)
+
+	set(_CATTY_KTX_SRC "")
+	if(CATTY_KTX_SOURCE_DIR AND EXISTS "${CATTY_KTX_SOURCE_DIR}/CMakeLists.txt")
+		set(_CATTY_KTX_SRC "${CATTY_KTX_SOURCE_DIR}")
+		message(STATUS "Catty: using CATTY_KTX_SOURCE_DIR=${_CATTY_KTX_SRC}")
+	else()
+		set(_catty_ktx_reuse "${FETCHCONTENT_BASE_DIR}/ktx_software-src")
+		if(EXISTS "${_catty_ktx_reuse}/CMakeLists.txt")
+			set(_CATTY_KTX_SRC "${_catty_ktx_reuse}")
+			message(STATUS "Catty: reusing KTX-Software at ${_CATTY_KTX_SRC}")
+		elseif(CATTY_FETCH_LIBKTX)
+			FetchContent_Declare(
+				ktx_software
+				GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software.git
+				GIT_TAG v4.3.2
+				GIT_SHALLOW TRUE
+			)
+			FetchContent_GetProperties(ktx_software)
+			if(NOT ktx_software_POPULATED)
+				FetchContent_Populate(ktx_software)
+			endif()
+			if(DEFINED ktx_software_SOURCE_DIR AND EXISTS "${ktx_software_SOURCE_DIR}/CMakeLists.txt")
+				set(_CATTY_KTX_SRC "${ktx_software_SOURCE_DIR}")
+			endif()
+		endif()
+		unset(_catty_ktx_reuse)
+	endif()
+
+	if(_CATTY_KTX_SRC AND EXISTS "${_CATTY_KTX_SRC}/CMakeLists.txt")
+		# KTX-Software FindBash requires a Unix-ish bash (Git for Windows).
+		if(WIN32 AND NOT BASH_EXECUTABLE)
+			foreach(_catty_bash_candidate
+				"$ENV{ProgramFiles}/Git/bin/bash.exe"
+				"$ENV{ProgramFiles\(x86\)}/Git/bin/bash.exe"
+				"D:/Git/bin/bash.exe"
+				"C:/Program Files/Git/bin/bash.exe")
+				if(EXISTS "${_catty_bash_candidate}")
+					set(BASH_EXECUTABLE "${_catty_bash_candidate}" CACHE FILEPATH "bash for KTX-Software" FORCE)
+					break()
+				endif()
+			endforeach()
+			# Same install as `where git` → …/cmd/git.exe → sibling bin/bash.exe
+			if(NOT BASH_EXECUTABLE)
+				find_program(_catty_git_exe NAMES git git.exe)
+				if(_catty_git_exe)
+					get_filename_component(_catty_git_cmd "${_catty_git_exe}" DIRECTORY)
+					get_filename_component(_catty_git_root "${_catty_git_cmd}" DIRECTORY)
+					if(EXISTS "${_catty_git_root}/bin/bash.exe")
+						set(BASH_EXECUTABLE "${_catty_git_root}/bin/bash.exe" CACHE FILEPATH "bash for KTX-Software" FORCE)
+					endif()
+					unset(_catty_git_cmd)
+					unset(_catty_git_root)
+				endif()
+				unset(_catty_git_exe)
+			endif()
+		endif()
+		set(ktx_software_SOURCE_DIR "${_CATTY_KTX_SRC}")
+		set(ktx_software_BINARY_DIR "${FETCHCONTENT_BASE_DIR}/ktx_software-build")
+		# Parent game projects often declare LANGUAGES CXX only; libktx needs C.
+		enable_language(C)
+		if(NOT TARGET ktx)
+			add_subdirectory(${ktx_software_SOURCE_DIR} ${ktx_software_BINARY_DIR} EXCLUDE_FROM_ALL)
+		endif()
+		if(TARGET ktx)
+			set(CATTY_HAS_LIBKTX 1)
+			set_target_properties(ktx PROPERTIES FOLDER "ThirdParty")
+			message(STATUS "Catty: KTX-Software (libktx) enabled")
+		else()
+			message(WARNING "Catty: KTX-Software sources present but target 'ktx' missing")
+		endif()
+	else()
+		message(STATUS
+			"Catty: libktx skipped (no KTX-Software sources). "
+			"Set CATTY_KTX_SOURCE_DIR or CATTY_FETCH_LIBKTX=ON when network allows.")
+	endif()
+	unset(_CATTY_KTX_SRC)
+endif()
+
+# Optional OpenImageIO (heavy). Default OFF — Win32 raster uses WIC; enable when deps ready.
+option(CATTY_WITH_OPENIMAGEIO "FetchContent OpenImageIO for raster texture IO" OFF)
+set(CATTY_HAS_OPENIMAGEIO 0)
+if(CATTY_WITH_OPENIMAGEIO)
+	message(STATUS "Catty: OpenImageIO requested — wire FetchContent in a follow-up if needed")
+endif()
+
 unset(_CATTY_REPO_ROOT)
 unset(_CATTY_PUBLIC_HEADERS)
 unset(_CATTY_TP)

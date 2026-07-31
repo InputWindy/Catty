@@ -1,4 +1,5 @@
 #include "ResourceIO.h"
+#include "TextureImageCodec.h"
 
 #include <Core/System/Log.h>
 
@@ -8,24 +9,6 @@ namespace Catty
 {
 namespace
 {
-[[nodiscard]] std::string GetExtensionLower(const std::string& Path)
-{
-	const std::size_t Dot = Path.find_last_of('.');
-	if (Dot == std::string::npos || Dot + 1 >= Path.size())
-	{
-		return {};
-	}
-
-	std::string Ext = Path.substr(Dot + 1);
-	for (char& Ch : Ext)
-	{
-		if (Ch >= 'A' && Ch <= 'Z')
-		{
-			Ch = static_cast<char>(Ch - 'A' + 'a');
-		}
-	}
-	return Ext;
-}
 
 [[nodiscard]] bool CopyFileToDestination(
 	const std::string& SourcePath,
@@ -37,17 +20,13 @@ namespace
 
 	if (!fs::is_regular_file(SourcePath, ErrorCode) || ErrorCode)
 	{
-		CATTY_CORE_ERROR(
-			"ResourceIO: source file missing or not regular '{}'",
-			SourcePath);
+		CATTY_CORE_ERROR("ResourceIO: source file missing or not regular '{}'", SourcePath);
 		return false;
 	}
 
 	if (!bOverwrite && fs::exists(DestinationPath, ErrorCode) && !ErrorCode)
 	{
-		CATTY_CORE_ERROR(
-			"ResourceIO: destination exists and overwrite is disabled '{}'",
-			DestinationPath);
+		CATTY_CORE_ERROR("ResourceIO: destination exists and overwrite is disabled '{}'", DestinationPath);
 		return false;
 	}
 
@@ -79,9 +58,66 @@ namespace
 			ErrorCode.message());
 		return false;
 	}
-
 	return true;
 }
+
+template <typename TTexture>
+[[nodiscard]] bool ImportTextureCpu(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	TTexture& Resource)
+{
+	if (Bulk.Bytes.empty())
+	{
+		CATTY_CORE_ERROR("ResourceIO: empty BulkData for '{}'", Config.SourcePath);
+		return false;
+	}
+
+	const ETextureDimension ExpectedDimension = Resource.GetDimension();
+
+	FDecodedImage Image;
+	if (!TextureImageCodec::DecodeFromMemory(
+			Bulk.Bytes.data(),
+			Bulk.Bytes.size(),
+			Config.SourcePath,
+			Image))
+	{
+		CATTY_CORE_ERROR("ResourceIO: decode failed for '{}'", Config.SourcePath);
+		return false;
+	}
+
+	if (Image.Dimension != ExpectedDimension)
+	{
+		CATTY_CORE_WARN(
+			"ResourceIO: '{}' decoded dimension {} vs type expectation {} (name hint / TypeHint may be wrong)",
+			Config.SourcePath,
+			static_cast<int>(Image.Dimension),
+			static_cast<int>(ExpectedDimension));
+	}
+
+	if (!TextureImageCodec::ApplyDecodedToTexture(Resource, std::move(Image)))
+	{
+		CATTY_CORE_ERROR("ResourceIO: ApplyDecodedToTexture failed for '{}'", Config.SourcePath);
+		return false;
+	}
+	return true;
+}
+
+template <typename TTexture>
+[[nodiscard]] bool ExportTextureCpu(FResourceExportConfig& Config, const TTexture& Resource)
+{
+	if (!Resource.GetPixels().empty())
+	{
+		return TextureImageCodec::EncodeToFile(Resource, Config.DestinationPath, Config.bOverwrite);
+	}
+	if (!Resource.GetSourcePath().empty())
+	{
+		return CopyFileToDestination(Resource.GetSourcePath(), Config.DestinationPath, Config.bOverwrite);
+	}
+	CATTY_CORE_ERROR("ResourceIO: export has neither CPU pixels nor SourcePath");
+	return false;
+}
+
 } // namespace
 
 bool TResourceIOTraits<UResource>::ImportSource(
@@ -91,7 +127,6 @@ bool TResourceIOTraits<UResource>::ImportSource(
 {
 	(void)Config;
 	(void)Resource;
-	// Raw resource: BulkData is the payload; typed decode not required.
 	return !Bulk.SourcePath.empty() || !Bulk.Bytes.empty();
 }
 
@@ -99,53 +134,115 @@ bool TResourceIOTraits<UResource>::ExportSource(
 	FResourceExportConfig& Config,
 	const UResource& Resource)
 {
-	return CopyFileToDestination(
-		Resource.GetSourcePath(),
-		Config.DestinationPath,
-		Config.bOverwrite);
+	return CopyFileToDestination(Resource.GetSourcePath(), Config.DestinationPath, Config.bOverwrite);
 }
 
-bool TResourceIOTraits<UTextureResource>::MatchesSourcePath(const std::string& SourcePath)
+bool TResourceIOTraits<UTexture2D>::MatchesSourcePath(const std::string& SourcePath)
 {
-	const std::string Ext = GetExtensionLower(SourcePath);
-	return Ext == "png" || Ext == "jpg" || Ext == "jpeg" || Ext == "tga" || Ext == "bmp"
-		|| Ext == "ktx" || Ext == "ktx2" || Ext == "dds";
-}
-
-bool TResourceIOTraits<UTextureResource>::ImportSource(
-	FResourceImportConfig& Config,
-	FResourceBulkData& Bulk,
-	UTextureResource& Resource)
-{
-	(void)Resource;
-
-	if (!MatchesSourcePath(Config.SourcePath))
+	const std::string Ext = TextureImageCodec::GetExtensionLower(SourcePath);
+	if (TextureImageCodec::PathLooksLikeCube(SourcePath)
+		|| TextureImageCodec::PathLooksLikeCubeArray(SourcePath)
+		|| TextureImageCodec::PathLooksLikeTexture3D(SourcePath)
+		|| TextureImageCodec::PathLooksLikeTexture2DArray(SourcePath))
 	{
-		CATTY_CORE_WARN(
-			"TResourceIOTraits<UTextureResource>: extension not recognized as texture '{}'",
-			Config.SourcePath);
-	}
-
-	if (Bulk.Bytes.empty())
-	{
-		CATTY_CORE_ERROR(
-			"TResourceIOTraits<UTextureResource>: empty BulkData for '{}'",
-			Config.SourcePath);
 		return false;
 	}
-
-	// Pixel decode / mip build lands here (consume Bulk.Bytes).
-	return true;
+	return TextureImageCodec::IsRasterExtension(Ext) || TextureImageCodec::IsKtx2Extension(Ext);
 }
 
-bool TResourceIOTraits<UTextureResource>::ExportSource(
-	FResourceExportConfig& Config,
-	const UTextureResource& Resource)
+bool TResourceIOTraits<UTexture2D>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UTexture2D& Resource)
 {
-	return CopyFileToDestination(
-		Resource.GetSourcePath(),
-		Config.DestinationPath,
-		Config.bOverwrite);
+	return ImportTextureCpu(Config, Bulk, Resource);
+}
+
+bool TResourceIOTraits<UTexture2D>::ExportSource(
+	FResourceExportConfig& Config,
+	const UTexture2D& Resource)
+{
+	return ExportTextureCpu(Config, Resource);
+}
+
+bool TResourceIOTraits<UTexture3D>::MatchesSourcePath(const std::string& SourcePath)
+{
+	return TextureImageCodec::PathLooksLikeTexture3D(SourcePath);
+}
+
+bool TResourceIOTraits<UTexture3D>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UTexture3D& Resource)
+{
+	return ImportTextureCpu(Config, Bulk, Resource);
+}
+
+bool TResourceIOTraits<UTexture3D>::ExportSource(
+	FResourceExportConfig& Config,
+	const UTexture3D& Resource)
+{
+	return ExportTextureCpu(Config, Resource);
+}
+
+bool TResourceIOTraits<UTextureCube>::MatchesSourcePath(const std::string& SourcePath)
+{
+	return TextureImageCodec::PathLooksLikeCube(SourcePath);
+}
+
+bool TResourceIOTraits<UTextureCube>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UTextureCube& Resource)
+{
+	return ImportTextureCpu(Config, Bulk, Resource);
+}
+
+bool TResourceIOTraits<UTextureCube>::ExportSource(
+	FResourceExportConfig& Config,
+	const UTextureCube& Resource)
+{
+	return ExportTextureCpu(Config, Resource);
+}
+
+bool TResourceIOTraits<UTextureCubeArray>::MatchesSourcePath(const std::string& SourcePath)
+{
+	return TextureImageCodec::PathLooksLikeCubeArray(SourcePath);
+}
+
+bool TResourceIOTraits<UTextureCubeArray>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UTextureCubeArray& Resource)
+{
+	return ImportTextureCpu(Config, Bulk, Resource);
+}
+
+bool TResourceIOTraits<UTextureCubeArray>::ExportSource(
+	FResourceExportConfig& Config,
+	const UTextureCubeArray& Resource)
+{
+	return ExportTextureCpu(Config, Resource);
+}
+
+bool TResourceIOTraits<UTexture2DArray>::MatchesSourcePath(const std::string& SourcePath)
+{
+	return TextureImageCodec::PathLooksLikeTexture2DArray(SourcePath);
+}
+
+bool TResourceIOTraits<UTexture2DArray>::ImportSource(
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk,
+	UTexture2DArray& Resource)
+{
+	return ImportTextureCpu(Config, Bulk, Resource);
+}
+
+bool TResourceIOTraits<UTexture2DArray>::ExportSource(
+	FResourceExportConfig& Config,
+	const UTexture2DArray& Resource)
+{
+	return ExportTextureCpu(Config, Resource);
 }
 
 } // namespace Catty

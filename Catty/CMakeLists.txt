@@ -137,6 +137,14 @@ target_link_libraries(Catty
 		lua
 )
 
+if(CATTY_HAS_LIBKTX)
+	target_link_libraries(Catty PRIVATE ktx)
+	target_compile_definitions(Catty PRIVATE CATTY_WITH_LIBKTX=1)
+endif()
+if(CATTY_HAS_OPENIMAGEIO)
+	target_compile_definitions(Catty PRIVATE CATTY_WITH_OPENIMAGEIO=1)
+endif()
+
 # Re-export ImGui include paths / defs so game TUs can #include <imgui.h> against Catty.dll.
 target_include_directories(Catty
 	PUBLIC

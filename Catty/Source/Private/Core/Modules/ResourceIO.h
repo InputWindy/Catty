@@ -159,27 +159,75 @@ struct TResourceIOTraits<UResource>
 };
 
 template <>
-struct TResourceIOTraits<UTextureResource>
+struct TResourceIOTraits<UTexture2D>
 {
-	static constexpr EResourceType GetType()
-	{
-		return EResourceType::Texture;
-	}
-
+	static constexpr EResourceType GetType() { return EResourceType::Texture2D; }
 	static constexpr const char* TypeNames[] = {
+		"Texture2D",
 		"Texture",
+		"UTexture2D",
+		"UTexture",
 		"TextureResource",
 		"UTextureResource",
 	};
-
 	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
-
 	[[nodiscard]] static bool ImportSource(
 		FResourceImportConfig& Config,
 		FResourceBulkData& Bulk,
-		UTextureResource& Resource);
+		UTexture2D& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UTexture2D& Resource);
+};
 
-	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UTextureResource& Resource);
+template <>
+struct TResourceIOTraits<UTexture3D>
+{
+	static constexpr EResourceType GetType() { return EResourceType::Texture3D; }
+	static constexpr const char* TypeNames[] = { "Texture3D", "UTexture3D" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UTexture3D& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UTexture3D& Resource);
+};
+
+template <>
+struct TResourceIOTraits<UTextureCube>
+{
+	static constexpr EResourceType GetType() { return EResourceType::TextureCube; }
+	static constexpr const char* TypeNames[] = { "TextureCube", "UTextureCube", "Cubemap" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UTextureCube& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UTextureCube& Resource);
+};
+
+template <>
+struct TResourceIOTraits<UTextureCubeArray>
+{
+	static constexpr EResourceType GetType() { return EResourceType::TextureCubeArray; }
+	static constexpr const char* TypeNames[] = { "TextureCubeArray", "UTextureCubeArray" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UTextureCubeArray& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UTextureCubeArray& Resource);
+};
+
+template <>
+struct TResourceIOTraits<UTexture2DArray>
+{
+	static constexpr EResourceType GetType() { return EResourceType::Texture2DArray; }
+	static constexpr const char* TypeNames[] = { "Texture2DArray", "UTexture2DArray" };
+	[[nodiscard]] static bool MatchesSourcePath(const std::string& SourcePath);
+	[[nodiscard]] static bool ImportSource(
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk,
+		UTexture2DArray& Resource);
+	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UTexture2DArray& Resource);
 };
 
 template <typename TResource>

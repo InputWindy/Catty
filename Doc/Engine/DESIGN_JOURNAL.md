@@ -66,11 +66,20 @@ Contract: [`../../Catty/Source/Public/Core/Object/CONTRACT.md`](../../Catty/Sour
 
 | Layer | Role |
 |-------|------|
-| `FResourceSystem` / `UResource` | Asset / UObject lifetime |
+| `FResourceSystem` / `UResource` / `UTexture*` | Asset / UObject lifetime; **CPU** BulkData + pixels only |
 | `FRHIResourceManager` | GPU `FRHI*` objects, pooling |
 | VMA | Device memory (Private only) |
 
 Do not collapse these three.
+
+### UTexture CPU IO (2026-07)
+
+- **Done:** `UTexture` base + `UTexture2D` / `3D` / `Cube` / `CubeArray` / `2DArray`; `EResourceType` texture variants; Private `TextureImageCodec` Import/Export via `TResourceIOTraits`.
+- **Raster:** Win32 **WIC** (png/jpg/… → RGBA8). `CATTY_WITH_OPENIMAGEIO` default **OFF** (FetchContent deferred).
+- **KTX2:** **libktx** when KTX-Software sources are present (`CATTY_KTX_SOURCE_DIR` or `Intermediate/_deps/ktx_software-src`; optional `CATTY_FETCH_LIBKTX=ON`). Needs Git Bash (`BASH_EXECUTABLE`) and `enable_language(C)`. Without sources, configure still succeeds (WIC-only). OIIO does not stably decode KTX2.
+- **Path hints:** `.cube.` / `.cubemap.` / `.cubearray.` / `.3d.` / `.2darray.` select subtype when TypeHint unknown; plain `.ktx2` defaults to `UTexture2D`.
+- **Not done:** Render-thread GPU snapshot / `FRHITexture` upload from `UTexture` pixels; OIIO wired build.
+- **Pitfalls:** Game `U*` must never hold GPU handles; cube KTX without a name hint may import as `UTexture2D` (dimension warn).
 
 ---
 

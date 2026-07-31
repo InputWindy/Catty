@@ -46,8 +46,9 @@ Full text: [`Doc/Engine/CODING_STANDARDS.md`](Doc/Engine/CODING_STANDARDS.md) an
 2. Naming: `U*` for UObject types, `F*` otherwise, `b` for bools, PascalCase members/functions.
 3. Public includes `<...>`, Private `"..."`; no nested `Public/Catty/`.
 4. Pooled `UObject` / `UPackage` / `UResource`: pass **`FObjectRef`** only — see Object `CONTRACT.md`.
-5. Never hand-edit `Catty/Source/Generated/**`.
-6. RHI: upper layers use **Manager** + logical **Graphics/Compute/Transfer** queues; no `vulkan.h` / VMA in Public — see RHI `CONTRACT.md`.
+5. `U*` Game assets (including `UTexture*`) are **CPU-only** — no FRHI/Vk on them; GPU via Render snapshot later.
+6. Never hand-edit `Catty/Source/Generated/**`.
+7. RHI: upper layers use **Manager** + logical **Graphics/Compute/Transfer** queues; no `vulkan.h` / VMA in Public — see RHI `CONTRACT.md`.
 
 ## Module contracts (status lives here too)
 

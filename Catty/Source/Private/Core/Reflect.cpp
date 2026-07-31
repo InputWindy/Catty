@@ -105,10 +105,16 @@ void SelfTestObjectReflect()
 	assert(ResourceEnum != nullptr);
 
 	assert(ResourceEnum->FindByName("Texture") != nullptr);
-
 	assert(ResourceEnum->FindByName("Texture")->Value == static_cast<std::int64_t>(EResourceType::Texture));
-
+	assert(ResourceEnum->FindByName("Texture2D") != nullptr);
+	assert(ResourceEnum->FindByName("Texture2D")->Value == static_cast<std::int64_t>(EResourceType::Texture2D));
+	assert(ResourceEnum->FindByName("TextureCube") != nullptr);
+	assert(ResourceEnum->FindByName("TextureCube")->Value == static_cast<std::int64_t>(EResourceType::TextureCube));
 	assert(ResourceEnum->FindByValue(static_cast<std::int64_t>(EResourceType::Mesh)) != nullptr);
+
+	const FEnumType* TexDimEnum = FEnumTypeRegistry::Get().FindType("Catty::ETextureDimension");
+	assert(TexDimEnum != nullptr);
+	assert(TexDimEnum->FindByName("Cube") != nullptr);
 
 
 

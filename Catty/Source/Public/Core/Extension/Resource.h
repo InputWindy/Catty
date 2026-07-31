@@ -47,12 +47,50 @@ enum class EResourceType : std::uint8_t
 {
 	Unknown = 0,
 	Raw,
+	/** Legacy alias — Prefer Texture2D. Kept for package/string compat. */
 	Texture,
+	Texture2D,
+	Texture3D,
+	TextureCube,
+	TextureCubeArray,
+	Texture2DArray,
 	Mesh,
 	Material,
 	Shader,
 	Audio,
 	Data,
+};
+
+/**
+ * CPU-side texture dimension (Game thread). Not an RHI/GPU type.
+ * U* assets never hold GPU resources — Render snapshots create FRHITexture later.
+ */
+CATTY_ENUM()
+enum class ETextureDimension : std::uint8_t
+{
+	Tex2D = 0,
+	Tex3D,
+	Cube,
+	CubeArray,
+	Tex2DArray,
+};
+
+/**
+ * CPU pixel layout for imported/exported texture bytes (Game thread only).
+ * Values may later align numerically with RHI formats; Public must not include RHI headers.
+ */
+CATTY_ENUM()
+enum class ETexturePixelFormat : std::uint8_t
+{
+	Unknown = 0,
+	R8,
+	RG8,
+	RGB8,
+	RGBA8,
+	RGBA16F,
+	RGBA32F,
+	/** Opaque GPU-compressed payload retained for later Render upload (e.g. from KTX2). */
+	BlockCompressed,
 };
 
 /**
@@ -101,20 +139,95 @@ protected:
 };
 
 /**
- * Typed texture asset shell (decode / GPU upload live in private ResourceIO Traits).
+ * Game-thread texture asset: CPU pixels / BulkData only.
+ * Must not hold FRHI* / Vk* / GPU handles. Render creates GPU textures from a snapshot later.
  * Not CATTY_OBJECT — Lua FLua_* wrappers only support UObject as sol base today.
+ * Formerly UTextureResource (removed).
  */
-class CATTY_API UTextureResource : public UResource
+class CATTY_API UTexture : public UResource
 {
 public:
 	static constexpr int PoolSize = 32;
 
-	UTextureResource(
+	UTexture(
 		UPackage* InOuter,
 		std::string InObjectName,
 		EResourceType InType,
 		std::string InSourcePath);
-	virtual ~UTextureResource() override;
+	~UTexture() override;
+
+	[[nodiscard]] ETextureDimension GetDimension() const { return Dimension; }
+	[[nodiscard]] ETexturePixelFormat GetPixelFormat() const { return PixelFormat; }
+	[[nodiscard]] std::uint32_t GetWidth() const { return Width; }
+	[[nodiscard]] std::uint32_t GetHeight() const { return Height; }
+	[[nodiscard]] std::uint32_t GetDepth() const { return Depth; }
+	[[nodiscard]] std::uint32_t GetArrayLayers() const { return ArrayLayers; }
+	[[nodiscard]] std::uint32_t GetMipCount() const { return MipCount; }
+	[[nodiscard]] bool IsSRGB() const { return bSRGB; }
+	[[nodiscard]] const std::vector<std::uint8_t>& GetPixels() const { return Pixels; }
+	[[nodiscard]] std::vector<std::uint8_t>& GetPixelsMutable() { return Pixels; }
+
+	void SetCpuImage(
+		ETextureDimension InDimension,
+		ETexturePixelFormat InFormat,
+		std::uint32_t InWidth,
+		std::uint32_t InHeight,
+		std::uint32_t InDepth,
+		std::uint32_t InArrayLayers,
+		std::uint32_t InMipCount,
+		bool bInSRGB,
+		std::vector<std::uint8_t> InPixels);
+
+protected:
+	ETextureDimension Dimension = ETextureDimension::Tex2D;
+	ETexturePixelFormat PixelFormat = ETexturePixelFormat::Unknown;
+	std::uint32_t Width = 0;
+	std::uint32_t Height = 0;
+	std::uint32_t Depth = 1;
+	std::uint32_t ArrayLayers = 1;
+	std::uint32_t MipCount = 1;
+	bool bSRGB = true;
+	std::vector<std::uint8_t> Pixels;
+};
+
+class CATTY_API UTexture2D : public UTexture
+{
+public:
+	static constexpr int PoolSize = 32;
+	UTexture2D(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UTexture2D() override;
+};
+
+class CATTY_API UTexture3D : public UTexture
+{
+public:
+	static constexpr int PoolSize = 16;
+	UTexture3D(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UTexture3D() override;
+};
+
+class CATTY_API UTextureCube : public UTexture
+{
+public:
+	static constexpr int PoolSize = 16;
+	UTextureCube(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UTextureCube() override;
+};
+
+class CATTY_API UTextureCubeArray : public UTexture
+{
+public:
+	static constexpr int PoolSize = 8;
+	UTextureCubeArray(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UTextureCubeArray() override;
+};
+
+class CATTY_API UTexture2DArray : public UTexture
+{
+public:
+	static constexpr int PoolSize = 16;
+	UTexture2DArray(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UTexture2DArray() override;
 };
 
 /** Raw bytes produced by FResourceServer; consumed by Importer. */

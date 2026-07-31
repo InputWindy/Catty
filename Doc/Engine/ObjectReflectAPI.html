@@ -232,6 +232,8 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 		<li><a href="#type-Catty-EPackageFlags">EPackageFlags</a></li>
 		<li><a href="#type-Catty-EResourceLoadState">EResourceLoadState</a></li>
 		<li><a href="#type-Catty-EResourceType">EResourceType</a></li>
+		<li><a href="#type-Catty-ETextureDimension">ETextureDimension</a></li>
+		<li><a href="#type-Catty-ETexturePixelFormat">ETexturePixelFormat</a></li>
 	</ul>
 <!-- @@CATTY_OBJECT_REFLECT_TOC_END@@ -->
 </nav>
@@ -481,7 +483,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 <section class="card" id="catalog">
 	<h2>Registered types</h2>
 	<div class="body">
-		<p>Codegen 扫描结果：3 object / 0 struct / 4 enum。 修改标注宏后重新构建即可刷新本节。</p>
+		<p>Codegen 扫描结果：3 object / 0 struct / 6 enum。 修改标注宏后重新构建即可刷新本节。</p>
 
 		<article class="fn" id="type-Catty-UObject">
 			<div class="fn-head">
@@ -544,7 +546,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: Catty::UObject · Catty/Source/Public/Core/Extension/Resource.h:63</code>
+				<code class="sig">super: Catty::UObject · Catty/Source/Public/Core/Extension/Resource.h:101</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
@@ -638,11 +640,61 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
 						<tr><td><code>Raw</code></td><td><code>1</code></td></tr>
 						<tr><td><code>Texture</code></td><td><code>2</code></td></tr>
-						<tr><td><code>Mesh</code></td><td><code>3</code></td></tr>
-						<tr><td><code>Material</code></td><td><code>4</code></td></tr>
-						<tr><td><code>Shader</code></td><td><code>5</code></td></tr>
-						<tr><td><code>Audio</code></td><td><code>6</code></td></tr>
-						<tr><td><code>Data</code></td><td><code>7</code></td></tr>
+						<tr><td><code>Texture2D</code></td><td><code>3</code></td></tr>
+						<tr><td><code>Texture3D</code></td><td><code>4</code></td></tr>
+						<tr><td><code>TextureCube</code></td><td><code>5</code></td></tr>
+						<tr><td><code>TextureCubeArray</code></td><td><code>6</code></td></tr>
+						<tr><td><code>Texture2DArray</code></td><td><code>7</code></td></tr>
+						<tr><td><code>Mesh</code></td><td><code>8</code></td></tr>
+						<tr><td><code>Material</code></td><td><code>9</code></td></tr>
+						<tr><td><code>Shader</code></td><td><code>10</code></td></tr>
+						<tr><td><code>Audio</code></td><td><code>11</code></td></tr>
+						<tr><td><code>Data</code></td><td><code>12</code></td></tr>
+					</tbody>
+				</table>
+			</div>
+		</article>
+
+		<article class="fn" id="type-Catty-ETextureDimension">
+			<div class="fn-head">
+				<h3 class="fn-name">Catty::ETextureDimension</h3>
+				<span class="tag tag-enum">enum</span>
+			</div>
+			<div class="fn-body">
+				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Extension/Resource.h:68</code>
+				<h4>Values</h4>
+				<table>
+					<thead><tr><th>Name</th><th>Value</th></tr></thead>
+					<tbody>
+						<tr><td><code>Tex2D</code></td><td><code>0</code></td></tr>
+						<tr><td><code>Tex3D</code></td><td><code>1</code></td></tr>
+						<tr><td><code>Cube</code></td><td><code>2</code></td></tr>
+						<tr><td><code>CubeArray</code></td><td><code>3</code></td></tr>
+						<tr><td><code>Tex2DArray</code></td><td><code>4</code></td></tr>
+					</tbody>
+				</table>
+			</div>
+		</article>
+
+		<article class="fn" id="type-Catty-ETexturePixelFormat">
+			<div class="fn-head">
+				<h3 class="fn-name">Catty::ETexturePixelFormat</h3>
+				<span class="tag tag-enum">enum</span>
+			</div>
+			<div class="fn-body">
+				<code class="sig">enum class : std::uint8_t · Catty/Source/Public/Core/Extension/Resource.h:82</code>
+				<h4>Values</h4>
+				<table>
+					<thead><tr><th>Name</th><th>Value</th></tr></thead>
+					<tbody>
+						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
+						<tr><td><code>R8</code></td><td><code>1</code></td></tr>
+						<tr><td><code>RG8</code></td><td><code>2</code></td></tr>
+						<tr><td><code>RGB8</code></td><td><code>3</code></td></tr>
+						<tr><td><code>RGBA8</code></td><td><code>4</code></td></tr>
+						<tr><td><code>RGBA16F</code></td><td><code>5</code></td></tr>
+						<tr><td><code>RGBA32F</code></td><td><code>6</code></td></tr>
+						<tr><td><code>BlockCompressed</code></td><td><code>7</code></td></tr>
 					</tbody>
 				</table>
 			</div>

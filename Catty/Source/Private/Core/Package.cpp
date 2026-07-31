@@ -34,6 +34,11 @@ namespace
 	{
 	case EResourceType::Raw: return "Raw";
 	case EResourceType::Texture: return "Texture";
+	case EResourceType::Texture2D: return "Texture2D";
+	case EResourceType::Texture3D: return "Texture3D";
+	case EResourceType::TextureCube: return "TextureCube";
+	case EResourceType::TextureCubeArray: return "TextureCubeArray";
+	case EResourceType::Texture2DArray: return "Texture2DArray";
 	case EResourceType::Mesh: return "Mesh";
 	case EResourceType::Material: return "Material";
 	case EResourceType::Shader: return "Shader";

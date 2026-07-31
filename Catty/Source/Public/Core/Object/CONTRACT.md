@@ -34,12 +34,20 @@ Mutual strong refs leak. Break cycles with a **non-owning raw observer** pointer
 
 - Stable core pattern; keep CONTRACT and `.cursor/rules/fobject-ref.mdc` in sync when changing ref semantics.
 
+## UResource / UTexture (Game thread)
+
+- `U*` assets hold **CPU data only** (BulkData / pixels / metadata). No `FRHI*`, `Vk*`, or GPU handles on Game objects.
+- Texture hierarchy: `UTexture` → `UTexture2D` / `UTexture3D` / `UTextureCube` / `UTextureCubeArray` / `UTexture2DArray`.
+- GPU textures are created later on the Render thread from a **snapshot** of Game CPU data (not in this layer).
+
 ## Pitfalls
 
 - Older text may mention `FObjectWeakRef` — follow **this** CONTRACT and `fobject-ref` rule for the current repo.
 - Do not confuse `UResource` (asset UObject) with `FRHIResource` (GPU object).
+- Do not put RHI includes or GPU resources on `UTexture*` — that breaks the Game/Render split.
 
 ## Related files
 
 - `Object.h`, pool / GC headers under `Core/`
-- Journal: `Doc/Engine/DESIGN_JOURNAL.md` → Object / GC
+- `Core/Extension/Resource.h` (`UTexture*`)
+- Journal: `Doc/Engine/DESIGN_JOURNAL.md` → Object / GC / Resource
