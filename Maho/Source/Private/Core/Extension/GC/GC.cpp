@@ -1,4 +1,4 @@
-﻿#include <Core/Extension/GC.h>
+﻿#include <Core/Extension/GC/GC.h>
 
 #include <Core/System/Console.h>
 #include <Core/Application/App.h>

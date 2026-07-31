@@ -7,10 +7,10 @@
  * FResourceSystem only holds IResourceImporter* / IResourceExporter* — no type switch.
  */
 
-#include <Core/Extension/Resource.h>
+#include <Core/Extension/Resource/Resource.h>
 
 #include <Core/System/Log.h>
-#include <Core/Extension/GC.h>
+#include <Core/Extension/GC/GC.h>
 #include <Core/Object/Package.h>
 
 #include <type_traits>

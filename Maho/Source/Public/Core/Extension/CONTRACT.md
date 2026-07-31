@@ -49,6 +49,6 @@ See [`../../../../Plugins/README.md`](../../../../Plugins/README.md):
 
 ## Related files
 
-- `Core/Extension/*.h`, `Core/Application/App.h`
+- `Core/Extension/<Name>/<Name>.h` (built-in systems), `Core/Extension/Script/ScriptLayer.h`, `Core/Extension/Editor/EditorLayer.h`, `Core/Application/App.h`
 - `Render/RenderServer.h`, `Render/RHI/RHIServer.h`
 - Journal: `Doc/Engine/DESIGN_JOURNAL.md` → Extensions

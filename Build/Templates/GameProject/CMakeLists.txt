@@ -33,7 +33,7 @@ maho_ensure_workspace_dirs()
 maho_warn_if_not_intermediate_binary_dir()
 
 option(MAHO_BUILD_SHARED "Build Maho engine as a shared library (DLL)" ON)
-# Push Maho::FEditorLayer from the game App (layer lives in Maho.dll under Core/Layer).
+# Push Maho::FEditorLayer from the game App (layer lives in Maho.dll under Core/Extension/Editor).
 option(GAME_WITH_EDITOR "Enable Maho::FEditorLayer overlay (disable for shipping)" ON)
 
 # Enabled plugins come from the sibling .cproject (or -DMAHO_CPROJECT=...).

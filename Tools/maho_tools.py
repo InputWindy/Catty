@@ -1137,8 +1137,8 @@ def generate_game_app_cpp(cproject_path: Path, *, log: Any = print) -> Path:
 		"",
 		"#include <Maho.h>",
 		"#include <EntryPoint.h>",
-		"#include <Core/Extension/ScriptLayer.h>",
-		"#include <Core/Extension/EditorLayer.h>",
+		"#include <Core/Extension/Script/ScriptLayer.h>",
+		"#include <Core/Extension/Editor/EditorLayer.h>",
 		f"#include <{layer_header}>",
 		'#include "World/WorldLayer.h"',
 	]

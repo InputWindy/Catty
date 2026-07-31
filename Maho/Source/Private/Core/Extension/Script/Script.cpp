@@ -1,9 +1,9 @@
-﻿#include <Core/Extension/Script.h>
+﻿#include <Core/Extension/Script/Script.h>
 
 #include <Core/Application/App.h>
 #include <Core/System/Console.h>
 #include <Core/System/Log.h>
-#include "Core/Layer/LuaObjectReflect.h"
+#include "LuaObjectReflect.h"
 
 #include <filesystem>
 #include <utility>

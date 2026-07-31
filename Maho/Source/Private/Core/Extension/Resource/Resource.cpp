@@ -1,13 +1,13 @@
-﻿#include "Core/Modules/ResourceIO.h"
+﻿#include "ResourceIO.h"
 
 #include <Core/Application/App.h>
-#include <Core/Extension/GC.h>
+#include <Core/Extension/GC/GC.h>
 #include <Core/Json.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
 #include <Core/Object/Package.h>
 #include <Core/Object/SoftObjectPath.h>
-#include "Core/Modules/ResourceServer.h"
+#include "ResourceServer.h"
 
 #include <ResourceTypes.gen.h>
 

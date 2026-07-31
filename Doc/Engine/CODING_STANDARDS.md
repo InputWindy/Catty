@@ -77,6 +77,32 @@ Allowed: unrelated English uses that are not a type-tag API (e.g. log string `"r
 - **Private** headers (`Source/Private`, plugin Private): `#include "..."`
 - Third-party / system: angle brackets (`<imgui.h>`, `<vector>`, `<vulkan/vulkan.h>` only in Private)
 
+## Extension source layout (**mandatory**)
+
+All code that belongs to a built-in engine **extension** (`*System`, related private helpers, companion Layers) must live under:
+
+```text
+Source/Public/Core/Extension/<ExtensionName>/
+Source/Private/Core/Extension/<ExtensionName>/
+```
+
+Rules:
+
+- **Folder name** = the extension’s identity (same as `GetName()` / system name): `GC`, `Resource`, `Script`, `Render`, `Platform`, `WorkerPool`, `Editor`, …
+- Public API header(s) and private `.cpp`/helpers for that extension stay **inside that folder** — do not dump them under `Core/Modules/`, `Core/Layer/`, or a flat `Core/Extension/*.cpp`.
+- Cross-cutting docs only (`CONTRACT.md`) may stay at `Core/Extension/CONTRACT.md`.
+- Include form: `#include <Core/Extension/Resource/Resource.h>` (not `<Core/Extension/Resource.h>`).
+
+Examples:
+
+| OK | Forbidden |
+|----|-----------|
+| `Extension/Resource/ResourceIO.cpp` | `Core/Modules/ResourceIO.cpp` |
+| `Extension/Script/LuaObjectReflect.cpp` | `Core/Layer/LuaObjectReflect.cpp` |
+| `Extension/GC/GC.cpp` | `Extension/GC.cpp` (flat) |
+
+Codegen outputs stay under `Source/Generated/` (e.g. `LuaReflectBindings.gen.h`) — those are **not** extension sources.
+
 ## Comments
 
 - All code comments (`//`, `/* */`, `/** */`) must be **English**

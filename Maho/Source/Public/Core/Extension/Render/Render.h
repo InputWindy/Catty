@@ -8,7 +8,7 @@
 #include <Core/DependsPack.h>
 #include <Core/Export.h>
 #include <Core/Sequencer/EngineExtension.h>
-#include <Core/Extension/Platform.h>
+#include <Core/Extension/Platform/Platform.h>
 #include <Core/TypeList.h>
 #include <Render/RenderServer.h>
 

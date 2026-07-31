@@ -49,5 +49,5 @@ Mutual strong refs leak. Break cycles with a **non-owning raw observer** pointer
 ## Related files
 
 - `Object.h`, pool / GC headers under `Core/`
-- `Core/Extension/Resource.h` (`UTexture*`)
+- `Core/Extension/Resource/Resource.h` (`UTexture*`)
 - Journal: `Doc/Engine/DESIGN_JOURNAL.md` → Object / GC / Resource

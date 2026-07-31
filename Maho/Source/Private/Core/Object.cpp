@@ -1,7 +1,7 @@
 ﻿#include <Core/Object/Object.h>
 
 #include <Core/System/Log.h>
-#include <Core/Extension/GC.h>
+#include <Core/Extension/GC/GC.h>
 #include <Core/Object/Package.h>
 
 namespace Maho

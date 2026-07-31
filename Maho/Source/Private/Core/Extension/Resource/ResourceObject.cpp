@@ -1,4 +1,4 @@
-﻿#include <Core/Extension/Resource.h>
+﻿#include <Core/Extension/Resource/Resource.h>
 
 namespace Maho
 {

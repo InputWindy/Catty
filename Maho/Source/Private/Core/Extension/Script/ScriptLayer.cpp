@@ -1,7 +1,7 @@
-﻿#include <Core/Extension/ScriptLayer.h>
+﻿#include <Core/Extension/Script/ScriptLayer.h>
 
 #include <Core/Application/App.h>
-#include <Core/Extension/Script.h>
+#include <Core/Extension/Script/Script.h>
 #include <Core/System/Log.h>
 
 #include <filesystem>

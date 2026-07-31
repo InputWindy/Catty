@@ -7,7 +7,7 @@
 
 #include <Core/DependsPack.h>
 #include <Core/Export.h>
-#include <Core/Extension/GC.h>
+#include <Core/Extension/GC/GC.h>
 #include <Core/Object/Object.h>
 #include <Core/Object/ObjectReflect.h>
 #include <Core/Object/SoftObjectPath.h>

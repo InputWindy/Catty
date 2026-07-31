@@ -81,5 +81,5 @@ Register from Mount / plugin Attach after the editor layer exists.
 ## Related
 
 - Public: `Core/Editor/EditorUIRegistry.h`, `EditorUITypes.h`
-- Shell: `Core/Extension/EditorLayer.h`
+- Shell: `Core/Extension/Editor/EditorLayer.h`
 - Journal: `Doc/Engine/DESIGN_JOURNAL.md` → Editor UI

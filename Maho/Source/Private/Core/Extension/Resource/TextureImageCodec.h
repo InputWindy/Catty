@@ -7,7 +7,7 @@
  * Game-thread only — never touches GPU / RHI.
  */
 
-#include <Core/Extension/Resource.h>
+#include <Core/Extension/Resource/Resource.h>
 
 #include <cstdint>
 #include <string>
