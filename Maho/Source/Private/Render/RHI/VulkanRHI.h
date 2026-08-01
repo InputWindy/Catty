@@ -45,6 +45,7 @@ public:
 	[[nodiscard]] virtual FRHIFence* CreateFence(bool bSignaled) override;
 	virtual void DestroyFence(FRHIFence* Fence) override;
 	virtual void WaitForFence(FRHIFence* Fence, std::uint64_t TimeoutNs) override;
+	[[nodiscard]] virtual bool IsFenceSignaled(FRHIFence* Fence) override;
 
 	[[nodiscard]] virtual FRHISemaphore* CreateGpuSemaphore() override;
 	virtual void DestroyGpuSemaphore(FRHISemaphore* Semaphore) override;

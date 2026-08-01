@@ -78,9 +78,9 @@ Do not collapse these three.
 - **Raster:** Win32 **WIC** (png/jpg/… → RGBA8). `MAHO_WITH_OPENIMAGEIO` default **OFF** (FetchContent deferred).
 - **KTX2:** **libktx** when KTX-Software sources are present (`MAHO_KTX_SOURCE_DIR` or `Intermediate/_deps/ktx_software-src`; optional `MAHO_FETCH_LIBKTX=ON`). Needs Git Bash (`BASH_EXECUTABLE`) and `enable_language(C)`. Without sources, configure still succeeds (WIC-only). OIIO does not stably decode KTX2.
 - **Path hints:** `.cube.` / `.cubemap.` / `.cubearray.` / `.3d.` / `.2darray.` select subtype when TypeHint unknown; plain `.ktx2` defaults to `UTexture2D`.
-- **Render proxy (2026-08):** `FRenderServer : FThreadedServer` (MahoRender) + `ENQUEUE_RENDER_COMMAND`; Game captures ImGui then enqueues `ExecuteFrame`. `FTextureCpuSnapshot` → `FTextureProxyRegistry` → staging + `CopyBufferToTexture` (RGBA8 Tex2D). No `ENQUEUE_RHI_COMMAND` — RHI uses CommandList Submit on MahoRHI.
-- **Not done:** Sampler/material bind of proxies; Cube/3D/BC upload; OIIO wired build.
-- **Pitfalls:** Game `U*` must never hold GPU handles; cube KTX without a name hint may import as `UTexture2D` (dimension warn).
+- **Render proxy / transfer (2026-08):** Client/ThreadedServer/Exporter — `FTransferHandle` (status only) + `FRenderServer::QueueResourceUpload<T>` / `RequestResourceDestroy`. Exporters specialized in `RenderServer.cpp` for `UTexture`(+dims), `UStaticMesh`, `USkeleton`, `UAnimation`. Async GPU upload via fence poll (`IsFenceSignaled`); no Flush/WaitForFence on Game or ExecuteFrame hot path (Boot placeholders excepted). Registries + defaults: Texture / Mesh / Skeleton / Animation. Join key = `FResourceSystem::MakeResourceCatalogKey` (SoftPath). Prefab/Material/AnimationGraph: no Render proxy.
+- **Not done:** Sampler/material bind of proxies; mesh draw path; Cube/3D/BC upload; skin streams on mesh snapshot; OIIO wired build; Game↔disk rewrite to `FTransferHandle` (kept as KickImport/`FObjectRef`).
+- **Pitfalls:** Game `U*` must never hold GPU handles; cube KTX without a name hint may import as `UTexture2D` (dimension warn); draw must use `Find*OrDefault` until transfer Succeeded.
 
 ### Model / Prefab CPU IO (2026-08)
 

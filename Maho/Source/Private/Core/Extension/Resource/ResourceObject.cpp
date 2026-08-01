@@ -186,6 +186,31 @@ void UStaticMesh::SetCpuGeometry(
 	Normals = std::move(InNormals);
 	UVs = std::move(InUVs);
 	Indices = std::move(InIndices);
+	++ContentGeneration;
+}
+
+void USkeleton::SetBones(std::vector<FSkeletonBone> InBones)
+{
+	Bones = std::move(InBones);
+	++ContentGeneration;
+}
+
+void UAnimation::SetSkeleton(FSoftObjectPath Path)
+{
+	Skeleton = std::move(Path);
+	++ContentGeneration;
+}
+
+void UAnimation::SetDurationSeconds(float Seconds)
+{
+	DurationSeconds = Seconds;
+	++ContentGeneration;
+}
+
+void UAnimation::SetTracks(std::vector<FAnimationTrack> InTracks)
+{
+	Tracks = std::move(InTracks);
+	++ContentGeneration;
 }
 
 USkeleton::USkeleton(

@@ -1357,6 +1357,16 @@ void FVulkanRHI::WaitForFence(FRHIFence* Fence, std::uint64_t TimeoutNs)
 	vkWaitForFences(Device, 1, &Handle, VK_TRUE, TimeoutNs);
 }
 
+bool FVulkanRHI::IsFenceSignaled(FRHIFence* Fence)
+{
+	if (Fence == nullptr)
+	{
+		return false;
+	}
+	VkFence Handle = static_cast<FVulkanFence*>(Fence)->GetVkFence();
+	return vkGetFenceStatus(Device, Handle) == VK_SUCCESS;
+}
+
 FRHISemaphore* FVulkanRHI::CreateGpuSemaphore()
 {
 	VkSemaphoreCreateInfo Info{};

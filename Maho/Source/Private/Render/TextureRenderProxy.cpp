@@ -1,10 +1,13 @@
 #include "TextureRenderProxy.h"
 
 #include <Core/Object/SoftObjectPath.h>
+#include <Core/Extension/Resource/Resource.h>
 #include <Core/System/Log.h>
 #include <Render/RHI/RHI.h>
 #include <Render/RHI/RHIResourceManager.h>
 #include <Render/RHI/RHIServer.h>
+
+#include <utility>
 
 namespace Maho
 {
@@ -48,81 +51,6 @@ namespace
 
 } // namespace
 
-void FTextureProxyRegistry::UploadSnapshotOnRHI(IRHI& RHI, FTextureRenderProxy& Proxy, FTextureCpuSnapshot& Snapshot)
-{
-	FRHITextureDesc Desc{};
-	if (!TryBuildTextureDesc(Snapshot, Desc))
-	{
-		MAHO_CORE_ERROR("TextureProxy: unsupported snapshot '{}'", Snapshot.CatalogKey);
-		return;
-	}
-
-	FRHIResourceManager& Manager = RHI.GetResourceManager();
-
-	if (Proxy.Texture && !DescEquals(Proxy.CachedDesc, Desc))
-	{
-		Manager.Release(Proxy.Texture, true);
-		Proxy.Texture = nullptr;
-	}
-
-	if (Proxy.Texture && Snapshot.Generation <= Proxy.UploadedGeneration)
-	{
-		return;
-	}
-
-	if (!Proxy.Texture)
-	{
-		Proxy.Texture = Manager.AcquireTexture(Desc, Snapshot.CatalogKey.c_str());
-		if (!Proxy.Texture)
-		{
-			MAHO_CORE_ERROR("TextureProxy: AcquireTexture failed '{}'", Snapshot.CatalogKey);
-			return;
-		}
-		Proxy.CachedDesc = Desc;
-	}
-
-	FRHIBufferDesc StagingDesc{};
-	StagingDesc.Size = Snapshot.Pixels.size();
-	StagingDesc.Usage = ERHIBufferUsage::TransferSrc;
-	StagingDesc.MemoryUsage = ERHIMemoryUsage::CPUToGPU;
-
-	FRHIBuffer* Staging = Manager.AcquireBuffer(StagingDesc);
-	if (!Staging)
-	{
-		MAHO_CORE_ERROR("TextureProxy: AcquireBuffer staging failed '{}'", Snapshot.CatalogKey);
-		return;
-	}
-
-	RHI.UpdateBuffer(Staging, 0, StagingDesc.Size, Snapshot.Pixels.data());
-
-	FRHICommandList* CmdList = RHI.CreateCommandList(ERHICommandListType::Transfer);
-	if (!CmdList)
-	{
-		Manager.Release(Staging, true);
-		MAHO_CORE_ERROR("TextureProxy: CreateCommandList failed '{}'", Snapshot.CatalogKey);
-		return;
-	}
-
-	CmdList->Begin();
-	CmdList->TransitionTexture(Proxy.Texture, ERHIResourceState::Common, ERHIResourceState::CopyDst);
-	CmdList->CopyBufferToTexture(Staging, Proxy.Texture, 0);
-	CmdList->TransitionTexture(Proxy.Texture, ERHIResourceState::CopyDst, ERHIResourceState::ShaderResource);
-	CmdList->End();
-
-	FRHIFence* Fence = RHI.CreateFence(false);
-	FRHICommandList* Lists[] = { CmdList };
-	RHI.GetTransferQueue().Submit(Lists, 1, nullptr, 0, nullptr, 0, Fence);
-	if (Fence)
-	{
-		RHI.WaitForFence(Fence);
-		RHI.DestroyFence(Fence);
-	}
-	RHI.DestroyCommandList(CmdList);
-	Manager.Release(Staging, true);
-
-	Proxy.UploadedGeneration = Snapshot.Generation;
-}
-
 bool TryBuildTextureCpuSnapshot(const UTexture& Texture, FTextureCpuSnapshot& Out)
 {
 	if (Texture.GetLoadState() != EResourceLoadState::Ready || Texture.GetPixels().empty())
@@ -131,11 +59,7 @@ bool TryBuildTextureCpuSnapshot(const UTexture& Texture, FTextureCpuSnapshot& Ou
 	}
 
 	Out = FTextureCpuSnapshot{};
-	Out.CatalogKey = FSoftObjectPath::FromObject(Texture).GetAssetPathString();
-	if (Out.CatalogKey.empty())
-	{
-		Out.CatalogKey = Texture.GetPathName();
-	}
+	Out.CatalogKey = FResourceSystem::MakeResourceCatalogKey(Texture);
 	Out.Generation = Texture.GetContentGeneration();
 	Out.Dimension = Texture.GetDimension();
 	Out.PixelFormat = Texture.GetPixelFormat();
@@ -216,18 +140,137 @@ void FTextureRenderProxy::Release(FRHIResourceManager& Manager)
 	}
 	UploadedGeneration = 0;
 	CachedDesc = FRHITextureDesc{};
+	bReady = false;
 }
 
-void FTextureProxyRegistry::UploadOrUpdate(FRHIServer& RHIServer, FTextureCpuSnapshot&& Snapshot)
+void FTextureProxyRegistry::BeginUploadOnRHI(
+	IRHI& RHI,
+	FTextureRenderProxy& Proxy,
+	FTextureCpuSnapshot& Snapshot,
+	FInFlightUpload& OutFlight)
+{
+	const FTransferHandle KeptHandle = OutFlight.Handle;
+	OutFlight = FInFlightUpload{};
+	OutFlight.Handle = KeptHandle;
+	OutFlight.CatalogKey = Snapshot.CatalogKey;
+	OutFlight.Generation = Snapshot.Generation;
+	OutFlight.Proxy = &Proxy;
+
+	FRHITextureDesc Desc{};
+	if (!TryBuildTextureDesc(Snapshot, Desc))
+	{
+		MAHO_CORE_ERROR("TextureProxy: unsupported snapshot '{}'", Snapshot.CatalogKey);
+		return;
+	}
+
+	FRHIResourceManager& Manager = RHI.GetResourceManager();
+	if (Proxy.Texture && !DescEquals(Proxy.CachedDesc, Desc))
+	{
+		Manager.Release(Proxy.Texture, true);
+		Proxy.Texture = nullptr;
+		Proxy.bReady = false;
+	}
+
+	if (Proxy.Texture && Snapshot.Generation <= Proxy.UploadedGeneration && Proxy.bReady)
+	{
+		return;
+	}
+
+	if (!Proxy.Texture)
+	{
+		Proxy.Texture = Manager.AcquireTexture(Desc, Snapshot.CatalogKey.c_str());
+		if (!Proxy.Texture)
+		{
+			MAHO_CORE_ERROR("TextureProxy: AcquireTexture failed '{}'", Snapshot.CatalogKey);
+			return;
+		}
+		Proxy.CachedDesc = Desc;
+		Proxy.bReady = false;
+	}
+
+	FRHIBufferDesc StagingDesc{};
+	StagingDesc.Size = Snapshot.Pixels.size();
+	StagingDesc.Usage = ERHIBufferUsage::TransferSrc;
+	StagingDesc.MemoryUsage = ERHIMemoryUsage::CPUToGPU;
+
+	FRHIBuffer* Staging = Manager.AcquireBuffer(StagingDesc);
+	if (!Staging)
+	{
+		MAHO_CORE_ERROR("TextureProxy: AcquireBuffer staging failed '{}'", Snapshot.CatalogKey);
+		return;
+	}
+
+	RHI.UpdateBuffer(Staging, 0, StagingDesc.Size, Snapshot.Pixels.data());
+
+	FRHICommandList* CmdList = RHI.CreateCommandList(ERHICommandListType::Transfer);
+	if (!CmdList)
+	{
+		Manager.Release(Staging, true);
+		MAHO_CORE_ERROR("TextureProxy: CreateCommandList failed '{}'", Snapshot.CatalogKey);
+		return;
+	}
+
+	CmdList->Begin();
+	CmdList->TransitionTexture(Proxy.Texture, ERHIResourceState::Common, ERHIResourceState::CopyDst);
+	CmdList->CopyBufferToTexture(Staging, Proxy.Texture, 0);
+	CmdList->TransitionTexture(Proxy.Texture, ERHIResourceState::CopyDst, ERHIResourceState::ShaderResource);
+	CmdList->End();
+
+	FRHIFence* Fence = RHI.CreateFence(false);
+	FRHICommandList* Lists[] = { CmdList };
+	RHI.GetTransferQueue().Submit(Lists, 1, nullptr, 0, nullptr, 0, Fence);
+
+	OutFlight.Fence = Fence;
+	OutFlight.Staging = Staging;
+	OutFlight.CmdList = CmdList;
+}
+
+void FTextureProxyRegistry::CompleteUploadOnRHI(IRHI& RHI, FInFlightUpload& Flight, bool bSuccess)
+{
+	FRHIResourceManager& Manager = RHI.GetResourceManager();
+	if (Flight.CmdList)
+	{
+		RHI.DestroyCommandList(Flight.CmdList);
+		Flight.CmdList = nullptr;
+	}
+	if (Flight.Staging)
+	{
+		Manager.Release(Flight.Staging, true);
+		Flight.Staging = nullptr;
+	}
+	if (Flight.Fence)
+	{
+		RHI.DestroyFence(Flight.Fence);
+		Flight.Fence = nullptr;
+	}
+
+	if (bSuccess && Flight.Proxy)
+	{
+		Flight.Proxy->UploadedGeneration = Flight.Generation;
+		Flight.Proxy->bReady = Flight.Proxy->Texture != nullptr;
+		SetTransferHandleState(Flight.Handle, ETransferState::Succeeded);
+	}
+	else
+	{
+		SetTransferHandleState(Flight.Handle, ETransferState::Failed);
+	}
+}
+
+void FTextureProxyRegistry::BeginUpload(
+	FRHIServer& RHIServer,
+	FTextureCpuSnapshot&& Snapshot,
+	FTransferHandle Handle)
 {
 	if (!RHIServer.HasRHI() || !RHIServer.IsInitialized())
 	{
 		MAHO_CORE_ERROR("TextureProxy: RHIServer unavailable for '{}'", Snapshot.CatalogKey);
+		SetTransferHandleState(Handle, ETransferState::Failed);
 		return;
 	}
 	if (!IsSupportedUpload(Snapshot))
 	{
 		MAHO_CORE_WARN("TextureProxy: skip unsupported '{}'", Snapshot.CatalogKey);
+		SetTransferHandleState(Handle, ETransferState::Failed);
 		return;
 	}
 
@@ -239,33 +282,137 @@ void FTextureProxyRegistry::UploadOrUpdate(FRHIServer& RHIServer, FTextureCpuSna
 		Proxy = NewProxy.get();
 		Proxies.emplace(Key, std::move(NewProxy));
 	}
+	Proxy->bReady = false;
 
 	FRHIServer* ServerPtr = &RHIServer;
 	RHIServer.Enqueue(
-		[ServerPtr, Proxy, Snap = std::move(Snapshot)](FThreadedServer& /*Server*/) mutable
+		[this, ServerPtr, Proxy, Snap = std::move(Snapshot), Handle](FThreadedServer& /*Server*/) mutable
+		{
+			IRHI* RHI = ServerPtr->GetRHI();
+			if (!RHI)
+			{
+				SetTransferHandleState(Handle, ETransferState::Failed);
+				return;
+			}
+
+			FInFlightUpload Flight{};
+			Flight.Handle = Handle;
+			BeginUploadOnRHI(*RHI, *Proxy, Snap, Flight);
+			if (!Flight.Fence)
+			{
+				if (Proxy->bReady && Snap.Generation <= Proxy->UploadedGeneration)
+				{
+					SetTransferHandleState(Handle, ETransferState::Succeeded);
+				}
+				else
+				{
+					CompleteUploadOnRHI(*RHI, Flight, false);
+				}
+				return;
+			}
+			InFlight.push_back(std::move(Flight));
+		});
+}
+
+void FTextureProxyRegistry::PollInFlight(FRHIServer& RHIServer)
+{
+	if (!RHIServer.HasRHI() || !RHIServer.IsInitialized() || InFlight.empty())
+	{
+		return;
+	}
+
+	FRHIServer* ServerPtr = &RHIServer;
+	RHIServer.Enqueue(
+		[this, ServerPtr](FThreadedServer& /*Server*/)
 		{
 			IRHI* RHI = ServerPtr->GetRHI();
 			if (!RHI)
 			{
 				return;
 			}
-			FTextureProxyRegistry::UploadSnapshotOnRHI(*RHI, *Proxy, Snap);
+
+			std::vector<FInFlightUpload> StillInFlight;
+			StillInFlight.reserve(InFlight.size());
+			for (FInFlightUpload& Flight : InFlight)
+			{
+				if (!Flight.Fence || !RHI->IsFenceSignaled(Flight.Fence))
+				{
+					StillInFlight.push_back(std::move(Flight));
+					continue;
+				}
+				CompleteUploadOnRHI(*RHI, Flight, true);
+			}
+			InFlight = std::move(StillInFlight);
 		});
-	RHIServer.Flush();
 }
 
-void FTextureProxyRegistry::Destroy(FRHIServer& RHIServer, const std::string& CatalogKey)
+void FTextureProxyRegistry::Destroy(
+	FRHIServer& RHIServer,
+	const std::string& CatalogKey,
+	FTransferHandle Handle)
 {
-	const auto It = Proxies.find(CatalogKey);
-	if (It == Proxies.end() || !It->second)
+	if (CatalogKey == DefaultKey)
 	{
+		SetTransferHandleState(Handle, ETransferState::Succeeded);
 		return;
 	}
 
-	FTextureRenderProxy* Proxy = It->second.get();
-	if (RHIServer.HasRHI() && RHIServer.IsInitialized() && Proxy->Texture)
+	const auto It = Proxies.find(CatalogKey);
+	if (It == Proxies.end() || !It->second)
+	{
+		SetTransferHandleState(Handle, ETransferState::Succeeded);
+		return;
+	}
+
+	std::unique_ptr<FTextureRenderProxy> Owned = std::move(It->second);
+	Proxies.erase(It);
+
+	if (!RHIServer.HasRHI() || !RHIServer.IsInitialized())
+	{
+		SetTransferHandleState(Handle, ETransferState::Succeeded);
+		return;
+	}
+
+	FRHIServer* ServerPtr = &RHIServer;
+	FTextureRenderProxy* Proxy = Owned.release();
+	RHIServer.Enqueue(
+		[ServerPtr, Proxy, Handle](FThreadedServer& /*Server*/)
+		{
+			if (IRHI* RHI = ServerPtr->GetRHI())
+			{
+				Proxy->Release(RHI->GetResourceManager());
+			}
+			delete Proxy;
+			SetTransferHandleState(Handle, ETransferState::Succeeded);
+		});
+}
+
+void FTextureProxyRegistry::DestroyAll(FRHIServer& RHIServer)
+{
+	std::vector<std::string> Keys;
+	Keys.reserve(Proxies.size());
+	for (const auto& Pair : Proxies)
+	{
+		if (Pair.first != DefaultKey)
+		{
+			Keys.push_back(Pair.first);
+		}
+	}
+	for (const std::string& Key : Keys)
+	{
+		Destroy(RHIServer, Key, AllocateTransferHandle(ETransferState::InProgress));
+	}
+
+	if (RHIServer.HasRHI() && RHIServer.IsInitialized())
+	{
+		RHIServer.Flush();
+	}
+
+	const auto DefaultIt = Proxies.find(DefaultKey);
+	if (DefaultIt != Proxies.end() && DefaultIt->second && RHIServer.HasRHI() && RHIServer.IsInitialized())
 	{
 		FRHIServer* ServerPtr = &RHIServer;
+		FTextureRenderProxy* Proxy = DefaultIt->second.get();
 		RHIServer.Enqueue(
 			[ServerPtr, Proxy](FThreadedServer& /*Server*/)
 			{
@@ -275,29 +422,81 @@ void FTextureProxyRegistry::Destroy(FRHIServer& RHIServer, const std::string& Ca
 				}
 			});
 		RHIServer.Flush();
+		Proxies.erase(DefaultIt);
 	}
-	Proxies.erase(It);
+	else
+	{
+		Proxies.clear();
+	}
+	InFlight.clear();
 }
 
-void FTextureProxyRegistry::DestroyAll(FRHIServer& RHIServer)
+void FTextureProxyRegistry::EnsureDefaultPlaceholder(FRHIServer& RHIServer)
 {
-	std::vector<std::string> Keys;
-	Keys.reserve(Proxies.size());
-	for (const auto& Pair : Proxies)
+	if (FindProxy(DefaultKey))
 	{
-		Keys.push_back(Pair.first);
+		return;
 	}
-	for (const std::string& Key : Keys)
+
+	FTextureCpuSnapshot Snap{};
+	Snap.CatalogKey = DefaultKey;
+	Snap.Generation = 1;
+	Snap.Dimension = ETextureDimension::Tex2D;
+	Snap.PixelFormat = ETexturePixelFormat::RGBA8;
+	Snap.Width = 1;
+	Snap.Height = 1;
+	Snap.bSRGB = true;
+	Snap.Pixels = { 255, 0, 255, 255 };
+
+	FTransferHandle Handle = AllocateTransferHandle(ETransferState::InProgress);
+	BeginUpload(RHIServer, std::move(Snap), Handle);
+	RHIServer.Flush();
+	PollInFlight(RHIServer);
+	RHIServer.Flush();
+	if (IRHI* RHI = RHIServer.GetRHI())
 	{
-		Destroy(RHIServer, Key);
+		(void)RHI;
 	}
+	// Drain until ready or failed (Boot only).
+	for (int Attempt = 0; Attempt < 64; ++Attempt)
+	{
+		if (FTextureRenderProxy* Proxy = FindProxy(DefaultKey); Proxy && Proxy->IsReady())
+		{
+			return;
+		}
+		PollInFlight(RHIServer);
+		RHIServer.Flush();
+		if (Handle.HasFailed())
+		{
+			MAHO_CORE_ERROR("TextureProxy: default placeholder upload failed");
+			return;
+		}
+		if (Handle.HasSucceeded())
+		{
+			return;
+		}
+	}
+	MAHO_CORE_WARN("TextureProxy: default placeholder still pending after Boot polls");
 }
 
 FRHITexture* FTextureProxyRegistry::FindTexture(const std::string& CatalogKey) const
 {
 	if (const FTextureRenderProxy* Proxy = FindProxy(CatalogKey))
 	{
-		return Proxy->GetRHITexture();
+		return Proxy->IsReady() ? Proxy->GetRHITexture() : nullptr;
+	}
+	return nullptr;
+}
+
+FRHITexture* FTextureProxyRegistry::FindTextureOrDefault(const std::string& CatalogKey) const
+{
+	if (FRHITexture* Texture = FindTexture(CatalogKey))
+	{
+		return Texture;
+	}
+	if (const FTextureRenderProxy* DefaultProxy = GetDefaultProxy())
+	{
+		return DefaultProxy->GetRHITexture();
 	}
 	return nullptr;
 }
@@ -310,6 +509,11 @@ FTextureRenderProxy* FTextureProxyRegistry::FindProxy(const std::string& Catalog
 		return nullptr;
 	}
 	return It->second.get();
+}
+
+FTextureRenderProxy* FTextureProxyRegistry::GetDefaultProxy() const
+{
+	return FindProxy(DefaultKey);
 }
 
 } // namespace Maho

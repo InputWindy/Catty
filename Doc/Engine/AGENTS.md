@@ -8,7 +8,7 @@ After the repo-root [`AGENTS.md`](../../AGENTS.md), use this folder for **engine
 
 | File | Role |
 |------|------|
-| [`CODING_STANDARDS.md`](CODING_STANDARDS.md) | Full C++ style (Allman, naming, includes, comments) |
+| [`CODING_STANDARDS.md`](CODING_STANDARDS.md) | Full C++ style + **Client/ThreadedServer/Exporter** transfer paradigm |
 | [`DESIGN_JOURNAL.md`](DESIGN_JOURNAL.md) | Subsystem status, design intent, pitfalls |
 | [`引擎架构设计.html`](引擎架构设计.html) | Architecture overview (verify against current `Extension` / RHI code if stale) |
 | [`ObjectReflectAPI.html`](ObjectReflectAPI.html) | Reflect C++ API |

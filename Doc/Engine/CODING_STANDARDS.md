@@ -108,6 +108,56 @@ Codegen outputs stay under `Source/Generated/` (e.g. `LuaReflectBindings.gen.h`)
 - All code comments (`//`, `/* */`, `/** */`) must be **English**
 - Chinese explanations belong in `Doc/` or chat — **not** in `.h` / `.cpp`
 
+## Client / ThreadedServer / Exporter transfer (**mandatory**)
+
+Applies when **large blobs** move between two modules and one side is active, the other passive. Model it as **client (master) / server (slave)** with `FThreadedServer` as the transport.
+
+| Role | Duty |
+|------|------|
+| Client | Starts the transfer; owns or produces CPU payload |
+| Server | Receives, registers, materializes local resources |
+| Transport | `FThreadedServer` (or its façade); queue + handles only — not business codecs in the header |
+
+### Rules
+
+1. **Unified template Import / Export** — the template argument is the **exporter/importer type**, not a resource enum and not a code-gen registry of exporters.
+2. **Exporter/importer specializations live in the server `.cpp`** (exception to “templates only in headers”: *explicit specializations* for this pattern belong in the server translation unit so Assimp/WIC/RHI stay out of public headers).
+3. **Non-blocking** — Import/Export return immediately. No hot-path `Flush` of the transport server and no `WaitForFence` on the client thread (Boot/Shutdown may Flush).
+4. **`FTransferHandle` is extremely light** — its **only** job is to query transfer status: **InProgress / Failed / Succeeded**. Forbidden on the handle: `GetCatalogKey`, `GetProxy`, `GetResult`, GPU pointers, payload bytes.
+5. **Resource identity stays on the client** (e.g. `FSoftObjectPath`). The handle only answers “did this transfer finish?”. Draw code uses SoftPath/CatalogKey to find a proxy; if not ready, use a **default placeholder** resource.
+6. On submit, **payload ownership moves** into the transport/server (CPU snapshot); the client must not assume shared mutable buffers after Import returns.
+7. **Small per-frame state sync** (e.g. scene primitives + poses) is **not** this pattern — use a value packet (`FSceneUpdatePacket` → render `FScene`), not Import/Export + `FTransferHandle`.
+
+### Shape (illustrative)
+
+```cpp
+enum class ETransferState : std::uint8_t
+{
+	InProgress,
+	Failed,
+	Succeeded,
+};
+
+struct FTransferHandle
+{
+	[[nodiscard]] ETransferState GetState() const;
+	[[nodiscard]] bool IsInProgress() const { return GetState() == ETransferState::InProgress; }
+	[[nodiscard]] bool HasFailed() const { return GetState() == ETransferState::Failed; }
+	[[nodiscard]] bool HasSucceeded() const { return GetState() == ETransferState::Succeeded; }
+};
+
+// Façade on the server / transport
+template <typename TExporter>
+FTransferHandle Import(/* request */);
+
+template <typename TImporter>
+FTransferHandle Export(/* request */);
+```
+
+Game → Render resource upload is the same idea: `QueueResourceUpload(const TResource&)` with `TResource : UResource`, dispatching to `TRenderResourceExporter<T>` specialized in `RenderServer.cpp` (or companion `.cpp`). Do **not** copy the old `QueueTextureUpload` + `RHIServer.Flush()` + `WaitForFence` path.
+
+Cursor / Agent note: [`.cursor/rules/client-server-transfer.md`](../../.cursor/rules/client-server-transfer.md) (promote to `.mdc` + `alwaysApply: true` when possible).
+
 ## Related hard constraints
 
 - Object refs: [`../../Maho/Source/Public/Core/Object/CONTRACT.md`](../../Maho/Source/Public/Core/Object/CONTRACT.md)

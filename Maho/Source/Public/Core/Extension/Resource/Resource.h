@@ -304,6 +304,7 @@ public:
 	[[nodiscard]] const std::vector<float>& GetNormals() const { return Normals; }
 	[[nodiscard]] const std::vector<float>& GetUVs() const { return UVs; }
 	[[nodiscard]] const std::vector<std::uint32_t>& GetIndices() const { return Indices; }
+	[[nodiscard]] std::uint64_t GetContentGeneration() const { return ContentGeneration; }
 
 	void SetCpuGeometry(
 		std::vector<float> InPositions,
@@ -317,6 +318,7 @@ protected:
 	std::vector<float> Normals;
 	std::vector<float> UVs;
 	std::vector<std::uint32_t> Indices;
+	std::uint64_t ContentGeneration = 0;
 };
 
 struct FSkeletonBone
@@ -340,10 +342,12 @@ public:
 	~USkeleton() override;
 
 	[[nodiscard]] const std::vector<FSkeletonBone>& GetBones() const { return Bones; }
-	void SetBones(std::vector<FSkeletonBone> InBones) { Bones = std::move(InBones); }
+	[[nodiscard]] std::uint64_t GetContentGeneration() const { return ContentGeneration; }
+	void SetBones(std::vector<FSkeletonBone> InBones);
 
 protected:
 	std::vector<FSkeletonBone> Bones;
+	std::uint64_t ContentGeneration = 0;
 };
 
 struct FAnimationKey
@@ -370,16 +374,18 @@ public:
 	~UAnimation() override;
 
 	[[nodiscard]] const FSoftObjectPath& GetSkeleton() const { return Skeleton; }
-	void SetSkeleton(FSoftObjectPath Path) { Skeleton = std::move(Path); }
+	void SetSkeleton(FSoftObjectPath Path);
 	[[nodiscard]] float GetDurationSeconds() const { return DurationSeconds; }
-	void SetDurationSeconds(float Seconds) { DurationSeconds = Seconds; }
+	void SetDurationSeconds(float Seconds);
 	[[nodiscard]] const std::vector<FAnimationTrack>& GetTracks() const { return Tracks; }
-	void SetTracks(std::vector<FAnimationTrack> InTracks) { Tracks = std::move(InTracks); }
+	void SetTracks(std::vector<FAnimationTrack> InTracks);
+	[[nodiscard]] std::uint64_t GetContentGeneration() const { return ContentGeneration; }
 
 protected:
 	FSoftObjectPath Skeleton;
 	float DurationSeconds = 0.f;
 	std::vector<FAnimationTrack> Tracks;
+	std::uint64_t ContentGeneration = 0;
 };
 
 /**
@@ -490,6 +496,10 @@ public:
 	[[nodiscard]] FObjectRef KickImport(FResourceImportConfig Config);
 	[[nodiscard]] bool KickExport(FResourceExportConfig Config, const FObjectRef& Resource);
 
+	/** SoftPath / catalog join key (also used by Game→Render proxy registries). */
+	[[nodiscard]] static std::string MakeResourceCatalogKey(const UResource& Resource);
+	[[nodiscard]] static std::string NormalizeResourceVirtualPath(const std::string& VirtualPath);
+
 	const char* GetName() const override { return "Resource"; }
 	bool ExecuteStage(EEngineStage Stage) override;
 	[[nodiscard]] bool IsIdle() const override;
@@ -520,8 +530,6 @@ private:
 	[[nodiscard]] static std::string NormalizePackageName(std::string Name);
 	[[nodiscard]] static std::string NormalizeSourcePath(std::string Path);
 	[[nodiscard]] static std::string MakeObjectNameFromSource(const std::string& SourcePath);
-	[[nodiscard]] static std::string MakeResourceCatalogKey(const UResource& Resource);
-	[[nodiscard]] static std::string NormalizeResourceVirtualPath(const std::string& VirtualPath);
 
 	[[nodiscard]] IResourceImporter* FindImporter(const FResourceImportConfig& Config) const;
 	[[nodiscard]] IResourceExporter* FindExporter(const FObjectRef& Resource) const;

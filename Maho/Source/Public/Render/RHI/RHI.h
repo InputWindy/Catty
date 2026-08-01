@@ -62,6 +62,8 @@ public:
 	[[nodiscard]] virtual FRHIFence* CreateFence(bool bSignaled) = 0;
 	virtual void DestroyFence(FRHIFence* Fence) = 0;
 	virtual void WaitForFence(FRHIFence* Fence, std::uint64_t TimeoutNs = std::numeric_limits<std::uint64_t>::max()) = 0;
+	/** Non-blocking fence query (vkGetFenceStatus). */
+	[[nodiscard]] virtual bool IsFenceSignaled(FRHIFence* Fence) = 0;
 
 	[[nodiscard]] virtual FRHISemaphore* CreateGpuSemaphore() = 0;
 	virtual void DestroyGpuSemaphore(FRHISemaphore* Semaphore) = 0;
