@@ -63,6 +63,18 @@ void UTexture::SetCpuImage(
 	++ContentGeneration;
 }
 
+void UTexture::SetSerializedSource(std::string Hint, std::vector<std::uint8_t> Bytes)
+{
+	SerializedSourceHint = std::move(Hint);
+	SerializedSourceBytes = std::move(Bytes);
+}
+
+void UTexture::ClearSerializedSource()
+{
+	SerializedSourceHint.clear();
+	SerializedSourceBytes.clear();
+}
+
 UTexture2D::UTexture2D(
 	UPackage* InOuter,
 	std::string InObjectName,

@@ -154,6 +154,17 @@ endif()
 if(MAHO_HAS_ASSIMP)
 	target_link_libraries(Maho PRIVATE assimp)
 	target_compile_definitions(Maho PRIVATE MAHO_WITH_ASSIMP=1)
+	# Assimp contrib zlib — used by FCompression / .casset packing.
+	if(TARGET zlibstatic)
+		target_link_libraries(Maho PRIVATE zlibstatic)
+		if(DEFINED assimp_SOURCE_DIR AND DEFINED assimp_BINARY_DIR)
+			target_include_directories(Maho PRIVATE
+				"${assimp_SOURCE_DIR}/contrib/zlib"
+				"${assimp_BINARY_DIR}/contrib/zlib"
+			)
+		endif()
+		target_compile_definitions(Maho PRIVATE MAHO_WITH_ZLIB=1)
+	endif()
 	# Shared Assimp (or leftover shared build) must sit next to Maho.dll / the game exe.
 	get_target_property(_MAHO_ASSIMP_TYPE assimp TYPE)
 	if(_MAHO_ASSIMP_TYPE STREQUAL "SHARED_LIBRARY")

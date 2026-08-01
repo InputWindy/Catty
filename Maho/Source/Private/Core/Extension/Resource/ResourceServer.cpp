@@ -1,4 +1,6 @@
 ﻿#include "ResourceServer.h"
+#include "MeshModelCodec.h"
+#include "TextureImageCodec.h"
 
 #include <Core/System/Log.h>
 #include <Core/System/Utf8Path.h>
@@ -66,6 +68,8 @@ FTransferHandle FResourceServer::RequestLoad(std::string Path)
 	{
 		std::vector<std::uint8_t> Bytes;
 		bool bSuccess = false;
+		EResourceBulkPreparedKind PreparedKind = EResourceBulkPreparedKind::None;
+		std::shared_ptr<void> Prepared;
 
 		namespace fs = std::filesystem;
 		std::error_code ErrorCode;
@@ -117,12 +121,67 @@ FTransferHandle FResourceServer::RequestLoad(std::string Path)
 							Handle.Id,
 							Path,
 							Bytes.size());
+
+						if (MeshModelCodec::MatchesModelSourcePath(Path))
+						{
+							auto Model = std::make_shared<FPreparedModelImport>();
+							if (MeshModelCodec::PrepareModelImport(
+									Bytes.data(),
+									Bytes.size(),
+									Path,
+									*Model))
+							{
+								const std::size_t TexCount = Model->Textures.size();
+								PreparedKind = EResourceBulkPreparedKind::Model;
+								Prepared = std::move(Model);
+								MAHO_CORE_INFO(
+									"Resource BulkData prepared model: id={} textures={}",
+									Handle.Id,
+									TexCount);
+							}
+							else
+							{
+								MAHO_CORE_ERROR(
+									"Resource BulkData model prepare failed: id={} path=\"{}\"",
+									Handle.Id,
+									Path);
+								bSuccess = false;
+								Bytes.clear();
+							}
+						}
+						else
+						{
+							const std::string Ext = TextureImageCodec::GetExtensionLower(Path);
+							if (TextureImageCodec::IsRasterExtension(Ext)
+								|| TextureImageCodec::IsKtx2Extension(Ext))
+							{
+								auto Image = std::make_shared<FDecodedImage>();
+								if (TextureImageCodec::DecodeFromMemory(
+										Bytes.data(),
+										Bytes.size(),
+										Path,
+										*Image))
+								{
+									PreparedKind = EResourceBulkPreparedKind::TextureImage;
+									Prepared = std::move(Image);
+								}
+								else
+								{
+									MAHO_CORE_ERROR(
+										"Resource BulkData texture prepare failed: id={} path=\"{}\"",
+										Handle.Id,
+										Path);
+									bSuccess = false;
+									Bytes.clear();
+								}
+							}
+						}
 					}
 				}
 			}
 		}
 
-		CompleteLoad(Handle, bSuccess, std::move(Bytes));
+		CompleteLoad(Handle, bSuccess, std::move(Bytes), PreparedKind, std::move(Prepared));
 	});
 
 	return Handle;
@@ -131,7 +190,9 @@ FTransferHandle FResourceServer::RequestLoad(std::string Path)
 void FResourceServer::CompleteLoad(
 	FTransferHandle Handle,
 	bool bSuccess,
-	std::vector<std::uint8_t> BulkBytes)
+	std::vector<std::uint8_t> BulkBytes,
+	EResourceBulkPreparedKind PreparedKind,
+	std::shared_ptr<void> Prepared)
 {
 	{
 		std::lock_guard<std::mutex> Lock(RegistryMutex);
@@ -141,6 +202,8 @@ void FResourceServer::CompleteLoad(
 			return;
 		}
 		It->second.BulkBytes = std::move(BulkBytes);
+		It->second.PreparedKind = PreparedKind;
+		It->second.Prepared = std::move(Prepared);
 		It->second.bBulkTaken = false;
 		It->second.bComplete = true;
 		SetTransferHandleState(
@@ -166,6 +229,9 @@ bool FResourceServer::TryTakeBulkData(FTransferHandle Handle, FResourceBulkData&
 
 	OutBulk.SourcePath = It->second.Path;
 	OutBulk.Bytes = std::move(It->second.BulkBytes);
+	OutBulk.PreparedKind = It->second.PreparedKind;
+	OutBulk.Prepared = std::move(It->second.Prepared);
+	It->second.PreparedKind = EResourceBulkPreparedKind::None;
 	It->second.bBulkTaken = true;
 	return true;
 }

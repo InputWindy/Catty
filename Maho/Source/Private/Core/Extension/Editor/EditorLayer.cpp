@@ -1158,6 +1158,16 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 		TickStartupCassetLoad();
 	}
 	TickManualContentImport();
+	{
+		FResourceSystem* Resources = Detail::GetResourceSystem();
+		const bool bSaving = Resources && Resources->IsSavePackageBusy();
+		if (bWasSavePackageBusy && !bSaving)
+		{
+			AppendOutput("Save finished");
+			RefreshContentListing();
+		}
+		bWasSavePackageBusy = bSaving;
+	}
 	DrawImporterDialog();
 	DrawDockSpace(App);
 	DrawMainViewportPanel();
@@ -2040,7 +2050,9 @@ namespace
 
 bool FEditorLayer::IsContentBrowserInputLocked() const
 {
-	return bContentBrowserRefreshing || bManualImportActive;
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	const bool bSaving = Resources && Resources->IsSavePackageBusy();
+	return bContentBrowserRefreshing || bManualImportActive || bSaving;
 }
 
 void FEditorLayer::CollectChildFolders(
@@ -2397,8 +2409,7 @@ void FEditorLayer::DrawContentBrowserTiles()
 			{
 				if (SaveContentAsset(Entry.CatalogKey))
 				{
-					AppendOutput("Saved casset: " + Entry.CatalogKey);
-					RefreshContentListing();
+					AppendOutput("Save queued: " + Entry.CatalogKey);
 				}
 				else
 				{
@@ -2911,9 +2922,11 @@ void FEditorLayer::TickManualContentImport()
 
 void FEditorLayer::DrawContentImportProgressOverlay()
 {
+	FResourceSystem* Resources = Detail::GetResourceSystem();
 	const bool bShowImport = bManualImportActive && !ManualImportJobs.empty();
 	const bool bShowCasset = bStartupCassetLoadActive && bStartupCassetScanDone && !StartupCassetSoftPaths.empty();
-	if (!bShowImport && !bShowCasset)
+	const bool bShowSave = Resources && Resources->IsSavePackageBusy();
+	if (!bShowImport && !bShowCasset && !bShowSave)
 	{
 		return;
 	}
@@ -2939,6 +2952,16 @@ void FEditorLayer::DrawContentImportProgressOverlay()
 		| ImGuiWindowFlags_NoNav;
 	if (ImGui::Begin("##ContentImportProgress", nullptr, Flags))
 	{
+		if (bShowSave)
+		{
+			ImGui::TextUnformatted("Saving .casset…");
+			ImGui::ProgressBar(Resources->GetSavePackageProgress(), ImVec2(260.0f, 0.0f));
+			const std::string& Status = Resources->GetSavePackageStatusText();
+			if (!Status.empty())
+			{
+				ImGui::TextDisabled("%s", Status.c_str());
+			}
+		}
 		if (bShowCasset)
 		{
 			const float Total = static_cast<float>(StartupCassetSoftPaths.size());
@@ -3001,7 +3024,7 @@ bool FEditorLayer::SaveContentAsset(const std::string& CatalogKey)
 		return false;
 	}
 
-	return Resources->SavePackage(PackageRef, FilePath, true, true);
+	return Resources->EnqueueSavePackage(PackageRef, FilePath, true);
 }
 
 void FEditorLayer::OpenResourceBrowser(const std::string& CatalogKey)

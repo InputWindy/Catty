@@ -1,10 +1,14 @@
 #include "ResourceCasset.h"
+#include "TextureImageCodec.h"
 
+#include <Core/System/Compression.h>
 #include <Core/System/Log.h>
+#include <Core/Object/Package.h>
 #include <Core/Object/SoftObjectPath.h>
 
 #include <cstring>
-#include <vector>
+#include <limits>
+#include <unordered_map>
 
 namespace Maho
 {
@@ -13,290 +17,377 @@ namespace ResourceCasset
 namespace
 {
 
-constexpr char kBase64Table[] =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-[[nodiscard]] int Base64DecodeValue(char C)
+class FByteWriter
 {
-	if (C >= 'A' && C <= 'Z')
-	{
-		return C - 'A';
-	}
-	if (C >= 'a' && C <= 'z')
-	{
-		return C - 'a' + 26;
-	}
-	if (C >= '0' && C <= '9')
-	{
-		return C - '0' + 52;
-	}
-	if (C == '+')
-	{
-		return 62;
-	}
-	if (C == '/')
-	{
-		return 63;
-	}
-	return -1;
-}
+public:
+	std::vector<std::uint8_t> Bytes;
 
-[[nodiscard]] std::string EncodeBase64(const std::uint8_t* Data, std::size_t Size)
-{
-	std::string Out;
-	Out.reserve(((Size + 2) / 3) * 4);
-	std::size_t I = 0;
-	while (I + 2 < Size)
+	void WriteU8(std::uint8_t V) { Bytes.push_back(V); }
+
+	void WriteU16(std::uint16_t V)
 	{
-		const std::uint32_t N =
-			(static_cast<std::uint32_t>(Data[I]) << 16)
-			| (static_cast<std::uint32_t>(Data[I + 1]) << 8)
-			| static_cast<std::uint32_t>(Data[I + 2]);
-		Out.push_back(kBase64Table[(N >> 18) & 63]);
-		Out.push_back(kBase64Table[(N >> 12) & 63]);
-		Out.push_back(kBase64Table[(N >> 6) & 63]);
-		Out.push_back(kBase64Table[N & 63]);
-		I += 3;
+		Bytes.push_back(static_cast<std::uint8_t>(V & 0xFF));
+		Bytes.push_back(static_cast<std::uint8_t>((V >> 8) & 0xFF));
 	}
-	if (I < Size)
+
+	void WriteU32(std::uint32_t V)
 	{
-		std::uint32_t N = static_cast<std::uint32_t>(Data[I]) << 16;
-		Out.push_back(kBase64Table[(N >> 18) & 63]);
-		if (I + 1 < Size)
+		Bytes.push_back(static_cast<std::uint8_t>(V & 0xFF));
+		Bytes.push_back(static_cast<std::uint8_t>((V >> 8) & 0xFF));
+		Bytes.push_back(static_cast<std::uint8_t>((V >> 16) & 0xFF));
+		Bytes.push_back(static_cast<std::uint8_t>((V >> 24) & 0xFF));
+	}
+
+	void WriteI32(std::int32_t V) { WriteU32(static_cast<std::uint32_t>(V)); }
+
+	void WriteF32(float V)
+	{
+		std::uint32_t Bits = 0;
+		std::memcpy(&Bits, &V, sizeof(Bits));
+		WriteU32(Bits);
+	}
+
+	void WriteBytes(const void* Data, std::size_t Size)
+	{
+		if (Size == 0)
 		{
-			N |= static_cast<std::uint32_t>(Data[I + 1]) << 8;
-			Out.push_back(kBase64Table[(N >> 12) & 63]);
-			Out.push_back(kBase64Table[(N >> 6) & 63]);
-			Out.push_back('=');
+			return;
 		}
-		else
+		const auto* Ptr = static_cast<const std::uint8_t*>(Data);
+		Bytes.insert(Bytes.end(), Ptr, Ptr + Size);
+	}
+
+	void WriteString(const std::string& Text)
+	{
+		if (Text.size() > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()))
 		{
-			Out.push_back(kBase64Table[(N >> 12) & 63]);
-			Out.push_back('=');
-			Out.push_back('=');
+			WriteU32(0);
+			return;
+		}
+		WriteU32(static_cast<std::uint32_t>(Text.size()));
+		WriteBytes(Text.data(), Text.size());
+	}
+
+	void PadTo4()
+	{
+		while ((Bytes.size() & 3u) != 0)
+		{
+			Bytes.push_back(0);
 		}
 	}
-	return Out;
+};
+
+class FByteReader
+{
+public:
+	const std::uint8_t* Data = nullptr;
+	std::size_t Size = 0;
+	std::size_t Pos = 0;
+
+	[[nodiscard]] bool Remaining(std::size_t N) const { return Pos + N <= Size; }
+
+	[[nodiscard]] bool ReadU8(std::uint8_t& Out)
+	{
+		if (!Remaining(1))
+		{
+			return false;
+		}
+		Out = Data[Pos++];
+		return true;
+	}
+
+	[[nodiscard]] bool ReadU16(std::uint16_t& Out)
+	{
+		if (!Remaining(2))
+		{
+			return false;
+		}
+		Out = static_cast<std::uint16_t>(Data[Pos] | (Data[Pos + 1] << 8));
+		Pos += 2;
+		return true;
+	}
+
+	[[nodiscard]] bool ReadU32(std::uint32_t& Out)
+	{
+		if (!Remaining(4))
+		{
+			return false;
+		}
+		Out = static_cast<std::uint32_t>(Data[Pos])
+			| (static_cast<std::uint32_t>(Data[Pos + 1]) << 8)
+			| (static_cast<std::uint32_t>(Data[Pos + 2]) << 16)
+			| (static_cast<std::uint32_t>(Data[Pos + 3]) << 24);
+		Pos += 4;
+		return true;
+	}
+
+	[[nodiscard]] bool ReadI32(std::int32_t& Out)
+	{
+		std::uint32_t U = 0;
+		if (!ReadU32(U))
+		{
+			return false;
+		}
+		Out = static_cast<std::int32_t>(U);
+		return true;
+	}
+
+	[[nodiscard]] bool ReadF32(float& Out)
+	{
+		std::uint32_t Bits = 0;
+		if (!ReadU32(Bits))
+		{
+			return false;
+		}
+		std::memcpy(&Out, &Bits, sizeof(Out));
+		return true;
+	}
+
+	[[nodiscard]] bool ReadBytes(void* Dest, std::size_t N)
+	{
+		if (!Remaining(N))
+		{
+			return false;
+		}
+		std::memcpy(Dest, Data + Pos, N);
+		Pos += N;
+		return true;
+	}
+
+	[[nodiscard]] bool ReadString(std::string& Out)
+	{
+		std::uint32_t Len = 0;
+		if (!ReadU32(Len))
+		{
+			return false;
+		}
+		if (!Remaining(Len))
+		{
+			return false;
+		}
+		Out.assign(reinterpret_cast<const char*>(Data + Pos), Len);
+		Pos += Len;
+		return true;
+	}
+
+	[[nodiscard]] bool Skip(std::size_t N)
+	{
+		if (!Remaining(N))
+		{
+			return false;
+		}
+		Pos += N;
+		return true;
+	}
+
+	[[nodiscard]] bool SkipPadTo4()
+	{
+		const std::size_t Rem = Pos & 3u;
+		if (Rem == 0)
+		{
+			return true;
+		}
+		return Skip(4 - Rem);
+	}
+};
+
+void AppendChunk(FByteWriter& Doc, std::uint32_t Tag, std::uint32_t ChunkFlags, const std::vector<std::uint8_t>& Payload)
+{
+	Doc.WriteU32(Tag);
+	Doc.WriteU32(static_cast<std::uint32_t>(Payload.size()));
+	Doc.WriteU32(ChunkFlags);
+	Doc.WriteBytes(Payload.data(), Payload.size());
+	Doc.PadTo4();
 }
 
-[[nodiscard]] bool DecodeBase64(const std::string& Text, std::vector<std::uint8_t>& Out)
+[[nodiscard]] bool WriteTextureCpu(const UTexture& Tex, FByteWriter& W)
+{
+	std::vector<std::uint8_t> EncodedFallback;
+	const std::uint8_t* Payload = nullptr;
+	std::size_t PayloadSize = 0;
+	std::uint8_t PayloadKind = kTexturePayloadRaw;
+	std::string EncodedHint;
+
+	if (Tex.HasSerializedSource())
+	{
+		PayloadKind = kTexturePayloadEncoded;
+		EncodedHint = Tex.GetSerializedSourceHint();
+		Payload = Tex.GetSerializedSourceBytes().data();
+		PayloadSize = Tex.GetSerializedSourceBytes().size();
+	}
+	else if (Tex.GetPixelFormat() == ETexturePixelFormat::RGBA8 && !Tex.GetPixels().empty())
+	{
+		if (!TextureImageCodec::EncodePngToMemory(Tex, EncodedFallback) || EncodedFallback.empty())
+		{
+			MAHO_CORE_ERROR("casset: PNG encode fallback failed for texture '{}'", Tex.GetName());
+			return false;
+		}
+		PayloadKind = kTexturePayloadEncoded;
+		EncodedHint = ".png";
+		Payload = EncodedFallback.data();
+		PayloadSize = EncodedFallback.size();
+	}
+	else
+	{
+		Payload = Tex.GetPixels().data();
+		PayloadSize = Tex.GetPixels().size();
+	}
+
+	W.WriteU16(kTextureCpuLayoutEncoded);
+	W.WriteU16(static_cast<std::uint16_t>(Tex.GetDimension()));
+	W.WriteU16(static_cast<std::uint16_t>(Tex.GetPixelFormat()));
+	W.WriteU16(0); // pad
+	W.WriteU32(Tex.GetWidth());
+	W.WriteU32(Tex.GetHeight());
+	W.WriteU32(Tex.GetDepth());
+	W.WriteU32(Tex.GetArrayLayers());
+	W.WriteU32(Tex.GetMipCount());
+	W.WriteU8(Tex.IsSRGB() ? 1 : 0);
+	W.WriteU8(PayloadKind);
+	W.WriteU16(0);
+	if (PayloadKind == kTexturePayloadEncoded)
+	{
+		W.WriteString(EncodedHint);
+	}
+	W.WriteU32(static_cast<std::uint32_t>(PayloadSize));
+	W.WriteBytes(Payload, PayloadSize);
+	return true;
+}
+
+[[nodiscard]] bool ReadTextureCpu(UTexture& Tex, FByteReader& R)
+{
+	std::uint16_t Layout = 0;
+	std::uint16_t Dim = 0;
+	std::uint16_t Format = 0;
+	std::uint16_t Pad0 = 0;
+	if (!R.ReadU16(Layout) || !R.ReadU16(Dim) || !R.ReadU16(Format) || !R.ReadU16(Pad0))
+	{
+		return false;
+	}
+	if (Layout != kTextureCpuLayoutRaw && Layout != kTextureCpuLayoutEncoded)
+	{
+		return false;
+	}
+
+	std::uint32_t W = 0, H = 0, D = 0, Layers = 0, Mips = 0, PayloadBytes = 0;
+	std::uint8_t Srgb = 0, PayloadKind = kTexturePayloadRaw;
+	std::uint16_t Pad2 = 0;
+	if (!R.ReadU32(W) || !R.ReadU32(H) || !R.ReadU32(D) || !R.ReadU32(Layers) || !R.ReadU32(Mips)
+		|| !R.ReadU8(Srgb) || !R.ReadU8(PayloadKind) || !R.ReadU16(Pad2))
+	{
+		return false;
+	}
+
+	std::string EncodedHint;
+	if (Layout == kTextureCpuLayoutEncoded && PayloadKind == kTexturePayloadEncoded)
+	{
+		if (!R.ReadString(EncodedHint))
+		{
+			return false;
+		}
+	}
+
+	if (!R.ReadU32(PayloadBytes))
+	{
+		return false;
+	}
+	std::vector<std::uint8_t> Payload(PayloadBytes);
+	if (PayloadBytes > 0 && !R.ReadBytes(Payload.data(), PayloadBytes))
+	{
+		return false;
+	}
+
+	if (Layout == kTextureCpuLayoutEncoded && PayloadKind == kTexturePayloadEncoded)
+	{
+		FDecodedImage Image;
+		const std::string Hint = EncodedHint.empty() ? Tex.GetSourcePath() : EncodedHint;
+		if (!TextureImageCodec::DecodeFromMemory(Payload.data(), Payload.size(), Hint, Image))
+		{
+			MAHO_CORE_ERROR("casset: encoded texture decode failed for '{}'", Tex.GetName());
+			return false;
+		}
+		Image.bSRGB = Srgb != 0;
+		if (!TextureImageCodec::ApplyDecodedToTexture(Tex, std::move(Image)))
+		{
+			return false;
+		}
+		Tex.SetSerializedSource(Hint, std::move(Payload));
+		return true;
+	}
+
+	Tex.SetCpuImage(
+		static_cast<ETextureDimension>(Dim),
+		static_cast<ETexturePixelFormat>(Format),
+		W,
+		H,
+		D,
+		Layers,
+		Mips,
+		Srgb != 0,
+		std::move(Payload));
+	return true;
+}
+
+template <typename T>
+void WriteBlob(FByteWriter& W, const std::vector<T>& Values)
+{
+	const std::uint32_t ByteCount = static_cast<std::uint32_t>(Values.size() * sizeof(T));
+	W.WriteU32(ByteCount);
+	if (ByteCount > 0)
+	{
+		W.WriteBytes(Values.data(), ByteCount);
+	}
+}
+
+template <typename T>
+[[nodiscard]] bool ReadBlob(FByteReader& R, std::vector<T>& Out)
 {
 	Out.clear();
-	if (Text.empty())
+	std::uint32_t ByteCount = 0;
+	if (!R.ReadU32(ByteCount))
+	{
+		return false;
+	}
+	if (ByteCount == 0)
 	{
 		return true;
 	}
-	if ((Text.size() % 4) != 0)
+	if ((ByteCount % sizeof(T)) != 0 || !R.Remaining(ByteCount))
 	{
 		return false;
 	}
-	Out.reserve(Text.size() / 4 * 3);
-	for (std::size_t I = 0; I < Text.size(); I += 4)
-	{
-		const int A = Base64DecodeValue(Text[I]);
-		const int B = Base64DecodeValue(Text[I + 1]);
-		const int C = Text[I + 2] == '=' ? 0 : Base64DecodeValue(Text[I + 2]);
-		const int D = Text[I + 3] == '=' ? 0 : Base64DecodeValue(Text[I + 3]);
-		if (A < 0 || B < 0 || (Text[I + 2] != '=' && C < 0) || (Text[I + 3] != '=' && D < 0))
-		{
-			Out.clear();
-			return false;
-		}
-		const std::uint32_t N =
-			(static_cast<std::uint32_t>(A) << 18)
-			| (static_cast<std::uint32_t>(B) << 12)
-			| (static_cast<std::uint32_t>(C) << 6)
-			| static_cast<std::uint32_t>(D);
-		Out.push_back(static_cast<std::uint8_t>((N >> 16) & 0xFF));
-		if (Text[I + 2] != '=')
-		{
-			Out.push_back(static_cast<std::uint8_t>((N >> 8) & 0xFF));
-		}
-		if (Text[I + 3] != '=')
-		{
-			Out.push_back(static_cast<std::uint8_t>(N & 0xFF));
-		}
-	}
+	Out.resize(ByteCount / sizeof(T));
+	return R.ReadBytes(Out.data(), ByteCount);
+}
+
+[[nodiscard]] bool WriteMeshCpu(const UStaticMesh& Mesh, FByteWriter& W)
+{
+	W.WriteU16(kCpuLayoutVersion);
+	W.WriteU16(0);
+	W.WriteString(Mesh.GetMaterial().ToString());
+	WriteBlob(W, Mesh.GetPositions());
+	WriteBlob(W, Mesh.GetNormals());
+	WriteBlob(W, Mesh.GetUVs());
+	WriteBlob(W, Mesh.GetIndices());
 	return true;
 }
 
-template <typename T>
-[[nodiscard]] FJsonValue EncodeBlob(const std::vector<T>& Values)
+[[nodiscard]] bool ReadMeshCpu(UStaticMesh& Mesh, FByteReader& R)
 {
-	if (Values.empty())
-	{
-		return FJsonValue::String({});
-	}
-	const auto* Bytes = reinterpret_cast<const std::uint8_t*>(Values.data());
-	return FJsonValue::String(EncodeBase64(Bytes, Values.size() * sizeof(T)));
-}
-
-template <typename T>
-[[nodiscard]] bool DecodeBlob(const FJsonValue& Value, std::vector<T>& Out)
-{
-	Out.clear();
-	const std::string Encoded = Value.AsString();
-	std::vector<std::uint8_t> Bytes;
-	if (!DecodeBase64(Encoded, Bytes))
+	std::uint16_t Layout = 0;
+	std::uint16_t Pad = 0;
+	std::string MatPath;
+	if (!R.ReadU16(Layout) || Layout != kCpuLayoutVersion || !R.ReadU16(Pad) || !R.ReadString(MatPath))
 	{
 		return false;
 	}
-	if ((Bytes.size() % sizeof(T)) != 0)
-	{
-		return false;
-	}
-	Out.resize(Bytes.size() / sizeof(T));
-	if (!Out.empty())
-	{
-		std::memcpy(Out.data(), Bytes.data(), Bytes.size());
-	}
-	return true;
-}
-
-[[nodiscard]] const char* DimensionToString(ETextureDimension Dim)
-{
-	switch (Dim)
-	{
-	case ETextureDimension::Tex3D: return "Tex3D";
-	case ETextureDimension::Cube: return "Cube";
-	case ETextureDimension::CubeArray: return "CubeArray";
-	case ETextureDimension::Tex2DArray: return "Tex2DArray";
-	case ETextureDimension::Tex2D:
-	default: return "Tex2D";
-	}
-}
-
-[[nodiscard]] ETextureDimension DimensionFromString(const std::string& Name)
-{
-	if (Name == "Tex3D")
-	{
-		return ETextureDimension::Tex3D;
-	}
-	if (Name == "Cube")
-	{
-		return ETextureDimension::Cube;
-	}
-	if (Name == "CubeArray")
-	{
-		return ETextureDimension::CubeArray;
-	}
-	if (Name == "Tex2DArray")
-	{
-		return ETextureDimension::Tex2DArray;
-	}
-	return ETextureDimension::Tex2D;
-}
-
-[[nodiscard]] const char* PixelFormatToString(ETexturePixelFormat Format)
-{
-	switch (Format)
-	{
-	case ETexturePixelFormat::R8: return "R8";
-	case ETexturePixelFormat::RG8: return "RG8";
-	case ETexturePixelFormat::RGB8: return "RGB8";
-	case ETexturePixelFormat::RGBA8: return "RGBA8";
-	case ETexturePixelFormat::RGBA16F: return "RGBA16F";
-	case ETexturePixelFormat::RGBA32F: return "RGBA32F";
-	case ETexturePixelFormat::BlockCompressed: return "BlockCompressed";
-	case ETexturePixelFormat::Unknown:
-	default: return "Unknown";
-	}
-}
-
-[[nodiscard]] ETexturePixelFormat PixelFormatFromString(const std::string& Name)
-{
-	if (Name == "R8")
-	{
-		return ETexturePixelFormat::R8;
-	}
-	if (Name == "RG8")
-	{
-		return ETexturePixelFormat::RG8;
-	}
-	if (Name == "RGB8")
-	{
-		return ETexturePixelFormat::RGB8;
-	}
-	if (Name == "RGBA8")
-	{
-		return ETexturePixelFormat::RGBA8;
-	}
-	if (Name == "RGBA16F")
-	{
-		return ETexturePixelFormat::RGBA16F;
-	}
-	if (Name == "RGBA32F")
-	{
-		return ETexturePixelFormat::RGBA32F;
-	}
-	if (Name == "BlockCompressed")
-	{
-		return ETexturePixelFormat::BlockCompressed;
-	}
-	return ETexturePixelFormat::Unknown;
-}
-
-[[nodiscard]] bool WriteTexture(const UTexture& Tex, FJsonValue& Cpu)
-{
-	Cpu.SetField("dimension", FJsonValue::String(DimensionToString(Tex.GetDimension())));
-	Cpu.SetField("format", FJsonValue::String(PixelFormatToString(Tex.GetPixelFormat())));
-	Cpu.SetField("width", FJsonValue::Number(static_cast<std::int64_t>(Tex.GetWidth())));
-	Cpu.SetField("height", FJsonValue::Number(static_cast<std::int64_t>(Tex.GetHeight())));
-	Cpu.SetField("depth", FJsonValue::Number(static_cast<std::int64_t>(Tex.GetDepth())));
-	Cpu.SetField("arrayLayers", FJsonValue::Number(static_cast<std::int64_t>(Tex.GetArrayLayers())));
-	Cpu.SetField("mipCount", FJsonValue::Number(static_cast<std::int64_t>(Tex.GetMipCount())));
-	Cpu.SetField("srgb", FJsonValue::Bool(Tex.IsSRGB()));
-	Cpu.SetField("pixelsBase64", EncodeBlob(Tex.GetPixels()));
-	return true;
-}
-
-[[nodiscard]] bool ReadTexture(UTexture& Tex, const FJsonValue& Cpu)
-{
-	std::vector<std::uint8_t> Pixels;
-	if (!DecodeBlob(Cpu.GetField("pixelsBase64"), Pixels))
-	{
-		MAHO_CORE_ERROR("casset: texture pixelsBase64 decode failed for '{}'", Tex.GetName());
-		return false;
-	}
-	Tex.SetCpuImage(
-		DimensionFromString(Cpu.GetField("dimension").AsString("Tex2D")),
-		PixelFormatFromString(Cpu.GetField("format").AsString("RGBA8")),
-		static_cast<std::uint32_t>(Cpu.GetField("width").AsInt64(0)),
-		static_cast<std::uint32_t>(Cpu.GetField("height").AsInt64(0)),
-		static_cast<std::uint32_t>(Cpu.GetField("depth").AsInt64(1)),
-		static_cast<std::uint32_t>(Cpu.GetField("arrayLayers").AsInt64(1)),
-		static_cast<std::uint32_t>(Cpu.GetField("mipCount").AsInt64(1)),
-		Cpu.GetField("srgb").AsBool(true),
-		std::move(Pixels));
-	return true;
-}
-
-[[nodiscard]] bool WriteMesh(const UStaticMesh& Mesh, FJsonValue& Cpu)
-{
-	Cpu.SetField("material", FJsonValue::String(Mesh.GetMaterial().ToString()));
-	Cpu.SetField("positionsBase64", EncodeBlob(Mesh.GetPositions()));
-	Cpu.SetField("normalsBase64", EncodeBlob(Mesh.GetNormals()));
-	Cpu.SetField("uvsBase64", EncodeBlob(Mesh.GetUVs()));
-	Cpu.SetField("indicesBase64", EncodeBlob(Mesh.GetIndices()));
-	return true;
-}
-
-[[nodiscard]] bool ReadMesh(UStaticMesh& Mesh, const FJsonValue& Cpu)
-{
-	std::vector<float> Positions;
-	std::vector<float> Normals;
-	std::vector<float> UVs;
+	std::vector<float> Positions, Normals, UVs;
 	std::vector<std::uint32_t> Indices;
-	if (!DecodeBlob(Cpu.GetField("positionsBase64"), Positions)
-		|| !DecodeBlob(Cpu.GetField("normalsBase64"), Normals)
-		|| !DecodeBlob(Cpu.GetField("uvsBase64"), UVs)
-		|| !DecodeBlob(Cpu.GetField("indicesBase64"), Indices))
+	if (!ReadBlob(R, Positions) || !ReadBlob(R, Normals) || !ReadBlob(R, UVs) || !ReadBlob(R, Indices))
 	{
-		MAHO_CORE_ERROR("casset: mesh blob decode failed for '{}'", Mesh.GetName());
 		return false;
 	}
 	Mesh.SetCpuGeometry(std::move(Positions), std::move(Normals), std::move(UVs), std::move(Indices));
-	const std::string MatPath = Cpu.GetField("material").AsString();
 	if (!MatPath.empty())
 	{
 		FSoftObjectPath Soft;
@@ -308,34 +399,38 @@ template <typename T>
 	return true;
 }
 
-[[nodiscard]] bool WriteMaterial(const UMaterial& Mat, FJsonValue& Cpu)
+[[nodiscard]] bool WriteMaterialCpu(const UMaterial& Mat, FByteWriter& W)
 {
-	Cpu.SetField("baseColorTexture", FJsonValue::String(Mat.GetBaseColorTexture().ToString()));
-	Cpu.SetField("normalTexture", FJsonValue::String(Mat.GetNormalTexture().ToString()));
-	Cpu.SetField("metallicRoughnessTexture", FJsonValue::String(Mat.GetMetallicRoughnessTexture().ToString()));
-	Cpu.SetField("occlusionTexture", FJsonValue::String(Mat.GetOcclusionTexture().ToString()));
-	Cpu.SetField("emissiveTexture", FJsonValue::String(Mat.GetEmissiveTexture().ToString()));
-	FJsonValue Factor = FJsonValue::Array();
-	Factor.AddElement(FJsonValue::Number(Mat.BaseColorFactor[0]));
-	Factor.AddElement(FJsonValue::Number(Mat.BaseColorFactor[1]));
-	Factor.AddElement(FJsonValue::Number(Mat.BaseColorFactor[2]));
-	Factor.AddElement(FJsonValue::Number(Mat.BaseColorFactor[3]));
-	Cpu.SetField("baseColorFactor", Factor);
-	Cpu.SetField("metallicFactor", FJsonValue::Number(Mat.MetallicFactor));
-	Cpu.SetField("roughnessFactor", FJsonValue::Number(Mat.RoughnessFactor));
-	FJsonValue Emissive = FJsonValue::Array();
-	Emissive.AddElement(FJsonValue::Number(Mat.EmissiveFactor[0]));
-	Emissive.AddElement(FJsonValue::Number(Mat.EmissiveFactor[1]));
-	Emissive.AddElement(FJsonValue::Number(Mat.EmissiveFactor[2]));
-	Cpu.SetField("emissiveFactor", Emissive);
+	W.WriteU16(kCpuLayoutVersion);
+	W.WriteU16(0);
+	W.WriteString(Mat.GetBaseColorTexture().ToString());
+	W.WriteString(Mat.GetNormalTexture().ToString());
+	W.WriteString(Mat.GetMetallicRoughnessTexture().ToString());
+	W.WriteString(Mat.GetOcclusionTexture().ToString());
+	W.WriteString(Mat.GetEmissiveTexture().ToString());
+	for (int I = 0; I < 4; ++I)
+	{
+		W.WriteF32(Mat.BaseColorFactor[I]);
+	}
+	W.WriteF32(Mat.MetallicFactor);
+	W.WriteF32(Mat.RoughnessFactor);
+	for (int I = 0; I < 3; ++I)
+	{
+		W.WriteF32(Mat.EmissiveFactor[I]);
+	}
 	return true;
 }
 
-[[nodiscard]] bool ReadMaterial(UMaterial& Mat, const FJsonValue& Cpu)
+[[nodiscard]] bool ReadMaterialCpu(UMaterial& Mat, FByteReader& R)
 {
-	auto SetSoft = [](const FJsonValue& Field, auto Setter)
+	std::uint16_t Layout = 0;
+	std::uint16_t Pad = 0;
+	if (!R.ReadU16(Layout) || Layout != kCpuLayoutVersion || !R.ReadU16(Pad))
 	{
-		const std::string Path = Field.AsString();
+		return false;
+	}
+	auto SetSoft = [](const std::string& Path, auto Setter)
+	{
 		if (Path.empty())
 		{
 			return;
@@ -346,125 +441,129 @@ template <typename T>
 			Setter(std::move(Soft));
 		}
 	};
-	SetSoft(Cpu.GetField("baseColorTexture"), [&](FSoftObjectPath P) { Mat.SetBaseColorTexture(std::move(P)); });
-	SetSoft(Cpu.GetField("normalTexture"), [&](FSoftObjectPath P) { Mat.SetNormalTexture(std::move(P)); });
-	SetSoft(
-		Cpu.GetField("metallicRoughnessTexture"),
-		[&](FSoftObjectPath P) { Mat.SetMetallicRoughnessTexture(std::move(P)); });
-	SetSoft(Cpu.GetField("occlusionTexture"), [&](FSoftObjectPath P) { Mat.SetOcclusionTexture(std::move(P)); });
-	SetSoft(Cpu.GetField("emissiveTexture"), [&](FSoftObjectPath P) { Mat.SetEmissiveTexture(std::move(P)); });
-
-	const FJsonValue Factor = Cpu.GetField("baseColorFactor");
-	if (Factor.IsArray() && Factor.GetArraySize() >= 4)
+	std::string Base, Normal, MR, Occ, Emissive;
+	if (!R.ReadString(Base) || !R.ReadString(Normal) || !R.ReadString(MR) || !R.ReadString(Occ)
+		|| !R.ReadString(Emissive))
 	{
-		Mat.BaseColorFactor[0] = Factor.GetElement(0).AsFloat(1.f);
-		Mat.BaseColorFactor[1] = Factor.GetElement(1).AsFloat(1.f);
-		Mat.BaseColorFactor[2] = Factor.GetElement(2).AsFloat(1.f);
-		Mat.BaseColorFactor[3] = Factor.GetElement(3).AsFloat(1.f);
+		return false;
 	}
-	Mat.MetallicFactor = Cpu.GetField("metallicFactor").AsFloat(0.f);
-	Mat.RoughnessFactor = Cpu.GetField("roughnessFactor").AsFloat(1.f);
-	const FJsonValue Emissive = Cpu.GetField("emissiveFactor");
-	if (Emissive.IsArray() && Emissive.GetArraySize() >= 3)
+	SetSoft(Base, [&](FSoftObjectPath P) { Mat.SetBaseColorTexture(std::move(P)); });
+	SetSoft(Normal, [&](FSoftObjectPath P) { Mat.SetNormalTexture(std::move(P)); });
+	SetSoft(MR, [&](FSoftObjectPath P) { Mat.SetMetallicRoughnessTexture(std::move(P)); });
+	SetSoft(Occ, [&](FSoftObjectPath P) { Mat.SetOcclusionTexture(std::move(P)); });
+	SetSoft(Emissive, [&](FSoftObjectPath P) { Mat.SetEmissiveTexture(std::move(P)); });
+	for (int I = 0; I < 4; ++I)
 	{
-		Mat.EmissiveFactor[0] = Emissive.GetElement(0).AsFloat(0.f);
-		Mat.EmissiveFactor[1] = Emissive.GetElement(1).AsFloat(0.f);
-		Mat.EmissiveFactor[2] = Emissive.GetElement(2).AsFloat(0.f);
+		if (!R.ReadF32(Mat.BaseColorFactor[I]))
+		{
+			return false;
+		}
+	}
+	if (!R.ReadF32(Mat.MetallicFactor) || !R.ReadF32(Mat.RoughnessFactor))
+	{
+		return false;
+	}
+	for (int I = 0; I < 3; ++I)
+	{
+		if (!R.ReadF32(Mat.EmissiveFactor[I]))
+		{
+			return false;
+		}
 	}
 	return true;
 }
 
-[[nodiscard]] bool WriteSkeleton(const USkeleton& Skeleton, FJsonValue& Cpu)
+[[nodiscard]] bool WriteSkeletonCpu(const USkeleton& Skeleton, FByteWriter& W)
 {
-	FJsonValue Bones = FJsonValue::Array();
-	for (const FSkeletonBone& Bone : Skeleton.GetBones())
+	W.WriteU16(kCpuLayoutVersion);
+	W.WriteU16(0);
+	const auto& Bones = Skeleton.GetBones();
+	W.WriteU32(static_cast<std::uint32_t>(Bones.size()));
+	for (const FSkeletonBone& Bone : Bones)
 	{
-		FJsonValue Entry = FJsonValue::Object();
-		Entry.SetField("name", FJsonValue::String(Bone.Name));
-		Entry.SetField("parent", FJsonValue::Number(static_cast<std::int64_t>(Bone.ParentIndex)));
-		FJsonValue Matrix = FJsonValue::Array();
+		W.WriteString(Bone.Name);
+		W.WriteI32(Bone.ParentIndex);
 		for (int I = 0; I < 16; ++I)
 		{
-			Matrix.AddElement(FJsonValue::Number(Bone.BindLocal[I]));
+			W.WriteF32(Bone.BindLocal[I]);
 		}
-		Entry.SetField("bindLocal", Matrix);
-		Bones.AddElement(Entry);
 	}
-	Cpu.SetField("bones", Bones);
 	return true;
 }
 
-[[nodiscard]] bool ReadSkeleton(USkeleton& Skeleton, const FJsonValue& Cpu)
+[[nodiscard]] bool ReadSkeletonCpu(USkeleton& Skeleton, FByteReader& R)
 {
-	std::vector<FSkeletonBone> Bones;
-	const FJsonValue Arr = Cpu.GetField("bones");
-	if (Arr.IsArray())
+	std::uint16_t Layout = 0;
+	std::uint16_t Pad = 0;
+	std::uint32_t Count = 0;
+	if (!R.ReadU16(Layout) || Layout != kCpuLayoutVersion || !R.ReadU16(Pad) || !R.ReadU32(Count))
 	{
-		Bones.reserve(Arr.GetArraySize());
-		for (std::size_t I = 0; I < Arr.GetArraySize(); ++I)
+		return false;
+	}
+	std::vector<FSkeletonBone> Bones;
+	Bones.reserve(Count);
+	for (std::uint32_t I = 0; I < Count; ++I)
+	{
+		FSkeletonBone Bone;
+		if (!R.ReadString(Bone.Name) || !R.ReadI32(Bone.ParentIndex))
 		{
-			const FJsonValue Entry = Arr.GetElement(I);
-			FSkeletonBone Bone;
-			Bone.Name = Entry.GetField("name").AsString();
-			Bone.ParentIndex = static_cast<std::int32_t>(Entry.GetField("parent").AsInt64(-1));
-			const FJsonValue Matrix = Entry.GetField("bindLocal");
-			if (Matrix.IsArray())
-			{
-				const std::size_t N = Matrix.GetArraySize() < 16 ? Matrix.GetArraySize() : 16;
-				for (std::size_t M = 0; M < N; ++M)
-				{
-					Bone.BindLocal[M] = Matrix.GetElement(M).AsFloat(0.f);
-				}
-			}
-			Bones.push_back(std::move(Bone));
+			return false;
 		}
+		for (int M = 0; M < 16; ++M)
+		{
+			if (!R.ReadF32(Bone.BindLocal[M]))
+			{
+				return false;
+			}
+		}
+		Bones.push_back(std::move(Bone));
 	}
 	Skeleton.SetBones(std::move(Bones));
 	return true;
 }
 
-[[nodiscard]] bool WriteAnimation(const UAnimation& Anim, FJsonValue& Cpu)
+[[nodiscard]] bool WriteAnimationCpu(const UAnimation& Anim, FByteWriter& W)
 {
-	Cpu.SetField("skeleton", FJsonValue::String(Anim.GetSkeleton().ToString()));
-	Cpu.SetField("duration", FJsonValue::Number(Anim.GetDurationSeconds()));
-	FJsonValue Tracks = FJsonValue::Array();
-	for (const FAnimationTrack& Track : Anim.GetTracks())
+	W.WriteU16(kCpuLayoutVersion);
+	W.WriteU16(0);
+	W.WriteString(Anim.GetSkeleton().ToString());
+	W.WriteF32(Anim.GetDurationSeconds());
+	const auto& Tracks = Anim.GetTracks();
+	W.WriteU32(static_cast<std::uint32_t>(Tracks.size()));
+	for (const FAnimationTrack& Track : Tracks)
 	{
-		FJsonValue TrackJson = FJsonValue::Object();
-		TrackJson.SetField("bone", FJsonValue::String(Track.TargetBoneName));
-		FJsonValue Keys = FJsonValue::Array();
+		W.WriteString(Track.TargetBoneName);
+		W.WriteU32(static_cast<std::uint32_t>(Track.Keys.size()));
 		for (const FAnimationKey& Key : Track.Keys)
 		{
-			FJsonValue KeyJson = FJsonValue::Object();
-			KeyJson.SetField("t", FJsonValue::Number(Key.Time));
-			FJsonValue Tr = FJsonValue::Array();
-			Tr.AddElement(FJsonValue::Number(Key.Translation[0]));
-			Tr.AddElement(FJsonValue::Number(Key.Translation[1]));
-			Tr.AddElement(FJsonValue::Number(Key.Translation[2]));
-			KeyJson.SetField("translation", Tr);
-			FJsonValue Rot = FJsonValue::Array();
-			Rot.AddElement(FJsonValue::Number(Key.Rotation[0]));
-			Rot.AddElement(FJsonValue::Number(Key.Rotation[1]));
-			Rot.AddElement(FJsonValue::Number(Key.Rotation[2]));
-			Rot.AddElement(FJsonValue::Number(Key.Rotation[3]));
-			KeyJson.SetField("rotation", Rot);
-			FJsonValue Sc = FJsonValue::Array();
-			Sc.AddElement(FJsonValue::Number(Key.Scale[0]));
-			Sc.AddElement(FJsonValue::Number(Key.Scale[1]));
-			Sc.AddElement(FJsonValue::Number(Key.Scale[2]));
-			KeyJson.SetField("scale", Sc);
-			Keys.AddElement(KeyJson);
+			W.WriteF32(Key.Time);
+			W.WriteF32(Key.Translation[0]);
+			W.WriteF32(Key.Translation[1]);
+			W.WriteF32(Key.Translation[2]);
+			W.WriteF32(Key.Rotation[0]);
+			W.WriteF32(Key.Rotation[1]);
+			W.WriteF32(Key.Rotation[2]);
+			W.WriteF32(Key.Rotation[3]);
+			W.WriteF32(Key.Scale[0]);
+			W.WriteF32(Key.Scale[1]);
+			W.WriteF32(Key.Scale[2]);
 		}
-		TrackJson.SetField("keys", Keys);
-		Tracks.AddElement(TrackJson);
 	}
-	Cpu.SetField("tracks", Tracks);
 	return true;
 }
 
-[[nodiscard]] bool ReadAnimation(UAnimation& Anim, const FJsonValue& Cpu)
+[[nodiscard]] bool ReadAnimationCpu(UAnimation& Anim, FByteReader& R)
 {
-	const std::string SkelPath = Cpu.GetField("skeleton").AsString();
+	std::uint16_t Layout = 0;
+	std::uint16_t Pad = 0;
+	std::string SkelPath;
+	float Duration = 0.f;
+	std::uint32_t TrackCount = 0;
+	if (!R.ReadU16(Layout) || Layout != kCpuLayoutVersion || !R.ReadU16(Pad)
+		|| !R.ReadString(SkelPath) || !R.ReadF32(Duration) || !R.ReadU32(TrackCount))
+	{
+		return false;
+	}
 	if (!SkelPath.empty())
 	{
 		FSoftObjectPath Soft;
@@ -473,151 +572,445 @@ template <typename T>
 			Anim.SetSkeleton(std::move(Soft));
 		}
 	}
-	Anim.SetDurationSeconds(Cpu.GetField("duration").AsFloat(0.f));
+	Anim.SetDurationSeconds(Duration);
 	std::vector<FAnimationTrack> Tracks;
-	const FJsonValue TracksJson = Cpu.GetField("tracks");
-	if (TracksJson.IsArray())
+	Tracks.reserve(TrackCount);
+	for (std::uint32_t T = 0; T < TrackCount; ++T)
 	{
-		Tracks.reserve(TracksJson.GetArraySize());
-		for (std::size_t I = 0; I < TracksJson.GetArraySize(); ++I)
+		FAnimationTrack Track;
+		std::uint32_t KeyCount = 0;
+		if (!R.ReadString(Track.TargetBoneName) || !R.ReadU32(KeyCount))
 		{
-			const FJsonValue TrackJson = TracksJson.GetElement(I);
-			FAnimationTrack Track;
-			Track.TargetBoneName = TrackJson.GetField("bone").AsString();
-			const FJsonValue KeysJson = TrackJson.GetField("keys");
-			if (KeysJson.IsArray())
-			{
-				Track.Keys.reserve(KeysJson.GetArraySize());
-				for (std::size_t K = 0; K < KeysJson.GetArraySize(); ++K)
-				{
-					const FJsonValue KeyJson = KeysJson.GetElement(K);
-					FAnimationKey Key;
-					Key.Time = KeyJson.GetField("t").AsFloat(0.f);
-					const FJsonValue Tr = KeyJson.GetField("translation");
-					if (Tr.IsArray() && Tr.GetArraySize() >= 3)
-					{
-						Key.Translation[0] = Tr.GetElement(0).AsFloat(0.f);
-						Key.Translation[1] = Tr.GetElement(1).AsFloat(0.f);
-						Key.Translation[2] = Tr.GetElement(2).AsFloat(0.f);
-					}
-					const FJsonValue Rot = KeyJson.GetField("rotation");
-					if (Rot.IsArray() && Rot.GetArraySize() >= 4)
-					{
-						Key.Rotation[0] = Rot.GetElement(0).AsFloat(0.f);
-						Key.Rotation[1] = Rot.GetElement(1).AsFloat(0.f);
-						Key.Rotation[2] = Rot.GetElement(2).AsFloat(0.f);
-						Key.Rotation[3] = Rot.GetElement(3).AsFloat(1.f);
-					}
-					const FJsonValue Sc = KeyJson.GetField("scale");
-					if (Sc.IsArray() && Sc.GetArraySize() >= 3)
-					{
-						Key.Scale[0] = Sc.GetElement(0).AsFloat(1.f);
-						Key.Scale[1] = Sc.GetElement(1).AsFloat(1.f);
-						Key.Scale[2] = Sc.GetElement(2).AsFloat(1.f);
-					}
-					Track.Keys.push_back(Key);
-				}
-			}
-			Tracks.push_back(std::move(Track));
+			return false;
 		}
+		Track.Keys.reserve(KeyCount);
+		for (std::uint32_t K = 0; K < KeyCount; ++K)
+		{
+			FAnimationKey Key;
+			if (!R.ReadF32(Key.Time)
+				|| !R.ReadF32(Key.Translation[0]) || !R.ReadF32(Key.Translation[1]) || !R.ReadF32(Key.Translation[2])
+				|| !R.ReadF32(Key.Rotation[0]) || !R.ReadF32(Key.Rotation[1]) || !R.ReadF32(Key.Rotation[2])
+				|| !R.ReadF32(Key.Rotation[3])
+				|| !R.ReadF32(Key.Scale[0]) || !R.ReadF32(Key.Scale[1]) || !R.ReadF32(Key.Scale[2]))
+			{
+				return false;
+			}
+			Track.Keys.push_back(Key);
+		}
+		Tracks.push_back(std::move(Track));
 	}
 	Anim.SetTracks(std::move(Tracks));
 	return true;
 }
 
+[[nodiscard]] bool WriteDocumentJsonCpu(const std::string& DocumentJson, FByteWriter& W)
+{
+	W.WriteU16(kCpuLayoutVersion);
+	W.WriteU16(0);
+	W.WriteString(DocumentJson);
+	return true;
+}
+
+[[nodiscard]] bool ReadDocumentJsonCpu(std::string& OutJson, FByteReader& R)
+{
+	std::uint16_t Layout = 0;
+	std::uint16_t Pad = 0;
+	if (!R.ReadU16(Layout) || Layout != kCpuLayoutVersion || !R.ReadU16(Pad) || !R.ReadString(OutJson))
+	{
+		return false;
+	}
+	return true;
+}
+
+[[nodiscard]] bool WriteObjectRecord(const UObject& Object, FByteWriter& ObjectsPayload)
+{
+	FByteWriter Record;
+	const UResource* Resource = dynamic_cast<const UResource*>(&Object);
+	Record.WriteString(Object.GetName());
+	Record.WriteU16(static_cast<std::uint16_t>(Resource ? Resource->GetType() : EResourceType::Unknown));
+	Record.WriteU16(Resource ? kClassKindResource : kClassKindObject);
+	Record.WriteString(Resource ? Resource->GetSourcePath() : std::string{});
+
+	std::vector<UObject*> Referenced;
+	Object.GetReferencedObjects(Referenced);
+	std::vector<std::uint8_t> CpuBytes;
+	std::uint32_t Flags = 0;
+	if (Resource)
+	{
+		if (!WriteCpuPayloadBytes(*Resource, CpuBytes))
+		{
+			return false;
+		}
+		if (!CpuBytes.empty())
+		{
+			Flags |= kRecordHasCpu;
+		}
+	}
+	if (!Referenced.empty())
+	{
+		Flags |= kRecordHasRefs;
+	}
+	Record.WriteU32(Flags);
+	Record.WriteU32(0);
+	Record.WriteU32(0);
+
+	if (Flags & kRecordHasRefs)
+	{
+		Record.WriteU32(static_cast<std::uint32_t>(Referenced.size()));
+		for (UObject* RefObj : Referenced)
+		{
+			Record.WriteString(RefObj ? RefObj->GetPathName() : std::string{});
+		}
+	}
+	if (Flags & kRecordHasCpu)
+	{
+		Record.WriteU32(static_cast<std::uint32_t>(CpuBytes.size()));
+		Record.WriteBytes(CpuBytes.data(), CpuBytes.size());
+	}
+
+	ObjectsPayload.WriteBytes(Record.Bytes.data(), Record.Bytes.size());
+	return true;
+}
+
+[[nodiscard]] bool ParseObjectRecord(FByteReader& R, FCassetParsedObject& Out)
+{
+	std::uint16_t TypeU16 = 0;
+	std::uint32_t Reserved0 = 0;
+	std::uint32_t Reserved1 = 0;
+	if (!R.ReadString(Out.Name) || !R.ReadU16(TypeU16) || !R.ReadU16(Out.ClassKind)
+		|| !R.ReadString(Out.ImportSource) || !R.ReadU32(Out.RecordFlags)
+		|| !R.ReadU32(Reserved0) || !R.ReadU32(Reserved1))
+	{
+		return false;
+	}
+	Out.Type = static_cast<EResourceType>(TypeU16);
+	if (Out.RecordFlags & kRecordHasRefs)
+	{
+		std::uint32_t RefCount = 0;
+		if (!R.ReadU32(RefCount))
+		{
+			return false;
+		}
+		Out.Refs.resize(RefCount);
+		for (std::uint32_t I = 0; I < RefCount; ++I)
+		{
+			if (!R.ReadString(Out.Refs[I]))
+			{
+				return false;
+			}
+		}
+	}
+	if (Out.RecordFlags & kRecordHasCpu)
+	{
+		std::uint32_t CpuSize = 0;
+		if (!R.ReadU32(CpuSize) || !R.Remaining(CpuSize))
+		{
+			return false;
+		}
+		Out.CpuBytes.resize(CpuSize);
+		if (CpuSize > 0 && !R.ReadBytes(Out.CpuBytes.data(), CpuSize))
+		{
+			return false;
+		}
+	}
+	if (Out.RecordFlags & kRecordHasExtras)
+	{
+		std::uint32_t ExtraCount = 0;
+		if (!R.ReadU32(ExtraCount))
+		{
+			return false;
+		}
+		for (std::uint32_t I = 0; I < ExtraCount; ++I)
+		{
+			std::uint32_t Key = 0;
+			std::uint32_t Size = 0;
+			if (!R.ReadU32(Key) || !R.ReadU32(Size) || !R.Skip(Size))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+[[nodiscard]] bool BuildUncompressedDocument(
+	const UPackage& Package,
+	const std::unordered_map<std::string, UObject*>& Objects,
+	std::vector<std::uint8_t>& OutDoc)
+{
+	OutDoc.clear();
+
+	std::string DefaultObjectName;
+	std::unordered_map<std::string, std::string> DependencyNameToFile;
+	FByteWriter ObjectsPayload;
+	std::uint32_t ObjectCount = 0;
+
+	for (const auto& Pair : Objects)
+	{
+		UObject* Object = Pair.second;
+		if (!Object)
+		{
+			continue;
+		}
+		if (DefaultObjectName.empty() && dynamic_cast<UResource*>(Object))
+		{
+			DefaultObjectName = Object->GetName();
+		}
+
+		std::vector<UObject*> Referenced;
+		Object->GetReferencedObjects(Referenced);
+		for (UObject* RefObj : Referenced)
+		{
+			if (!RefObj)
+			{
+				continue;
+			}
+			FObjectRef OtherOuter = RefObj->GetOuter();
+			UPackage* OtherPackage = OtherOuter.Cast<UPackage>();
+			if (!OtherPackage || OtherPackage == &Package || !OtherPackage->IsPersistent())
+			{
+				continue;
+			}
+			DependencyNameToFile[OtherPackage->GetName()] = OtherPackage->GetFilePath();
+		}
+
+		if (!WriteObjectRecord(*Object, ObjectsPayload))
+		{
+			MAHO_CORE_ERROR("casset: failed encoding object '{}'", Object->GetName());
+			return false;
+		}
+		++ObjectCount;
+	}
+
+	FByteWriter Pkg1;
+	Pkg1.WriteString(Package.GetName());
+	Pkg1.WriteU32(static_cast<std::uint32_t>(Package.GetPackageFlags()));
+	Pkg1.WriteString(DefaultObjectName);
+	Pkg1.WriteU32(ObjectCount);
+	Pkg1.WriteU32(0);
+	Pkg1.WriteU32(0);
+	Pkg1.WriteU32(0);
+	Pkg1.WriteU32(0);
+
+	FByteWriter Deps;
+	Deps.WriteU32(static_cast<std::uint32_t>(DependencyNameToFile.size()));
+	for (const auto& Dep : DependencyNameToFile)
+	{
+		Deps.WriteString(Dep.first);
+		Deps.WriteString(Dep.second);
+		Deps.WriteU32(0);
+	}
+
+	FByteWriter Objs;
+	Objs.WriteU32(ObjectCount);
+	Objs.WriteBytes(ObjectsPayload.Bytes.data(), ObjectsPayload.Bytes.size());
+
+	FByteWriter Doc;
+	AppendChunk(Doc, kChunkTagPKG1, kChunkMustUnderstand, Pkg1.Bytes);
+	AppendChunk(Doc, kChunkTagDEPS, kChunkMustUnderstand, Deps.Bytes);
+	AppendChunk(Doc, kChunkTagOBJS, kChunkMustUnderstand, Objs.Bytes);
+	OutDoc = std::move(Doc.Bytes);
+	return true;
+}
+
+[[nodiscard]] bool ParseUncompressedDocument(const std::uint8_t* Data, std::size_t Size, FCassetParsedPackage& Out)
+{
+	Out = {};
+	FByteReader R{Data, Size, 0};
+	bool bHavePkg = false;
+	bool bHaveDeps = false;
+	bool bHaveObjs = false;
+
+	while (R.Pos < R.Size)
+	{
+		if (!R.Remaining(12))
+		{
+			break;
+		}
+		std::uint32_t Tag = 0;
+		std::uint32_t PayloadSize = 0;
+		std::uint32_t ChunkFlags = 0;
+		if (!R.ReadU32(Tag) || !R.ReadU32(PayloadSize) || !R.ReadU32(ChunkFlags))
+		{
+			return false;
+		}
+		if (!R.Remaining(PayloadSize))
+		{
+			MAHO_CORE_ERROR("casset: truncated chunk payload");
+			return false;
+		}
+		FByteReader Payload{R.Data + R.Pos, PayloadSize, 0};
+		R.Pos += PayloadSize;
+		if (!R.SkipPadTo4())
+		{
+			return false;
+		}
+
+		if (Tag == kChunkTagPKG1)
+		{
+			std::uint32_t Hint = 0;
+			std::uint32_t R0 = 0, R1 = 0, R2 = 0, R3 = 0;
+			if (!Payload.ReadString(Out.Name) || !Payload.ReadU32(Out.PackageFlags)
+				|| !Payload.ReadString(Out.DefaultObjectName) || !Payload.ReadU32(Hint)
+				|| !Payload.ReadU32(R0) || !Payload.ReadU32(R1) || !Payload.ReadU32(R2)
+				|| !Payload.ReadU32(R3))
+			{
+				return false;
+			}
+			bHavePkg = true;
+		}
+		else if (Tag == kChunkTagDEPS)
+		{
+			std::uint32_t Count = 0;
+			if (!Payload.ReadU32(Count))
+			{
+				return false;
+			}
+			Out.Dependencies.resize(Count);
+			for (std::uint32_t I = 0; I < Count; ++I)
+			{
+				if (!Payload.ReadString(Out.Dependencies[I].PackageName)
+					|| !Payload.ReadString(Out.Dependencies[I].FilePath)
+					|| !Payload.ReadU32(Out.Dependencies[I].Reserved))
+				{
+					return false;
+				}
+			}
+			bHaveDeps = true;
+		}
+		else if (Tag == kChunkTagOBJS)
+		{
+			std::uint32_t Count = 0;
+			if (!Payload.ReadU32(Count))
+			{
+				return false;
+			}
+			Out.Objects.resize(Count);
+			for (std::uint32_t I = 0; I < Count; ++I)
+			{
+				if (!ParseObjectRecord(Payload, Out.Objects[I]))
+				{
+					MAHO_CORE_ERROR("casset: bad object record index {}", I);
+					return false;
+				}
+			}
+			bHaveObjs = true;
+		}
+		else if (ChunkFlags & kChunkMustUnderstand)
+		{
+			MAHO_CORE_ERROR("casset: unknown critical chunk tag=0x{:08X}", Tag);
+			return false;
+		}
+	}
+
+	if (!bHavePkg || !bHaveDeps || !bHaveObjs)
+	{
+		MAHO_CORE_ERROR("casset: missing required chunks PKG1/DEPS/OBJS");
+		return false;
+	}
+	return true;
+}
+
 } // namespace
 
-bool WriteCpuPayload(const UResource& Resource, FJsonValue& InOutEntry)
+bool IsCassetBinaryFile(const std::uint8_t* Data, std::size_t Size)
 {
-	FJsonValue Cpu = FJsonValue::Object();
-	bool bOk = false;
+	if (!Data || Size < 4)
+	{
+		return false;
+	}
+	const std::uint32_t Magic =
+		static_cast<std::uint32_t>(Data[0])
+		| (static_cast<std::uint32_t>(Data[1]) << 8)
+		| (static_cast<std::uint32_t>(Data[2]) << 16)
+		| (static_cast<std::uint32_t>(Data[3]) << 24);
+	return Magic == kCassetMagic;
+}
 
+bool WriteCpuPayloadBytes(const UResource& Resource, std::vector<std::uint8_t>& OutCpuBytes)
+{
+	FByteWriter W;
+	bool bOk = false;
 	if (const UTexture* Tex = dynamic_cast<const UTexture*>(&Resource))
 	{
-		bOk = WriteTexture(*Tex, Cpu);
+		bOk = WriteTextureCpu(*Tex, W);
 	}
 	else if (const UStaticMesh* Mesh = dynamic_cast<const UStaticMesh*>(&Resource))
 	{
-		bOk = WriteMesh(*Mesh, Cpu);
+		bOk = WriteMeshCpu(*Mesh, W);
 	}
 	else if (const UMaterial* Mat = dynamic_cast<const UMaterial*>(&Resource))
 	{
-		bOk = WriteMaterial(*Mat, Cpu);
+		bOk = WriteMaterialCpu(*Mat, W);
 	}
 	else if (const USkeleton* Skeleton = dynamic_cast<const USkeleton*>(&Resource))
 	{
-		bOk = WriteSkeleton(*Skeleton, Cpu);
+		bOk = WriteSkeletonCpu(*Skeleton, W);
 	}
 	else if (const UAnimation* Anim = dynamic_cast<const UAnimation*>(&Resource))
 	{
-		bOk = WriteAnimation(*Anim, Cpu);
+		bOk = WriteAnimationCpu(*Anim, W);
 	}
 	else if (const UAnimationGraph* Graph = dynamic_cast<const UAnimationGraph*>(&Resource))
 	{
-		Cpu.SetField("documentJson", FJsonValue::String(Graph->GetDocumentJson()));
-		bOk = true;
+		bOk = WriteDocumentJsonCpu(Graph->GetDocumentJson(), W);
 	}
 	else if (const UPrefab* Prefab = dynamic_cast<const UPrefab*>(&Resource))
 	{
-		Cpu.SetField("documentJson", FJsonValue::String(Prefab->GetDocumentJson()));
-		bOk = true;
+		bOk = WriteDocumentJsonCpu(Prefab->GetDocumentJson(), W);
 	}
 	else
 	{
-		MAHO_CORE_WARN("casset: no CPU writer for '{}'", Resource.GetName());
 		bOk = true;
 	}
-
 	if (bOk)
 	{
-		InOutEntry.SetField("cpu", Cpu);
-		if (!Resource.GetSourcePath().empty())
-		{
-			InOutEntry.SetField("importSource", FJsonValue::String(Resource.GetSourcePath()));
-		}
+		OutCpuBytes = std::move(W.Bytes);
 	}
 	return bOk;
 }
 
-bool ReadCpuPayload(UResource& Resource, const FJsonValue& Entry)
+bool ApplyCpuPayload(UResource& Resource, const std::vector<std::uint8_t>& CpuBytes)
 {
-	if (!Entry.HasField("cpu") || !Entry.GetField("cpu").IsObject())
-	{
-		MAHO_CORE_ERROR("casset: missing cpu payload for '{}'", Resource.GetName());
-		return false;
-	}
-	const FJsonValue Cpu = Entry.GetField("cpu");
+	FByteReader R{CpuBytes.data(), CpuBytes.size(), 0};
 	bool bOk = false;
-
 	if (UTexture* Tex = dynamic_cast<UTexture*>(&Resource))
 	{
-		bOk = ReadTexture(*Tex, Cpu);
+		bOk = ReadTextureCpu(*Tex, R);
 	}
 	else if (UStaticMesh* Mesh = dynamic_cast<UStaticMesh*>(&Resource))
 	{
-		bOk = ReadMesh(*Mesh, Cpu);
+		bOk = ReadMeshCpu(*Mesh, R);
 	}
 	else if (UMaterial* Mat = dynamic_cast<UMaterial*>(&Resource))
 	{
-		bOk = ReadMaterial(*Mat, Cpu);
+		bOk = ReadMaterialCpu(*Mat, R);
 	}
 	else if (USkeleton* Skeleton = dynamic_cast<USkeleton*>(&Resource))
 	{
-		bOk = ReadSkeleton(*Skeleton, Cpu);
+		bOk = ReadSkeletonCpu(*Skeleton, R);
 	}
 	else if (UAnimation* Anim = dynamic_cast<UAnimation*>(&Resource))
 	{
-		bOk = ReadAnimation(*Anim, Cpu);
+		bOk = ReadAnimationCpu(*Anim, R);
 	}
 	else if (UAnimationGraph* Graph = dynamic_cast<UAnimationGraph*>(&Resource))
 	{
-		Graph->SetDocumentJson(Cpu.GetField("documentJson").AsString());
-		bOk = true;
+		std::string Json;
+		bOk = ReadDocumentJsonCpu(Json, R);
+		if (bOk)
+		{
+			Graph->SetDocumentJson(std::move(Json));
+		}
 	}
 	else if (UPrefab* Prefab = dynamic_cast<UPrefab*>(&Resource))
 	{
-		Prefab->SetDocumentJson(Cpu.GetField("documentJson").AsString());
-		bOk = true;
+		std::string Json;
+		bOk = ReadDocumentJsonCpu(Json, R);
+		if (bOk)
+		{
+			Prefab->SetDocumentJson(std::move(Json));
+		}
 	}
 	else
 	{
@@ -630,6 +1023,120 @@ bool ReadCpuPayload(UResource& Resource, const FJsonValue& Entry)
 		Resource.ClearDirty();
 	}
 	return bOk;
+}
+
+bool EncodePackageFile(const UPackage& Package, std::vector<std::uint8_t>& OutFileBytes)
+{
+	std::vector<std::uint8_t> Uncompressed;
+	if (!BuildPackageDocument(Package, Uncompressed))
+	{
+		return false;
+	}
+	return WrapDocumentToMcasFile(Uncompressed, OutFileBytes);
+}
+
+bool BuildPackageDocument(const UPackage& Package, std::vector<std::uint8_t>& OutDocument)
+{
+	return BuildUncompressedDocument(Package, Package.Objects, OutDocument);
+}
+
+bool WrapDocumentToMcasFile(
+	const std::vector<std::uint8_t>& UncompressedDocument,
+	std::vector<std::uint8_t>& OutFileBytes)
+{
+	OutFileBytes.clear();
+	std::vector<std::uint8_t> Compressed;
+	if (!FCompression::CompressZlib(
+			UncompressedDocument.data(),
+			UncompressedDocument.size(),
+			Compressed))
+	{
+		return false;
+	}
+
+	FByteWriter File;
+	File.WriteU32(kCassetMagic);
+	File.WriteU32(kCassetFormatVersion);
+	File.WriteU32(kCassetHeaderSize);
+	File.WriteU32(kCassetFlagBodyZlib);
+	File.WriteU32(kCassetContentVersion);
+	File.WriteU32(static_cast<std::uint32_t>(UncompressedDocument.size()));
+	File.WriteU32(static_cast<std::uint32_t>(Compressed.size()));
+	File.WriteU32(0); // Checksum (v1 unused)
+	for (int I = 0; I < 8; ++I)
+	{
+		File.WriteU32(0);
+	}
+
+	File.WriteBytes(Compressed.data(), Compressed.size());
+	OutFileBytes = std::move(File.Bytes);
+	if (OutFileBytes.size() < kCassetHeaderSize)
+	{
+		MAHO_CORE_ERROR("casset: internal header size mismatch");
+		return false;
+	}
+	return true;
+}
+
+bool DecodePackageFile(
+	const std::uint8_t* FileBytes,
+	std::size_t FileSize,
+	FCassetParsedPackage& OutPackage)
+{
+	OutPackage = {};
+	if (!IsCassetBinaryFile(FileBytes, FileSize) || FileSize < kCassetHeaderSize)
+	{
+		MAHO_CORE_ERROR("casset: not an MCAS binary package");
+		return false;
+	}
+
+	FByteReader H{FileBytes, FileSize, 0};
+	std::uint32_t Magic = 0, FormatVer = 0, HeaderSize = 0, Flags = 0, ContentVer = 0;
+	std::uint32_t UncompSize = 0, CompSize = 0, Checksum = 0;
+	if (!H.ReadU32(Magic) || !H.ReadU32(FormatVer) || !H.ReadU32(HeaderSize) || !H.ReadU32(Flags)
+		|| !H.ReadU32(ContentVer) || !H.ReadU32(UncompSize) || !H.ReadU32(CompSize) || !H.ReadU32(Checksum))
+	{
+		return false;
+	}
+	(void)Checksum;
+	if (Magic != kCassetMagic)
+	{
+		return false;
+	}
+	if (FormatVer > kCassetFormatVersion || ContentVer > kCassetContentVersion)
+	{
+		MAHO_CORE_ERROR(
+			"casset: unsupported version format={} content={} (max {}/{})",
+			FormatVer,
+			ContentVer,
+			kCassetFormatVersion,
+			kCassetContentVersion);
+		return false;
+	}
+	if (HeaderSize < 32 || HeaderSize > FileSize)
+	{
+		MAHO_CORE_ERROR("casset: bad HeaderSize {}", HeaderSize);
+		return false;
+	}
+	H.Pos = HeaderSize;
+
+	if ((Flags & kCassetFlagBodyZlib) == 0)
+	{
+		MAHO_CORE_ERROR("casset: uncompressed body not supported in v1");
+		return false;
+	}
+	if (CompSize == 0 || UncompSize == 0 || !H.Remaining(CompSize))
+	{
+		MAHO_CORE_ERROR("casset: bad compressed body size");
+		return false;
+	}
+
+	std::vector<std::uint8_t> Uncompressed;
+	if (!FCompression::DecompressZlib(H.Data + H.Pos, CompSize, UncompSize, Uncompressed))
+	{
+		return false;
+	}
+	return ParseUncompressedDocument(Uncompressed.data(), Uncompressed.size(), OutPackage);
 }
 
 } // namespace ResourceCasset

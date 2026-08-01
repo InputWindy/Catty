@@ -58,11 +58,18 @@ private:
 		std::string Path;
 		FTransferHandle Handle;
 		std::vector<std::uint8_t> BulkBytes;
+		EResourceBulkPreparedKind PreparedKind = EResourceBulkPreparedKind::None;
+		std::shared_ptr<void> Prepared;
 		bool bBulkTaken = false;
 		bool bComplete = false;
 	};
 
-	void CompleteLoad(FTransferHandle Handle, bool bSuccess, std::vector<std::uint8_t> BulkBytes);
+	void CompleteLoad(
+		FTransferHandle Handle,
+		bool bSuccess,
+		std::vector<std::uint8_t> BulkBytes,
+		EResourceBulkPreparedKind PreparedKind = EResourceBulkPreparedKind::None,
+		std::shared_ptr<void> Prepared = {});
 
 	mutable std::mutex RegistryMutex;
 	std::condition_variable LoadCv;

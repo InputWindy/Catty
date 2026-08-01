@@ -635,12 +635,124 @@ bool DecodeFromMemory(
 #endif
 }
 
+bool PrepareModelImport(
+	const std::uint8_t* Bytes,
+	std::size_t ByteCount,
+	std::string_view SourcePathHint,
+	FPreparedModelImport& Out)
+{
+	Out = {};
+	if (!DecodeFromMemory(Bytes, ByteCount, SourcePathHint, Out.Scene))
+	{
+		return false;
+	}
+
+	auto ResolveTextureDiskPath = [&](const std::string& RelativeOrAbsolute) -> std::string
+	{
+		if (RelativeOrAbsolute.empty() || RelativeOrAbsolute[0] == '*')
+		{
+			return {};
+		}
+		std::error_code ErrorCode;
+		const std::filesystem::path AsPath = PathFromUtf8(RelativeOrAbsolute);
+		if (AsPath.is_absolute())
+		{
+			return PathToUtf8(std::filesystem::weakly_canonical(AsPath, ErrorCode));
+		}
+		if (Out.Scene.SourcePathHint.empty())
+		{
+			return RelativeOrAbsolute;
+		}
+		const std::filesystem::path BaseDir = PathFromUtf8(Out.Scene.SourcePathHint).parent_path();
+		return PathToUtf8(std::filesystem::weakly_canonical(BaseDir / AsPath, ErrorCode));
+	};
+
+	for (const FDecodedMaterial& Mat : Out.Scene.Materials)
+	{
+		for (const FDecodedTextureRef& TexRef : Mat.Textures)
+		{
+			FPreparedTextureImage Prepared;
+			Prepared.bForceLinear = TexRef.SlotName == "Normal"
+				|| TexRef.SlotName == "MetallicRoughness"
+				|| TexRef.SlotName == "Occlusion";
+
+			std::vector<std::uint8_t> FileBytes;
+			if (!TexRef.EmbeddedBytes.empty())
+			{
+				Prepared.CacheKey = "embedded:" + TexRef.SourcePath;
+				FileBytes = TexRef.EmbeddedBytes;
+				Prepared.DecodeHint = TexRef.SourcePath;
+				if (Prepared.DecodeHint.empty() || Prepared.DecodeHint[0] == '*')
+				{
+					Prepared.DecodeHint = "embedded.png";
+				}
+			}
+			else
+			{
+				Prepared.CacheKey = ResolveTextureDiskPath(TexRef.SourcePath);
+				if (Prepared.CacheKey.empty())
+				{
+					continue;
+				}
+				if (Out.Textures.find(Prepared.CacheKey) != Out.Textures.end())
+				{
+					continue;
+				}
+
+				std::ifstream File(PathFromUtf8(Prepared.CacheKey), std::ios::binary | std::ios::ate);
+				if (!File)
+				{
+					MAHO_CORE_WARN("MeshModelCodec: cannot open texture '{}'", Prepared.CacheKey);
+					continue;
+				}
+				const std::streamoff Size = File.tellg();
+				if (Size <= 0)
+				{
+					continue;
+				}
+				File.seekg(0, std::ios::beg);
+				FileBytes.resize(static_cast<std::size_t>(Size));
+				if (!File.read(reinterpret_cast<char*>(FileBytes.data()), Size))
+				{
+					MAHO_CORE_WARN("MeshModelCodec: failed reading texture '{}'", Prepared.CacheKey);
+					continue;
+				}
+				Prepared.DecodeHint = Prepared.CacheKey;
+			}
+
+			if (Out.Textures.find(Prepared.CacheKey) != Out.Textures.end())
+			{
+				continue;
+			}
+
+			if (!TextureImageCodec::DecodeFromMemory(
+					FileBytes.data(),
+					FileBytes.size(),
+					Prepared.DecodeHint,
+					Prepared.Image))
+			{
+				MAHO_CORE_WARN("MeshModelCodec: decode failed for texture '{}'", Prepared.DecodeHint);
+				continue;
+			}
+			if (Prepared.bForceLinear)
+			{
+				Prepared.Image.bSRGB = false;
+			}
+			Prepared.SerializedSourceBytes = std::move(FileBytes);
+			Out.Textures.emplace(Prepared.CacheKey, std::move(Prepared));
+		}
+	}
+
+	return true;
+}
+
 bool ApplyDecodedModelScene(
 	FDecodedModelScene&& Scene,
 	FResourceSystem& Resources,
 	FGCSystem& GC,
 	UPackage& Package,
-	UPrefab& Prefab)
+	UPrefab& Prefab,
+	const std::unordered_map<std::string, FPreparedTextureImage>* PreparedTextures)
 {
 	// On failure, drop siblings created here (Prefab root is aborted by ProcessReadyIO).
 	struct FApplyRollback
@@ -704,6 +816,9 @@ bool ApplyDecodedModelScene(
 		std::string CacheKey;
 		std::vector<std::uint8_t> Bytes;
 		std::string DecodeHint = TexRef.SourcePath;
+		bool bForceLinear = TexRef.SlotName == "Normal"
+			|| TexRef.SlotName == "MetallicRoughness"
+			|| TexRef.SlotName == "Occlusion";
 
 		if (!TexRef.EmbeddedBytes.empty())
 		{
@@ -726,25 +841,6 @@ bool ApplyDecodedModelScene(
 			{
 				return It->second;
 			}
-
-			std::ifstream File(PathFromUtf8(CacheKey), std::ios::binary | std::ios::ate);
-			if (!File)
-			{
-				MAHO_CORE_WARN("MeshModelCodec: cannot open texture '{}'", CacheKey);
-				return {};
-			}
-			const std::streamoff Size = File.tellg();
-			if (Size <= 0)
-			{
-				return {};
-			}
-			File.seekg(0, std::ios::beg);
-			Bytes.resize(static_cast<std::size_t>(Size));
-			if (!File.read(reinterpret_cast<char*>(Bytes.data()), Size))
-			{
-				MAHO_CORE_WARN("MeshModelCodec: failed reading texture '{}'", CacheKey);
-				return {};
-			}
 			DecodeHint = CacheKey;
 		}
 
@@ -755,10 +851,53 @@ bool ApplyDecodedModelScene(
 		}
 
 		FDecodedImage Image;
-		if (!TextureImageCodec::DecodeFromMemory(Bytes.data(), Bytes.size(), DecodeHint, Image))
+		std::vector<std::uint8_t> SerializedBytes;
+		if (PreparedTextures)
 		{
-			MAHO_CORE_WARN("MeshModelCodec: decode failed for texture '{}'", DecodeHint);
-			return {};
+			const auto PrepIt = PreparedTextures->find(CacheKey);
+			if (PrepIt == PreparedTextures->end())
+			{
+				MAHO_CORE_WARN("MeshModelCodec: missing prepared texture '{}'", CacheKey);
+				return {};
+			}
+			Image = PrepIt->second.Image;
+			SerializedBytes = PrepIt->second.SerializedSourceBytes;
+			DecodeHint = PrepIt->second.DecodeHint;
+			if (PrepIt->second.bForceLinear)
+			{
+				bForceLinear = true;
+			}
+		}
+		else
+		{
+			if (Bytes.empty())
+			{
+				std::ifstream File(PathFromUtf8(CacheKey), std::ios::binary | std::ios::ate);
+				if (!File)
+				{
+					MAHO_CORE_WARN("MeshModelCodec: cannot open texture '{}'", CacheKey);
+					return {};
+				}
+				const std::streamoff Size = File.tellg();
+				if (Size <= 0)
+				{
+					return {};
+				}
+				File.seekg(0, std::ios::beg);
+				Bytes.resize(static_cast<std::size_t>(Size));
+				if (!File.read(reinterpret_cast<char*>(Bytes.data()), Size))
+				{
+					MAHO_CORE_WARN("MeshModelCodec: failed reading texture '{}'", CacheKey);
+					return {};
+				}
+			}
+
+			if (!TextureImageCodec::DecodeFromMemory(Bytes.data(), Bytes.size(), DecodeHint, Image))
+			{
+				MAHO_CORE_WARN("MeshModelCodec: decode failed for texture '{}'", DecodeHint);
+				return {};
+			}
+			SerializedBytes = std::move(Bytes);
 		}
 
 		const std::string Stem = SanitizeObjectName(
@@ -776,10 +915,7 @@ bool ApplyDecodedModelScene(
 			return {};
 		}
 		Rollback.Track(Texture);
-		// Data maps / normals stay linear; color maps use sRGB from decoder.
-		if (TexRef.SlotName == "Normal"
-			|| TexRef.SlotName == "MetallicRoughness"
-			|| TexRef.SlotName == "Occlusion")
+		if (bForceLinear)
 		{
 			Image.bSRGB = false;
 		}
@@ -787,6 +923,10 @@ bool ApplyDecodedModelScene(
 		{
 			MAHO_CORE_WARN("MeshModelCodec: ApplyDecodedToTexture failed for '{}'", Stem);
 			return {};
+		}
+		if (!SerializedBytes.empty())
+		{
+			Texture->SetSerializedSource(DecodeHint, std::move(SerializedBytes));
 		}
 		Texture->MarkCpuReady();
 		FSoftObjectPath Soft = FSoftObjectPath::FromObject(*Texture);

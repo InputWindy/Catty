@@ -47,7 +47,7 @@ public:
 	[[nodiscard]] virtual bool Export(FResourceExportConfig Config, const FObjectRef& Resource) = 0;
 };
 
-/** .casset package hydrate (JSON BulkData → LoadPackageFromDocument). */
+/** .casset package hydrate (MCAS binary BulkData → LoadPackageFromBinary). */
 class FCassetPackageImporter final : public IResourceImporter
 {
 public:

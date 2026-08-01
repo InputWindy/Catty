@@ -15,7 +15,10 @@
 
 #include <cctype>
 #include <filesystem>
+#include <fstream>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace Maho
 {
@@ -330,6 +333,11 @@ void FResourceSystem::PrepareForExit()
 	}
 
 	bAcceptingNewWork = false;
+	if (AsyncSave.Task)
+	{
+		AsyncSave.Task->Wait();
+		AsyncSave = {};
+	}
 	FlushAll();
 
 	for (auto& Pair : PendingIO)
@@ -367,6 +375,7 @@ bool FResourceSystem::IsIdle() const
 	return !bAcceptingNewWork
 		&& Resources.empty()
 		&& PendingIO.empty()
+		&& !AsyncSave.bActive
 		&& !Server->HasPendingLoads();
 }
 
@@ -384,6 +393,7 @@ bool FResourceSystem::ExecuteStage(EEngineStage Stage)
 	case EEngineStage::BeginFrame:
 	case EEngineStage::Update:
 		ProcessReadyIO();
+		TickSavePackage();
 		return true;
 	case EEngineStage::PrepareExit:
 		PrepareForExit();
@@ -691,6 +701,245 @@ bool FResourceSystem::SavePackage(
 	return SavePackageInternal(Package, FilePath, bPretty, bSaveDependencies, SavingPackageNames);
 }
 
+bool FResourceSystem::EnqueueSavePackage(
+	const FObjectRef& Package,
+	const std::string& FilePath,
+	bool bSaveDependencies)
+{
+	if (AsyncSave.bActive)
+	{
+		MAHO_CORE_WARN("FResourceSystem::EnqueueSavePackage: save already in progress");
+		return false;
+	}
+	if (!IsInitialized() || !bAcceptingNewWork)
+	{
+		MAHO_CORE_ERROR("FResourceSystem::EnqueueSavePackage: not accepting work");
+		return false;
+	}
+	if (!Package)
+	{
+		return false;
+	}
+
+	UPackage* PackagePtr = Package.Cast<UPackage>();
+	if (!PackagePtr || !PackagePtr->IsPersistent())
+	{
+		MAHO_CORE_ERROR("FResourceSystem::EnqueueSavePackage: invalid / non-persistent package");
+		return false;
+	}
+
+	std::string OutPath = FilePath.empty() ? PackagePtr->GetFilePath() : FilePath;
+	if (OutPath.empty())
+	{
+		MAHO_CORE_ERROR("FResourceSystem::EnqueueSavePackage: empty file path");
+		return false;
+	}
+
+	if (bSaveDependencies)
+	{
+		std::unordered_set<std::string> SavingPackageNames;
+		std::unordered_map<std::string, std::string> DependencyNameToFile;
+		for (const auto& Pair : PackagePtr->Objects)
+		{
+			UObject* Object = Pair.second;
+			if (!Object)
+			{
+				continue;
+			}
+			std::vector<UObject*> Referenced;
+			Object->GetReferencedObjects(Referenced);
+			for (UObject* RefObj : Referenced)
+			{
+				if (!RefObj)
+				{
+					continue;
+				}
+				FObjectRef OtherOuter = RefObj->GetOuter();
+				UPackage* OtherPackage = OtherOuter.Cast<UPackage>();
+				if (!OtherPackage || OtherPackage == PackagePtr || !OtherPackage->IsPersistent())
+				{
+					continue;
+				}
+				DependencyNameToFile[OtherPackage->GetName()] = OtherPackage->GetFilePath();
+			}
+		}
+
+		for (const auto& Dep : DependencyNameToFile)
+		{
+			FGCSystem* GC = Detail::GetGCSystem();
+			FObjectRef DepPackage = GC ? GC->FindPackage(NormalizePackageName(Dep.first)) : FObjectRef{};
+			UPackage* DepPtr = DepPackage.Cast<UPackage>();
+			if (!DepPtr)
+			{
+				MAHO_CORE_ERROR("FResourceSystem::EnqueueSavePackage: dependency '{}' not loaded", Dep.first);
+				return false;
+			}
+			std::string DepFile = Dep.second.empty() ? DepPtr->GetFilePath() : Dep.second;
+			if (DepFile.empty()
+				|| !SavePackageInternal(DepPackage, DepFile, true, true, SavingPackageNames))
+			{
+				MAHO_CORE_ERROR(
+					"FResourceSystem::EnqueueSavePackage: failed saving dependency '{}'",
+					Dep.first);
+				return false;
+			}
+		}
+	}
+
+	{
+		std::error_code ErrorCode;
+		const std::filesystem::path Parent = PathFromUtf8(OutPath).parent_path();
+		if (!Parent.empty())
+		{
+			std::filesystem::create_directories(Parent, ErrorCode);
+			if (ErrorCode)
+			{
+				MAHO_CORE_ERROR(
+					"FResourceSystem::EnqueueSavePackage: create_directories failed: {}",
+					ErrorCode.message());
+				return false;
+			}
+		}
+	}
+
+	AsyncSave = {};
+	AsyncSave.bActive = true;
+	AsyncSave.PackageRef = Package;
+	AsyncSave.OutPath = OutPath;
+	AsyncSave.PackageName = PackagePtr->GetName();
+	AsyncSave.Progress = 0.15f;
+	AsyncSave.StatusText = "Building package…";
+	AsyncSave.FileBytes = std::make_shared<std::vector<std::uint8_t>>();
+	AsyncSave.bOk = std::make_shared<std::atomic<bool>>(false);
+
+	if (!ResourceCasset::BuildPackageDocument(*PackagePtr, AsyncSave.Document))
+	{
+		MAHO_CORE_ERROR("FResourceSystem::EnqueueSavePackage: BuildPackageDocument failed");
+		AsyncSave = {};
+		return false;
+	}
+
+	AsyncSave.Progress = 0.45f;
+	AsyncSave.StatusText = "Compressing…";
+	PackagePtr->SetFilePath(OutPath);
+
+	auto Document = std::make_shared<std::vector<std::uint8_t>>(std::move(AsyncSave.Document));
+	AsyncSave.Document.clear();
+	auto FileBytes = AsyncSave.FileBytes;
+	auto bOk = AsyncSave.bOk;
+	const std::string WritePath = OutPath;
+
+	AsyncSave.Task = FAsyncTask::LaunchNew([Document, FileBytes, bOk, WritePath]()
+	{
+		std::vector<std::uint8_t> LocalFile;
+		if (!ResourceCasset::WrapDocumentToMcasFile(*Document, LocalFile))
+		{
+			bOk->store(false, std::memory_order_release);
+			return;
+		}
+
+		std::ofstream Out(PathFromUtf8(WritePath), std::ios::binary | std::ios::trunc);
+		if (!Out
+			|| !Out.write(
+				reinterpret_cast<const char*>(LocalFile.data()),
+				static_cast<std::streamsize>(LocalFile.size())))
+		{
+			bOk->store(false, std::memory_order_release);
+			return;
+		}
+
+		*FileBytes = std::move(LocalFile);
+		bOk->store(true, std::memory_order_release);
+	});
+	AsyncSave.bCompressStarted = true;
+	return true;
+}
+
+bool FResourceSystem::IsSavePackageBusy() const
+{
+	return AsyncSave.bActive;
+}
+
+float FResourceSystem::GetSavePackageProgress() const
+{
+	if (!AsyncSave.bActive)
+	{
+		return 1.f;
+	}
+	if (!AsyncSave.bCompressStarted)
+	{
+		return AsyncSave.Progress;
+	}
+	if (AsyncSave.Task && !AsyncSave.Task->IsDone())
+	{
+		return 0.7f;
+	}
+	return 0.95f;
+}
+
+const std::string& FResourceSystem::GetSavePackageStatusText() const
+{
+	static const std::string IdleText;
+	return AsyncSave.bActive ? AsyncSave.StatusText : IdleText;
+}
+
+void FResourceSystem::TickSavePackage()
+{
+	if (!AsyncSave.bActive || !AsyncSave.bCompressStarted || !AsyncSave.Task)
+	{
+		return;
+	}
+	if (!AsyncSave.Task->IsDone())
+	{
+		AsyncSave.StatusText = "Compressing / writing…";
+		AsyncSave.Progress = 0.7f;
+		return;
+	}
+
+	AsyncSave.Task->Wait();
+	const bool bOk = AsyncSave.bOk && AsyncSave.bOk->load(std::memory_order_acquire);
+	if (bOk)
+	{
+		FinalizeSavePackageSuccess();
+	}
+	else
+	{
+		FinalizeSavePackageFailure();
+	}
+}
+
+void FResourceSystem::FinalizeSavePackageSuccess()
+{
+	UPackage* PackagePtr = AsyncSave.PackageRef.Cast<UPackage>();
+	const std::size_t ByteCount = AsyncSave.FileBytes ? AsyncSave.FileBytes->size() : 0;
+	if (PackagePtr)
+	{
+		for (const auto& Pair : PackagePtr->Objects)
+		{
+			if (UResource* Resource = dynamic_cast<UResource*>(Pair.second))
+			{
+				Resource->ClearDirty();
+			}
+		}
+		MAHO_CORE_INFO(
+			"Saved package '{}' ({} objects) -> '{}' ({} bytes)",
+			PackagePtr->GetName(),
+			PackagePtr->GetObjectCount(),
+			AsyncSave.OutPath,
+			ByteCount);
+	}
+	AsyncSave = {};
+}
+
+void FResourceSystem::FinalizeSavePackageFailure()
+{
+	MAHO_CORE_ERROR(
+		"FResourceSystem: async save failed for '{}' -> '{}'",
+		AsyncSave.PackageName,
+		AsyncSave.OutPath);
+	AsyncSave = {};
+}
+
 bool FResourceSystem::SavePackageInternal(
 	const FObjectRef& Package,
 	const std::string& FilePath,
@@ -749,79 +998,70 @@ bool FResourceSystem::SavePackageInternal(
 	// Ensure FilePath is set before serializing so dependents can record it.
 	PackageObj.SetFilePath(OutPath);
 
-	FJsonValue Root = FJsonValue::Object();
-	if (!PackageObj.Serialize(Root))
-	{
-		MAHO_CORE_ERROR("FResourceSystem::SavePackage: Serialize failed for '{}'", PackageObj.GetName());
-		SavingPackageNames.erase(PackageKey);
-		return false;
-	}
-
 	if (bSaveDependencies)
 	{
-		if (Root.HasField("dependencies") && Root.GetField("dependencies").IsArray())
+		std::unordered_map<std::string, std::string> DependencyNameToFile;
+		for (const auto& Pair : PackageObj.Objects)
 		{
-			const FJsonValue Deps = Root.GetField("dependencies");
-			const std::size_t DepCount = Deps.GetArraySize();
-			for (std::size_t Index = 0; Index < DepCount; ++Index)
+			UObject* Object = Pair.second;
+			if (!Object)
 			{
-				const FJsonValue DepEntry = Deps.GetElement(Index);
-				if (!DepEntry.IsObject())
+				continue;
+			}
+			std::vector<UObject*> Referenced;
+			Object->GetReferencedObjects(Referenced);
+			for (UObject* RefObj : Referenced)
+			{
+				if (!RefObj)
 				{
 					continue;
 				}
-
-				const std::string DepName = NormalizePackageName(DepEntry.GetField("name").AsString());
-				std::string DepFile = DepEntry.GetField("file").AsString();
-				if (DepName.empty())
+				FObjectRef OtherOuter = RefObj->GetOuter();
+				UPackage* OtherPackage = OtherOuter.Cast<UPackage>();
+				if (!OtherPackage || OtherPackage == &PackageObj || !OtherPackage->IsPersistent())
 				{
 					continue;
 				}
-
-				FGCSystem* GC = Detail::GetGCSystem();
-				FObjectRef DepPackage = GC ? GC->FindPackage(DepName) : FObjectRef{};
-				UPackage* DepPtr = DepPackage.Cast<UPackage>();
-				if (!DepPtr)
-				{
-					MAHO_CORE_ERROR(
-						"FResourceSystem::SavePackage: dependency '{}' not loaded",
-						DepName);
-					SavingPackageNames.erase(PackageKey);
-					return false;
-				}
-
-				if (DepFile.empty())
-				{
-					DepFile = DepPtr->GetFilePath();
-				}
-				if (DepFile.empty())
-				{
-					MAHO_CORE_ERROR(
-						"FResourceSystem::SavePackage: dependency '{}' has no file path",
-						DepName);
-					SavingPackageNames.erase(PackageKey);
-					return false;
-				}
-
-				if (!SavePackageInternal(DepPackage, DepFile, bPretty, true, SavingPackageNames))
-				{
-					MAHO_CORE_ERROR(
-						"FResourceSystem::SavePackage: failed saving dependency '{}' for '{}'",
-						DepName,
-						PackageKey);
-					SavingPackageNames.erase(PackageKey);
-					return false;
-				}
+				DependencyNameToFile[OtherPackage->GetName()] = OtherPackage->GetFilePath();
 			}
 		}
 
-		// Refresh JSON so dependency file paths set during recursive save are recorded.
-		Root = FJsonValue::Object();
-		if (!PackageObj.Serialize(Root))
+		for (const auto& Dep : DependencyNameToFile)
 		{
-			MAHO_CORE_ERROR("FResourceSystem::SavePackage: Serialize failed for '{}'", PackageObj.GetName());
-			SavingPackageNames.erase(PackageKey);
-			return false;
+			const std::string DepName = NormalizePackageName(Dep.first);
+			std::string DepFile = Dep.second;
+			FGCSystem* GC = Detail::GetGCSystem();
+			FObjectRef DepPackage = GC ? GC->FindPackage(DepName) : FObjectRef{};
+			UPackage* DepPtr = DepPackage.Cast<UPackage>();
+			if (!DepPtr)
+			{
+				MAHO_CORE_ERROR(
+					"FResourceSystem::SavePackage: dependency '{}' not loaded",
+					DepName);
+				SavingPackageNames.erase(PackageKey);
+				return false;
+			}
+			if (DepFile.empty())
+			{
+				DepFile = DepPtr->GetFilePath();
+			}
+			if (DepFile.empty())
+			{
+				MAHO_CORE_ERROR(
+					"FResourceSystem::SavePackage: dependency '{}' has no file path",
+					DepName);
+				SavingPackageNames.erase(PackageKey);
+				return false;
+			}
+			if (!SavePackageInternal(DepPackage, DepFile, bPretty, true, SavingPackageNames))
+			{
+				MAHO_CORE_ERROR(
+					"FResourceSystem::SavePackage: failed saving dependency '{}' for '{}'",
+					DepName,
+					PackageKey);
+				SavingPackageNames.erase(PackageKey);
+				return false;
+			}
 		}
 	}
 
@@ -843,13 +1083,22 @@ bool FResourceSystem::SavePackageInternal(
 		}
 	}
 
-	FJsonDocument Doc;
-	Doc.SetRoot(std::move(Root));
-	if (!Doc.SaveToFile(OutPath, bPretty))
+	std::vector<std::uint8_t> FileBytes;
+	if (!ResourceCasset::EncodePackageFile(PackageObj, FileBytes))
 	{
-		MAHO_CORE_ERROR("FResourceSystem::SavePackage: write failed '{}'", OutPath);
+		MAHO_CORE_ERROR("FResourceSystem::SavePackage: EncodePackageFile failed for '{}'", PackageObj.GetName());
 		SavingPackageNames.erase(PackageKey);
 		return false;
+	}
+
+	{
+		std::ofstream Out(PathFromUtf8(OutPath), std::ios::binary | std::ios::trunc);
+		if (!Out || !Out.write(reinterpret_cast<const char*>(FileBytes.data()), static_cast<std::streamsize>(FileBytes.size())))
+		{
+			MAHO_CORE_ERROR("FResourceSystem::SavePackage: write failed '{}'", OutPath);
+			SavingPackageNames.erase(PackageKey);
+			return false;
+		}
 	}
 
 	for (const auto& Pair : PackageObj.Objects)
@@ -861,10 +1110,11 @@ bool FResourceSystem::SavePackageInternal(
 	}
 
 	MAHO_CORE_INFO(
-		"Saved package '{}' ({} objects) -> '{}'",
+		"Saved package '{}' ({} objects) -> '{}' ({} bytes)",
 		PackageObj.GetName(),
 		PackageObj.GetObjectCount(),
-		OutPath);
+		OutPath,
+		FileBytes.size());
 	SavingPackageNames.erase(PackageKey);
 	return true;
 }
@@ -894,7 +1144,6 @@ template <typename TResource>
 	const std::string& ImportSource)
 {
 	FObjectRef Ref = GC.NewObject<TResource>(&Package, ObjectName, Type, ImportSource);
-	// RegisterOwnedResource clears Outer on failure; do not touch private Get/ClearOuter here.
 	if (!Ref || !Resources.RegisterOwnedResource(Package, Ref))
 	{
 		return {};
@@ -902,84 +1151,60 @@ template <typename TResource>
 	return Ref;
 }
 
-} // namespace
-
-FObjectRef FResourceSystem::LoadInlineResourceFromJson(UPackage& Package, const FJsonValue& Entry)
+[[nodiscard]] FObjectRef CreateResourceFromParsed(
+	FResourceSystem& Manager,
+	FGCSystem& GC,
+	UPackage& Package,
+	const ResourceCasset::FCassetParsedObject& Entry)
 {
-	FGCSystem* GC = Detail::GetGCSystem();
-	if (!GC)
+	if (Entry.Name.empty())
 	{
+		MAHO_CORE_ERROR("FResourceSystem: empty object name in casset");
 		return {};
 	}
-
-	std::string ObjectName = Entry.GetField("name").AsString();
-	if (ObjectName.empty())
-	{
-		MAHO_CORE_ERROR("FResourceSystem::LoadInlineResourceFromJson: empty object name");
-		return {};
-	}
-
-	EResourceType Type = EResourceType::Unknown;
-	if (Entry.HasField("type"))
-	{
-		Type = ResourceTypeFromString(Entry.GetField("type").AsString());
-	}
-	const std::string ClassName = Entry.GetField("class").AsString("Resource");
-	if (Type == EResourceType::Unknown
-		&& !TryResourceTypeFromClassName(ClassName.empty() ? "Resource" : ClassName, Type))
-	{
-		MAHO_CORE_ERROR(
-			"FResourceSystem::LoadInlineResourceFromJson: unknown type for '{}'",
-			ObjectName);
-		return {};
-	}
-
-	const std::string ImportSource = Entry.HasField("importSource")
-		? Entry.GetField("importSource").AsString()
-		: std::string{};
 
 	FObjectRef Created;
-	switch (Type)
+	switch (Entry.Type)
 	{
 	case EResourceType::Texture:
 	case EResourceType::Texture2D:
-		Created = NewTypedResource<UTexture2D>(*GC, *this, Package, ObjectName, EResourceType::Texture2D, ImportSource);
+		Created = NewTypedResource<UTexture2D>(GC, Manager, Package, Entry.Name, EResourceType::Texture2D, Entry.ImportSource);
 		break;
 	case EResourceType::Texture3D:
-		Created = NewTypedResource<UTexture3D>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UTexture3D>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::TextureCube:
-		Created = NewTypedResource<UTextureCube>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UTextureCube>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::TextureCubeArray:
-		Created = NewTypedResource<UTextureCubeArray>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UTextureCubeArray>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::Texture2DArray:
-		Created = NewTypedResource<UTexture2DArray>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UTexture2DArray>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::Mesh:
-		Created = NewTypedResource<UStaticMesh>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UStaticMesh>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::Material:
-		Created = NewTypedResource<UMaterial>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UMaterial>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::Skeleton:
-		Created = NewTypedResource<USkeleton>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<USkeleton>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::Animation:
-		Created = NewTypedResource<UAnimation>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UAnimation>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::AnimationGraph:
-		Created = NewTypedResource<UAnimationGraph>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UAnimationGraph>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	case EResourceType::Prefab:
-		Created = NewTypedResource<UPrefab>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		Created = NewTypedResource<UPrefab>(GC, Manager, Package, Entry.Name, Entry.Type, Entry.ImportSource);
 		break;
 	default:
 		MAHO_CORE_ERROR(
-			"FResourceSystem::LoadInlineResourceFromJson: unsupported type {} for '{}'",
-			static_cast<int>(Type),
-			ObjectName);
+			"FResourceSystem: unsupported casset type {} for '{}'",
+			static_cast<int>(Entry.Type),
+			Entry.Name);
 		return {};
 	}
 
@@ -988,13 +1213,23 @@ FObjectRef FResourceSystem::LoadInlineResourceFromJson(UPackage& Package, const 
 	{
 		return {};
 	}
-	if (!ResourceCasset::ReadCpuPayload(*Resource, Entry))
+	if ((Entry.RecordFlags & ResourceCasset::kRecordHasCpu) != 0)
 	{
-		UnregisterResource(Resource);
-		return {};
+		if (!ResourceCasset::ApplyCpuPayload(*Resource, Entry.CpuBytes))
+		{
+			Manager.UnregisterResource(Resource);
+			return {};
+		}
+	}
+	else
+	{
+		Resource->MarkCpuReady();
+		Resource->ClearDirty();
 	}
 	return Created;
 }
+
+} // namespace
 
 FObjectRef FResourceSystem::LoadPackageInternal(
 	const std::string& FilePath,
@@ -1028,28 +1263,35 @@ FObjectRef FResourceSystem::LoadPackageInternal(
 	}
 	LoadingFilePaths.insert(NormalizedFile);
 
-	FJsonDocument Doc;
-	if (!Doc.LoadFromFile(FilePath))
+	std::ifstream In(PathFromUtf8(FilePath), std::ios::binary | std::ios::ate);
+	if (!In)
+	{
+		MAHO_CORE_ERROR("FResourceSystem::LoadPackage: open failed '{}'", FilePath);
+		LoadingFilePaths.erase(NormalizedFile);
+		return {};
+	}
+	const std::streamoff Size = In.tellg();
+	if (Size < 0)
+	{
+		LoadingFilePaths.erase(NormalizedFile);
+		return {};
+	}
+	In.seekg(0, std::ios::beg);
+	std::vector<std::uint8_t> Bytes(static_cast<std::size_t>(Size));
+	if (Size > 0 && !In.read(reinterpret_cast<char*>(Bytes.data()), Size))
 	{
 		MAHO_CORE_ERROR("FResourceSystem::LoadPackage: read failed '{}'", FilePath);
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}
 
-	const FJsonValue& Root = Doc.GetRoot();
-	if (!Root.IsObject())
-	{
-		MAHO_CORE_ERROR("FResourceSystem::LoadPackage: root is not an object '{}'", FilePath);
-		LoadingFilePaths.erase(NormalizedFile);
-		return {};
-	}
-
-	return LoadPackageFromDocument(FilePath, Root, LoadingFilePaths);
+	return LoadPackageFromBinary(FilePath, Bytes.data(), Bytes.size(), LoadingFilePaths);
 }
 
-FObjectRef FResourceSystem::LoadPackageFromDocument(
+FObjectRef FResourceSystem::LoadPackageFromBinary(
 	const std::string& FilePath,
-	const FJsonValue& Root,
+	const std::uint8_t* FileBytes,
+	std::size_t FileSize,
 	std::unordered_set<std::string>& LoadingFilePaths)
 {
 	const std::string NormalizedFile = NormalizeSourcePath(FilePath);
@@ -1058,52 +1300,43 @@ FObjectRef FResourceSystem::LoadPackageFromDocument(
 		LoadingFilePaths.insert(NormalizedFile);
 	}
 
-	// Load dependency packages first (depth-first).
-	if (Root.HasField("dependencies") && Root.GetField("dependencies").IsArray())
+	ResourceCasset::FCassetParsedPackage Parsed;
+	if (!ResourceCasset::DecodePackageFile(FileBytes, FileSize, Parsed))
 	{
-		const FJsonValue Deps = Root.GetField("dependencies");
-		const std::size_t DepCount = Deps.GetArraySize();
-		for (std::size_t Index = 0; Index < DepCount; ++Index)
+		LoadingFilePaths.erase(NormalizedFile);
+		return {};
+	}
+
+	for (const ResourceCasset::FCassetDependency& Dep : Parsed.Dependencies)
+	{
+		const std::string DepName = NormalizePackageName(Dep.PackageName);
+		if (!DepName.empty())
 		{
-			const FJsonValue DepEntry = Deps.GetElement(Index);
-			if (!DepEntry.IsObject())
+			FGCSystem* GC = Detail::GetGCSystem();
+			if (GC && GC->FindPackage(DepName))
 			{
 				continue;
 			}
-
-			const std::string DepName = NormalizePackageName(DepEntry.GetField("name").AsString());
-			const std::string DepFile = DepEntry.GetField("file").AsString();
-
-			if (!DepName.empty())
-			{
-				FGCSystem* GC = Detail::GetGCSystem();
-				if (GC && GC->FindPackage(DepName))
-				{
-					continue;
-				}
-			}
-
-			if (DepFile.empty())
-			{
-				MAHO_CORE_WARN(
-					"FResourceSystem::LoadPackage: dependency '{}' has empty file — skip",
-					DepName.empty() ? "<unnamed>" : DepName);
-				continue;
-			}
-
-			if (!LoadPackageInternal(DepFile, LoadingFilePaths))
-			{
-				MAHO_CORE_ERROR(
-					"FResourceSystem::LoadPackage: failed loading dependency '{}' from '{}'",
-					DepName.empty() ? DepFile : DepName,
-					DepFile);
-				LoadingFilePaths.erase(NormalizedFile);
-				return {};
-			}
+		}
+		if (Dep.FilePath.empty())
+		{
+			MAHO_CORE_WARN(
+				"FResourceSystem::LoadPackage: dependency '{}' has empty file — skip",
+				DepName.empty() ? "<unnamed>" : DepName);
+			continue;
+		}
+		if (!LoadPackageInternal(Dep.FilePath, LoadingFilePaths))
+		{
+			MAHO_CORE_ERROR(
+				"FResourceSystem::LoadPackage: failed loading dependency '{}' from '{}'",
+				DepName.empty() ? Dep.FilePath : DepName,
+				Dep.FilePath);
+			LoadingFilePaths.erase(NormalizedFile);
+			return {};
 		}
 	}
 
-	std::string PackageName = NormalizePackageName(Root.GetField("name").AsString());
+	std::string PackageName = NormalizePackageName(Parsed.Name);
 	if (PackageName.empty())
 	{
 		PackageName = FilePath;
@@ -1123,40 +1356,22 @@ FObjectRef FResourceSystem::LoadPackageFromDocument(
 		? GC->NewObject<UPackage>(PackageName, EPackageFlags::Persistent)
 		: FObjectRef{};
 	UPackage* Raw = PackageRef.Cast<UPackage>();
-	if (!Raw)
+	if (!Raw || !GC)
 	{
 		MAHO_CORE_ERROR("FResourceSystem::LoadPackage: NewObject<UPackage> failed");
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
 	}
 
-	if (!Raw->Deserialize(Root))
+	Raw->PackageFlags = static_cast<EPackageFlags>(Parsed.PackageFlags);
+	if (!HasAnyPackageFlags(Raw->PackageFlags, EPackageFlags::Transient)
+		&& !HasAnyPackageFlags(Raw->PackageFlags, EPackageFlags::Persistent))
 	{
-		MAHO_CORE_ERROR("FResourceSystem::LoadPackage: Deserialize failed '{}'", FilePath);
-		LoadingFilePaths.erase(NormalizedFile);
-		PackageRef = {};
-		GC->CollectGarbage();
-		GC->PurgePendingKill();
-		return {};
+		Raw->PackageFlags |= EPackageFlags::Persistent;
 	}
-
 	Raw->AddPackageFlags(EPackageFlags::Persistent);
 	Raw->ClearPackageFlags(EPackageFlags::Transient);
 	Raw->SetFilePath(FilePath);
-
-	FJsonValue ObjectField = FJsonValue::Null();
-	if (Root.HasField("objects"))
-	{
-		ObjectField = Root.GetField("objects");
-	}
-	else if (Root.HasField("exports"))
-	{
-		ObjectField = Root.GetField("exports");
-	}
-	else if (Root.HasField("resources"))
-	{
-		ObjectField = Root.GetField("resources");
-	}
 
 	struct FPendingObjectLinks
 	{
@@ -1165,48 +1380,21 @@ FObjectRef FResourceSystem::LoadPackageFromDocument(
 	};
 	std::vector<FPendingObjectLinks> PendingLinks;
 
-	if (ObjectField.IsArray())
+	for (const ResourceCasset::FCassetParsedObject& Entry : Parsed.Objects)
 	{
-		const std::size_t Count = ObjectField.GetArraySize();
-		for (std::size_t Index = 0; Index < Count; ++Index)
+		FObjectRef Created = CreateResourceFromParsed(*this, *GC, *Raw, Entry);
+		if (!Created)
 		{
-			const FJsonValue Entry = ObjectField.GetElement(Index);
-			if (!Entry.IsObject())
-			{
-				continue;
-			}
-
-			std::string ObjectName = Entry.GetField("name").AsString();
-			if (ObjectName.empty())
-			{
-				MAHO_CORE_WARN("FResourceSystem::LoadPackage: object with empty name — skip");
-				continue;
-			}
-
-			FObjectRef Created = LoadInlineResourceFromJson(*Raw, Entry);
-			if (!Created)
-			{
-				MAHO_CORE_WARN(
-					"FResourceSystem::LoadPackage: failed to create '{}' in '{}'",
-					ObjectName,
-					PackageName);
-				continue;
-			}
-
-			FPendingObjectLinks Links;
-			Links.Object = Created;
-			if (Entry.HasField("refs") && Entry.GetField("refs").IsArray())
-			{
-				const FJsonValue RefArray = Entry.GetField("refs");
-				const std::size_t RefCount = RefArray.GetArraySize();
-				Links.SoftPaths.reserve(RefCount);
-				for (std::size_t RefIndex = 0; RefIndex < RefCount; ++RefIndex)
-				{
-					Links.SoftPaths.push_back(RefArray.GetElement(RefIndex).AsString());
-				}
-			}
-			PendingLinks.push_back(std::move(Links));
+			MAHO_CORE_WARN(
+				"FResourceSystem::LoadPackage: failed to create '{}' in '{}'",
+				Entry.Name,
+				PackageName);
+			continue;
 		}
+		FPendingObjectLinks Links;
+		Links.Object = Created;
+		Links.SoftPaths = Entry.Refs;
+		PendingLinks.push_back(std::move(Links));
 	}
 
 	for (FPendingObjectLinks& Links : PendingLinks)
@@ -1215,7 +1403,6 @@ FObjectRef FResourceSystem::LoadPackageFromDocument(
 		{
 			continue;
 		}
-
 		std::vector<UObject*> Resolved;
 		Resolved.reserve(Links.SoftPaths.size());
 		for (const std::string& SoftPath : Links.SoftPaths)
@@ -1225,7 +1412,6 @@ FObjectRef FResourceSystem::LoadPackageFromDocument(
 				Resolved.push_back(nullptr);
 				continue;
 			}
-
 			FObjectRef ResolvedRef = ResolveObjectPath(SoftPath);
 			if (!ResolvedRef)
 			{
@@ -1238,7 +1424,6 @@ FObjectRef FResourceSystem::LoadPackageFromDocument(
 			}
 			Resolved.push_back(ResolvedRef.Get());
 		}
-
 		Links.Object->SetReferencedObjects(Resolved);
 	}
 

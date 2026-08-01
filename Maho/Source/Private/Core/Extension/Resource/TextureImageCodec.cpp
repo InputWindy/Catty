@@ -12,9 +12,11 @@
 #	ifndef NOMINMAX
 #		define NOMINMAX
 #	endif
+#	include <objbase.h>
 #	include <wincodec.h>
 #	include <wrl/client.h>
 #	pragma comment(lib, "windowscodecs.lib")
+#	pragma comment(lib, "ole32.lib")
 #endif
 
 #if defined(MAHO_WITH_LIBKTX)
@@ -326,6 +328,158 @@ namespace
 		CoUninitialize();
 	}
 	return SUCCEEDED(Hr);
+}
+
+[[nodiscard]] bool EncodeRasterWicToMemory(
+	const UTexture& Texture,
+	REFGUID ContainerFormat,
+	std::vector<std::uint8_t>& OutBytes)
+{
+	OutBytes.clear();
+	if (Texture.GetPixelFormat() != ETexturePixelFormat::RGBA8
+		|| Texture.GetPixels().empty()
+		|| Texture.GetWidth() == 0
+		|| Texture.GetHeight() == 0)
+	{
+		return false;
+	}
+
+	using Microsoft::WRL::ComPtr;
+	HRESULT Hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+	const bool bNeedUninit = SUCCEEDED(Hr);
+	if (FAILED(Hr) && Hr != RPC_E_CHANGED_MODE)
+	{
+		return false;
+	}
+
+	ComPtr<IWICImagingFactory> Factory;
+	Hr = CoCreateInstance(
+		CLSID_WICImagingFactory,
+		nullptr,
+		CLSCTX_INPROC_SERVER,
+		IID_PPV_ARGS(Factory.GetAddressOf()));
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+
+	ComPtr<IStream> MemoryStream;
+	Hr = CreateStreamOnHGlobal(nullptr, TRUE, MemoryStream.GetAddressOf());
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+
+	ComPtr<IWICStream> Stream;
+	Hr = Factory->CreateStream(Stream.GetAddressOf());
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+	Hr = Stream->InitializeFromIStream(MemoryStream.Get());
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+
+	ComPtr<IWICBitmapEncoder> Encoder;
+	Hr = Factory->CreateEncoder(ContainerFormat, nullptr, Encoder.GetAddressOf());
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+	Hr = Encoder->Initialize(Stream.Get(), WICBitmapEncoderNoCache);
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+
+	ComPtr<IWICBitmapFrameEncode> Frame;
+	ComPtr<IPropertyBag2> Props;
+	Hr = Encoder->CreateNewFrame(Frame.GetAddressOf(), Props.GetAddressOf());
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+	Hr = Frame->Initialize(Props.Get());
+	const UINT W = Texture.GetWidth();
+	const UINT H = Texture.GetHeight();
+	Hr = Frame->SetSize(W, H);
+	WICPixelFormatGUID Pf = GUID_WICPixelFormat32bppRGBA;
+	Hr = Frame->SetPixelFormat(&Pf);
+	const UINT Stride = W * 4u;
+	Hr = Frame->WritePixels(H, Stride, Stride * H, const_cast<BYTE*>(Texture.GetPixels().data()));
+	Hr = Frame->Commit();
+	Hr = Encoder->Commit();
+	if (FAILED(Hr))
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+
+	STATSTG Stat{};
+	Hr = MemoryStream->Stat(&Stat, STATFLAG_NONAME);
+	if (FAILED(Hr) || Stat.cbSize.QuadPart <= 0 || Stat.cbSize.QuadPart > 0x7fffffff)
+	{
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+
+	const ULONG Size = static_cast<ULONG>(Stat.cbSize.QuadPart);
+	OutBytes.resize(Size);
+	LARGE_INTEGER Zero{};
+	Hr = MemoryStream->Seek(Zero, STREAM_SEEK_SET, nullptr);
+	ULONG Read = 0;
+	Hr = MemoryStream->Read(OutBytes.data(), Size, &Read);
+	if (FAILED(Hr) || Read != Size)
+	{
+		OutBytes.clear();
+		if (bNeedUninit)
+		{
+			CoUninitialize();
+		}
+		return false;
+	}
+
+	if (bNeedUninit)
+	{
+		CoUninitialize();
+	}
+	return true;
 }
 #endif // _WIN32
 
@@ -671,6 +825,23 @@ bool EncodeToFile(const UTexture& Texture, const std::string& DestinationPath, b
 #else
 	(void)Texture;
 	MAHO_CORE_ERROR("TextureImageCodec: raster encode requires Win32 WIC or OpenImageIO");
+	return false;
+#endif
+}
+
+bool EncodePngToMemory(const UTexture& Texture, std::vector<std::uint8_t>& OutBytes)
+{
+	OutBytes.clear();
+#if defined(_WIN32)
+	if (!EncodeRasterWicToMemory(Texture, GUID_ContainerFormatPng, OutBytes))
+	{
+		MAHO_CORE_ERROR("TextureImageCodec: EncodePngToMemory failed");
+		return false;
+	}
+	return true;
+#else
+	(void)Texture;
+	MAHO_CORE_ERROR("TextureImageCodec: EncodePngToMemory requires Win32 WIC");
 	return false;
 #endif
 }

@@ -1,22 +1,28 @@
 ﻿#pragma once
 
 #include <Core/Export.h>
-#include <Core/Json.h>
 #include <Core/Object/Object.h>
 
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-
+#include <vector>
 namespace Maho
 {
 
 class FResourceSystem;
+class UPackage;
+
+namespace ResourceCasset
+{
+[[nodiscard]] bool EncodePackageFile(const UPackage& Package, std::vector<std::uint8_t>& OutFileBytes);
+[[nodiscard]] bool BuildPackageDocument(const UPackage& Package, std::vector<std::uint8_t>& OutDocument);
+}
 
 /**
  * Package residency / save policy (UE PKG_* lite).
  * Transient: runtime-only; SavePackage refuses.
- * Persistent: may be written / loaded as JSON by the private Resource module.
+ * Persistent: may be written / loaded as binary .casset by the private Resource module.
  * Lifetime is RefCount only (catalog FObjectRef + Outer pins) — flags do not gate GC.
  */
 MAHO_ENUM()
@@ -112,6 +118,8 @@ public:
 private:
 	friend class FResourceSystem;
 	friend class UObject;
+	friend bool ResourceCasset::EncodePackageFile(const UPackage& Package, std::vector<std::uint8_t>& OutFileBytes);
+	friend bool ResourceCasset::BuildPackageDocument(const UPackage& Package, std::vector<std::uint8_t>& OutDocument);
 
 	// ---------------------------------------------------------------------------
 	// Flags / file path (Resource module persistence)
@@ -125,12 +133,6 @@ private:
 	[[nodiscard]] bool RegisterObject(UObject* Object);
 	/** Name-table only; called from UObject::ClearOuter. */
 	void DetachObject(UObject* Object);
-
-	// ---------------------------------------------------------------------------
-	// Persistence IO (Resource module)
-	// ---------------------------------------------------------------------------
-	[[nodiscard]] bool Serialize(FJsonValue& OutObject) const;
-	[[nodiscard]] bool Deserialize(const FJsonValue& InObject);
 
 	// ---------------------------------------------------------------------------
 	// Fields

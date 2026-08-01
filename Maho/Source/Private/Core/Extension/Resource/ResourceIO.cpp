@@ -1,13 +1,14 @@
 #include "ResourceIO.h"
+#include "ResourceCasset.h"
 #include "TextureImageCodec.h"
 #include "MeshModelCodec.h"
 
 #include <Core/System/Log.h>
+#include <Core/System/Paths.h>
 #include <Core/System/Utf8Path.h>
-#include <Core/Json.h>
-#include <unordered_set>
 
 #include <filesystem>
+#include <unordered_set>
 
 namespace Maho
 {
@@ -40,19 +41,18 @@ bool FCassetPackageImporter::ApplyBulkData(
 	FResourceBulkData& Bulk)
 {
 	(void)Config;
-	FJsonDocument Doc;
-	const std::string Text(reinterpret_cast<const char*>(Bulk.Bytes.data()), Bulk.Bytes.size());
-	if (!Doc.Parse(Text) || !Doc.GetRoot().IsObject())
+	const std::string FilePath = Bulk.SourcePath.empty() ? Config.SourcePath : Bulk.SourcePath;
+	if (!ResourceCasset::IsCassetBinaryFile(Bulk.Bytes.data(), Bulk.Bytes.size()))
 	{
 		MAHO_CORE_ERROR(
-			"FCassetPackageImporter::ApplyBulkData: JSON parse failed for '{}'",
-			Bulk.SourcePath.empty() ? Config.SourcePath : Bulk.SourcePath);
+			"FCassetPackageImporter::ApplyBulkData: not MCAS binary '{}'",
+			FilePath);
 		return false;
 	}
 
-	const std::string FilePath = Bulk.SourcePath.empty() ? Config.SourcePath : Bulk.SourcePath;
 	std::unordered_set<std::string> LoadingFilePaths;
-	return static_cast<bool>(Manager.LoadPackageFromDocument(FilePath, Doc.GetRoot(), LoadingFilePaths));
+	return static_cast<bool>(
+		Manager.LoadPackageFromBinary(FilePath, Bulk.Bytes.data(), Bulk.Bytes.size(), LoadingFilePaths));
 }
 
 namespace
@@ -116,7 +116,7 @@ template <typename TTexture>
 	FResourceBulkData& Bulk,
 	TTexture& Resource)
 {
-	if (Bulk.Bytes.empty())
+	if (Bulk.Bytes.empty() && Bulk.PreparedKind != EResourceBulkPreparedKind::TextureImage)
 	{
 		MAHO_CORE_ERROR("ResourceIO: empty BulkData for '{}'", Config.SourcePath);
 		return false;
@@ -125,14 +125,23 @@ template <typename TTexture>
 	const ETextureDimension ExpectedDimension = Resource.GetDimension();
 
 	FDecodedImage Image;
-	if (!TextureImageCodec::DecodeFromMemory(
-			Bulk.Bytes.data(),
-			Bulk.Bytes.size(),
-			Config.SourcePath,
-			Image))
+	std::vector<std::uint8_t> Serialized = Bulk.Bytes;
+	if (Bulk.PreparedKind == EResourceBulkPreparedKind::TextureImage && Bulk.Prepared)
 	{
-		MAHO_CORE_ERROR("ResourceIO: decode failed for '{}'", Config.SourcePath);
-		return false;
+		auto* Prepared = static_cast<FDecodedImage*>(Bulk.Prepared.get());
+		Image = *Prepared;
+	}
+	else
+	{
+		if (!TextureImageCodec::DecodeFromMemory(
+				Bulk.Bytes.data(),
+				Bulk.Bytes.size(),
+				Config.SourcePath,
+				Image))
+		{
+			MAHO_CORE_ERROR("ResourceIO: decode failed for '{}'", Config.SourcePath);
+			return false;
+		}
 	}
 
 	if (Image.Dimension != ExpectedDimension)
@@ -148,6 +157,10 @@ template <typename TTexture>
 	{
 		MAHO_CORE_ERROR("ResourceIO: ApplyDecodedToTexture failed for '{}'", Config.SourcePath);
 		return false;
+	}
+	if (!Serialized.empty())
+	{
+		Resource.SetSerializedSource(Config.SourcePath, std::move(Serialized));
 	}
 	return true;
 }
@@ -304,7 +317,7 @@ bool TResourceIOTraits<UPrefab>::ImportSource(
 	FResourceBulkData& Bulk,
 	UPrefab& Resource)
 {
-	if (Bulk.Bytes.empty())
+	if (Bulk.Bytes.empty() && Bulk.PreparedKind != EResourceBulkPreparedKind::Model)
 	{
 		MAHO_CORE_ERROR("ResourceIO: empty BulkData for model '{}'", Config.SourcePath);
 		return false;
@@ -326,14 +339,25 @@ bool TResourceIOTraits<UPrefab>::ImportSource(
 	}
 
 	FDecodedModelScene Scene;
-	if (!MeshModelCodec::DecodeFromMemory(
-			Bulk.Bytes.data(),
-			Bulk.Bytes.size(),
-			Config.SourcePath,
-			Scene))
+	const std::unordered_map<std::string, FPreparedTextureImage>* PreparedTextures = nullptr;
+	std::shared_ptr<FPreparedModelImport> PreparedHolder;
+	if (Bulk.PreparedKind == EResourceBulkPreparedKind::Model && Bulk.Prepared)
 	{
-		MAHO_CORE_ERROR("ResourceIO: model decode failed for '{}'", Config.SourcePath);
-		return false;
+		PreparedHolder = std::static_pointer_cast<FPreparedModelImport>(Bulk.Prepared);
+		Scene = std::move(PreparedHolder->Scene);
+		PreparedTextures = &PreparedHolder->Textures;
+	}
+	else
+	{
+		if (!MeshModelCodec::DecodeFromMemory(
+				Bulk.Bytes.data(),
+				Bulk.Bytes.size(),
+				Config.SourcePath,
+				Scene))
+		{
+			MAHO_CORE_ERROR("ResourceIO: model decode failed for '{}'", Config.SourcePath);
+			return false;
+		}
 	}
 
 	if (!MeshModelCodec::ApplyDecodedModelScene(
@@ -341,7 +365,8 @@ bool TResourceIOTraits<UPrefab>::ImportSource(
 			*Resources,
 			*GC,
 			*Package,
-			Resource))
+			Resource,
+			PreparedTextures))
 	{
 		MAHO_CORE_ERROR("ResourceIO: model Apply failed for '{}'", Config.SourcePath);
 		return false;

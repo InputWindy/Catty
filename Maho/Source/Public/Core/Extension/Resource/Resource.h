@@ -21,7 +21,9 @@
 #include <Core/Sequencer/EngineExtension.h>
 #include <Core/Server/TransferHandle.h>
 #include <Core/TypeList.h>
+#include <Core/Concurrent/AsyncTask.h>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -215,6 +217,19 @@ public:
 	[[nodiscard]] std::vector<std::uint8_t>& GetPixelsMutable() { return Pixels; }
 	[[nodiscard]] std::uint64_t GetContentGeneration() const { return ContentGeneration; }
 
+	/**
+	 * Original compressed file bytes (JPEG/PNG/KTX2/…) kept for .casset round-trip.
+	 * Avoids storing expanded RGBA8 in packages. Decode hint is a path or extension.
+	 */
+	[[nodiscard]] const std::vector<std::uint8_t>& GetSerializedSourceBytes() const
+	{
+		return SerializedSourceBytes;
+	}
+	[[nodiscard]] const std::string& GetSerializedSourceHint() const { return SerializedSourceHint; }
+	[[nodiscard]] bool HasSerializedSource() const { return !SerializedSourceBytes.empty(); }
+	void SetSerializedSource(std::string Hint, std::vector<std::uint8_t> Bytes);
+	void ClearSerializedSource();
+
 	void SetCpuImage(
 		ETextureDimension InDimension,
 		ETexturePixelFormat InFormat,
@@ -236,6 +251,8 @@ protected:
 	std::uint32_t MipCount = 1;
 	bool bSRGB = true;
 	std::vector<std::uint8_t> Pixels;
+	std::string SerializedSourceHint;
+	std::vector<std::uint8_t> SerializedSourceBytes;
 	std::uint64_t ContentGeneration = 0;
 };
 
@@ -449,11 +466,21 @@ protected:
 	std::string DocumentJson;
 };
 
+/** Opaque worker-prepared decode payload (model / texture); cast at Apply site. */
+enum class EResourceBulkPreparedKind : std::uint8_t
+{
+	None = 0,
+	Model = 1,
+	TextureImage = 2,
+};
+
 /** Raw bytes produced by FResourceServer; consumed by Importer. */
 struct FResourceBulkData
 {
 	std::string SourcePath;
 	std::vector<std::uint8_t> Bytes;
+	EResourceBulkPreparedKind PreparedKind = EResourceBulkPreparedKind::None;
+	std::shared_ptr<void> Prepared;
 };
 
 /** Async = enqueue SoftPath and return; Sync = enqueue then Flush to terminal state. */
@@ -531,7 +558,7 @@ public:
 	template <typename TExporter>
 	[[nodiscard]] FSoftObjectPath Export(FResourceExportConfig Config, const FSoftObjectPath& Source);
 
-	/** Write package to .casset (Editor Save). Prefer Export for typed source-file export. */
+	/** Write package to binary .casset (Editor Save). Blocks the caller (prefer EnqueueSavePackage). */
 	[[nodiscard]] bool SavePackage(
 		const FObjectRef& Package,
 		const std::string& FilePath = {},
@@ -539,10 +566,17 @@ public:
 		bool bSaveDependencies = true);
 
 	/**
-	 * Create + register a UResource from a self-contained .casset objects[] entry (inline cpu).
-	 * Does not Import / read external source files.
+	 * Build package document on the calling (game) thread, then zlib+write on a worker.
+	 * Returns false if another save is in flight or validation fails.
 	 */
-	[[nodiscard]] FObjectRef LoadInlineResourceFromJson(UPackage& Package, const FJsonValue& Entry);
+	[[nodiscard]] bool EnqueueSavePackage(
+		const FObjectRef& Package,
+		const std::string& FilePath = {},
+		bool bSaveDependencies = true);
+	[[nodiscard]] bool IsSavePackageBusy() const;
+	/** Rough 0..1 while IsSavePackageBusy(); 1 when idle after success. */
+	[[nodiscard]] float GetSavePackageProgress() const;
+	[[nodiscard]] const std::string& GetSavePackageStatusText() const;
 
 	[[nodiscard]] EResourceLoadState GetLoadState(const FSoftObjectPath& SoftPath) const;
 	[[nodiscard]] bool IsReady(const FSoftObjectPath& SoftPath) const;
@@ -594,6 +628,9 @@ private:
 	void AbortFailedImport(UResource& Resource);
 	void CancelPendingImport(UObject* Resource);
 	void ProcessReadyIO();
+	void TickSavePackage();
+	void FinalizeSavePackageSuccess();
+	void FinalizeSavePackageFailure();
 
 	[[nodiscard]] FSoftObjectPath EnqueueImport(
 		std::unique_ptr<IResourceImporter> Importer,
@@ -614,14 +651,15 @@ private:
 		bool bPretty,
 		bool bSaveDependencies,
 		std::unordered_set<std::string>& SavingPackageNames);
-	/** Sync disk→JSON hydrate (dependency loads / internal). Prefer Import for SoftPath. */
+	/** Sync disk→MCAS hydrate (dependency loads / internal). Prefer Import for SoftPath. */
 	[[nodiscard]] FObjectRef LoadPackage(const std::string& FilePath);
 	[[nodiscard]] FObjectRef LoadPackageInternal(
 		const std::string& FilePath,
 		std::unordered_set<std::string>& LoadingFilePaths);
-	[[nodiscard]] FObjectRef LoadPackageFromDocument(
+	[[nodiscard]] FObjectRef LoadPackageFromBinary(
 		const std::string& FilePath,
-		const FJsonValue& Root,
+		const std::uint8_t* FileBytes,
+		std::size_t FileSize,
 		std::unordered_set<std::string>& LoadingFilePaths);
 	[[nodiscard]] FObjectRef ResolveObjectPath(const std::string& PathName) const;
 
@@ -630,6 +668,22 @@ private:
 	/** SoftPath asset-path string → in-flight Import. */
 	std::unordered_map<std::string, FPendingIO> PendingIO;
 	bool bAcceptingNewWork = true;
+
+	struct FAsyncSaveJob
+	{
+		FObjectRef PackageRef;
+		std::string OutPath;
+		std::string PackageName;
+		std::vector<std::uint8_t> Document;
+		std::shared_ptr<std::vector<std::uint8_t>> FileBytes;
+		std::shared_ptr<std::atomic<bool>> bOk;
+		std::unique_ptr<FAsyncTask> Task;
+		float Progress = 0.f;
+		std::string StatusText;
+		bool bActive = false;
+		bool bCompressStarted = false;
+	};
+	FAsyncSaveJob AsyncSave;
 };
 
 namespace Detail

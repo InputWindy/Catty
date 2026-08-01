@@ -203,6 +203,7 @@ private:
 	std::size_t ManualImportKickIndex = 0;
 	std::size_t ManualImportCompleted = 0;
 	std::string ManualImportCurrentName;
+	bool bWasSavePackageBusy = false;
 	FImporterDialogState ImporterDialog;
 
 	float ContentBrowserDropMinX = 0.0f;

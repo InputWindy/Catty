@@ -54,6 +54,9 @@ namespace TextureImageCodec
 	const std::string& DestinationPath,
 	bool bOverwrite);
 
+/** Encode RGBA8 CPU pixels to PNG bytes (WIC). Used when SerializedSource is missing. */
+[[nodiscard]] bool EncodePngToMemory(const UTexture& Texture, std::vector<std::uint8_t>& OutBytes);
+
 [[nodiscard]] bool ApplyDecodedToTexture(UTexture& Texture, FDecodedImage&& Image);
 
 } // namespace TextureImageCodec

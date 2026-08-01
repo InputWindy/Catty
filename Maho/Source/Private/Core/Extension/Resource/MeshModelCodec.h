@@ -7,6 +7,8 @@
 
 #include <Core/Extension/Resource/Resource.h>
 
+#include "TextureImageCodec.h"
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -131,6 +133,23 @@ struct FDecodedModelScene
 	std::vector<FDecodedSceneNode> Nodes;
 };
 
+/** Worker-thread texture decode result for Prefab Apply (game thread). */
+struct FPreparedTextureImage
+{
+	std::string CacheKey;
+	std::string DecodeHint;
+	bool bForceLinear = false;
+	FDecodedImage Image;
+	std::vector<std::uint8_t> SerializedSourceBytes;
+};
+
+/** Assimp + texture decode prepared off the game thread. */
+struct FPreparedModelImport
+{
+	FDecodedModelScene Scene;
+	std::unordered_map<std::string, FPreparedTextureImage> Textures;
+};
+
 namespace MeshModelCodec
 {
 
@@ -149,15 +168,27 @@ namespace MeshModelCodec
 	FDecodedModelScene& Out);
 
 /**
+ * Worker-safe: Assimp decode + load/decode every referenced texture.
+ * Safe to call on the ResourceServer thread.
+ */
+[[nodiscard]] bool PrepareModelImport(
+	const std::uint8_t* Bytes,
+	std::size_t ByteCount,
+	std::string_view SourcePathHint,
+	FPreparedModelImport& Out);
+
+/**
  * Create sibling U* in Package from Decoded scene; fill Prefab document + SoftPaths.
  * Order: Materials(+textures stubs) → Meshes → Skeleton → Animations → Graph → Prefab JSON.
+ * When PreparedTextures is non-null, skips disk IO / decode (uses prepared images).
  */
 [[nodiscard]] bool ApplyDecodedModelScene(
 	FDecodedModelScene&& Scene,
 	FResourceSystem& Resources,
 	FGCSystem& GC,
 	UPackage& Package,
-	UPrefab& Prefab);
+	UPrefab& Prefab,
+	const std::unordered_map<std::string, FPreparedTextureImage>* PreparedTextures = nullptr);
 
 } // namespace MeshModelCodec
 } // namespace Maho
