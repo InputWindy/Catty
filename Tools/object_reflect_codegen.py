@@ -2327,7 +2327,7 @@ def render_resource_header() -> str:
 			"class FGCSystem;",
 			"class FResourceSystem;",
 			"",
-			"/** Register UResource IO + any non-MAHO_OBJECT pools onto Manager/GC. */",
+			"/** Register non-MAHO_OBJECT UResource pools onto GC (IO is explicit Import/Export templates). */",
 			"void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);",
 			"",
 			"[[nodiscard]] EResourceType ResourceTypeFromString(const std::string& Name);",
@@ -2352,7 +2352,6 @@ def render_resource_cpp(entries: list[FResourceSystemTypeEntry]) -> str:
 		'#include <Core/Extension/GC/GC.h>',
 		"",
 		"#include <cstring>",
-		"#include <memory>",
 		"",
 		"namespace Maho",
 		"{",
@@ -2364,20 +2363,12 @@ def render_resource_cpp(entries: list[FResourceSystemTypeEntry]) -> str:
 		lines.append("\t(void)Manager;")
 		lines.append("\t(void)GC;")
 	else:
-		# Replace any prior registration (Initialize is once, but keep idempotent).
-		lines.append("\tManager.ClearImportersAndExporters();")
+		lines.append("\t(void)Manager;")
 		for e in entries:
 			if e.GCPooledSlots is not None and not e.bAlreadyObjectPooled:
 				lines.append(
 					f"\tGC.RegisterObjectType<{e.TypeName}>({e.TypeName}::PoolSize);"
 				)
-		for e in entries:
-			lines.append(
-				f"\tManager.RegisterImporter(std::make_unique<TResourceImporter<{e.TypeName}>>());"
-			)
-			lines.append(
-				f"\tManager.RegisterExporter(std::make_unique<TResourceExporter<{e.TypeName}>>());"
-			)
 	lines.append("}")
 	lines.append("")
 

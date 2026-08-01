@@ -4,11 +4,57 @@
 
 #include <Core/System/Log.h>
 #include <Core/System/Utf8Path.h>
+#include <Core/Json.h>
+#include <unordered_set>
 
 #include <filesystem>
 
 namespace Maho
 {
+
+bool FCassetPackageImporter::MatchesSourcePath(const std::string& SourcePath) const
+{
+	const std::string Ext = FPaths::GetPackageExtension();
+	if (SourcePath.size() < Ext.size())
+	{
+		return false;
+	}
+	const std::string Suffix = SourcePath.substr(SourcePath.size() - Ext.size());
+	for (std::size_t I = 0; I < Ext.size(); ++I)
+	{
+		const char A = Suffix[I];
+		const char B = Ext[I];
+		const char La = (A >= 'A' && A <= 'Z') ? static_cast<char>(A - 'A' + 'a') : A;
+		const char Lb = (B >= 'A' && B <= 'Z') ? static_cast<char>(B - 'A' + 'a') : B;
+		if (La != Lb)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool FCassetPackageImporter::ApplyBulkData(
+	FResourceSystem& Manager,
+	FResourceImportConfig& Config,
+	FResourceBulkData& Bulk)
+{
+	(void)Config;
+	FJsonDocument Doc;
+	const std::string Text(reinterpret_cast<const char*>(Bulk.Bytes.data()), Bulk.Bytes.size());
+	if (!Doc.Parse(Text) || !Doc.GetRoot().IsObject())
+	{
+		MAHO_CORE_ERROR(
+			"FCassetPackageImporter::ApplyBulkData: JSON parse failed for '{}'",
+			Bulk.SourcePath.empty() ? Config.SourcePath : Bulk.SourcePath);
+		return false;
+	}
+
+	const std::string FilePath = Bulk.SourcePath.empty() ? Config.SourcePath : Bulk.SourcePath;
+	std::unordered_set<std::string> LoadingFilePaths;
+	return static_cast<bool>(Manager.LoadPackageFromDocument(FilePath, Doc.GetRoot(), LoadingFilePaths));
+}
+
 namespace
 {
 
@@ -266,7 +312,11 @@ bool TResourceIOTraits<UPrefab>::ImportSource(
 
 	FResourceSystem* Resources = Detail::GetResourceSystem();
 	FGCSystem* GC = Detail::GetGCSystem();
-	UPackage* Package = Config.Package.Cast<UPackage>();
+	UPackage* Package = nullptr;
+	if (GC && !Config.PackagePath.empty())
+	{
+		Package = GC->FindPackage(Config.PackagePath).Cast<UPackage>();
+	}
 	if (!Resources || !GC || !Package)
 	{
 		MAHO_CORE_ERROR(

@@ -103,6 +103,7 @@ struct FDecodedMaterial
 	float BaseColorFactor[4] = {1.f, 1.f, 1.f, 1.f};
 	float MetallicFactor = 0.f;
 	float RoughnessFactor = 1.f;
+	float EmissiveFactor[3] = {0.f, 0.f, 0.f};
 	std::vector<FDecodedTextureRef> Textures;
 };
 

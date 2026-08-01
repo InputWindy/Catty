@@ -25,8 +25,8 @@ struct FPathMount
  * OS roots + UE-style package virtual filesystem.
  *
  * Package / virtual refs (no class / subobject yet):
- *   /Game/Maps/Demo                  → Project Content/Maps/Demo.pkg.json
- *   /Engine/EngineMaterials/Default  → Engine Content/.../Default.pkg.json
+ *   /Game/Maps/Demo                  → Project Content/Maps/Demo.casset
+ *   /Engine/EngineMaterials/Default  → Engine Content/.../Default.casset
  * Soft object path (object identity): see FSoftObjectPath
  *   /Game/Maps/Demo.Demo             → same disk file as /Game/Maps/Demo
  *   UResource'/Game/Maps/Demo.Demo'  → class-qualified soft ref (parse-only)
@@ -88,7 +88,7 @@ public:
 	// Package / virtual path protocol
 	// ---------------------------------------------------------------------------
 
-	/** On-disk package suffix (Maho: ".pkg.json"; plays the role of UE ".uasset"). */
+	/** On-disk package suffix (Maho: ".casset"; self-contained engine asset). */
 	[[nodiscard]] static const char* GetPackageExtension();
 
 	/**

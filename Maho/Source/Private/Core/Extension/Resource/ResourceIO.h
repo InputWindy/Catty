@@ -1,10 +1,9 @@
 ﻿#pragma once
 
 /**
- * Polymorphic Importer / Exporter for the private Resource module.
- * Add a resource type: inherit UResource, specialize TResourceIOTraits, register
- * TResourceImporter<T> / TResourceExporter<T> (see RegisterDefaultImportersAndExporters).
- * FResourceSystem only holds IResourceImporter* / IResourceExporter* — no type switch.
+ * Explicit Importer / Exporter types for FResourceSystem::Import / Export.
+ * Callers pass TResourceImporter<T> / TResourceExporter<T> / FCassetPackageImporter as templates.
+ * No global RegisterImporter table — Manager stores only the instance for an in-flight SoftPath.
  */
 
 #include <Core/Extension/Resource/Resource.h>
@@ -12,6 +11,7 @@
 #include <Core/System/Log.h>
 #include <Core/Extension/GC/GC.h>
 #include <Core/Object/Package.h>
+#include <Core/System/Paths.h>
 
 #include <type_traits>
 #include <utility>
@@ -26,11 +26,15 @@ public:
 
 	[[nodiscard]] virtual EResourceType GetType() const = 0;
 	[[nodiscard]] virtual bool MatchesSourcePath(const std::string& SourcePath) const = 0;
-	[[nodiscard]] virtual FObjectRef Import(FResourceSystem& Manager, FResourceImportConfig Config) = 0;
+
+	/**
+	 * Game-thread Apply after BulkData Succeeded.
+	 * Creates GC objects as needed; returns false on failure.
+	 */
 	[[nodiscard]] virtual bool ApplyBulkData(
+		FResourceSystem& Manager,
 		FResourceImportConfig& Config,
-		FResourceBulkData& Bulk,
-		FObjectRef& Resource) = 0;
+		FResourceBulkData& Bulk) = 0;
 };
 
 class IResourceExporter
@@ -41,6 +45,23 @@ public:
 	[[nodiscard]] virtual EResourceType GetType() const = 0;
 	[[nodiscard]] virtual bool CanExport(const FObjectRef& Resource) const = 0;
 	[[nodiscard]] virtual bool Export(FResourceExportConfig Config, const FObjectRef& Resource) = 0;
+};
+
+/** .casset package hydrate (JSON BulkData → LoadPackageFromDocument). */
+class FCassetPackageImporter final : public IResourceImporter
+{
+public:
+	[[nodiscard]] EResourceType GetType() const override
+	{
+		return EResourceType::Data;
+	}
+
+	[[nodiscard]] bool MatchesSourcePath(const std::string& SourcePath) const override;
+
+	[[nodiscard]] bool ApplyBulkData(
+		FResourceSystem& Manager,
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk) override;
 };
 
 template <typename TResource>
@@ -67,27 +88,16 @@ public:
 		return FTraits::MatchesSourcePath(SourcePath);
 	}
 
-	[[nodiscard]] FObjectRef Import(FResourceSystem& Manager, FResourceImportConfig Config) override
+	[[nodiscard]] bool ApplyBulkData(
+		FResourceSystem& Manager,
+		FResourceImportConfig& Config,
+		FResourceBulkData& Bulk) override
 	{
 		if (Config.TypeHint == EResourceType::Unknown)
 		{
 			Config.TypeHint = FTraits::GetType();
 		}
-		return Manager.BeginImport<TResource>(Config, this);
-	}
-
-	[[nodiscard]] bool ApplyBulkData(
-		FResourceImportConfig& Config,
-		FResourceBulkData& Bulk,
-		FObjectRef& Resource) override
-	{
-		TResource* Typed = Resource.Cast<TResource>();
-		if (!Typed)
-		{
-			MAHO_CORE_ERROR("TResourceImporter::ApplyBulkData: unexpected resource type");
-			return false;
-		}
-		return FTraits::ImportSource(Config, Bulk, *Typed);
+		return Manager.ApplyTypedBulkData<TResource>(Config, Bulk);
 	}
 };
 
@@ -313,135 +323,136 @@ struct TResourceIOTraits<UAnimationGraph>
 	[[nodiscard]] static bool ExportSource(FResourceExportConfig& Config, const UAnimationGraph& Resource);
 };
 
-template <typename TResource>
-FObjectRef FResourceSystem::BeginImport(FResourceImportConfig& Config, IResourceImporter* Importer)
+template <typename TImporter>
+FSoftObjectPath FResourceSystem::Import(FResourceImportConfig Config)
 {
-	if (!Importer)
-	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: null Importer");
-		return {};
-	}
+	return EnqueueImport(std::make_unique<TImporter>(), std::move(Config));
+}
 
-	if (!IsInitialized())
-	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: not initialized");
-		return {};
-	}
+template <typename TResource>
+bool FResourceSystem::ApplyTypedBulkData(FResourceImportConfig& Config, FResourceBulkData& Bulk)
+{
+	using FTraits = TResourceIOTraits<TResource>;
 
-	if (!bAcceptingNewWork)
+	if (!IsInitialized() || !bAcceptingNewWork)
 	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: refused during exit");
-		return {};
+		MAHO_CORE_ERROR("FResourceSystem::ApplyTypedBulkData: not accepting work");
+		return false;
 	}
-
-	if (!Config.Package)
-	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: invalid Package");
-		return {};
-	}
-
-	UPackage* PackagePtr = Config.Package.Cast<UPackage>();
-	if (!PackagePtr)
-	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: Ref is not an UPackage");
-		return {};
-	}
-
-	UPackage& PackageObj = *PackagePtr;
 
 	Config.SourcePath = NormalizeSourcePath(std::move(Config.SourcePath));
+	Config.PackagePath = NormalizePackageName(std::move(Config.PackagePath));
 	if (Config.ObjectName.empty() && !Config.SourcePath.empty())
 	{
 		Config.ObjectName = MakeObjectNameFromSource(Config.SourcePath);
 	}
 
-	if (Config.ObjectName.empty())
+	if (Config.PackagePath.empty() || Config.ObjectName.empty() || Config.SourcePath.empty())
 	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: empty ObjectName");
-		return {};
-	}
-
-	if (Config.SourcePath.empty())
-	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: empty SourcePath");
-		return {};
-	}
-
-	if (PackageObj.FindObject(Config.ObjectName))
-	{
-		MAHO_CORE_ERROR(
-			"FResourceSystem::BeginImport: '{}' already exists in '{}'",
-			Config.ObjectName,
-			PackageObj.GetName());
-		return {};
-	}
-
-	EResourceType Type = Config.TypeHint;
-	if (Type == EResourceType::Unknown)
-	{
-		Type = Importer->GetType();
-	}
-
-	if (!HasActiveServer())
-	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: ResourceServer unavailable");
-		return {};
-	}
-
-	const std::uint64_t LoadId = RequestLoadId(Config.SourcePath);
-	if (LoadId == 0)
-	{
-		return {};
+		MAHO_CORE_ERROR("FResourceSystem::ApplyTypedBulkData: PackagePath/ObjectName/SourcePath required");
+		return false;
 	}
 
 	FGCSystem* GC = Detail::GetGCSystem();
 	if (!GC)
 	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: GC unavailable");
-		ReleaseLoadId(LoadId);
-		return {};
+		MAHO_CORE_ERROR("FResourceSystem::ApplyTypedBulkData: GC unavailable");
+		return false;
+	}
+
+	FObjectRef PackageRef = GC->FindPackage(Config.PackagePath);
+	if (!PackageRef)
+	{
+		PackageRef = GC->NewObject<UPackage>(Config.PackagePath, EPackageFlags::Persistent);
+	}
+	UPackage* PackagePtr = PackageRef.Cast<UPackage>();
+	if (!PackagePtr)
+	{
+		MAHO_CORE_ERROR(
+			"FResourceSystem::ApplyTypedBulkData: failed to create package '{}'",
+			Config.PackagePath);
+		return false;
+	}
+
+	if (PackagePtr->FindObject(Config.ObjectName))
+	{
+		MAHO_CORE_ERROR(
+			"FResourceSystem::ApplyTypedBulkData: '{}' already exists in '{}'",
+			Config.ObjectName,
+			PackagePtr->GetName());
+		return false;
+	}
+
+	EResourceType Type = Config.TypeHint;
+	if (Type == EResourceType::Unknown)
+	{
+		Type = FTraits::GetType();
 	}
 
 	FObjectRef ResourceRef = GC->NewObject<TResource>(
-		&PackageObj,
+		PackagePtr,
 		Config.ObjectName,
 		Type,
 		Config.SourcePath);
 	TResource* Resource = ResourceRef.Cast<TResource>();
 	if (!Resource)
 	{
-		MAHO_CORE_ERROR("FResourceSystem::BeginImport: NewObject failed");
-		ReleaseLoadId(LoadId);
-		return {};
+		MAHO_CORE_ERROR("FResourceSystem::ApplyTypedBulkData: NewObject failed");
+		return false;
 	}
 
 	Resource->SetLoadState(EResourceLoadState::Pending);
-
-	if (!PackageObj.RegisterObject(Resource))
+	if (!RegisterOwnedResource(*PackagePtr, ResourceRef))
 	{
-		ReleaseLoadId(LoadId);
 		Resource->ClearOuter();
+		return false;
+	}
+
+	const bool bOk = FTraits::ImportSource(Config, Bulk, *Resource);
+	Resource->SetLoadState(bOk ? EResourceLoadState::Ready : EResourceLoadState::Failed);
+	if (!bOk)
+	{
+		AbortFailedImport(*Resource);
+		return false;
+	}
+
+	Resource->MarkDirty();
+	if (UPackage* Package = Resource->GetPackage().Cast<UPackage>())
+	{
+		for (const auto& Pair : Package->Objects)
+		{
+			if (UResource* Sibling = dynamic_cast<UResource*>(Pair.second))
+			{
+				Sibling->MarkDirty();
+			}
+		}
+	}
+	return true;
+}
+
+template <typename TExporter>
+FSoftObjectPath FResourceSystem::Export(FResourceExportConfig Config, const FSoftObjectPath& Source)
+{
+	if (!IsInitialized() || !bAcceptingNewWork)
+	{
+		MAHO_CORE_ERROR("FResourceSystem::Export: not accepting work");
 		return {};
 	}
 
-	if (!RegisterResource(ResourceRef))
+	FObjectRef Resource = Source.Resolve();
+	if (!Resource)
 	{
-		ReleaseLoadId(LoadId);
-		Resource->ClearOuter();
+		MAHO_CORE_ERROR("FResourceSystem::Export: SoftPath '{}' not loaded", Source.ToString());
 		return {};
 	}
 
-	FPendingImport Pending;
-	Pending.LoadId = LoadId;
-	Pending.Resource = ResourceRef;
-	Pending.Config = Config;
-	Pending.Importer = Importer;
-	PendingImports.emplace(LoadId, std::move(Pending));
+	TExporter Exporter;
+	if (!Exporter.CanExport(Resource) || !Exporter.Export(std::move(Config), Resource))
+	{
+		return {};
+	}
 
-	// Extra strong pin for the whole async load/Apply window (independent of Pending move).
-	ImportPins[LoadId] = ResourceRef;
-
-	return ResourceRef;
+	return Source;
 }
 
 } // namespace Maho

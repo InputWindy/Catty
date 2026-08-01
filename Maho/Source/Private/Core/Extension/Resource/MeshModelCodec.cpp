@@ -1,13 +1,16 @@
 #include "MeshModelCodec.h"
+#include "TextureImageCodec.h"
 
 #include <Core/Extension/GC/GC.h>
 #include <Core/Extension/Resource/Resource.h>
 #include <Core/Object/Package.h>
 #include <Core/Object/SoftObjectPath.h>
 #include <Core/System/Log.h>
+#include <Core/System/Utf8Path.h>
 
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 #include <sstream>
 #include <unordered_map>
 
@@ -30,7 +33,7 @@ std::string SanitizeObjectName(std::string_view Raw, std::string_view Fallback)
 	Out.reserve(Raw.size());
 	for (const unsigned char Ch : Raw)
 	{
-		// Keep UTF-8 multibyte (CJK) intact; only filter ASCII path separators / junk.
+		// Keep UTF-8 multibyte (CJK) intact; map ASCII separators / punctuation to '_'.
 		if (Ch >= 0x80)
 		{
 			Out.push_back(static_cast<char>(Ch));
@@ -40,16 +43,39 @@ std::string SanitizeObjectName(std::string_view Raw, std::string_view Fallback)
 		{
 			Out.push_back(static_cast<char>(Ch));
 		}
-		else if (Ch == ' ' || Ch == '.' || Ch == '/' || Ch == '\\')
+		else
 		{
+			// '!', spaces, dots, path separators, etc. → underscore (MMD often uses '肌2!').
 			Out.push_back('_');
 		}
+	}
+	while (!Out.empty() && Out.back() == '_')
+	{
+		Out.pop_back();
 	}
 	if (Out.empty())
 	{
 		Out.assign(Fallback.begin(), Fallback.end());
 	}
 	return Out;
+}
+
+/** Package object names must be unique; MMD materials/meshes often share display names. */
+[[nodiscard]] std::string MakeUniqueObjectName(UPackage& Package, std::string BaseName)
+{
+	if (!Package.FindObject(BaseName))
+	{
+		return BaseName;
+	}
+	for (int Suffix = 1; Suffix < 100000; ++Suffix)
+	{
+		const std::string Candidate = BaseName + "_" + std::to_string(Suffix);
+		if (!Package.FindObject(Candidate))
+		{
+			return Candidate;
+		}
+	}
+	return BaseName + "_x";
 }
 
 void CopyMat4(float Out[16], const float* In)
@@ -65,14 +91,18 @@ template <typename TResource>
 	FResourceSystem& Resources,
 	FGCSystem& GC,
 	UPackage& Package,
-	const std::string& Name,
+	const std::string& DesiredName,
 	EResourceType Type,
 	const std::string& SourcePath)
 {
-	if (Package.FindObject(Name))
+	const std::string Name = MakeUniqueObjectName(Package, DesiredName);
+	if (Name != DesiredName)
 	{
-		MAHO_CORE_ERROR("MeshModelCodec: '{}' already exists in package '{}'", Name, Package.GetName());
-		return nullptr;
+		MAHO_CORE_WARN(
+			"MeshModelCodec: renamed '{}' -> '{}' in package '{}'",
+			DesiredName,
+			Name,
+			Package.GetName());
 	}
 
 	FObjectRef Ref = GC.NewObject<TResource>(&Package, Name, Type, SourcePath);
@@ -222,7 +252,8 @@ void DecodeMaterials(const aiScene* Scene, FDecodedModelScene& Out)
 		}
 
 		aiColor4D Color;
-		if (Mat->Get(AI_MATKEY_COLOR_DIFFUSE, Color) == AI_SUCCESS)
+		if (Mat->Get(AI_MATKEY_BASE_COLOR, Color) == AI_SUCCESS
+			|| Mat->Get(AI_MATKEY_COLOR_DIFFUSE, Color) == AI_SUCCESS)
 		{
 			Decoded.BaseColorFactor[0] = Color.r;
 			Decoded.BaseColorFactor[1] = Color.g;
@@ -230,14 +261,78 @@ void DecodeMaterials(const aiScene* Scene, FDecodedModelScene& Out)
 			Decoded.BaseColorFactor[3] = Color.a;
 		}
 
-		aiString TexPath;
-		if (Mat->GetTexture(aiTextureType_DIFFUSE, 0, &TexPath) == AI_SUCCESS)
+		float Metallic = 0.f;
+		float Roughness = 1.f;
+		if (Mat->Get(AI_MATKEY_METALLIC_FACTOR, Metallic) == AI_SUCCESS)
 		{
-			FDecodedTextureRef Tex;
-			Tex.SlotName = "BaseColor";
-			Tex.SourcePath = TexPath.C_Str();
-			Decoded.Textures.push_back(std::move(Tex));
+			Decoded.MetallicFactor = Metallic;
 		}
+		if (Mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, Roughness) == AI_SUCCESS)
+		{
+			Decoded.RoughnessFactor = Roughness;
+		}
+
+		aiColor3D Emissive;
+		if (Mat->Get(AI_MATKEY_COLOR_EMISSIVE, Emissive) == AI_SUCCESS)
+		{
+			Decoded.EmissiveFactor[0] = Emissive.r;
+			Decoded.EmissiveFactor[1] = Emissive.g;
+			Decoded.EmissiveFactor[2] = Emissive.b;
+		}
+
+		auto HasSlot = [&](const char* Slot) -> bool
+		{
+			for (const FDecodedTextureRef& Tex : Decoded.Textures)
+			{
+				if (Tex.SlotName == Slot)
+				{
+					return true;
+				}
+			}
+			return false;
+		};
+
+		auto TryAddTex = [&](aiTextureType Type, const char* Slot)
+		{
+			if (HasSlot(Slot))
+			{
+				return;
+			}
+			aiString TexPath;
+			if (Mat->GetTexture(Type, 0, &TexPath) != AI_SUCCESS || TexPath.length == 0)
+			{
+				return;
+			}
+			FDecodedTextureRef Tex;
+			Tex.SlotName = Slot;
+			Tex.SourcePath = TexPath.C_Str();
+			// Assimp embedded texture: "*0", "*1", ...
+			if (!Tex.SourcePath.empty() && Tex.SourcePath[0] == '*')
+			{
+				const aiTexture* Embedded = Scene->GetEmbeddedTexture(TexPath.C_Str());
+				if (Embedded && Embedded->mHeight == 0 && Embedded->pcData && Embedded->mWidth > 0)
+				{
+					const auto* Bytes = reinterpret_cast<const std::uint8_t*>(Embedded->pcData);
+					Tex.EmbeddedBytes.assign(Bytes, Bytes + Embedded->mWidth);
+				}
+			}
+			Decoded.Textures.push_back(std::move(Tex));
+		};
+
+		// glTF PBR first, then classic / fallbacks.
+		TryAddTex(aiTextureType_BASE_COLOR, "BaseColor");
+		TryAddTex(aiTextureType_DIFFUSE, "BaseColor");
+		TryAddTex(aiTextureType_NORMAL_CAMERA, "Normal");
+		TryAddTex(aiTextureType_NORMALS, "Normal");
+		TryAddTex(aiTextureType_HEIGHT, "Normal");
+		// glTF metallicRoughnessTexture often lands on UNKNOWN; metal/rough may also be split.
+		TryAddTex(aiTextureType_UNKNOWN, "MetallicRoughness");
+		TryAddTex(aiTextureType_METALNESS, "MetallicRoughness");
+		TryAddTex(aiTextureType_DIFFUSE_ROUGHNESS, "MetallicRoughness");
+		TryAddTex(aiTextureType_AMBIENT_OCCLUSION, "Occlusion");
+		TryAddTex(aiTextureType_LIGHTMAP, "Occlusion");
+		TryAddTex(aiTextureType_EMISSION_COLOR, "Emissive");
+		TryAddTex(aiTextureType_EMISSIVE, "Emissive");
 
 		Out.Materials.push_back(std::move(Decoded));
 	}
@@ -343,11 +438,36 @@ bool DecodeWithAssimp(
 		aiProcess_LimitBoneWeights;
 
 	const std::string Hint(SourcePathHint);
-	const aiScene* Scene = Importer.ReadFileFromMemory(
-		Bytes,
-		ByteCount,
-		Flags,
-		Hint.empty() ? nullptr : Hint.c_str());
+	const aiScene* Scene = nullptr;
+
+	// glTF/OBJ/etc. reference external siblings (.bin, .mtl, textures). ReadFileFromMemory
+	// only has the primary file bytes — Assimp cannot size-check buffers →
+	// "Invalid byteLength exceeds size of actual data". Prefer disk path when available.
+	if (!Hint.empty())
+	{
+		std::error_code ErrorCode;
+		if (std::filesystem::is_regular_file(PathFromUtf8(Hint), ErrorCode) && !ErrorCode)
+		{
+			Scene = Importer.ReadFile(Hint.c_str(), Flags);
+			if (!Scene)
+			{
+				MAHO_CORE_WARN(
+					"MeshModelCodec: ReadFile('{}') failed ({}); falling back to memory",
+					Hint,
+					Importer.GetErrorString());
+			}
+		}
+	}
+
+	if (!Scene)
+	{
+		Scene = Importer.ReadFileFromMemory(
+			Bytes,
+			ByteCount,
+			Flags,
+			Hint.empty() ? nullptr : Hint.c_str());
+	}
+
 	if (!Scene || (Scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !Scene->mRootNode)
 	{
 		MAHO_CORE_ERROR("MeshModelCodec: Assimp failed: {}", Importer.GetErrorString());
@@ -522,7 +642,7 @@ bool ApplyDecodedModelScene(
 	UPackage& Package,
 	UPrefab& Prefab)
 {
-	// On failure, drop siblings created here (Prefab root is aborted by ProcessReadyImports).
+	// On failure, drop siblings created here (Prefab root is aborted by ProcessReadyIO).
 	struct FApplyRollback
 	{
 		FResourceSystem& Resources;
@@ -556,6 +676,124 @@ bool ApplyDecodedModelScene(
 	std::vector<UMaterial*> Materials;
 	Materials.reserve(Scene.Materials.size());
 
+	// Dedup texture imports by absolute path / embedded key → SoftPath.
+	std::unordered_map<std::string, FSoftObjectPath> ImportedTextures;
+
+	auto ResolveTextureDiskPath = [&](const std::string& RelativeOrAbsolute) -> std::string
+	{
+		if (RelativeOrAbsolute.empty() || RelativeOrAbsolute[0] == '*')
+		{
+			return {};
+		}
+		std::error_code ErrorCode;
+		const std::filesystem::path AsPath = PathFromUtf8(RelativeOrAbsolute);
+		if (AsPath.is_absolute())
+		{
+			return PathToUtf8(std::filesystem::weakly_canonical(AsPath, ErrorCode));
+		}
+		if (Scene.SourcePathHint.empty())
+		{
+			return RelativeOrAbsolute;
+		}
+		const std::filesystem::path BaseDir = PathFromUtf8(Scene.SourcePathHint).parent_path();
+		return PathToUtf8(std::filesystem::weakly_canonical(BaseDir / AsPath, ErrorCode));
+	};
+
+	auto ImportTextureSibling = [&](const FDecodedTextureRef& TexRef) -> FSoftObjectPath
+	{
+		std::string CacheKey;
+		std::vector<std::uint8_t> Bytes;
+		std::string DecodeHint = TexRef.SourcePath;
+
+		if (!TexRef.EmbeddedBytes.empty())
+		{
+			CacheKey = "embedded:" + TexRef.SourcePath;
+			Bytes = TexRef.EmbeddedBytes;
+			if (DecodeHint.empty() || DecodeHint[0] == '*')
+			{
+				DecodeHint = "embedded.png";
+			}
+		}
+		else
+		{
+			CacheKey = ResolveTextureDiskPath(TexRef.SourcePath);
+			if (CacheKey.empty())
+			{
+				return {};
+			}
+			const auto It = ImportedTextures.find(CacheKey);
+			if (It != ImportedTextures.end())
+			{
+				return It->second;
+			}
+
+			std::ifstream File(PathFromUtf8(CacheKey), std::ios::binary | std::ios::ate);
+			if (!File)
+			{
+				MAHO_CORE_WARN("MeshModelCodec: cannot open texture '{}'", CacheKey);
+				return {};
+			}
+			const std::streamoff Size = File.tellg();
+			if (Size <= 0)
+			{
+				return {};
+			}
+			File.seekg(0, std::ios::beg);
+			Bytes.resize(static_cast<std::size_t>(Size));
+			if (!File.read(reinterpret_cast<char*>(Bytes.data()), Size))
+			{
+				MAHO_CORE_WARN("MeshModelCodec: failed reading texture '{}'", CacheKey);
+				return {};
+			}
+			DecodeHint = CacheKey;
+		}
+
+		const auto Existing = ImportedTextures.find(CacheKey);
+		if (Existing != ImportedTextures.end())
+		{
+			return Existing->second;
+		}
+
+		FDecodedImage Image;
+		if (!TextureImageCodec::DecodeFromMemory(Bytes.data(), Bytes.size(), DecodeHint, Image))
+		{
+			MAHO_CORE_WARN("MeshModelCodec: decode failed for texture '{}'", DecodeHint);
+			return {};
+		}
+
+		const std::string Stem = SanitizeObjectName(
+			PathToUtf8(PathFromUtf8(DecodeHint).stem()),
+			"Texture");
+		UTexture2D* Texture = CreateRegisteredResource<UTexture2D>(
+			Resources,
+			GC,
+			Package,
+			Stem,
+			EResourceType::Texture2D,
+			CacheKey);
+		if (!Texture)
+		{
+			return {};
+		}
+		Rollback.Track(Texture);
+		// Data maps / normals stay linear; color maps use sRGB from decoder.
+		if (TexRef.SlotName == "Normal"
+			|| TexRef.SlotName == "MetallicRoughness"
+			|| TexRef.SlotName == "Occlusion")
+		{
+			Image.bSRGB = false;
+		}
+		if (!TextureImageCodec::ApplyDecodedToTexture(*Texture, std::move(Image)))
+		{
+			MAHO_CORE_WARN("MeshModelCodec: ApplyDecodedToTexture failed for '{}'", Stem);
+			return {};
+		}
+		Texture->MarkCpuReady();
+		FSoftObjectPath Soft = FSoftObjectPath::FromObject(*Texture);
+		ImportedTextures.emplace(CacheKey, Soft);
+		return Soft;
+	};
+
 	for (std::size_t I = 0; I < Scene.Materials.size(); ++I)
 	{
 		const FDecodedMaterial& Src = Scene.Materials[I];
@@ -578,19 +816,39 @@ bool ApplyDecodedModelScene(
 		Mat->BaseColorFactor[3] = Src.BaseColorFactor[3];
 		Mat->MetallicFactor = Src.MetallicFactor;
 		Mat->RoughnessFactor = Src.RoughnessFactor;
+		Mat->EmissiveFactor[0] = Src.EmissiveFactor[0];
+		Mat->EmissiveFactor[1] = Src.EmissiveFactor[1];
+		Mat->EmissiveFactor[2] = Src.EmissiveFactor[2];
 		for (const FDecodedTextureRef& Tex : Src.Textures)
 		{
-			if (!Tex.SourcePath.empty() && Tex.SlotName == "BaseColor")
+			if (Tex.SourcePath.empty() && Tex.EmbeddedBytes.empty())
 			{
-				Mat->SetBaseColorTexture(FSoftObjectPath(Tex.SourcePath));
+				continue;
 			}
-			else if (!Tex.SourcePath.empty() && Tex.SlotName == "Normal")
+			FSoftObjectPath Soft = ImportTextureSibling(Tex);
+			if (!Soft.IsValid())
 			{
-				Mat->SetNormalTexture(FSoftObjectPath(Tex.SourcePath));
+				continue;
 			}
-			else if (!Tex.SourcePath.empty() && Tex.SlotName == "MetallicRoughness")
+			if (Tex.SlotName == "BaseColor")
 			{
-				Mat->SetMetallicRoughnessTexture(FSoftObjectPath(Tex.SourcePath));
+				Mat->SetBaseColorTexture(std::move(Soft));
+			}
+			else if (Tex.SlotName == "Normal")
+			{
+				Mat->SetNormalTexture(std::move(Soft));
+			}
+			else if (Tex.SlotName == "MetallicRoughness")
+			{
+				Mat->SetMetallicRoughnessTexture(std::move(Soft));
+			}
+			else if (Tex.SlotName == "Occlusion")
+			{
+				Mat->SetOcclusionTexture(std::move(Soft));
+			}
+			else if (Tex.SlotName == "Emissive")
+			{
+				Mat->SetEmissiveTexture(std::move(Soft));
 			}
 		}
 		Mat->MarkCpuReady();

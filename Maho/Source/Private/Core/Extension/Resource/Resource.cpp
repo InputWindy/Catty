@@ -1,4 +1,5 @@
 ﻿#include "ResourceIO.h"
+#include "ResourceCasset.h"
 
 #include <Core/Application/App.h>
 #include <Core/Extension/GC/GC.h>
@@ -13,6 +14,7 @@
 #include <ResourceTypes.gen.h>
 
 #include <cctype>
+#include <filesystem>
 #include <utility>
 
 namespace Maho
@@ -289,24 +291,9 @@ FObjectRef FResourceSystem::FindRegisteredResource(const std::string& CatalogKey
 	return It->second;
 }
 
-bool FResourceSystem::CanImportSourcePath(const std::string& SourcePath) const
+std::string FResourceSystem::SoftPathKey(const FSoftObjectPath& SoftPath)
 {
-	if (SourcePath.empty())
-	{
-		return false;
-	}
-	for (const auto& Importer : Importers)
-	{
-		if (!Importer || Importer->GetType() == EResourceType::Raw)
-		{
-			continue;
-		}
-		if (Importer->MatchesSourcePath(SourcePath))
-		{
-			return true;
-		}
-	}
-	return false;
+	return SoftPath.GetAssetPathString();
 }
 
 void FResourceSystem::UnregisterResourcesInPackage(const std::string& PackageName)
@@ -345,8 +332,11 @@ void FResourceSystem::PrepareForExit()
 	bAcceptingNewWork = false;
 	FlushAll();
 
-	ImportPins.clear();
-	PendingImports.clear();
+	for (auto& Pair : PendingIO)
+	{
+		ReleaseBulkLoad(Pair.second.Handle);
+	}
+	PendingIO.clear();
 
 	std::vector<FObjectRef> Snapshot;
 	Snapshot.reserve(Resources.size());
@@ -376,8 +366,7 @@ bool FResourceSystem::IsIdle() const
 	}
 	return !bAcceptingNewWork
 		&& Resources.empty()
-		&& PendingImports.empty()
-		&& ImportPins.empty()
+		&& PendingIO.empty()
 		&& !Server->HasPendingLoads();
 }
 
@@ -394,7 +383,7 @@ bool FResourceSystem::ExecuteStage(EEngineStage Stage)
 		return true;
 	case EEngineStage::BeginFrame:
 	case EEngineStage::Update:
-		ProcessReadyImports();
+		ProcessReadyIO();
 		return true;
 	case EEngineStage::PrepareExit:
 		PrepareForExit();
@@ -419,9 +408,6 @@ void FResourceSystem::Shutdown()
 
 	PrepareForExit();
 
-	Importers.clear();
-	Exporters.clear();
-
 	if (Server->IsInitialized())
 	{
 		Server->Shutdown();
@@ -437,188 +423,91 @@ void FResourceSystem::CancelPendingImport(UObject* Resource)
 		return;
 	}
 
-	for (auto It = PendingImports.begin(); It != PendingImports.end();)
-	{
-		if (It->second.Resource.GetRaw() == Resource)
-		{
-			const std::uint64_t LoadId = It->second.LoadId;
-			ReleaseLoadId(LoadId);
-			ImportPins.erase(LoadId);
-			It = PendingImports.erase(It);
-		}
-		else
-		{
-			++It;
-		}
-	}
-}
-
-void FResourceSystem::ProcessReadyImports()
-{
-	if (!HasActiveServer() || PendingImports.empty())
+	const FSoftObjectPath Soft = FSoftObjectPath::FromObject(*Resource);
+	const std::string Key = SoftPathKey(Soft);
+	if (Key.empty())
 	{
 		return;
 	}
 
-	std::vector<std::uint64_t> ReadyIds;
-	ReadyIds.reserve(PendingImports.size());
-	for (const auto& Pair : PendingImports)
+	const auto It = PendingIO.find(Key);
+	if (It == PendingIO.end())
 	{
-		const FResourceId Id{Pair.second.LoadId};
-		const EResourceLoadState State = Server->GetLoadState(Id);
-		if (State != EResourceLoadState::Pending)
+		return;
+	}
+
+	ReleaseBulkLoad(It->second.Handle);
+	PendingIO.erase(It);
+}
+
+void FResourceSystem::ProcessReadyIO()
+{
+	if (!HasActiveServer() || PendingIO.empty())
+	{
+		return;
+	}
+
+	std::vector<std::string> ReadyKeys;
+	ReadyKeys.reserve(PendingIO.size());
+	for (const auto& Pair : PendingIO)
+	{
+		const FTransferHandle Handle = Pair.second.Handle;
+		if (!Handle.IsValid() || Handle.HasFailed() || Handle.HasSucceeded())
 		{
-			ReadyIds.push_back(Pair.first);
+			ReadyKeys.push_back(Pair.first);
 		}
 	}
 
-	for (const std::uint64_t IdValue : ReadyIds)
+	// At most one Apply per tick so large .casset hydrates do not stall the frame.
+	std::size_t Applied = 0;
+	constexpr std::size_t kMaxAppliesPerTick = 1;
+	for (const std::string& Key : ReadyKeys)
 	{
-		const auto It = PendingImports.find(IdValue);
-		if (It == PendingImports.end())
+		if (Applied >= kMaxAppliesPerTick)
+		{
+			break;
+		}
+
+		const auto It = PendingIO.find(Key);
+		if (It == PendingIO.end())
 		{
 			continue;
 		}
 
-		FPendingImport Pending = std::move(It->second);
-		PendingImports.erase(It);
+		FPendingIO Pending = std::move(It->second);
+		PendingIO.erase(It);
 
-		// Keep ImportPins[LoadId] until this iteration finishes so Apply/Abort cannot race GC.
-		const auto Unpin = [this, LoadId = Pending.LoadId]()
-		{
-			ImportPins.erase(LoadId);
-		};
-
-		UResource* Resource = Pending.Resource.Cast<UResource>();
-		const FResourceId Id{Pending.LoadId};
-		const EResourceLoadState BulkState = Server->GetLoadState(Id);
-
-		if (!Resource)
+		if (!Pending.Handle.IsValid() || Pending.Handle.HasFailed())
 		{
 			MAHO_CORE_ERROR(
-				"FResourceSystem::ProcessReadyImports: lost Resource pin for LoadId={} — scrubbing",
-				Pending.LoadId);
-			ReleaseLoadId(Pending.LoadId);
-			Unpin();
-			continue;
-		}
-
-		if (BulkState == EResourceLoadState::Failed || BulkState == EResourceLoadState::Invalid)
-		{
-			Resource->SetLoadState(EResourceLoadState::Failed);
-			AbortFailedImport(*Resource);
-			ReleaseLoadId(Pending.LoadId);
-			Unpin();
+				"FResourceSystem::ProcessReadyIO: BulkData failed for '{}'",
+				Pending.Config.SourcePath);
+			ReleaseBulkLoad(Pending.Handle);
 			continue;
 		}
 
 		FResourceBulkData Bulk;
-		if (!TakeBulkData(Pending.LoadId, Bulk))
+		if (!TakeBulkData(Pending.Handle, Bulk))
 		{
 			MAHO_CORE_ERROR(
-				"FResourceSystem::ProcessReadyImports: TakeBulkData failed for '{}'",
-				Resource->GetSourcePath());
-			Resource->SetLoadState(EResourceLoadState::Failed);
-			AbortFailedImport(*Resource);
-			ReleaseLoadId(Pending.LoadId);
-			Unpin();
+				"FResourceSystem::ProcessReadyIO: TakeBulkData failed for '{}'",
+				Pending.Config.SourcePath);
+			ReleaseBulkLoad(Pending.Handle);
 			continue;
 		}
 
 		const bool bOk = Pending.Importer
-			&& Pending.Importer->ApplyBulkData(Pending.Config, Bulk, Pending.Resource);
-		Resource->SetLoadState(bOk ? EResourceLoadState::Ready : EResourceLoadState::Failed);
-		ReleaseLoadId(Pending.LoadId);
+			&& Pending.Importer->ApplyBulkData(*this, Pending.Config, Bulk);
+		ReleaseBulkLoad(Pending.Handle);
+		++Applied;
 
 		if (!bOk)
 		{
 			MAHO_CORE_ERROR(
-				"FResourceSystem::ProcessReadyImports: Importer failed for '{}'",
-				Resource->GetSourcePath());
-			AbortFailedImport(*Resource);
-		}
-		Unpin();
-	}
-}
-
-void FResourceSystem::RegisterImporter(std::unique_ptr<IResourceImporter> Importer)
-{
-	if (Importer)
-	{
-		Importers.push_back(std::move(Importer));
-	}
-}
-
-void FResourceSystem::RegisterExporter(std::unique_ptr<IResourceExporter> Exporter)
-{
-	if (Exporter)
-	{
-		Exporters.push_back(std::move(Exporter));
-	}
-}
-
-void FResourceSystem::ClearImportersAndExporters()
-{
-	Importers.clear();
-	Exporters.clear();
-}
-
-IResourceImporter* FResourceSystem::FindImporter(const FResourceImportConfig& Config) const
-{
-	if (Config.TypeHint != EResourceType::Unknown)
-	{
-		for (const auto& Importer : Importers)
-		{
-			if (Importer && Importer->GetType() == Config.TypeHint)
-			{
-				return Importer.get();
-			}
+				"FResourceSystem::ProcessReadyIO: Apply failed for '{}'",
+				Pending.Config.SourcePath);
 		}
 	}
-
-	IResourceImporter* Fallback = nullptr;
-	for (const auto& Importer : Importers)
-	{
-		if (!Importer)
-		{
-			continue;
-		}
-
-		if (Importer->GetType() == EResourceType::Raw)
-		{
-			Fallback = Importer.get();
-			continue;
-		}
-
-		if (Importer->MatchesSourcePath(Config.SourcePath))
-		{
-			return Importer.get();
-		}
-	}
-
-	return Fallback;
-}
-
-IResourceExporter* FResourceSystem::FindExporter(const FObjectRef& Resource) const
-{
-	IResourceExporter* Fallback = nullptr;
-	for (const auto& Exporter : Exporters)
-	{
-		if (!Exporter || !Exporter->CanExport(Resource))
-		{
-			continue;
-		}
-
-		if (Exporter->GetType() == EResourceType::Raw)
-		{
-			Fallback = Exporter.get();
-			continue;
-		}
-
-		return Exporter.get();
-	}
-
-	return Fallback;
 }
 
 bool FResourceSystem::HasActiveServer() const
@@ -626,71 +515,99 @@ bool FResourceSystem::HasActiveServer() const
 	return Server && Server->IsInitialized();
 }
 
-std::uint64_t FResourceSystem::RequestLoadId(const std::string& SourcePath)
+FTransferHandle FResourceSystem::RequestBulkLoad(const std::string& SourcePath)
 {
 	if (!HasActiveServer())
 	{
-		return 0;
+		return {};
 	}
-	return Server->RequestLoad(SourcePath).Value;
+	return Server->RequestLoad(SourcePath);
 }
 
-void FResourceSystem::ReleaseLoadId(std::uint64_t LoadId)
+void FResourceSystem::ReleaseBulkLoad(FTransferHandle Handle)
 {
-	if (HasActiveServer() && LoadId != 0)
+	if (HasActiveServer() && Handle.IsValid())
 	{
-		Server->Release(FResourceId{LoadId});
+		Server->Release(Handle);
 	}
 }
 
-bool FResourceSystem::TakeBulkData(std::uint64_t LoadId, FResourceBulkData& OutBulk)
+bool FResourceSystem::TakeBulkData(FTransferHandle Handle, FResourceBulkData& OutBulk)
 {
-	if (!HasActiveServer() || LoadId == 0)
+	if (!HasActiveServer() || !Handle.IsValid())
 	{
 		return false;
 	}
-	return Server->TryTakeBulkData(FResourceId{LoadId}, OutBulk);
+	return Server->TryTakeBulkData(Handle, OutBulk);
 }
 
-FObjectRef FResourceSystem::KickImport(FResourceImportConfig Config)
+FSoftObjectPath FResourceSystem::EnqueueImport(
+	std::unique_ptr<IResourceImporter> Importer,
+	FResourceImportConfig Config)
 {
-	IResourceImporter* Importer = FindImporter(Config);
 	if (!Importer)
 	{
-		MAHO_CORE_ERROR(
-			"FResourceSystem::KickImport: no importer for '{}' (type hint {})",
-			Config.SourcePath,
-			static_cast<int>(Config.TypeHint));
+		MAHO_CORE_ERROR("FResourceSystem::EnqueueImport: null Importer");
 		return {};
 	}
 
-	return Importer->Import(*this, std::move(Config));
-}
-
-bool FResourceSystem::KickExport(FResourceExportConfig Config, const FObjectRef& Resource)
-{
-	IResourceExporter* Exporter = FindExporter(Resource);
-	if (!Exporter)
+	if (!IsInitialized() || !bAcceptingNewWork)
 	{
-		MAHO_CORE_ERROR("FResourceSystem::KickExport: no exporter for resource");
-		return false;
+		MAHO_CORE_ERROR("FResourceSystem::EnqueueImport: not accepting work");
+		return {};
 	}
 
-	return Exporter->Export(std::move(Config), Resource);
-}
+	Config.SourcePath = NormalizeSourcePath(std::move(Config.SourcePath));
+	Config.PackagePath = NormalizePackageName(std::move(Config.PackagePath));
+	if (Config.ObjectName.empty() && !Config.SourcePath.empty())
+	{
+		Config.ObjectName = MakeObjectNameFromSource(Config.SourcePath);
+	}
 
-FObjectRef FResourceSystem::LoadResourceIntoPackage(
-	const FObjectRef& Package,
-	std::string ObjectName,
-	std::string SourcePath,
-	EResourceType Type)
-{
-	FResourceImportConfig Config;
-	Config.Package = Package;
-	Config.ObjectName = std::move(ObjectName);
-	Config.SourcePath = std::move(SourcePath);
-	Config.TypeHint = Type;
-	return KickImport(std::move(Config));
+	if (Config.PackagePath.empty() || Config.ObjectName.empty() || Config.SourcePath.empty())
+	{
+		MAHO_CORE_ERROR(
+			"FResourceSystem::EnqueueImport: PackagePath/ObjectName/SourcePath required");
+		return {};
+	}
+
+	FSoftObjectPath SoftPath(Config.PackagePath, Config.ObjectName);
+	const std::string Key = SoftPathKey(SoftPath);
+	if (Key.empty())
+	{
+		return {};
+	}
+
+	if (PendingIO.find(Key) != PendingIO.end())
+	{
+		return SoftPath;
+	}
+
+	if (!HasActiveServer())
+	{
+		MAHO_CORE_ERROR("FResourceSystem::EnqueueImport: ResourceServer unavailable");
+		return {};
+	}
+
+	FTransferHandle Handle = RequestBulkLoad(Config.SourcePath);
+	if (!Handle.IsValid())
+	{
+		return {};
+	}
+
+	FPendingIO Pending;
+	Pending.Handle = Handle;
+	Pending.SoftPath = SoftPath;
+	Pending.Config = Config;
+	Pending.Importer = std::move(Importer);
+	PendingIO.emplace(Key, std::move(Pending));
+
+	if (Config.Mode == EResourceIOMode::Sync)
+	{
+		Flush(SoftPath);
+	}
+
+	return SoftPath;
 }
 
 bool FResourceSystem::UnloadResource(const std::string& VirtualPath)
@@ -724,38 +641,34 @@ FObjectRef FResourceSystem::TryLoad(const FSoftObjectPath& SoftPath)
 		return {};
 	}
 
+	if (FObjectRef Existing = SoftPath.Resolve())
+	{
+		return Existing;
+	}
+
 	FGCSystem* GC = Detail::GetGCSystem();
-	if (GC)
+	if (GC && GC->FindPackage(SoftPath.GetPackageName()))
 	{
-		if (FObjectRef Existing = GC->FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName()))
-		{
-			return Existing;
-		}
+		return SoftPath.Resolve();
 	}
 
-	if (!GC || !GC->FindPackage(SoftPath.GetPackageName()))
+	const std::string Filename = FPaths::ConvertPackageNameToFilename(SoftPath.GetPackageName());
+	if (Filename.empty())
 	{
-		const std::string Filename = FPaths::ConvertPackageNameToFilename(SoftPath.GetPackageName());
-		if (Filename.empty())
-		{
-			MAHO_CORE_ERROR(
-				"FResourceSystem::TryLoad: no mount mapping for '{}'",
-				SoftPath.GetPackageName());
-			return {};
-		}
-
-		if (!LoadPackage(Filename))
-		{
-			MAHO_CORE_ERROR(
-				"FResourceSystem::TryLoad: LoadPackage failed for '{}' ('{}')",
-				SoftPath.GetPackageName(),
-				Filename);
-			return {};
-		}
+		MAHO_CORE_ERROR(
+			"FResourceSystem::TryLoad: no mount mapping for '{}'",
+			SoftPath.GetPackageName());
+		return {};
 	}
 
-	GC = Detail::GetGCSystem();
-	return GC ? GC->FindObject(SoftPath.GetPackageName(), SoftPath.GetAssetName()) : FObjectRef{};
+	FResourceImportConfig Config;
+	Config.PackagePath = SoftPath.GetPackageName();
+	Config.ObjectName = SoftPath.GetAssetName();
+	Config.SourcePath = Filename;
+	Config.Mode = EResourceIOMode::Sync;
+	(void)Import<FCassetPackageImporter>(std::move(Config));
+
+	return SoftPath.Resolve();
 }
 
 FObjectRef FResourceSystem::TryLoad(const std::string& SoftPathString)
@@ -912,6 +825,24 @@ bool FResourceSystem::SavePackageInternal(
 		}
 	}
 
+	{
+		std::error_code ErrorCode;
+		const std::filesystem::path Parent = PathFromUtf8(OutPath).parent_path();
+		if (!Parent.empty())
+		{
+			std::filesystem::create_directories(Parent, ErrorCode);
+			if (ErrorCode)
+			{
+				MAHO_CORE_ERROR(
+					"FResourceSystem::SavePackage: create_directories failed for '{}': {}",
+					PathToUtf8(Parent),
+					ErrorCode.message());
+				SavingPackageNames.erase(PackageKey);
+				return false;
+			}
+		}
+	}
+
 	FJsonDocument Doc;
 	Doc.SetRoot(std::move(Root));
 	if (!Doc.SaveToFile(OutPath, bPretty))
@@ -919,6 +850,14 @@ bool FResourceSystem::SavePackageInternal(
 		MAHO_CORE_ERROR("FResourceSystem::SavePackage: write failed '{}'", OutPath);
 		SavingPackageNames.erase(PackageKey);
 		return false;
+	}
+
+	for (const auto& Pair : PackageObj.Objects)
+	{
+		if (UResource* Resource = dynamic_cast<UResource*>(Pair.second))
+		{
+			Resource->ClearDirty();
+		}
 	}
 
 	MAHO_CORE_INFO(
@@ -940,6 +879,121 @@ FObjectRef FResourceSystem::LoadPackage(const std::string& FilePath)
 {
 	std::unordered_set<std::string> LoadingFilePaths;
 	return LoadPackageInternal(FilePath, LoadingFilePaths);
+}
+
+namespace
+{
+
+template <typename TResource>
+[[nodiscard]] FObjectRef NewTypedResource(
+	FGCSystem& GC,
+	FResourceSystem& Resources,
+	UPackage& Package,
+	const std::string& ObjectName,
+	EResourceType Type,
+	const std::string& ImportSource)
+{
+	FObjectRef Ref = GC.NewObject<TResource>(&Package, ObjectName, Type, ImportSource);
+	// RegisterOwnedResource clears Outer on failure; do not touch private Get/ClearOuter here.
+	if (!Ref || !Resources.RegisterOwnedResource(Package, Ref))
+	{
+		return {};
+	}
+	return Ref;
+}
+
+} // namespace
+
+FObjectRef FResourceSystem::LoadInlineResourceFromJson(UPackage& Package, const FJsonValue& Entry)
+{
+	FGCSystem* GC = Detail::GetGCSystem();
+	if (!GC)
+	{
+		return {};
+	}
+
+	std::string ObjectName = Entry.GetField("name").AsString();
+	if (ObjectName.empty())
+	{
+		MAHO_CORE_ERROR("FResourceSystem::LoadInlineResourceFromJson: empty object name");
+		return {};
+	}
+
+	EResourceType Type = EResourceType::Unknown;
+	if (Entry.HasField("type"))
+	{
+		Type = ResourceTypeFromString(Entry.GetField("type").AsString());
+	}
+	const std::string ClassName = Entry.GetField("class").AsString("Resource");
+	if (Type == EResourceType::Unknown
+		&& !TryResourceTypeFromClassName(ClassName.empty() ? "Resource" : ClassName, Type))
+	{
+		MAHO_CORE_ERROR(
+			"FResourceSystem::LoadInlineResourceFromJson: unknown type for '{}'",
+			ObjectName);
+		return {};
+	}
+
+	const std::string ImportSource = Entry.HasField("importSource")
+		? Entry.GetField("importSource").AsString()
+		: std::string{};
+
+	FObjectRef Created;
+	switch (Type)
+	{
+	case EResourceType::Texture:
+	case EResourceType::Texture2D:
+		Created = NewTypedResource<UTexture2D>(*GC, *this, Package, ObjectName, EResourceType::Texture2D, ImportSource);
+		break;
+	case EResourceType::Texture3D:
+		Created = NewTypedResource<UTexture3D>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::TextureCube:
+		Created = NewTypedResource<UTextureCube>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::TextureCubeArray:
+		Created = NewTypedResource<UTextureCubeArray>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::Texture2DArray:
+		Created = NewTypedResource<UTexture2DArray>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::Mesh:
+		Created = NewTypedResource<UStaticMesh>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::Material:
+		Created = NewTypedResource<UMaterial>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::Skeleton:
+		Created = NewTypedResource<USkeleton>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::Animation:
+		Created = NewTypedResource<UAnimation>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::AnimationGraph:
+		Created = NewTypedResource<UAnimationGraph>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	case EResourceType::Prefab:
+		Created = NewTypedResource<UPrefab>(*GC, *this, Package, ObjectName, Type, ImportSource);
+		break;
+	default:
+		MAHO_CORE_ERROR(
+			"FResourceSystem::LoadInlineResourceFromJson: unsupported type {} for '{}'",
+			static_cast<int>(Type),
+			ObjectName);
+		return {};
+	}
+
+	UResource* Resource = Created.Cast<UResource>();
+	if (!Resource)
+	{
+		return {};
+	}
+	if (!ResourceCasset::ReadCpuPayload(*Resource, Entry))
+	{
+		UnregisterResource(Resource);
+		return {};
+	}
+	return Created;
 }
 
 FObjectRef FResourceSystem::LoadPackageInternal(
@@ -988,6 +1042,20 @@ FObjectRef FResourceSystem::LoadPackageInternal(
 		MAHO_CORE_ERROR("FResourceSystem::LoadPackage: root is not an object '{}'", FilePath);
 		LoadingFilePaths.erase(NormalizedFile);
 		return {};
+	}
+
+	return LoadPackageFromDocument(FilePath, Root, LoadingFilePaths);
+}
+
+FObjectRef FResourceSystem::LoadPackageFromDocument(
+	const std::string& FilePath,
+	const FJsonValue& Root,
+	std::unordered_set<std::string>& LoadingFilePaths)
+{
+	const std::string NormalizedFile = NormalizeSourcePath(FilePath);
+	if (LoadingFilePaths.find(NormalizedFile) == LoadingFilePaths.end())
+	{
+		LoadingFilePaths.insert(NormalizedFile);
 	}
 
 	// Load dependency packages first (depth-first).
@@ -1066,7 +1134,6 @@ FObjectRef FResourceSystem::LoadPackageInternal(
 	{
 		MAHO_CORE_ERROR("FResourceSystem::LoadPackage: Deserialize failed '{}'", FilePath);
 		LoadingFilePaths.erase(NormalizedFile);
-		// Drop the only Ref so GC can finalize; otherwise FindPackage keeps returning this shell.
 		PackageRef = {};
 		GC->CollectGarbage();
 		GC->PurgePendingKill();
@@ -1110,43 +1177,13 @@ FObjectRef FResourceSystem::LoadPackageInternal(
 			}
 
 			std::string ObjectName = Entry.GetField("name").AsString();
-			std::string SourcePath = Entry.HasField("source")
-				? Entry.GetField("source").AsString()
-				: Entry.GetField("path").AsString();
-
-			if (ObjectName.empty() && !SourcePath.empty())
+			if (ObjectName.empty())
 			{
-				ObjectName = MakeObjectNameFromSource(SourcePath);
-			}
-
-			FObjectRef Created;
-			const std::string ClassName = Entry.GetField("class").AsString("Resource");
-
-			EResourceType Type = EResourceType::Unknown;
-			if (Entry.HasField("type"))
-			{
-				Type = ResourceTypeFromString(Entry.GetField("type").AsString());
-			}
-			if (Type == EResourceType::Unknown
-				&& !TryResourceTypeFromClassName(ClassName.empty() ? "Resource" : ClassName, Type))
-			{
-				MAHO_CORE_WARN(
-					"FResourceSystem::LoadPackage: unsupported class '{}' for '{}' — skip",
-					ClassName,
-					ObjectName);
+				MAHO_CORE_WARN("FResourceSystem::LoadPackage: object with empty name — skip");
 				continue;
 			}
 
-			if (SourcePath.empty())
-			{
-				MAHO_CORE_WARN(
-					"FResourceSystem::LoadPackage: object '{}' has no source — skip",
-					ObjectName);
-				continue;
-			}
-
-			Created = LoadResourceIntoPackage(PackageRef, ObjectName, SourcePath, Type);
-
+			FObjectRef Created = LoadInlineResourceFromJson(*Raw, Entry);
 			if (!Created)
 			{
 				MAHO_CORE_WARN(
@@ -1214,45 +1251,83 @@ FObjectRef FResourceSystem::LoadPackageInternal(
 	return PackageRef;
 }
 
-EResourceLoadState FResourceSystem::GetLoadState(const FObjectRef& Object) const
+EResourceLoadState FResourceSystem::GetLoadState(const FSoftObjectPath& SoftPath) const
 {
-	const UResource* Resource = Object.Cast<UResource>();
-	if (!Resource)
+	if (!SoftPath.IsValid())
 	{
 		return EResourceLoadState::Invalid;
 	}
 
-	return Resource->GetLoadState();
-}
-
-bool FResourceSystem::IsReady(const FObjectRef& Object) const
-{
-	return GetLoadState(Object) == EResourceLoadState::Ready;
-}
-
-void FResourceSystem::Flush(const FObjectRef& Object)
-{
-	if (!IsInitialized())
+	const std::string Key = SoftPathKey(SoftPath);
+	const auto PendingIt = PendingIO.find(Key);
+	if (PendingIt != PendingIO.end())
 	{
-		return;
-	}
-
-	UObject* ObjectPtr = Object.Get();
-	if (!ObjectPtr)
-	{
-		return;
-	}
-
-	for (const auto& Pair : PendingImports)
-	{
-		if (Pair.second.Resource.Get() == ObjectPtr)
+		const FTransferHandle Handle = PendingIt->second.Handle;
+		if (Handle.HasFailed() || !Handle.IsValid())
 		{
-			Server->Flush(FResourceId{Pair.second.LoadId});
+			return EResourceLoadState::Failed;
+		}
+		return EResourceLoadState::Pending;
+	}
+
+	if (FObjectRef Resolved = SoftPath.Resolve())
+	{
+		if (const UResource* Resource = Resolved.Cast<UResource>())
+		{
+			return Resource->GetLoadState();
+		}
+		return EResourceLoadState::Ready;
+	}
+
+	FGCSystem* GC = Detail::GetGCSystem();
+	if (GC && GC->FindPackage(SoftPath.GetPackageName()))
+	{
+		return EResourceLoadState::Ready;
+	}
+
+	return EResourceLoadState::Invalid;
+}
+
+bool FResourceSystem::IsReady(const FSoftObjectPath& SoftPath) const
+{
+	return GetLoadState(SoftPath) == EResourceLoadState::Ready;
+}
+
+void FResourceSystem::Flush(const FSoftObjectPath& SoftPath)
+{
+	if (!IsInitialized() || !SoftPath.IsValid())
+	{
+		return;
+	}
+
+	const std::string Key = SoftPathKey(SoftPath);
+	const auto It = PendingIO.find(Key);
+	if (It != PendingIO.end() && HasActiveServer())
+	{
+		Server->Flush(It->second.Handle);
+	}
+
+	while (PendingIO.find(Key) != PendingIO.end())
+	{
+		ProcessReadyIO();
+		if (PendingIO.find(Key) == PendingIO.end())
+		{
+			break;
+		}
+		const auto Still = PendingIO.find(Key);
+		if (Still != PendingIO.end() && Still->second.Handle.IsInProgress())
+		{
+			Server->Flush(Still->second.Handle);
+		}
+		else if (Still != PendingIO.end())
+		{
+			ProcessReadyIO();
+		}
+		else
+		{
 			break;
 		}
 	}
-
-	ProcessReadyImports();
 }
 
 void FResourceSystem::FlushAll()
@@ -1262,13 +1337,16 @@ void FResourceSystem::FlushAll()
 		return;
 	}
 
-	for (const auto& Pair : PendingImports)
+	for (const auto& Pair : PendingIO)
 	{
-		Server->Flush(FResourceId{Pair.second.LoadId});
+		Server->Flush(Pair.second.Handle);
 	}
 
 	Server->FThreadedServer::Flush();
-	ProcessReadyImports();
+	while (!PendingIO.empty())
+	{
+		ProcessReadyIO();
+	}
 }
 
 namespace Detail

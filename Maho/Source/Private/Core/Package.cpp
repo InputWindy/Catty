@@ -4,6 +4,8 @@
 #include <Core/System/Log.h>
 #include <Core/Extension/Resource/Resource.h>
 
+#include "Core/Extension/Resource/ResourceCasset.h"
+
 #include <unordered_map>
 #include <vector>
 
@@ -213,6 +215,8 @@ bool UPackage::Serialize(FJsonValue& OutObject) const
 		OutObject = FJsonValue::Object();
 	}
 
+	OutObject.SetField("format", FJsonValue::String("casset"));
+	OutObject.SetField("version", FJsonValue::Number(1));
 	OutObject.SetField("name", FJsonValue::String(GetName()));
 	OutObject.SetField(
 		"flags",
@@ -236,7 +240,13 @@ bool UPackage::Serialize(FJsonValue& OutObject) const
 		{
 			Entry.SetField("class", FJsonValue::String("Resource"));
 			Entry.SetField("type", FJsonValue::String(ResourceTypeToString(Resource->GetType())));
-			Entry.SetField("source", FJsonValue::String(Resource->GetSourcePath()));
+			if (!ResourceCasset::WriteCpuPayload(*Resource, Entry))
+			{
+				MAHO_CORE_ERROR(
+					"UPackage::Serialize: cpu payload failed for '{}'",
+					Resource->GetPathName());
+				return false;
+			}
 		}
 		else
 		{

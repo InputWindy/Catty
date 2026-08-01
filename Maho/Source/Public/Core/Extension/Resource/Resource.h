@@ -1,17 +1,25 @@
 #pragma once
 
 /**
- * Resource extension: UResource types, catalog, package IO, BulkData kick-off.
- * Type-specific work is IResourceImporter / IResourceExporter (private ResourceIO).
+ * Resource extension: UResource types, catalog, package IO.
+ *
+ * Transfer paradigm (three layers):
+ *   FTransferHandle  — BulkData transport status only (poll; no Manager callbacks)
+ *   FSoftObjectPath  — Import/Export handle and GetLoadState / Flush / Resolve key
+ *   FObjectRef       — live GC object; Manager does not return this as an async ticket
+ *
+ * Public IO: Import<TImporter> / Export<TExporter> (explicit template; no global registry).
  */
 
 #include <Core/DependsPack.h>
 #include <Core/Export.h>
 #include <Core/Extension/GC/GC.h>
+#include <Core/Json.h>
 #include <Core/Object/Object.h>
 #include <Core/Object/ObjectReflect.h>
 #include <Core/Object/SoftObjectPath.h>
 #include <Core/Sequencer/EngineExtension.h>
+#include <Core/Server/TransferHandle.h>
 #include <Core/TypeList.h>
 
 #include <cstdint>
@@ -31,6 +39,7 @@ class FResourceSystem;
 class FResourceServer;
 class IResourceImporter;
 class IResourceExporter;
+class FCassetPackageImporter;
 void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);
 
 MAHO_ENUM()
@@ -157,6 +166,11 @@ public:
 	/** Mark CPU payload ready (sibling assets created during scene Apply, authored content). */
 	void MarkCpuReady() { SetLoadState(EResourceLoadState::Ready); }
 
+	/** Unsaved memory edits (import / mutate) until written to a .casset. */
+	[[nodiscard]] bool IsDirty() const { return bDirty; }
+	void MarkDirty() { bDirty = true; }
+	void ClearDirty() { bDirty = false; }
+
 protected:
 	friend class FResourceSystem;
 
@@ -168,6 +182,7 @@ protected:
 	std::string SourcePath;
 	MAHO_PROPERTY()
 	EResourceLoadState LoadState = EResourceLoadState::Pending;
+	bool bDirty = false;
 };
 
 /**
@@ -279,15 +294,22 @@ public:
 	void SetNormalTexture(FSoftObjectPath Path) { NormalTexture = std::move(Path); }
 	[[nodiscard]] const FSoftObjectPath& GetMetallicRoughnessTexture() const { return MetallicRoughnessTexture; }
 	void SetMetallicRoughnessTexture(FSoftObjectPath Path) { MetallicRoughnessTexture = std::move(Path); }
+	[[nodiscard]] const FSoftObjectPath& GetOcclusionTexture() const { return OcclusionTexture; }
+	void SetOcclusionTexture(FSoftObjectPath Path) { OcclusionTexture = std::move(Path); }
+	[[nodiscard]] const FSoftObjectPath& GetEmissiveTexture() const { return EmissiveTexture; }
+	void SetEmissiveTexture(FSoftObjectPath Path) { EmissiveTexture = std::move(Path); }
 
 	float BaseColorFactor[4] = {1.f, 1.f, 1.f, 1.f};
 	float MetallicFactor = 0.f;
 	float RoughnessFactor = 1.f;
+	float EmissiveFactor[3] = {0.f, 0.f, 0.f};
 
 protected:
 	FSoftObjectPath BaseColorTexture;
 	FSoftObjectPath NormalTexture;
 	FSoftObjectPath MetallicRoughnessTexture;
+	FSoftObjectPath OcclusionTexture;
+	FSoftObjectPath EmissiveTexture;
 };
 
 /** CPU static mesh geometry + SoftPath to UMaterial. */
@@ -434,23 +456,33 @@ struct FResourceBulkData
 	std::vector<std::uint8_t> Bytes;
 };
 
+/** Async = enqueue SoftPath and return; Sync = enqueue then Flush to terminal state. */
+MAHO_ENUM()
+enum class EResourceIOMode : std::uint8_t
+{
+	Async = 0,
+	Sync = 1,
+};
+
 struct FResourceImportConfig
 {
-	FObjectRef Package;
+	std::string PackagePath;
 	std::string ObjectName;
 	std::string SourcePath;
 	EResourceType TypeHint = EResourceType::Unknown;
+	EResourceIOMode Mode = EResourceIOMode::Async;
 };
 
 struct FResourceExportConfig
 {
 	std::string DestinationPath;
 	bool bOverwrite = true;
+	EResourceIOMode Mode = EResourceIOMode::Async;
 };
 
 /**
- * Resource extension. Catalog / package / import services are public;
- * Initialize/Shutdown and IO registration stay private (codegen friend).
+ * Resource extension. Catalog / package / SoftPath Import-Export are public.
+ * Initialize/Shutdown and GC pool registration stay private (codegen friend).
  */
 class MAHO_API FResourceSystem final
 	: public IEngineExtension
@@ -478,24 +510,44 @@ public:
 	bool UnloadResource(const std::string& VirtualPath);
 	bool UnloadResource(const FObjectRef& Resource);
 
+	/**
+	 * Resolve if loaded; otherwise Sync Import of the .casset for the package, then Resolve.
+	 * Prefer Import<T> when the caller knows the importer type.
+	 */
 	[[nodiscard]] FObjectRef TryLoad(const FSoftObjectPath& SoftPath);
 	[[nodiscard]] FObjectRef TryLoad(const std::string& SoftPathString);
 
+	/**
+	 * Explicit-template Import: enqueue BulkData for Config.SourcePath, return SoftPath immediately.
+	 * Objects are created on Apply (game thread) when Transfer Succeeded.
+	 */
+	template <typename TImporter>
+	[[nodiscard]] FSoftObjectPath Import(FResourceImportConfig Config);
+
+	/**
+	 * Explicit-template Export: write DestinationPath from SoftPath Source (Resolve → Exporter).
+	 * Returns Source SoftPath on success; null SoftPath on failure.
+	 */
+	template <typename TExporter>
+	[[nodiscard]] FSoftObjectPath Export(FResourceExportConfig Config, const FSoftObjectPath& Source);
+
+	/** Write package to .casset (Editor Save). Prefer Export for typed source-file export. */
 	[[nodiscard]] bool SavePackage(
 		const FObjectRef& Package,
 		const std::string& FilePath = {},
 		bool bPretty = true,
 		bool bSaveDependencies = true);
-	[[nodiscard]] FObjectRef LoadPackage(const std::string& FilePath);
 
-	[[nodiscard]] EResourceLoadState GetLoadState(const FObjectRef& Object) const;
-	[[nodiscard]] bool IsReady(const FObjectRef& Object) const;
-	void Flush(const FObjectRef& Object);
+	/**
+	 * Create + register a UResource from a self-contained .casset objects[] entry (inline cpu).
+	 * Does not Import / read external source files.
+	 */
+	[[nodiscard]] FObjectRef LoadInlineResourceFromJson(UPackage& Package, const FJsonValue& Entry);
+
+	[[nodiscard]] EResourceLoadState GetLoadState(const FSoftObjectPath& SoftPath) const;
+	[[nodiscard]] bool IsReady(const FSoftObjectPath& SoftPath) const;
+	void Flush(const FSoftObjectPath& SoftPath);
 	void FlushAll();
-
-	/** Resolve importer/exporter by config / live object — no type switch in Manager. */
-	[[nodiscard]] FObjectRef KickImport(FResourceImportConfig Config);
-	[[nodiscard]] bool KickExport(FResourceExportConfig Config, const FObjectRef& Resource);
 
 	/** SoftPath / catalog join key (also used by Game→Render proxy registries). */
 	[[nodiscard]] static std::string MakeResourceCatalogKey(const UResource& Resource);
@@ -507,12 +559,6 @@ public:
 
 	[[nodiscard]] FObjectRef FindRegisteredResource(const std::string& CatalogKey) const;
 
-	/**
-	 * True when a typed importer MatchesSourcePath (excludes Raw fallback).
-	 * Used by editor content scan — does not create objects.
-	 */
-	[[nodiscard]] bool CanImportSourcePath(const std::string& SourcePath) const;
-
 	[[nodiscard]] bool IsInitialized() const;
 
 	const char* GetName() const override { return "Resource"; }
@@ -523,53 +569,44 @@ private:
 	friend void RegisterGeneratedResourceTypes(FResourceSystem& Manager, FGCSystem& GC);
 	template <typename TResource>
 	friend class TResourceImporter;
+	friend class FCassetPackageImporter;
 	friend class UResource;
 
 	[[nodiscard]] bool Initialize();
 	void Shutdown();
 	void PrepareForExit();
 
-	void RegisterImporter(std::unique_ptr<IResourceImporter> Importer);
-	void RegisterExporter(std::unique_ptr<IResourceExporter> Exporter);
-	void ClearImportersAndExporters();
-
-	struct FPendingImport
+	struct FPendingIO
 	{
-		std::uint64_t LoadId = 0;
-		FObjectRef Resource;
+		FTransferHandle Handle;
+		FSoftObjectPath SoftPath;
 		FResourceImportConfig Config;
-		IResourceImporter* Importer = nullptr;
+		std::unique_ptr<IResourceImporter> Importer;
 	};
 
 	[[nodiscard]] static std::string NormalizePackageName(std::string Name);
 	[[nodiscard]] static std::string NormalizeSourcePath(std::string Path);
 	[[nodiscard]] static std::string MakeObjectNameFromSource(const std::string& SourcePath);
-
-	[[nodiscard]] IResourceImporter* FindImporter(const FResourceImportConfig& Config) const;
-	[[nodiscard]] IResourceExporter* FindExporter(const FObjectRef& Resource) const;
+	[[nodiscard]] static std::string SoftPathKey(const FSoftObjectPath& SoftPath);
 
 	void UnregisterResourcesInPackage(const std::string& PackageName);
 	/** Drop catalog + Outer for a failed import root (and siblings in the same package). */
 	void AbortFailedImport(UResource& Resource);
 	void CancelPendingImport(UObject* Resource);
-	void ProcessReadyImports();
+	void ProcessReadyIO();
 
-	/** Create pooled TResource + catalog + kick BulkData; Importer retained for ApplyBulkData. */
+	[[nodiscard]] FSoftObjectPath EnqueueImport(
+		std::unique_ptr<IResourceImporter> Importer,
+		FResourceImportConfig Config);
+
+	/** Create TResource + ImportSource (called from TResourceImporter::ApplyBulkData). */
 	template <typename TResource>
-	[[nodiscard]] FObjectRef BeginImport(
-		FResourceImportConfig& Config,
-		IResourceImporter* Importer);
+	[[nodiscard]] bool ApplyTypedBulkData(FResourceImportConfig& Config, FResourceBulkData& Bulk);
 
 	[[nodiscard]] bool HasActiveServer() const;
-	[[nodiscard]] std::uint64_t RequestLoadId(const std::string& SourcePath);
-	void ReleaseLoadId(std::uint64_t LoadId);
-	[[nodiscard]] bool TakeBulkData(std::uint64_t LoadId, FResourceBulkData& OutBulk);
-
-	[[nodiscard]] FObjectRef LoadResourceIntoPackage(
-		const FObjectRef& Package,
-		std::string ObjectName,
-		std::string SourcePath,
-		EResourceType Type);
+	[[nodiscard]] FTransferHandle RequestBulkLoad(const std::string& SourcePath);
+	void ReleaseBulkLoad(FTransferHandle Handle);
+	[[nodiscard]] bool TakeBulkData(FTransferHandle Handle, FResourceBulkData& OutBulk);
 
 	[[nodiscard]] bool SavePackageInternal(
 		const FObjectRef& Package,
@@ -577,21 +614,21 @@ private:
 		bool bPretty,
 		bool bSaveDependencies,
 		std::unordered_set<std::string>& SavingPackageNames);
+	/** Sync disk→JSON hydrate (dependency loads / internal). Prefer Import for SoftPath. */
+	[[nodiscard]] FObjectRef LoadPackage(const std::string& FilePath);
 	[[nodiscard]] FObjectRef LoadPackageInternal(
 		const std::string& FilePath,
+		std::unordered_set<std::string>& LoadingFilePaths);
+	[[nodiscard]] FObjectRef LoadPackageFromDocument(
+		const std::string& FilePath,
+		const FJsonValue& Root,
 		std::unordered_set<std::string>& LoadingFilePaths);
 	[[nodiscard]] FObjectRef ResolveObjectPath(const std::string& PathName) const;
 
 	std::unique_ptr<FResourceServer> Server;
 	std::unordered_map<std::string, FObjectRef> Resources;
-	std::unordered_map<std::uint64_t, FPendingImport> PendingImports;
-	/**
-	 * Strong pins for in-flight imports (LoadId → UResource).
-	 * Survives PendingImports move/erase so GC cannot collect while BulkData/Apply runs.
-	 */
-	std::unordered_map<std::uint64_t, FObjectRef> ImportPins;
-	std::vector<std::unique_ptr<IResourceImporter>> Importers;
-	std::vector<std::unique_ptr<IResourceExporter>> Exporters;
+	/** SoftPath asset-path string → in-flight Import. */
+	std::unordered_map<std::string, FPendingIO> PendingIO;
 	bool bAcceptingNewWork = true;
 };
 

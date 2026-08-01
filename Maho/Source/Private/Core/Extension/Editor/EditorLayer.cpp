@@ -16,6 +16,7 @@
 #include <Core/System/Utf8Path.h>
 #include <Render/UI/ImGuiExtensions.h>
 
+#include "Core/Extension/Resource/ResourceIO.h"
 #include "Core/Extension/Resource/TextureImageCodec.h"
 
 #include <imgui.h>
@@ -248,6 +249,75 @@ namespace SeqGraphIds
 	}
 }
 
+[[nodiscard]] EResourceType InferImportTypeLocal(const std::string& SourcePath)
+{
+	if (TResourceIOTraits<UTexture2D>::MatchesSourcePath(SourcePath))
+	{
+		return EResourceType::Texture2D;
+	}
+	if (TResourceIOTraits<UTexture3D>::MatchesSourcePath(SourcePath))
+	{
+		return EResourceType::Texture3D;
+	}
+	if (TResourceIOTraits<UTextureCube>::MatchesSourcePath(SourcePath))
+	{
+		return EResourceType::TextureCube;
+	}
+	if (TResourceIOTraits<UTextureCubeArray>::MatchesSourcePath(SourcePath))
+	{
+		return EResourceType::TextureCubeArray;
+	}
+	if (TResourceIOTraits<UTexture2DArray>::MatchesSourcePath(SourcePath))
+	{
+		return EResourceType::Texture2DArray;
+	}
+	if (TResourceIOTraits<UPrefab>::MatchesSourcePath(SourcePath))
+	{
+		return EResourceType::Prefab;
+	}
+	return EResourceType::Unknown;
+}
+
+[[nodiscard]] bool CanImportSourcePathLocal(const std::string& SourcePath)
+{
+	return InferImportTypeLocal(SourcePath) != EResourceType::Unknown;
+}
+
+[[nodiscard]] FSoftObjectPath EnqueueTypedImport(
+	FResourceSystem& Resources,
+	FResourceImportConfig Config,
+	EResourceType TypeHint)
+{
+	if (TypeHint == EResourceType::Unknown)
+	{
+		TypeHint = InferImportTypeLocal(Config.SourcePath);
+	}
+	Config.TypeHint = TypeHint;
+
+	switch (TypeHint)
+	{
+	case EResourceType::Texture:
+	case EResourceType::Texture2D:
+		return Resources.Import<TResourceImporter<UTexture2D>>(std::move(Config));
+	case EResourceType::Texture3D:
+		return Resources.Import<TResourceImporter<UTexture3D>>(std::move(Config));
+	case EResourceType::TextureCube:
+		return Resources.Import<TResourceImporter<UTextureCube>>(std::move(Config));
+	case EResourceType::TextureCubeArray:
+		return Resources.Import<TResourceImporter<UTextureCubeArray>>(std::move(Config));
+	case EResourceType::Texture2DArray:
+		return Resources.Import<TResourceImporter<UTexture2DArray>>(std::move(Config));
+	case EResourceType::Prefab:
+		return Resources.Import<TResourceImporter<UPrefab>>(std::move(Config));
+	default:
+		MAHO_CORE_ERROR(
+			"EnqueueTypedImport: unsupported type {} for '{}'",
+			static_cast<int>(TypeHint),
+			Config.SourcePath);
+		return {};
+	}
+}
+
 #if MAHO_EDITOR_DEMO_CONTENT
 struct FContentIcon
 {
@@ -381,7 +451,15 @@ void FEditorLayer::MountEditor()
 
 	EnsureContentMounts();
 	SelectContentFolder("/Game");
-	StartStartupContentImport();
+	// Defer .casset LoadPackage until the editor UI has drawn and settled.
+	bStartupCassetLoadStarted = false;
+	bStartupCassetLoadActive = false;
+	bStartupCassetScanDone = false;
+	EditorUiPresentedFrames = 0;
+	StartupCassetPaths.clear();
+	StartupCassetSoftPaths.clear();
+	StartupCassetNextIndex = 0;
+	StartupCassetLoaded = 0;
 	AppendOutput("Output Log ready. Commands: `Dump` | `<Name>` | `<Name> <Value>` | `help`.");
 	StartAgentChat();
 
@@ -427,13 +505,23 @@ void FEditorLayer::UnmountEditor()
 	{
 		OpenResourceBrowsers.clear();
 	}
+	ResourceBrowserFocusKey.clear();
 
-	StartupImportJobs.clear();
-	bStartupImportActive = false;
-	bStartupContentImportStarted = false;
-	StartupImportKickIndex = 0;
-	StartupImportCompleted = 0;
-	StartupImportCurrentName.clear();
+	ManualImportJobs.clear();
+	bManualImportActive = false;
+	bStartupCassetLoadStarted = false;
+	bStartupCassetLoadActive = false;
+	bStartupCassetScanDone = false;
+	EditorUiPresentedFrames = 0;
+	StartupCassetPaths.clear();
+	StartupCassetSoftPaths.clear();
+	StartupCassetNextIndex = 0;
+	StartupCassetLoaded = 0;
+	ManualImportKickIndex = 0;
+	ManualImportCompleted = 0;
+	ManualImportCurrentName.clear();
+	ImporterDialog = {};
+	bContentBrowserDropRectValid = false;
 
 	if (AgentChat)
 	{
@@ -1063,12 +1151,14 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 	}
 
 	EnsureDefaultWallpaper(App);
-	ProcessWallpaperFileDrops(App);
-	if (!bStartupContentImportStarted)
+	ProcessEditorFileDrops(App);
+	// Wait until the editor UI has drawn and settled for a few frames.
+	if (EditorUiPresentedFrames >= kEditorUiSettleFrames)
 	{
-		StartStartupContentImport();
+		TickStartupCassetLoad();
 	}
-	TickStartupContentImport();
+	TickManualContentImport();
+	DrawImporterDialog();
 	DrawDockSpace(App);
 	DrawMainViewportPanel();
 	{
@@ -1093,6 +1183,11 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 	}
 #endif
 #endif
+	// Count full UI draw passes after mount (dock layout + content browser included).
+	if (bEditorMounted && EditorUiPresentedFrames < kEditorUiSettleFrames)
+	{
+		++EditorUiPresentedFrames;
+	}
 	return true;
 }
 
@@ -1755,7 +1850,7 @@ bool FEditorLayer::TryApplyWallpaperFromPath(FApp& App, const std::string& Path)
 	return true;
 }
 
-void FEditorLayer::ProcessWallpaperFileDrops(FApp& App)
+void FEditorLayer::ProcessEditorFileDrops(FApp& App)
 {
 	FPlatformSystem* Platform = App.GetExtension<FPlatformSystem>();
 	if (!Platform || !Platform->GetWindow())
@@ -1771,21 +1866,41 @@ void FEditorLayer::ProcessWallpaperFileDrops(FApp& App)
 	}
 
 	const ImVec2 Mouse = ImGui::GetIO().MousePos;
-	const bool bOverDrop =
+	const bool bOverWallpaper =
 		bWallpaperDropRectValid
 		&& Mouse.x >= WallpaperDropMinX
 		&& Mouse.y >= WallpaperDropMinY
 		&& Mouse.x <= WallpaperDropMaxX
 		&& Mouse.y <= WallpaperDropMaxY;
-	if (!bOverDrop)
+	const bool bOverContent =
+		bContentBrowserDropRectValid
+		&& Mouse.x >= ContentBrowserDropMinX
+		&& Mouse.y >= ContentBrowserDropMinY
+		&& Mouse.x <= ContentBrowserDropMaxX
+		&& Mouse.y <= ContentBrowserDropMaxY;
+
+	if (bOverWallpaper)
+	{
+		for (const std::string& Path : Dropped)
+		{
+			if (TryApplyWallpaperFromPath(App, Path))
+			{
+				break;
+			}
+		}
+		return;
+	}
+
+	if (!bOverContent || ImporterDialog.bOpen || bManualImportActive)
 	{
 		return;
 	}
 
 	for (const std::string& Path : Dropped)
 	{
-		if (TryApplyWallpaperFromPath(App, Path))
+		if (CanImportSourcePathLocal(Path))
 		{
+			OpenImporterDialog(Path);
 			break;
 		}
 	}
@@ -1793,6 +1908,38 @@ void FEditorLayer::ProcessWallpaperFileDrops(FApp& App)
 
 namespace
 {
+
+[[nodiscard]] const char* ResourceTypeLabel(EResourceType Type)
+{
+	switch (Type)
+	{
+	case EResourceType::Texture:
+	case EResourceType::Texture2D:
+		return "Texture2D";
+	case EResourceType::Texture3D:
+		return "Texture3D";
+	case EResourceType::TextureCube:
+		return "TextureCube";
+	case EResourceType::TextureCubeArray:
+		return "TextureCubeArray";
+	case EResourceType::Texture2DArray:
+		return "Texture2DArray";
+	case EResourceType::Mesh:
+		return "StaticMesh";
+	case EResourceType::Material:
+		return "Material";
+	case EResourceType::Skeleton:
+		return "Skeleton";
+	case EResourceType::Animation:
+		return "Animation";
+	case EResourceType::AnimationGraph:
+		return "AnimationGraph";
+	case EResourceType::Prefab:
+		return "Prefab";
+	default:
+		return "Unknown";
+	}
+}
 
 [[nodiscard]] const char* ResourceTypeGlyph(EResourceType Type)
 {
@@ -1893,7 +2040,7 @@ namespace
 
 bool FEditorLayer::IsContentBrowserInputLocked() const
 {
-	return bContentBrowserRefreshing || bStartupImportActive;
+	return bContentBrowserRefreshing || bManualImportActive;
 }
 
 void FEditorLayer::CollectChildFolders(
@@ -1951,8 +2098,19 @@ void FEditorLayer::DrawContentBrowser()
 	ImGui::SetNextWindowClass(&ContentClass);
 	if (!ImGui::Begin(kWinContent, nullptr, ImGuiWindowFlags_NoCollapse))
 	{
+		bContentBrowserDropRectValid = false;
 		ImGui::End();
 		return;
+	}
+
+	{
+		const ImVec2 Min = ImGui::GetWindowPos();
+		const ImVec2 Size = ImGui::GetWindowSize();
+		ContentBrowserDropMinX = Min.x;
+		ContentBrowserDropMinY = Min.y;
+		ContentBrowserDropMaxX = Min.x + Size.x;
+		ContentBrowserDropMaxY = Min.y + Size.y;
+		bContentBrowserDropRectValid = true;
 	}
 
 	RefreshContentListing();
@@ -2032,7 +2190,7 @@ void FEditorLayer::DrawContentBrowser()
 	if (bLocked)
 	{
 		ImGui::SameLine();
-		ImGui::TextDisabled(bStartupImportActive ? "(importing…)" : "(refreshing…)");
+		ImGui::TextDisabled(bManualImportActive ? "(importing…)" : "(refreshing…)");
 	}
 
 	const ImVec4 DeepBg = ImVec4(14.0f / 255.0f, 14.0f / 255.0f, 16.0f / 255.0f, 1.0f);
@@ -2232,13 +2390,31 @@ void FEditorLayer::DrawContentBrowserTiles()
 		{
 			OpenResourceBrowser(Entry.CatalogKey);
 		}
+		if (ImGui::BeginPopupContextItem("##AssetCtx"))
+		{
+			SelectedVirtualEntry = Entry.CatalogKey;
+			if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK " Save"))
+			{
+				if (SaveContentAsset(Entry.CatalogKey))
+				{
+					AppendOutput("Saved casset: " + Entry.CatalogKey);
+					RefreshContentListing();
+				}
+				else
+				{
+					AppendOutput("Save failed: " + Entry.CatalogKey, spdlog::level::err);
+				}
+			}
+			ImGui::EndPopup();
+		}
 		if (bHovered)
 		{
 			ImGui::SetTooltip(
-				"%s\n%s · %s",
+				"%s\n%s · %s%s",
 				Entry.CatalogKey.c_str(),
 				LoadStateLabel(Entry.LoadState),
-				Entry.DisplayName.c_str());
+				Entry.DisplayName.c_str(),
+				Entry.bDirty ? "\n(unsaved)" : "");
 		}
 
 		ImDrawList* DrawList = ImGui::GetWindowDrawList();
@@ -2259,11 +2435,13 @@ void FEditorLayer::DrawContentBrowserTiles()
 			GlyphColor,
 			Glyph);
 
-		const ImVec2 LabelSize = ImGui::CalcTextSize(Entry.DisplayName.c_str());
+		const std::string Label =
+			Entry.bDirty ? (Entry.DisplayName + " *") : Entry.DisplayName;
+		const ImVec2 LabelSize = ImGui::CalcTextSize(Label.c_str());
 		ImGui::SetCursorPos(ImVec2(
 			StartPos.x + (Tile - LabelSize.x) * 0.5f,
 			StartPos.y + Tile + LabelGap));
-		ImGui::TextUnformatted(Entry.DisplayName.c_str());
+		ImGui::TextUnformatted(Label.c_str());
 		ImGui::SetCursorPos(ImVec2(StartPos.x, StartPos.y + Tile + LabelGap + LabelSize.y));
 		ImGui::Dummy(ImVec2(Tile, 0.0f));
 		ImGui::EndGroup();
@@ -2299,9 +2477,10 @@ void FEditorLayer::DrawContentBrowserTiles()
 		{
 			ImGui::TextDisabled("Mount disk: %s", Disk.c_str());
 		}
-		if (bStartupImportActive)
+		ImGui::TextDisabled("Drag source files (png/fbx/pmx/…) here to import.");
+		if (bManualImportActive)
 		{
-			ImGui::TextDisabled("Startup import still running…");
+			ImGui::TextDisabled("Import still running…");
 		}
 	}
 }
@@ -2353,6 +2532,7 @@ void FEditorLayer::RefreshContentListing()
 				Entry.DisplayName = SoftPath.GetAssetName();
 				Entry.Type = Resource->GetType();
 				Entry.LoadState = Resource->GetLoadState();
+				Entry.bDirty = Resource->IsDirty();
 				AssetEntries.push_back(std::move(Entry));
 			});
 	}
@@ -2367,9 +2547,9 @@ void FEditorLayer::RefreshContentListing()
 	bContentBrowserRefreshing = false;
 }
 
-void FEditorLayer::StartStartupContentImport()
+void FEditorLayer::StartStartupCassetLoad()
 {
-	if (bStartupContentImportStarted)
+	if (bStartupCassetLoadStarted)
 	{
 		return;
 	}
@@ -2377,123 +2557,288 @@ void FEditorLayer::StartStartupContentImport()
 	FResourceSystem* Resources = Detail::GetResourceSystem();
 	if (!Resources || !Resources->IsInitialized())
 	{
-		// Retry on a later Update — Attach may run before Resource Init finishes.
 		return;
 	}
 
-	bStartupContentImportStarted = true;
-	StartupImportJobs.clear();
-	StartupImportKickIndex = 0;
-	StartupImportCompleted = 0;
-	StartupImportCurrentName.clear();
-
-	for (const FPathMount& Mount : FPaths::GetMountPoints())
-	{
-		std::error_code ErrorCode;
-		const std::filesystem::path DiskRoot = PathFromUtf8(Mount.DiskRoot);
-		if (!std::filesystem::is_directory(DiskRoot, ErrorCode) || ErrorCode)
-		{
-			continue;
-		}
-
-		for (const std::filesystem::directory_entry& Entry :
-			std::filesystem::recursive_directory_iterator(DiskRoot, ErrorCode))
-		{
-			if (ErrorCode)
-			{
-				break;
-			}
-			if (!Entry.is_regular_file(ErrorCode) || ErrorCode)
-			{
-				continue;
-			}
-			const std::string FileName = PathToUtf8(Entry.path().filename());
-			if (FileName.empty() || FileName[0] == '.')
-			{
-				continue;
-			}
-
-			const std::string Absolute = PathToUtf8(std::filesystem::absolute(Entry.path(), ErrorCode));
-			if (ErrorCode || Absolute.empty())
-			{
-				continue;
-			}
-			if (!Resources->CanImportSourcePath(Absolute))
-			{
-				continue;
-			}
-
-			std::string VirtualFile = FPaths::ConvertFilenameToVirtualPath(Absolute);
-			if (VirtualFile.empty())
-			{
-				continue;
-			}
-			VirtualFile = FPaths::NormalizePackagePath(std::move(VirtualFile));
-			const std::string PackagePath = FPaths::NormalizePackagePath(StripFileExtension(VirtualFile));
-			const std::string ObjectName = PathToUtf8(PathFromUtf8(VirtualFile).stem());
-			if (PackagePath.empty() || ObjectName.empty())
-			{
-				continue;
-			}
-
-			const std::string CatalogKey = PackagePath + "." + ObjectName;
-			if (Resources->FindRegisteredResource(CatalogKey))
-			{
-				// Keep already-loaded catalog entry; do not reimport or overwrite.
-				continue;
-			}
-
-			FStartupImportJob Job;
-			Job.SourcePath = Absolute;
-			Job.PackagePath = PackagePath;
-			Job.ObjectName = ObjectName;
-			StartupImportJobs.push_back(std::move(Job));
-		}
-	}
-
-	bStartupImportActive = !StartupImportJobs.empty();
-	if (bStartupImportActive)
-	{
-		AppendOutput(
-			"Content import: queued " + std::to_string(StartupImportJobs.size()) + " source file(s).");
-	}
-	else
-	{
-		std::string Roots;
-		for (const FPathMount& Mount : FPaths::GetMountPoints())
-		{
-			if (!Roots.empty())
-			{
-				Roots += " | ";
-			}
-			Roots += Mount.VirtualRoot + " → " + Mount.DiskRoot;
-		}
-		AppendOutput(
-			"Content import: no importable source files under mounts (" + Roots + ").");
-	}
+	bStartupCassetLoadStarted = true;
+	bStartupCassetLoadActive = true;
+	bStartupCassetScanDone = false;
+	StartupCassetPaths.clear();
+	StartupCassetSoftPaths.clear();
+	StartupCassetNextIndex = 0;
+	StartupCassetLoaded = 0;
 }
 
-void FEditorLayer::TickStartupContentImport()
+void FEditorLayer::TickStartupCassetLoad()
 {
-	if (!bStartupImportActive)
+	if (EditorUiPresentedFrames < kEditorUiSettleFrames)
+	{
+		return;
+	}
+	if (!bStartupCassetLoadStarted)
+	{
+		StartStartupCassetLoad();
+	}
+	if (!bStartupCassetLoadActive)
 	{
 		return;
 	}
 
 	FResourceSystem* Resources = Detail::GetResourceSystem();
-	FGCSystem* GC = Detail::GetGCSystem();
-	if (!Resources || !GC)
+	if (!Resources || !Resources->IsInitialized())
 	{
-		bStartupImportActive = false;
+		return;
+	}
+
+	if (!bStartupCassetScanDone)
+	{
+		const std::string Ext = FPaths::GetPackageExtension();
+		for (const FPathMount& Mount : FPaths::GetMountPoints())
+		{
+			std::error_code ErrorCode;
+			const std::filesystem::path DiskRoot = PathFromUtf8(Mount.DiskRoot);
+			if (!std::filesystem::is_directory(DiskRoot, ErrorCode) || ErrorCode)
+			{
+				continue;
+			}
+
+			for (const std::filesystem::directory_entry& Entry :
+				std::filesystem::recursive_directory_iterator(DiskRoot, ErrorCode))
+			{
+				if (ErrorCode)
+				{
+					break;
+				}
+				if (!Entry.is_regular_file(ErrorCode) || ErrorCode)
+				{
+					continue;
+				}
+				const std::string FileName = PathToUtf8(Entry.path().filename());
+				if (FileName.size() < Ext.size())
+				{
+					continue;
+				}
+				const std::string Suffix = FileName.substr(FileName.size() - Ext.size());
+				bool bMatch = true;
+				for (std::size_t I = 0; I < Ext.size(); ++I)
+				{
+					const char A = Suffix[I];
+					const char B = Ext[I];
+					const char La = (A >= 'A' && A <= 'Z') ? static_cast<char>(A - 'A' + 'a') : A;
+					const char Lb = (B >= 'A' && B <= 'Z') ? static_cast<char>(B - 'A' + 'a') : B;
+					if (La != Lb)
+					{
+						bMatch = false;
+						break;
+					}
+				}
+				if (!bMatch)
+				{
+					continue;
+				}
+
+				const std::string Absolute = PathToUtf8(std::filesystem::absolute(Entry.path(), ErrorCode));
+				if (ErrorCode || Absolute.empty())
+				{
+					continue;
+				}
+				StartupCassetPaths.push_back(Absolute);
+			}
+		}
+		bStartupCassetScanDone = true;
+		if (StartupCassetPaths.empty())
+		{
+			bStartupCassetLoadActive = false;
+			RefreshContentListing();
+			AppendOutput("No .casset packages found under Content mounts.");
+			return;
+		}
+
+		StartupCassetSoftPaths.clear();
+		std::size_t Kicked = 0;
+		for (const std::string& Absolute : StartupCassetPaths)
+		{
+			const std::string PackagePath = FPaths::ConvertFilenameToPackageName(Absolute);
+			std::string ObjectName = PathToUtf8(PathFromUtf8(Absolute).stem());
+			if (PackagePath.empty() || ObjectName.empty())
+			{
+				continue;
+			}
+
+			FResourceImportConfig Config;
+			Config.PackagePath = PackagePath;
+			Config.ObjectName = std::move(ObjectName);
+			Config.SourcePath = Absolute;
+			Config.Mode = EResourceIOMode::Async;
+			FSoftObjectPath Soft = Resources->Import<FCassetPackageImporter>(std::move(Config));
+			if (Soft.IsValid())
+			{
+				StartupCassetSoftPaths.push_back(std::move(Soft));
+				++Kicked;
+			}
+		}
+		StartupCassetLoaded = 0;
+		AppendOutput(
+			"Queued " + std::to_string(Kicked) + "/" + std::to_string(StartupCassetPaths.size())
+			+ " .casset package(s) for async load…");
+		return;
+	}
+
+	StartupCassetLoaded = 0;
+	bool bAnyPending = false;
+	for (const FSoftObjectPath& Soft : StartupCassetSoftPaths)
+	{
+		const EResourceLoadState State = Resources->GetLoadState(Soft);
+		if (State == EResourceLoadState::Pending)
+		{
+			bAnyPending = true;
+		}
+		else
+		{
+			++StartupCassetLoaded;
+		}
+	}
+
+	if ((StartupCassetLoaded % 2) == 0 || !bAnyPending)
+	{
+		RefreshContentListing();
+	}
+
+	if (!bAnyPending)
+	{
+		bStartupCassetLoadActive = false;
+		RefreshContentListing();
+		AppendOutput(
+			"Loaded " + std::to_string(StartupCassetLoaded) + "/"
+			+ std::to_string(StartupCassetSoftPaths.size()) + " .casset package(s).");
+	}
+}
+
+void FEditorLayer::OpenImporterDialog(const std::string& SourcePath)
+{
+	if (!CanImportSourcePathLocal(SourcePath))
+	{
+		AppendOutput("Importer: unsupported source '" + SourcePath + "'", spdlog::level::warn);
+		return;
+	}
+
+	const std::string Stem = PathToUtf8(PathFromUtf8(SourcePath).stem());
+	std::string PackagePath = FPaths::NormalizePackagePath(CurrentVirtualPath + "/" + Stem);
+	if (PackagePath.empty())
+	{
+		PackagePath = "/Game/" + Stem;
+	}
+
+	ImporterDialog = {};
+	ImporterDialog.bOpen = true;
+	ImporterDialog.SourcePath = SourcePath;
+	ImporterDialog.PackagePath = PackagePath;
+	ImporterDialog.ObjectName = Stem;
+	ImporterDialog.TypeHint = InferImportTypeLocal(SourcePath);
+	std::snprintf(
+		ImporterDialog.PackagePathEdit,
+		sizeof(ImporterDialog.PackagePathEdit),
+		"%s",
+		PackagePath.c_str());
+	std::snprintf(
+		ImporterDialog.ObjectNameEdit,
+		sizeof(ImporterDialog.ObjectNameEdit),
+		"%s",
+		Stem.c_str());
+}
+
+void FEditorLayer::DrawImporterDialog()
+{
+	if (!ImporterDialog.bOpen)
+	{
+		return;
+	}
+
+	ImGui::OpenPopup("Import Asset");
+	const ImVec2 Center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(Center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (ImGui::BeginPopupModal("Import Asset", &ImporterDialog.bOpen, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::TextUnformatted("Source");
+		ImGui::TextWrapped("%s", ImporterDialog.SourcePath.c_str());
+		ImGui::Text("Inferred type: %s", ResourceTypeLabel(ImporterDialog.TypeHint));
+		ImGui::Separator();
+		ImGui::InputText("Package path", ImporterDialog.PackagePathEdit, sizeof(ImporterDialog.PackagePathEdit));
+		ImGui::InputText("Object name", ImporterDialog.ObjectNameEdit, sizeof(ImporterDialog.ObjectNameEdit));
+		ImGui::TextDisabled("Writes to memory until you Save a .casset from the Content Browser.");
+
+		if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
+		{
+			ConfirmImporterDialog();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+		{
+			ImporterDialog.bOpen = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+	if (!ImporterDialog.bOpen)
+	{
+		ImporterDialog = {};
+	}
+}
+
+void FEditorLayer::ConfirmImporterDialog()
+{
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	if (!Resources)
+	{
+		ImporterDialog.bOpen = false;
+		return;
+	}
+
+	ImporterDialog.PackagePath = FPaths::NormalizePackagePath(ImporterDialog.PackagePathEdit);
+	ImporterDialog.ObjectName = ImporterDialog.ObjectNameEdit;
+	ImporterDialog.bOpen = false;
+
+	if (ImporterDialog.PackagePath.empty() || ImporterDialog.ObjectName.empty())
+	{
+		AppendOutput("Importer: package path / object name required", spdlog::level::err);
+		return;
+	}
+
+	FManualImportJob Job;
+	Job.SourcePath = ImporterDialog.SourcePath;
+	Job.PackagePath = ImporterDialog.PackagePath;
+	Job.ObjectName = ImporterDialog.ObjectName;
+	Job.TypeHint = ImporterDialog.TypeHint;
+	ManualImportJobs.clear();
+	ManualImportJobs.push_back(std::move(Job));
+	ManualImportKickIndex = 0;
+	ManualImportCompleted = 0;
+	ManualImportCurrentName.clear();
+	bManualImportActive = true;
+	AppendOutput("Import queued: " + ImporterDialog.SourcePath);
+}
+
+void FEditorLayer::TickManualContentImport()
+{
+	if (!bManualImportActive)
+	{
+		return;
+	}
+
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	if (!Resources)
+	{
+		bManualImportActive = false;
 		return;
 	}
 
 	constexpr std::size_t KicksPerFrame = 4;
 	std::size_t KickedThisFrame = 0;
-	while (StartupImportKickIndex < StartupImportJobs.size() && KickedThisFrame < KicksPerFrame)
+	while (ManualImportKickIndex < ManualImportJobs.size() && KickedThisFrame < KicksPerFrame)
 	{
-		FStartupImportJob& Job = StartupImportJobs[StartupImportKickIndex];
-		++StartupImportKickIndex;
+		FManualImportJob& Job = ManualImportJobs[ManualImportKickIndex];
+		++ManualImportKickIndex;
 		if (Job.bKicked)
 		{
 			continue;
@@ -2502,87 +2847,73 @@ void FEditorLayer::TickStartupContentImport()
 		const std::string CatalogKey = Job.PackagePath + "." + Job.ObjectName;
 		if (Resources->FindRegisteredResource(CatalogKey))
 		{
-			Job.bKicked = true;
-			continue;
-		}
-
-		FObjectRef PackageRef = GC->FindPackage(Job.PackagePath);
-		if (!PackageRef)
-		{
-			PackageRef = GC->NewObject<UPackage>(Job.PackagePath, EPackageFlags::Persistent);
-		}
-		if (!PackageRef)
-		{
+			AppendOutput("Import skipped — already registered: " + CatalogKey, spdlog::level::warn);
 			Job.bKicked = true;
 			continue;
 		}
 
 		FResourceImportConfig Config;
-		Config.Package = PackageRef;
+		Config.PackagePath = Job.PackagePath;
 		Config.ObjectName = Job.ObjectName;
 		Config.SourcePath = Job.SourcePath;
-		Config.TypeHint = EResourceType::Unknown;
-		Job.Resource = Resources->KickImport(std::move(Config));
+		Config.TypeHint = Job.TypeHint;
+		Config.Mode = EResourceIOMode::Async;
+		Job.SoftPath = EnqueueTypedImport(*Resources, std::move(Config), Job.TypeHint);
 		Job.bKicked = true;
-		StartupImportCurrentName = PathToUtf8(PathFromUtf8(Job.SourcePath).filename());
+		ManualImportCurrentName = PathToUtf8(PathFromUtf8(Job.SourcePath).filename());
 		++KickedThisFrame;
 	}
 
-	StartupImportCompleted = 0;
+	ManualImportCompleted = 0;
 	bool bAnyPending = false;
-	for (FStartupImportJob& Job : StartupImportJobs)
+	for (FManualImportJob& Job : ManualImportJobs)
 	{
 		if (!Job.bKicked)
 		{
 			bAnyPending = true;
 			continue;
 		}
-		if (!Job.Resource.IsValid())
+		if (!Job.SoftPath.IsValid())
 		{
-			Job.Resource.Reset();
-			++StartupImportCompleted;
+			++ManualImportCompleted;
 			continue;
 		}
-		const EResourceLoadState State = Resources->GetLoadState(Job.Resource);
+		const EResourceLoadState State = Resources->GetLoadState(Job.SoftPath);
 		if (State == EResourceLoadState::Pending)
 		{
 			bAnyPending = true;
-			if (StartupImportCurrentName.empty())
+			if (ManualImportCurrentName.empty())
 			{
-				StartupImportCurrentName = PathToUtf8(PathFromUtf8(Job.SourcePath).filename());
+				ManualImportCurrentName = PathToUtf8(PathFromUtf8(Job.SourcePath).filename());
 			}
 		}
 		else
 		{
-			++StartupImportCompleted;
-			// Catalog (Ready) or AbortFailedImport (Failed) owns lifetime; drop editor pin.
-			Job.Resource.Reset();
+			++ManualImportCompleted;
 		}
 	}
 
-	if (StartupImportKickIndex < StartupImportJobs.size())
+	if (ManualImportKickIndex < ManualImportJobs.size())
 	{
 		bAnyPending = true;
 	}
 
 	if (!bAnyPending)
 	{
-		bStartupImportActive = false;
-		StartupImportCurrentName.clear();
-		for (FStartupImportJob& Job : StartupImportJobs)
-		{
-			Job.Resource.Reset();
-		}
+		bManualImportActive = false;
+		ManualImportCurrentName.clear();
 		RefreshContentListing();
 		AppendOutput(
-			"Content import finished: " + std::to_string(StartupImportCompleted) + "/"
-			+ std::to_string(StartupImportJobs.size()));
+			"Import finished: " + std::to_string(ManualImportCompleted) + "/"
+			+ std::to_string(ManualImportJobs.size()));
 	}
 }
 
 void FEditorLayer::DrawContentImportProgressOverlay()
 {
-	if (!bStartupImportActive || StartupImportJobs.empty())
+	const bool bShowImport = bManualImportActive && !ManualImportJobs.empty();
+	const bool bShowCasset = bStartupCassetLoadActive && bStartupCassetScanDone && !StartupCassetSoftPaths.empty();
+	if (!bShowImport && !bShowCasset)
 	{
 		return;
 	}
@@ -2608,18 +2939,69 @@ void FEditorLayer::DrawContentImportProgressOverlay()
 		| ImGuiWindowFlags_NoNav;
 	if (ImGui::Begin("##ContentImportProgress", nullptr, Flags))
 	{
-		const float Total = static_cast<float>(StartupImportJobs.size());
-		const float Done = static_cast<float>(StartupImportCompleted);
-		const float Fraction = Total > 0.0f ? (Done / Total) : 0.0f;
-		ImGui::TextUnformatted("Importing content…");
-		ImGui::ProgressBar(Fraction, ImVec2(260.0f, 0.0f));
-		ImGui::Text("%zu / %zu", StartupImportCompleted, StartupImportJobs.size());
-		if (!StartupImportCurrentName.empty())
+		if (bShowCasset)
 		{
-			ImGui::TextDisabled("%s", StartupImportCurrentName.c_str());
+			const float Total = static_cast<float>(StartupCassetSoftPaths.size());
+			const float Done = static_cast<float>(StartupCassetLoaded);
+			const float Fraction = Total > 0.0f ? (Done / Total) : 0.0f;
+			ImGui::TextUnformatted("Loading .casset…");
+			ImGui::ProgressBar(Fraction, ImVec2(260.0f, 0.0f));
+			ImGui::Text(
+				"%zu / %zu",
+				StartupCassetLoaded,
+				StartupCassetSoftPaths.size());
+		}
+		if (bShowImport)
+		{
+			const float Total = static_cast<float>(ManualImportJobs.size());
+			const float Done = static_cast<float>(ManualImportCompleted);
+			const float Fraction = Total > 0.0f ? (Done / Total) : 0.0f;
+			ImGui::TextUnformatted("Importing…");
+			ImGui::ProgressBar(Fraction, ImVec2(260.0f, 0.0f));
+			ImGui::Text("%zu / %zu", ManualImportCompleted, ManualImportJobs.size());
+			if (!ManualImportCurrentName.empty())
+			{
+				ImGui::TextDisabled("%s", ManualImportCurrentName.c_str());
+			}
 		}
 	}
 	ImGui::End();
+}
+
+bool FEditorLayer::SaveContentAsset(const std::string& CatalogKey)
+{
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	if (!Resources)
+	{
+		return false;
+	}
+
+	FObjectRef Ref = Resources->FindRegisteredResource(CatalogKey);
+	UResource* Resource = Ref.Cast<UResource>();
+	if (!Resource)
+	{
+		return false;
+	}
+
+	FObjectRef PackageRef = Resource->GetPackage();
+	UPackage* Package = PackageRef.Cast<UPackage>();
+	if (!Package)
+	{
+		return false;
+	}
+
+	std::string FilePath = Package->GetFilePath();
+	if (FilePath.empty())
+	{
+		FilePath = FPaths::ConvertPackageNameToFilename(Package->GetName());
+	}
+	if (FilePath.empty())
+	{
+		AppendOutput("Save: no disk path for package " + Package->GetName(), spdlog::level::err);
+		return false;
+	}
+
+	return Resources->SavePackage(PackageRef, FilePath, true, true);
 }
 
 void FEditorLayer::OpenResourceBrowser(const std::string& CatalogKey)
@@ -2629,6 +3011,7 @@ void FEditorLayer::OpenResourceBrowser(const std::string& CatalogKey)
 		if (Window.CatalogKey == CatalogKey)
 		{
 			Window.bOpen = true;
+			ResourceBrowserFocusKey = CatalogKey;
 			return;
 		}
 	}
@@ -2641,6 +3024,7 @@ void FEditorLayer::OpenResourceBrowser(const std::string& CatalogKey)
 	Window.Type = Resource ? Resource->GetType() : EResourceType::Unknown;
 	Window.bOpen = true;
 	OpenResourceBrowsers.push_back(std::move(Window));
+	ResourceBrowserFocusKey = CatalogKey;
 }
 
 void FEditorLayer::ReleaseResourceBrowserPreview(FResourceBrowserWindow& Window, FApp& App)
@@ -2662,58 +3046,119 @@ void FEditorLayer::ReleaseResourceBrowserPreview(FResourceBrowserWindow& Window,
 
 void FEditorLayer::DrawOpenResourceBrowsers(FApp& App)
 {
-	FResourceSystem* Resources = Detail::GetResourceSystem();
-	for (std::size_t Index = 0; Index < OpenResourceBrowsers.size();)
+	if (OpenResourceBrowsers.empty())
 	{
-		FResourceBrowserWindow& Window = OpenResourceBrowsers[Index];
-		if (!Window.bOpen)
+		return;
+	}
+
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+
+	ImGui::SetNextWindowSize(ImVec2(480.0f, 420.0f), ImGuiCond_FirstUseEver);
+	bool bHostOpen = true;
+	if (!ImGui::Begin("Asset Inspector###ResourceBrowserHost", &bHostOpen))
+	{
+		ImGui::End();
+		if (!bHostOpen)
+		{
+			for (FResourceBrowserWindow& Window : OpenResourceBrowsers)
+			{
+				ReleaseResourceBrowserPreview(Window, App);
+			}
+			OpenResourceBrowsers.clear();
+			ResourceBrowserFocusKey.clear();
+		}
+		return;
+	}
+
+	if (!bHostOpen)
+	{
+		ImGui::End();
+		for (FResourceBrowserWindow& Window : OpenResourceBrowsers)
 		{
 			ReleaseResourceBrowserPreview(Window, App);
-			OpenResourceBrowsers.erase(OpenResourceBrowsers.begin() + static_cast<std::ptrdiff_t>(Index));
-			continue;
 		}
+		OpenResourceBrowsers.clear();
+		ResourceBrowserFocusKey.clear();
+		return;
+	}
 
-		FSoftObjectPath SoftPath;
-		(void)SoftPath.TrySetPath(Window.CatalogKey);
-		const std::string Title =
-			std::string(ResourceTypeGlyph(Window.Type)) + "  "
-			+ (SoftPath.IsValid() ? SoftPath.GetAssetName() : Window.CatalogKey)
-			+ "###ResourceBrowser_" + Window.CatalogKey;
-
-		ImGui::SetNextWindowSize(ImVec2(420.0f, 360.0f), ImGuiCond_FirstUseEver);
-		if (ImGui::Begin(Title.c_str(), &Window.bOpen))
+	const ImGuiTabBarFlags TabBarFlags =
+		ImGuiTabBarFlags_Reorderable
+		| ImGuiTabBarFlags_FittingPolicyScroll
+		| ImGuiTabBarFlags_AutoSelectNewTabs;
+	if (ImGui::BeginTabBar("##ResourceBrowserTabs", TabBarFlags))
+	{
+		for (std::size_t Index = 0; Index < OpenResourceBrowsers.size();)
 		{
-			UResource* Resource =
-				Resources ? Resources->FindRegisteredResource(Window.CatalogKey).Cast<UResource>() : nullptr;
-			if (!Resource)
+			FResourceBrowserWindow& Window = OpenResourceBrowsers[Index];
+			if (!Window.bOpen)
 			{
-				ImGui::TextDisabled("Resource no longer in catalog.");
+				ReleaseResourceBrowserPreview(Window, App);
+				OpenResourceBrowsers.erase(OpenResourceBrowsers.begin() + static_cast<std::ptrdiff_t>(Index));
+				continue;
 			}
-			else
+
+			FSoftObjectPath SoftPath;
+			(void)SoftPath.TrySetPath(Window.CatalogKey);
+			const std::string TabLabel =
+				std::string(ResourceTypeGlyph(Window.Type)) + "  "
+				+ (SoftPath.IsValid() ? SoftPath.GetAssetName() : Window.CatalogKey)
+				+ "###RB_" + Window.CatalogKey;
+
+			ImGuiTabItemFlags TabFlags = ImGuiTabItemFlags_None;
+			if (!ResourceBrowserFocusKey.empty() && ResourceBrowserFocusKey == Window.CatalogKey)
 			{
-				ImGui::TextUnformatted(Window.CatalogKey.c_str());
-				ImGui::Text("Type: %d   State: %s", static_cast<int>(Resource->GetType()), LoadStateLabel(Resource->GetLoadState()));
-				ImGui::TextWrapped("Source: %s", Resource->GetSourcePath().c_str());
-				ImGui::Separator();
-				if (Resource->GetLoadState() != EResourceLoadState::Ready)
+				TabFlags |= ImGuiTabItemFlags_SetSelected;
+				ResourceBrowserFocusKey.clear();
+			}
+
+			bool bTabOpen = true;
+			if (ImGui::BeginTabItem(TabLabel.c_str(), &bTabOpen, TabFlags))
+			{
+				UResource* Resource =
+					Resources ? Resources->FindRegisteredResource(Window.CatalogKey).Cast<UResource>() : nullptr;
+				if (!Resource)
 				{
-					ImGui::TextDisabled("Waiting until Ready…");
+					ImGui::TextDisabled("Resource no longer in catalog.");
 				}
 				else
 				{
-					DrawResourceBrowserBody(Window, *Resource, App);
+					ImGui::TextUnformatted(Window.CatalogKey.c_str());
+					ImGui::Text(
+						"Type: %d   State: %s",
+						static_cast<int>(Resource->GetType()),
+						LoadStateLabel(Resource->GetLoadState()));
+					ImGui::TextWrapped("Source: %s", Resource->GetSourcePath().c_str());
+					ImGui::Separator();
+					if (Resource->GetLoadState() != EResourceLoadState::Ready)
+					{
+						ImGui::TextDisabled("Waiting until Ready…");
+					}
+					else
+					{
+						DrawResourceBrowserBody(Window, *Resource, App);
+					}
 				}
+				ImGui::EndTabItem();
 			}
-		}
-		ImGui::End();
 
-		if (!Window.bOpen)
-		{
-			ReleaseResourceBrowserPreview(Window, App);
-			OpenResourceBrowsers.erase(OpenResourceBrowsers.begin() + static_cast<std::ptrdiff_t>(Index));
-			continue;
+			if (!bTabOpen)
+			{
+				Window.bOpen = false;
+				ReleaseResourceBrowserPreview(Window, App);
+				OpenResourceBrowsers.erase(OpenResourceBrowsers.begin() + static_cast<std::ptrdiff_t>(Index));
+				continue;
+			}
+			++Index;
 		}
-		++Index;
+		ImGui::EndTabBar();
+	}
+
+	ImGui::End();
+
+	if (OpenResourceBrowsers.empty())
+	{
+		ResourceBrowserFocusKey.clear();
 	}
 }
 
@@ -2803,10 +3248,17 @@ void FEditorLayer::DrawResourceBrowserBody(FResourceBrowserWindow& Window, UReso
 			ImGui::TextWrapped("BaseColor: %s", Material->GetBaseColorTexture().ToString().c_str());
 			ImGui::TextWrapped("Normal: %s", Material->GetNormalTexture().ToString().c_str());
 			ImGui::TextWrapped("MR: %s", Material->GetMetallicRoughnessTexture().ToString().c_str());
+			ImGui::TextWrapped("Occlusion: %s", Material->GetOcclusionTexture().ToString().c_str());
+			ImGui::TextWrapped("Emissive: %s", Material->GetEmissiveTexture().ToString().c_str());
 			ImGui::Text(
 				"Metallic=%.2f Roughness=%.2f",
 				Material->MetallicFactor,
 				Material->RoughnessFactor);
+			ImGui::Text(
+				"EmissiveFactor=%.2f %.2f %.2f",
+				Material->EmissiveFactor[0],
+				Material->EmissiveFactor[1],
+				Material->EmissiveFactor[2]);
 		}
 		return;
 	}

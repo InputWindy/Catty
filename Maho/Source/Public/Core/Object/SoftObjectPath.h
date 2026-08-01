@@ -82,14 +82,14 @@ public:
 	[[nodiscard]] std::string ToStringWithoutClass() const;
 
 	/**
-	 * Lookup among already-loaded packages only (no LoadPackage).
+	 * Resolve among already-loaded packages only (no Import).
 	 * No Resource module / miss → empty Ref.
 	 */
 	[[nodiscard]] FObjectRef Resolve() const;
 
 	/**
-	 * Resolve; if package missing, LoadPackage via FPaths then Resolve.
-	 * Needs a live GApp Resource module.
+	 * Resolve; if missing, Sync Import<.casset> for the package then Resolve.
+	 * Prefer FResourceSystem::Import<T> when the importer type is known.
 	 */
 	[[nodiscard]] FObjectRef TryLoad() const;
 

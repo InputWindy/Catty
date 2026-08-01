@@ -39,7 +39,7 @@ bool FPaths::bInitialized = false;
 namespace
 {
 
-constexpr const char* GPackageExtension = ".pkg.json";
+constexpr const char* GPackageExtension = ".casset";
 
 [[nodiscard]] bool LooksLikeProjectRoot(const fs::path& Candidate)
 {

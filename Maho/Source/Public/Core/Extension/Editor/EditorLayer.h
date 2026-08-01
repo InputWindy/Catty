@@ -61,15 +61,28 @@ private:
 		std::string DisplayName;
 		EResourceType Type = EResourceType::Unknown;
 		EResourceLoadState LoadState = EResourceLoadState::Invalid;
+		bool bDirty = false;
 	};
 
-	struct FStartupImportJob
+	struct FManualImportJob
 	{
 		std::string SourcePath;
 		std::string PackagePath;
 		std::string ObjectName;
-		FObjectRef Resource;
+		EResourceType TypeHint = EResourceType::Unknown;
+		FSoftObjectPath SoftPath;
 		bool bKicked = false;
+	};
+
+	struct FImporterDialogState
+	{
+		bool bOpen = false;
+		std::string SourcePath;
+		std::string PackagePath;
+		std::string ObjectName;
+		EResourceType TypeHint = EResourceType::Unknown;
+		char PackagePathEdit[512] = {};
+		char ObjectNameEdit[256] = {};
 	};
 
 	struct FResourceBrowserWindow
@@ -80,6 +93,9 @@ private:
 		FImGuiTextureHandle PreviewTexture;
 		std::uint64_t PreviewGeneration = 0;
 	};
+
+	/** When set, next DrawOpenResourceBrowsers selects this catalog tab. */
+	std::string ResourceBrowserFocusKey;
 
 	void MountEditor();
 	void UnmountEditor();
@@ -107,7 +123,7 @@ private:
 	void EnsureSequenceGraphNodeLayout();
 	void EnsureSequenceGraphNodeLayout(const std::vector<IEngineExtension*>& Extensions);
 
-	void ProcessWallpaperFileDrops(FApp& App);
+	void ProcessEditorFileDrops(FApp& App);
 	[[nodiscard]] bool TryApplyWallpaperFromPath(FApp& App, const std::string& Path);
 	void ClearWallpaper(FApp& App);
 	void EnsureDefaultWallpaper(FApp& App);
@@ -120,9 +136,14 @@ private:
 	[[nodiscard]] bool IsContentBrowserInputLocked() const;
 	void CollectChildFolders(const std::string& ParentVirtualPath, std::vector<std::string>& OutFolders) const;
 
-	void StartStartupContentImport();
-	void TickStartupContentImport();
+	void StartStartupCassetLoad();
+	void TickStartupCassetLoad();
+	void OpenImporterDialog(const std::string& SourcePath);
+	void DrawImporterDialog();
+	void ConfirmImporterDialog();
+	void TickManualContentImport();
 	void DrawContentImportProgressOverlay();
+	[[nodiscard]] bool SaveContentAsset(const std::string& CatalogKey);
 	void OpenResourceBrowser(const std::string& CatalogKey);
 	void DrawOpenResourceBrowsers(FApp& App);
 	void DrawResourceBrowserBody(FResourceBrowserWindow& Window, UResource& Resource, FApp& App);
@@ -167,12 +188,28 @@ private:
 	std::vector<FContentAssetEntry> AssetEntries;
 	bool bContentBrowserRefreshing = false;
 
-	bool bStartupContentImportStarted = false;
-	bool bStartupImportActive = false;
-	std::vector<FStartupImportJob> StartupImportJobs;
-	std::size_t StartupImportKickIndex = 0;
-	std::size_t StartupImportCompleted = 0;
-	std::string StartupImportCurrentName;
+	bool bStartupCassetLoadStarted = false;
+	bool bStartupCassetLoadActive = false;
+	bool bStartupCassetScanDone = false;
+	/** Frames of full editor UI drawn since mount; casset load waits until this reaches kEditorUiSettleFrames. */
+	std::uint32_t EditorUiPresentedFrames = 0;
+	static constexpr std::uint32_t kEditorUiSettleFrames = 2;
+	std::vector<std::string> StartupCassetPaths;
+	std::vector<FSoftObjectPath> StartupCassetSoftPaths;
+	std::size_t StartupCassetNextIndex = 0;
+	std::size_t StartupCassetLoaded = 0;
+	bool bManualImportActive = false;
+	std::vector<FManualImportJob> ManualImportJobs;
+	std::size_t ManualImportKickIndex = 0;
+	std::size_t ManualImportCompleted = 0;
+	std::string ManualImportCurrentName;
+	FImporterDialogState ImporterDialog;
+
+	float ContentBrowserDropMinX = 0.0f;
+	float ContentBrowserDropMinY = 0.0f;
+	float ContentBrowserDropMaxX = 0.0f;
+	float ContentBrowserDropMaxY = 0.0f;
+	bool bContentBrowserDropRectValid = false;
 
 	std::vector<FResourceBrowserWindow> OpenResourceBrowsers;
 

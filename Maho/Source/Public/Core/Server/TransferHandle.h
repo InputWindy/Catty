@@ -2,8 +2,13 @@
 
 /**
  * Lightweight transfer ticket for Client → ThreadedServer blob transport.
- * Handle exposes status only (InProgress / Failed / Succeeded).
- * CatalogKey / SoftPath / Proxy stay on the client or in server registries.
+ *
+ * Transfer paradigm (three layers):
+ *   FTransferHandle  — transport status only (InProgress / Failed / Succeeded); poll, no callbacks
+ *   FSoftObjectPath  — asset identity / Import-Export handle (ResourceManager ↔ GC)
+ *   FObjectRef       — live GC handle; not an async ticket
+ *
+ * CatalogKey / SoftPath / Proxy stay on the client or in server registries — never on this ticket.
  */
 
 #include <Core/Export.h>

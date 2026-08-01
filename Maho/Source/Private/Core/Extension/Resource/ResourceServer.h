@@ -1,10 +1,16 @@
 ﻿#pragma once
 
+/**
+ * Private async BulkData loader for FResourceSystem.
+ * Uses FTransferHandle for status (InProgress / Succeeded / Failed).
+ * SoftPath / CatalogKey stay on FResourceSystem — never stored here.
+ */
+
 #include <Core/Extension/Resource/Resource.h>
 #include <Core/Server/ThreadedServer.h>
+#include <Core/Server/TransferHandle.h>
 
 #include <condition_variable>
-#include <cstdint>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -13,22 +19,6 @@
 namespace Maho
 {
 
-/** Opaque BulkData job handle — private to FResourceServer / FResourceSystem. */
-struct FResourceId
-{
-	std::uint64_t Value = 0;
-
-	[[nodiscard]] bool IsValid() const { return Value != 0; }
-
-	friend bool operator==(FResourceId A, FResourceId B) { return A.Value == B.Value; }
-	friend bool operator!=(FResourceId A, FResourceId B) { return A.Value != B.Value; }
-};
-
-/**
- * Private async BulkData loader for FResourceSystem.
- * Issues FResourceId handles; Manager alone sees this type.
- * Does not create UResource / touch Package / catalog / Importer.
- */
 class FResourceServer : public FThreadedServer
 {
 public:
@@ -38,23 +28,20 @@ public:
 	FResourceServer(const FResourceServer&) = delete;
 	FResourceServer& operator=(const FResourceServer&) = delete;
 
-	/** Begin async file → BulkData. Invalid id on enqueue failure. */
-	[[nodiscard]] FResourceId RequestLoad(std::string Path);
-
-	[[nodiscard]] EResourceLoadState GetLoadState(FResourceId Id) const;
-	[[nodiscard]] bool IsReady(FResourceId Id) const;
+	/** Begin async file → BulkData. Invalid handle on enqueue failure. */
+	[[nodiscard]] FTransferHandle RequestLoad(std::string Path);
 
 	/**
-	 * When Ready, move BulkData out of the registry (one-shot).
-	 * Returns false if not Ready or already taken.
+	 * When Succeeded, move BulkData out of the registry (one-shot).
+	 * Returns false if not Succeeded or already taken.
 	 */
-	[[nodiscard]] bool TryTakeBulkData(FResourceId Id, FResourceBulkData& OutBulk);
+	[[nodiscard]] bool TryTakeBulkData(FTransferHandle Handle, FResourceBulkData& OutBulk);
 
-	/** Block until Id is Ready, Failed, released, or invalid. */
-	void Flush(FResourceId Id);
+	/** Block until Handle is Succeeded, Failed, released, or invalid. */
+	void Flush(FTransferHandle Handle);
 
 	/** Drop a handle (and any remaining BulkData). */
-	void Release(FResourceId Id);
+	void Release(FTransferHandle Handle);
 
 	[[nodiscard]] bool HasPendingLoads() const;
 
@@ -69,17 +56,17 @@ private:
 	struct FResourceRecord
 	{
 		std::string Path;
-		EResourceLoadState State = EResourceLoadState::Invalid;
+		FTransferHandle Handle;
 		std::vector<std::uint8_t> BulkBytes;
 		bool bBulkTaken = false;
+		bool bComplete = false;
 	};
 
-	void CompleteLoad(FResourceId Id, bool bSuccess, std::vector<std::uint8_t> BulkBytes);
+	void CompleteLoad(FTransferHandle Handle, bool bSuccess, std::vector<std::uint8_t> BulkBytes);
 
 	mutable std::mutex RegistryMutex;
 	std::condition_variable LoadCv;
 	std::unordered_map<std::uint64_t, FResourceRecord> Registry;
-	std::uint64_t NextResourceValue = 1;
 };
 
 } // namespace Maho

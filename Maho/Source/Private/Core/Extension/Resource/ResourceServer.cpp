@@ -23,12 +23,18 @@ void FResourceServer::OnShutdown()
 {
 	FThreadedServer::Flush();
 	std::lock_guard<std::mutex> Lock(RegistryMutex);
+	for (auto& Pair : Registry)
+	{
+		if (Pair.second.Handle.IsValid() && Pair.second.Handle.IsInProgress())
+		{
+			SetTransferHandleState(Pair.second.Handle, ETransferState::Failed);
+		}
+	}
 	Registry.clear();
-	NextResourceValue = 1;
 	MAHO_CORE_INFO("ResourceServer shut down");
 }
 
-FResourceId FResourceServer::RequestLoad(std::string Path)
+FTransferHandle FResourceServer::RequestLoad(std::string Path)
 {
 	if (Path.empty())
 	{
@@ -42,17 +48,21 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 		return {};
 	}
 
-	FResourceId Id;
+	FTransferHandle Handle = AllocateTransferHandle(ETransferState::InProgress);
+	if (!Handle.IsValid())
 	{
-		std::lock_guard<std::mutex> Lock(RegistryMutex);
-		Id.Value = NextResourceValue++;
-		FResourceRecord Record;
-		Record.Path = Path;
-		Record.State = EResourceLoadState::Pending;
-		Registry.emplace(Id.Value, std::move(Record));
+		return {};
 	}
 
-	Enqueue([this, Id, Path = std::move(Path)](FThreadedServer& /*Server*/)
+	{
+		std::lock_guard<std::mutex> Lock(RegistryMutex);
+		FResourceRecord Record;
+		Record.Path = Path;
+		Record.Handle = Handle;
+		Registry.emplace(Handle.Id, std::move(Record));
+	}
+
+	Enqueue([this, Handle, Path = std::move(Path)](FThreadedServer& /*Server*/)
 	{
 		std::vector<std::uint8_t> Bytes;
 		bool bSuccess = false;
@@ -64,7 +74,7 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 		{
 			MAHO_CORE_ERROR(
 				"Resource BulkData failed: id={} path=\"{}\" (not a regular file)",
-				Id.Value,
+				Handle.Id,
 				Path);
 		}
 		else
@@ -74,7 +84,7 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 			{
 				MAHO_CORE_ERROR(
 					"Resource BulkData failed: id={} path=\"{}\" (open failed)",
-					Id.Value,
+					Handle.Id,
 					Path);
 			}
 			else
@@ -84,7 +94,7 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 				{
 					MAHO_CORE_ERROR(
 						"Resource BulkData failed: id={} path=\"{}\" (size failed)",
-						Id.Value,
+						Handle.Id,
 						Path);
 				}
 				else
@@ -96,7 +106,7 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 						Bytes.clear();
 						MAHO_CORE_ERROR(
 							"Resource BulkData failed: id={} path=\"{}\" (read failed)",
-							Id.Value,
+							Handle.Id,
 							Path);
 					}
 					else
@@ -104,7 +114,7 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 						bSuccess = true;
 						MAHO_CORE_INFO(
 							"Resource BulkData ready: id={} path=\"{}\" bytes={}",
-							Id.Value,
+							Handle.Id,
 							Path,
 							Bytes.size());
 					}
@@ -112,67 +122,44 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 			}
 		}
 
-		CompleteLoad(Id, bSuccess, std::move(Bytes));
+		CompleteLoad(Handle, bSuccess, std::move(Bytes));
 	});
 
-	return Id;
+	return Handle;
 }
 
 void FResourceServer::CompleteLoad(
-	FResourceId Id,
+	FTransferHandle Handle,
 	bool bSuccess,
 	std::vector<std::uint8_t> BulkBytes)
 {
 	{
 		std::lock_guard<std::mutex> Lock(RegistryMutex);
-		const auto It = Registry.find(Id.Value);
+		const auto It = Registry.find(Handle.Id);
 		if (It == Registry.end())
 		{
 			return;
 		}
-		It->second.State = bSuccess ? EResourceLoadState::Ready : EResourceLoadState::Failed;
 		It->second.BulkBytes = std::move(BulkBytes);
 		It->second.bBulkTaken = false;
+		It->second.bComplete = true;
+		SetTransferHandleState(
+			Handle,
+			bSuccess ? ETransferState::Succeeded : ETransferState::Failed);
 	}
 	LoadCv.notify_all();
 }
 
-EResourceLoadState FResourceServer::GetLoadState(FResourceId Id) const
+bool FResourceServer::TryTakeBulkData(FTransferHandle Handle, FResourceBulkData& OutBulk)
 {
-	if (!Id.IsValid())
-	{
-		return EResourceLoadState::Invalid;
-	}
-
-	std::lock_guard<std::mutex> Lock(RegistryMutex);
-	const auto It = Registry.find(Id.Value);
-	if (It == Registry.end())
-	{
-		return EResourceLoadState::Invalid;
-	}
-	return It->second.State;
-}
-
-bool FResourceServer::IsReady(FResourceId Id) const
-{
-	return GetLoadState(Id) == EResourceLoadState::Ready;
-}
-
-bool FResourceServer::TryTakeBulkData(FResourceId Id, FResourceBulkData& OutBulk)
-{
-	if (!Id.IsValid())
+	if (!Handle.IsValid() || !Handle.HasSucceeded())
 	{
 		return false;
 	}
 
 	std::lock_guard<std::mutex> Lock(RegistryMutex);
-	const auto It = Registry.find(Id.Value);
-	if (It == Registry.end())
-	{
-		return false;
-	}
-
-	if (It->second.State != EResourceLoadState::Ready || It->second.bBulkTaken)
+	const auto It = Registry.find(Handle.Id);
+	if (It == Registry.end() || It->second.bBulkTaken)
 	{
 		return false;
 	}
@@ -183,35 +170,35 @@ bool FResourceServer::TryTakeBulkData(FResourceId Id, FResourceBulkData& OutBulk
 	return true;
 }
 
-void FResourceServer::Flush(FResourceId Id)
+void FResourceServer::Flush(FTransferHandle Handle)
 {
-	if (!Id.IsValid())
+	if (!Handle.IsValid())
 	{
 		return;
 	}
 
 	std::unique_lock<std::mutex> Lock(RegistryMutex);
-	LoadCv.wait(Lock, [this, Id]()
+	LoadCv.wait(Lock, [this, Handle]()
 	{
-		const auto It = Registry.find(Id.Value);
+		const auto It = Registry.find(Handle.Id);
 		if (It == Registry.end())
 		{
 			return true;
 		}
-		return It->second.State != EResourceLoadState::Pending;
+		return It->second.bComplete;
 	});
 }
 
-void FResourceServer::Release(FResourceId Id)
+void FResourceServer::Release(FTransferHandle Handle)
 {
-	if (!Id.IsValid())
+	if (!Handle.IsValid())
 	{
 		return;
 	}
 
 	{
 		std::lock_guard<std::mutex> Lock(RegistryMutex);
-		Registry.erase(Id.Value);
+		Registry.erase(Handle.Id);
 	}
 	LoadCv.notify_all();
 }
@@ -221,7 +208,7 @@ bool FResourceServer::HasPendingLoads() const
 	std::lock_guard<std::mutex> Lock(RegistryMutex);
 	for (const auto& Pair : Registry)
 	{
-		if (Pair.second.State == EResourceLoadState::Pending)
+		if (!Pair.second.bComplete)
 		{
 			return true;
 		}
