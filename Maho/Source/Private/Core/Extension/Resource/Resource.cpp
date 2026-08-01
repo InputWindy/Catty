@@ -5,6 +5,7 @@
 #include <Core/Json.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
+#include <Core/System/Utf8Path.h>
 #include <Core/Object/Package.h>
 #include <Core/Object/SoftObjectPath.h>
 #include "ResourceServer.h"
@@ -56,10 +57,11 @@ std::string FResourceSystem::NormalizeSourcePath(std::string Path)
 		{
 			Ch = '/';
 		}
-#if defined(_WIN32)
-		Ch = static_cast<char>(std::tolower(static_cast<unsigned char>(Ch)));
-#endif
 	}
+#if defined(_WIN32)
+	// ASCII-only — byte-wise tolower corrupts UTF-8 CJK paths.
+	AsciiToLowerInPlace(Path);
+#endif
 
 	while (Path.size() >= 2 && Path[0] == '.' && Path[1] == '/')
 	{
@@ -143,6 +145,19 @@ bool FResourceSystem::RegisterResource(const FObjectRef& Resource)
 	}
 
 	Resources[CatalogKey] = Resource;
+	if (!Resources[CatalogKey].IsValid())
+	{
+		// Copy may have skipped AddRef if liveness check raced; force a hold on the known pointer.
+		Resources[CatalogKey] = FObjectRef::Wrap(ResourcePtr);
+	}
+	if (!Resources[CatalogKey].IsValid())
+	{
+		MAHO_CORE_ERROR(
+			"FResourceSystem::RegisterResource: failed to pin '{}' in catalog",
+			CatalogKey);
+		Resources.erase(CatalogKey);
+		return false;
+	}
 	return true;
 }
 
@@ -160,12 +175,14 @@ bool FResourceSystem::RegisterOwnedResource(UPackage& Package, const FObjectRef&
 		MAHO_CORE_ERROR(
 			"FResourceSystem::RegisterOwnedResource: Package.RegisterObject failed for '{}'",
 			Object->GetName());
+		Object->ClearOuter();
 		return false;
 	}
 
 	if (!RegisterResource(Resource))
 	{
 		Package.DetachObject(Object);
+		Object->ClearOuter();
 		return false;
 	}
 	return true;
@@ -194,12 +211,27 @@ bool FResourceSystem::UnregisterResource(UObject* Resource)
 	}
 
 	Resources.erase(It);
+	ResourcePtr->ClearOuter();
 	return true;
 }
 
 bool FResourceSystem::UnregisterResource(const FObjectRef& Resource)
 {
 	return UnregisterResource(Resource.Get());
+}
+
+void FResourceSystem::AbortFailedImport(UResource& Resource)
+{
+	FObjectRef PackageRef = Resource.GetPackage();
+	UPackage* Package = PackageRef.Cast<UPackage>();
+	if (Package)
+	{
+		UnregisterResourcesInPackage(Package->GetName());
+	}
+	else
+	{
+		UnregisterResource(&Resource);
+	}
 }
 
 std::string FResourceSystem::MakeResourceCatalogKey(const UResource& Resource)
@@ -313,6 +345,9 @@ void FResourceSystem::PrepareForExit()
 	bAcceptingNewWork = false;
 	FlushAll();
 
+	ImportPins.clear();
+	PendingImports.clear();
+
 	std::vector<FObjectRef> Snapshot;
 	Snapshot.reserve(Resources.size());
 	for (auto& Pair : Resources)
@@ -342,6 +377,7 @@ bool FResourceSystem::IsIdle() const
 	return !bAcceptingNewWork
 		&& Resources.empty()
 		&& PendingImports.empty()
+		&& ImportPins.empty()
 		&& !Server->HasPendingLoads();
 }
 
@@ -403,9 +439,11 @@ void FResourceSystem::CancelPendingImport(UObject* Resource)
 
 	for (auto It = PendingImports.begin(); It != PendingImports.end();)
 	{
-		if (It->second.Resource.Get() == Resource)
+		if (It->second.Resource.GetRaw() == Resource)
 		{
-			ReleaseLoadId(It->second.LoadId);
+			const std::uint64_t LoadId = It->second.LoadId;
+			ReleaseLoadId(LoadId);
+			ImportPins.erase(LoadId);
 			It = PendingImports.erase(It);
 		}
 		else
@@ -445,20 +483,32 @@ void FResourceSystem::ProcessReadyImports()
 		FPendingImport Pending = std::move(It->second);
 		PendingImports.erase(It);
 
+		// Keep ImportPins[LoadId] until this iteration finishes so Apply/Abort cannot race GC.
+		const auto Unpin = [this, LoadId = Pending.LoadId]()
+		{
+			ImportPins.erase(LoadId);
+		};
+
 		UResource* Resource = Pending.Resource.Cast<UResource>();
 		const FResourceId Id{Pending.LoadId};
 		const EResourceLoadState BulkState = Server->GetLoadState(Id);
 
 		if (!Resource)
 		{
+			MAHO_CORE_ERROR(
+				"FResourceSystem::ProcessReadyImports: lost Resource pin for LoadId={} — scrubbing",
+				Pending.LoadId);
 			ReleaseLoadId(Pending.LoadId);
+			Unpin();
 			continue;
 		}
 
 		if (BulkState == EResourceLoadState::Failed || BulkState == EResourceLoadState::Invalid)
 		{
 			Resource->SetLoadState(EResourceLoadState::Failed);
+			AbortFailedImport(*Resource);
 			ReleaseLoadId(Pending.LoadId);
+			Unpin();
 			continue;
 		}
 
@@ -469,7 +519,9 @@ void FResourceSystem::ProcessReadyImports()
 				"FResourceSystem::ProcessReadyImports: TakeBulkData failed for '{}'",
 				Resource->GetSourcePath());
 			Resource->SetLoadState(EResourceLoadState::Failed);
+			AbortFailedImport(*Resource);
 			ReleaseLoadId(Pending.LoadId);
+			Unpin();
 			continue;
 		}
 
@@ -483,7 +535,9 @@ void FResourceSystem::ProcessReadyImports()
 			MAHO_CORE_ERROR(
 				"FResourceSystem::ProcessReadyImports: Importer failed for '{}'",
 				Resource->GetSourcePath());
+			AbortFailedImport(*Resource);
 		}
+		Unpin();
 	}
 }
 

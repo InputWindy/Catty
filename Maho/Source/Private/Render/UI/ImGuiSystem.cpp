@@ -3,6 +3,7 @@
 #include <Core/System/Console.h>
 #include <Core/System/Log.h>
 #include <Core/System/PlatformWindow.h>
+#include <Core/System/Utf8Path.h>
 #include <Render/RHI/RHIResourceManager.h>
 #include <Render/RHI/RHIServer.h>
 #include <Render/UI/ImGuiTheme.h>
@@ -114,7 +115,8 @@ void CheckImGuiVkResult(VkResult Result)
 	Config.OversampleH = 2;
 	Config.OversampleV = 1;
 	Config.PixelSnapH = true;
-	return IO.Fonts->AddFontFromFileTTF(FontPath.string().c_str(), SizePixels, &Config);
+	const std::string Utf8Path = PathToUtf8(FontPath);
+	return IO.Fonts->AddFontFromFileTTF(Utf8Path.c_str(), SizePixels, &Config);
 }
 
 [[nodiscard]] bool TryMergeFontAwesome(ImGuiIO& IO, const std::filesystem::path& FontPath, float SizePixels)
@@ -131,12 +133,101 @@ void CheckImGuiVkResult(VkResult Result)
 	IconsConfig.PixelSnapH = true;
 	IconsConfig.GlyphMinAdvanceX = SizePixels;
 	static const ImWchar IconRanges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+	const std::string Utf8Path = PathToUtf8(FontPath);
 	return IO.Fonts->AddFontFromFileTTF(
-		FontPath.string().c_str(),
+		Utf8Path.c_str(),
 		SizePixels,
 		&IconsConfig,
 		IconRanges) != nullptr;
 }
+
+#if defined(_WIN32)
+[[nodiscard]] bool TryMergeSystemCjkFont(
+	ImGuiIO& IO,
+	const wchar_t* WideFontPath,
+	float SizePixels,
+	const ImWchar* GlyphRanges,
+	const char* LogLabel)
+{
+	namespace fs = std::filesystem;
+	std::error_code ErrorCode;
+	const fs::path FontPath(WideFontPath);
+	if (!fs::exists(FontPath, ErrorCode) || ErrorCode)
+	{
+		return false;
+	}
+
+	ImFontConfig Config;
+	Config.MergeMode = true;
+	Config.PixelSnapH = true;
+	Config.OversampleH = 1;
+	Config.OversampleV = 1;
+	// .ttc collections: face 0 is the regular UI face for YaHei / Yu Gothic.
+	Config.FontNo = 0;
+
+	const std::string Utf8Path = PathToUtf8(FontPath);
+	if (!IO.Fonts->AddFontFromFileTTF(Utf8Path.c_str(), SizePixels, &Config, GlyphRanges))
+	{
+		return false;
+	}
+	MAHO_CORE_INFO("FImGuiSystem: merged {} glyphs from '{}'", LogLabel, Utf8Path);
+	return true;
+}
+
+void MergeEditorCjkFonts(ImGuiIO& IO, float SizePixels)
+{
+	bool bMergedChinese = false;
+	const wchar_t* ChineseCandidates[] = {
+		L"C:\\Windows\\Fonts\\msyh.ttc",
+		L"C:\\Windows\\Fonts\\msyh.ttf",
+		L"C:\\Windows\\Fonts\\msyhbd.ttc",
+		L"C:\\Windows\\Fonts\\simhei.ttf",
+	};
+	for (const wchar_t* Candidate : ChineseCandidates)
+	{
+		if (TryMergeSystemCjkFont(
+				IO,
+				Candidate,
+				SizePixels,
+				IO.Fonts->GetGlyphRangesChineseFull(),
+				"Chinese"))
+		{
+			bMergedChinese = true;
+			break;
+		}
+	}
+
+	bool bMergedJapanese = false;
+	const wchar_t* JapaneseCandidates[] = {
+		L"C:\\Windows\\Fonts\\YuGothR.ttc",
+		L"C:\\Windows\\Fonts\\YuGothM.ttc",
+		L"C:\\Windows\\Fonts\\meiryo.ttc",
+		L"C:\\Windows\\Fonts\\msgothic.ttc",
+	};
+	for (const wchar_t* Candidate : JapaneseCandidates)
+	{
+		if (TryMergeSystemCjkFont(
+				IO,
+				Candidate,
+				SizePixels,
+				IO.Fonts->GetGlyphRangesJapanese(),
+				"Japanese"))
+		{
+			bMergedJapanese = true;
+			break;
+		}
+	}
+
+	if (!bMergedChinese)
+	{
+		MAHO_CORE_WARN("FImGuiSystem: no Chinese UI font found under Windows\\Fonts");
+	}
+	if (!bMergedJapanese)
+	{
+		MAHO_CORE_WARN("FImGuiSystem: no Japanese UI font found under Windows\\Fonts");
+	}
+}
+#endif
 
 void LoadEditorFonts(ImGuiIO& IO, const std::string& ConfigDirectory)
 {
@@ -158,7 +249,10 @@ void LoadEditorFonts(ImGuiIO& IO, const std::string& ConfigDirectory)
 		UiFont = TryAddUiFont(IO, Path, kUiFontSize);
 		if (UiFont)
 		{
-			MAHO_CORE_INFO("FImGuiSystem: loaded UI font '{}' @ {:.0f}px", Path.string(), kUiFontSize);
+			MAHO_CORE_INFO(
+				"FImGuiSystem: loaded UI font '{}' @ {:.0f}px",
+				PathToUtf8(Path),
+				kUiFontSize);
 			break;
 		}
 	}
@@ -171,7 +265,7 @@ void LoadEditorFonts(ImGuiIO& IO, const std::string& ConfigDirectory)
 		UiFont = TryAddUiFont(IO, Segoe, kUiFontSize);
 		if (UiFont)
 		{
-			MAHO_CORE_INFO("FImGuiSystem: loaded UI font '{}'", Segoe.string());
+			MAHO_CORE_INFO("FImGuiSystem: loaded UI font '{}'", PathToUtf8(Segoe));
 		}
 	}
 #endif
@@ -182,10 +276,15 @@ void LoadEditorFonts(ImGuiIO& IO, const std::string& ConfigDirectory)
 		MAHO_CORE_WARN("FImGuiSystem: UI font missing; using Proggy default");
 	}
 
+#if defined(_WIN32)
+	// Merge CJK after Latin base so Content Browser can show Chinese/Japanese names.
+	MergeEditorCjkFonts(IO, kUiFontSize);
+#endif
+
 	const fs::path IconPath = ResolveFontPath(FONT_ICON_FILE_NAME_FAS, BinaryDir, ConfigDirectory);
 	if (TryMergeFontAwesome(IO, IconPath, kIconFontSize))
 	{
-		MAHO_CORE_INFO("FImGuiSystem: merged icon font '{}'", IconPath.string());
+		MAHO_CORE_INFO("FImGuiSystem: merged icon font '{}'", PathToUtf8(IconPath));
 	}
 	else
 	{

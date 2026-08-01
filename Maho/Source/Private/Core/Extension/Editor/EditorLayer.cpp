@@ -13,6 +13,7 @@
 #include <Core/Object/SoftObjectPath.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
+#include <Core/System/Utf8Path.h>
 #include <Render/UI/ImGuiExtensions.h>
 
 #include "Core/Extension/Resource/TextureImageCodec.h"
@@ -1684,7 +1685,7 @@ bool FEditorLayer::TryApplyWallpaperFromPath(FApp& App, const std::string& Path)
 		return false;
 	}
 
-	std::ifstream File(Path, std::ios::binary);
+	std::ifstream File(PathFromUtf8(Path), std::ios::binary);
 	if (!File)
 	{
 		AppendOutput("Wallpaper: failed to open '" + Path + "'", spdlog::level::err);
@@ -2389,7 +2390,7 @@ void FEditorLayer::StartStartupContentImport()
 	for (const FPathMount& Mount : FPaths::GetMountPoints())
 	{
 		std::error_code ErrorCode;
-		const std::filesystem::path DiskRoot(Mount.DiskRoot);
+		const std::filesystem::path DiskRoot = PathFromUtf8(Mount.DiskRoot);
 		if (!std::filesystem::is_directory(DiskRoot, ErrorCode) || ErrorCode)
 		{
 			continue;
@@ -2406,13 +2407,13 @@ void FEditorLayer::StartStartupContentImport()
 			{
 				continue;
 			}
-			const std::string FileName = Entry.path().filename().string();
+			const std::string FileName = PathToUtf8(Entry.path().filename());
 			if (FileName.empty() || FileName[0] == '.')
 			{
 				continue;
 			}
 
-			const std::string Absolute = std::filesystem::absolute(Entry.path(), ErrorCode).string();
+			const std::string Absolute = PathToUtf8(std::filesystem::absolute(Entry.path(), ErrorCode));
 			if (ErrorCode || Absolute.empty())
 			{
 				continue;
@@ -2429,7 +2430,7 @@ void FEditorLayer::StartStartupContentImport()
 			}
 			VirtualFile = FPaths::NormalizePackagePath(std::move(VirtualFile));
 			const std::string PackagePath = FPaths::NormalizePackagePath(StripFileExtension(VirtualFile));
-			const std::string ObjectName = std::filesystem::path(VirtualFile).stem().string();
+			const std::string ObjectName = PathToUtf8(PathFromUtf8(VirtualFile).stem());
 			if (PackagePath.empty() || ObjectName.empty())
 			{
 				continue;
@@ -2523,7 +2524,7 @@ void FEditorLayer::TickStartupContentImport()
 		Config.TypeHint = EResourceType::Unknown;
 		Job.Resource = Resources->KickImport(std::move(Config));
 		Job.bKicked = true;
-		StartupImportCurrentName = std::filesystem::path(Job.SourcePath).filename().string();
+		StartupImportCurrentName = PathToUtf8(PathFromUtf8(Job.SourcePath).filename());
 		++KickedThisFrame;
 	}
 
@@ -2536,8 +2537,9 @@ void FEditorLayer::TickStartupContentImport()
 			bAnyPending = true;
 			continue;
 		}
-		if (!Job.Resource)
+		if (!Job.Resource.IsValid())
 		{
+			Job.Resource.Reset();
 			++StartupImportCompleted;
 			continue;
 		}
@@ -2547,12 +2549,14 @@ void FEditorLayer::TickStartupContentImport()
 			bAnyPending = true;
 			if (StartupImportCurrentName.empty())
 			{
-				StartupImportCurrentName = std::filesystem::path(Job.SourcePath).filename().string();
+				StartupImportCurrentName = PathToUtf8(PathFromUtf8(Job.SourcePath).filename());
 			}
 		}
 		else
 		{
 			++StartupImportCompleted;
+			// Catalog (Ready) or AbortFailedImport (Failed) owns lifetime; drop editor pin.
+			Job.Resource.Reset();
 		}
 	}
 
@@ -2565,6 +2569,10 @@ void FEditorLayer::TickStartupContentImport()
 	{
 		bStartupImportActive = false;
 		StartupImportCurrentName.clear();
+		for (FStartupImportJob& Job : StartupImportJobs)
+		{
+			Job.Resource.Reset();
+		}
 		RefreshContentListing();
 		AppendOutput(
 			"Content import finished: " + std::to_string(StartupImportCompleted) + "/"

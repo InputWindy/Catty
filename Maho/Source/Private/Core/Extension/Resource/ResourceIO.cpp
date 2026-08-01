@@ -3,6 +3,7 @@
 #include "MeshModelCodec.h"
 
 #include <Core/System/Log.h>
+#include <Core/System/Utf8Path.h>
 
 #include <filesystem>
 
@@ -18,20 +19,21 @@ namespace
 {
 	namespace fs = std::filesystem;
 	std::error_code ErrorCode;
+	const fs::path Source = PathFromUtf8(SourcePath);
+	const fs::path Dest = PathFromUtf8(DestinationPath);
 
-	if (!fs::is_regular_file(SourcePath, ErrorCode) || ErrorCode)
+	if (!fs::is_regular_file(Source, ErrorCode) || ErrorCode)
 	{
 		MAHO_CORE_ERROR("ResourceIO: source file missing or not regular '{}'", SourcePath);
 		return false;
 	}
 
-	if (!bOverwrite && fs::exists(DestinationPath, ErrorCode) && !ErrorCode)
+	if (!bOverwrite && fs::exists(Dest, ErrorCode) && !ErrorCode)
 	{
 		MAHO_CORE_ERROR("ResourceIO: destination exists and overwrite is disabled '{}'", DestinationPath);
 		return false;
 	}
 
-	const fs::path Dest(DestinationPath);
 	if (Dest.has_parent_path())
 	{
 		fs::create_directories(Dest.parent_path(), ErrorCode);
@@ -46,8 +48,8 @@ namespace
 	}
 
 	fs::copy_file(
-		SourcePath,
-		DestinationPath,
+		Source,
+		Dest,
 		bOverwrite ? fs::copy_options::overwrite_existing : fs::copy_options::none,
 		ErrorCode);
 	if (ErrorCode)

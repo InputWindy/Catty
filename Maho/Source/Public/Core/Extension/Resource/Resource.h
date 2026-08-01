@@ -549,6 +549,8 @@ private:
 	[[nodiscard]] IResourceExporter* FindExporter(const FObjectRef& Resource) const;
 
 	void UnregisterResourcesInPackage(const std::string& PackageName);
+	/** Drop catalog + Outer for a failed import root (and siblings in the same package). */
+	void AbortFailedImport(UResource& Resource);
 	void CancelPendingImport(UObject* Resource);
 	void ProcessReadyImports();
 
@@ -583,6 +585,11 @@ private:
 	std::unique_ptr<FResourceServer> Server;
 	std::unordered_map<std::string, FObjectRef> Resources;
 	std::unordered_map<std::uint64_t, FPendingImport> PendingImports;
+	/**
+	 * Strong pins for in-flight imports (LoadId → UResource).
+	 * Survives PendingImports move/erase so GC cannot collect while BulkData/Apply runs.
+	 */
+	std::unordered_map<std::uint64_t, FObjectRef> ImportPins;
 	std::vector<std::unique_ptr<IResourceImporter>> Importers;
 	std::vector<std::unique_ptr<IResourceExporter>> Exporters;
 	bool bAcceptingNewWork = true;

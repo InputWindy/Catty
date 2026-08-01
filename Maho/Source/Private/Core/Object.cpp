@@ -4,6 +4,8 @@
 #include <Core/Extension/GC/GC.h>
 #include <Core/Object/Package.h>
 
+#include <algorithm>
+
 namespace Maho
 {
 
@@ -111,15 +113,21 @@ bool UObject::CallFunction(
 
 void UObject::ClearOuter()
 {
-	if (!Outer)
+	// Use GetRaw — IsValid()/operator bool must not skip Reset when Outer is a purged pointer.
+	UObject* OuterPtr = Outer.GetRaw();
+	if (!OuterPtr)
 	{
 		return;
 	}
 
 	// Detach while Outer Ref still pins the package, then drop the pin.
-	if (UPackage* Package = Outer.Cast<UPackage>())
+	if (UPackage* Package = dynamic_cast<UPackage*>(OuterPtr))
 	{
-		Package->DetachObject(this);
+		const FGCSystem* GCSys = Detail::GetGCSystem();
+		if (!GCSys || !GCSys->IsInitialized() || GCSys->ContainsLiveObject(Package))
+		{
+			Package->DetachObject(this);
+		}
 	}
 	Outer.Reset();
 }
@@ -132,16 +140,21 @@ FObjectRef UObject::GetOuter() const
 FObjectRef UObject::GetPackage() const
 {
 	const UObject* Current = this;
-	while (Current->Outer)
+	for (;;)
 	{
-		Current = Current->Outer.Get();
+		UObject* Next = Current->Outer.GetRaw();
+		if (!Next)
+		{
+			break;
+		}
+		Current = Next;
 	}
 	return FObjectRef::Wrap(const_cast<UObject*>(Current));
 }
 
 std::string UObject::GetPathName() const
 {
-	if (!Outer)
+	if (!Outer.IsValid())
 	{
 		return ObjectName;
 	}
@@ -184,11 +197,27 @@ void UObject::SetReferencedObjects(const std::vector<UObject*>& InObjects)
 
 // --- FObjectRef ---
 
-FObjectRef::FObjectRef(const FObjectRef& Other)
-	: Object(Other.Object)
+bool FObjectRef::IsValid() const
 {
-	if (Object)
+	if (!Object)
 	{
+		return false;
+	}
+	// Pointer compare against LiveObjects — do not dereference Object (may be purged).
+	const FGCSystem* GC = Detail::GetGCSystem();
+	if (!GC || !GC->IsInitialized())
+	{
+		return true;
+	}
+	return GC->ContainsLiveObject(Object);
+}
+
+FObjectRef::FObjectRef(const FObjectRef& Other)
+	: Object(nullptr)
+{
+	if (Other.IsValid())
+	{
+		Object = Other.Object;
 		Object->AddRef();
 	}
 }
@@ -212,9 +241,9 @@ FObjectRef& FObjectRef::operator=(const FObjectRef& Other)
 	}
 
 	Reset();
-	Object = Other.Object;
-	if (Object)
+	if (Other.IsValid())
 	{
+		Object = Other.Object;
 		Object->AddRef();
 	}
 	return *this;
@@ -235,7 +264,12 @@ FObjectRef& FObjectRef::operator=(FObjectRef&& Other) noexcept
 
 std::uint32_t FObjectRef::GetRefCount() const
 {
-	return Object ? Object->GetRefCount() : 0;
+	return IsValid() ? Object->GetRefCount() : 0;
+}
+
+UObject* FObjectRef::Get() const
+{
+	return IsValid() ? Object : nullptr;
 }
 
 FObjectRef FObjectRef::Wrap(UObject* InObject)
@@ -245,20 +279,37 @@ FObjectRef FObjectRef::Wrap(UObject* InObject)
 
 void FObjectRef::Reset()
 {
-	if (Object)
+	if (!Object)
 	{
-		Object->ReleaseRef();
-		Object = nullptr;
+		return;
 	}
+
+	// If the pool already freed this address, do not touch RefCount (use-after-free).
+	const FGCSystem* GC = Detail::GetGCSystem();
+	if (GC && GC->IsInitialized() && !GC->ContainsLiveObject(Object))
+	{
+		Object = nullptr;
+		return;
+	}
+
+	Object->ReleaseRef();
+	Object = nullptr;
 }
 
 FObjectRef::FObjectRef(UObject* InObject)
-	: Object(InObject)
+	: Object(nullptr)
 {
-	if (Object)
+	if (!InObject)
 	{
-		Object->AddRef();
+		return;
 	}
+	const FGCSystem* GC = Detail::GetGCSystem();
+	if (GC && GC->IsInitialized() && !GC->ContainsLiveObject(InObject))
+	{
+		return;
+	}
+	Object = InObject;
+	Object->AddRef();
 }
 
 } // namespace Maho

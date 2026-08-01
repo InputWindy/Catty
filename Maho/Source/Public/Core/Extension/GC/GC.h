@@ -157,6 +157,12 @@ public:
 		const std::string& ObjectName) const;
 	[[nodiscard]] FObjectRef FindObject(const std::string& PathName) const;
 
+	/**
+	 * True if Object is still in LiveObjects (pointer compare only — safe for dangling addresses).
+	 * Use before dynamic_cast when an FObjectRef may outlive a purged pool slot.
+	 */
+	[[nodiscard]] bool ContainsLiveObject(const UObject* Object) const;
+
 	void CollectGarbage();
 	void PurgePendingKill();
 

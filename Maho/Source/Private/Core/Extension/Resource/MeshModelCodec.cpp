@@ -28,11 +28,17 @@ std::string SanitizeObjectName(std::string_view Raw, std::string_view Fallback)
 {
 	std::string Out;
 	Out.reserve(Raw.size());
-	for (const char Ch : Raw)
+	for (const unsigned char Ch : Raw)
 	{
-		if (std::isalnum(static_cast<unsigned char>(Ch)) || Ch == '_' || Ch == '-')
+		// Keep UTF-8 multibyte (CJK) intact; only filter ASCII path separators / junk.
+		if (Ch >= 0x80)
 		{
-			Out.push_back(Ch);
+			Out.push_back(static_cast<char>(Ch));
+			continue;
+		}
+		if (std::isalnum(Ch) || Ch == '_' || Ch == '-')
+		{
+			Out.push_back(static_cast<char>(Ch));
 		}
 		else if (Ch == ' ' || Ch == '.' || Ch == '/' || Ch == '\\')
 		{
@@ -479,7 +485,8 @@ std::string GetExtensionLower(std::string_view Path)
 bool IsModelExtension(std::string_view Ext)
 {
 	return Ext == "fbx" || Ext == "gltf" || Ext == "glb" || Ext == "obj" || Ext == "dae" ||
-		Ext == "blend" || Ext == "3ds" || Ext == "ase" || Ext == "ply" || Ext == "stl";
+		Ext == "blend" || Ext == "3ds" || Ext == "ase" || Ext == "ply" || Ext == "stl" ||
+		Ext == "pmx" || Ext == "pmd";
 }
 
 bool MatchesModelSourcePath(std::string_view Path)
@@ -515,6 +522,36 @@ bool ApplyDecodedModelScene(
 	UPackage& Package,
 	UPrefab& Prefab)
 {
+	// On failure, drop siblings created here (Prefab root is aborted by ProcessReadyImports).
+	struct FApplyRollback
+	{
+		FResourceSystem& Resources;
+		std::vector<FObjectRef> Created;
+		bool bCommitted = false;
+
+		void Track(UObject* Object)
+		{
+			if (Object)
+			{
+				Created.push_back(FObjectRef::Wrap(Object));
+			}
+		}
+
+		~FApplyRollback()
+		{
+			if (bCommitted)
+			{
+				return;
+			}
+			for (FObjectRef& Ref : Created)
+			{
+				Resources.UnregisterResource(Ref);
+			}
+		}
+	};
+
+	FApplyRollback Rollback{Resources, {}, false};
+
 	std::vector<std::string> MeshSoftPathStrings;
 	std::vector<UMaterial*> Materials;
 	Materials.reserve(Scene.Materials.size());
@@ -534,6 +571,7 @@ bool ApplyDecodedModelScene(
 		{
 			return false;
 		}
+		Rollback.Track(Mat);
 		Mat->BaseColorFactor[0] = Src.BaseColorFactor[0];
 		Mat->BaseColorFactor[1] = Src.BaseColorFactor[1];
 		Mat->BaseColorFactor[2] = Src.BaseColorFactor[2];
@@ -574,6 +612,7 @@ bool ApplyDecodedModelScene(
 		{
 			return false;
 		}
+		Rollback.Track(Mesh);
 		Mesh->SetCpuGeometry(
 			std::move(Src.Positions),
 			std::move(Src.Normals),
@@ -605,6 +644,7 @@ bool ApplyDecodedModelScene(
 		{
 			return false;
 		}
+		Rollback.Track(Skeleton);
 		std::vector<FSkeletonBone> Bones;
 		Bones.reserve(Scene.Skeleton.Bones.size());
 		for (const FDecodedBone& Bone : Scene.Skeleton.Bones)
@@ -638,6 +678,7 @@ bool ApplyDecodedModelScene(
 		{
 			return false;
 		}
+		Rollback.Track(Anim);
 		Anim->SetDurationSeconds(Src.DurationSeconds);
 		if (SkeletonPath.IsValid())
 		{
@@ -684,6 +725,7 @@ bool ApplyDecodedModelScene(
 	{
 		return false;
 	}
+	Rollback.Track(Graph);
 	const std::string DefaultAnim =
 		AnimSoftPathStrings.empty() ? std::string{} : AnimSoftPathStrings.front();
 	Graph->SetDocumentJson(BuildAnimationGraphJson(AnimSoftPathStrings, DefaultAnim));
@@ -695,6 +737,7 @@ bool ApplyDecodedModelScene(
 		MeshSoftPathStrings,
 		SkeletonSoftPath,
 		GraphSoftPath));
+	Rollback.bCommitted = true;
 	return true;
 }
 

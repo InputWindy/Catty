@@ -438,6 +438,9 @@ FObjectRef FResourceSystem::BeginImport(FResourceImportConfig& Config, IResource
 	Pending.Importer = Importer;
 	PendingImports.emplace(LoadId, std::move(Pending));
 
+	// Extra strong pin for the whole async load/Apply window (independent of Pending move).
+	ImportPins[LoadId] = ResourceRef;
+
 	return ResourceRef;
 }
 

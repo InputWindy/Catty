@@ -1,6 +1,7 @@
 #include <Core/Json.h>
 
 #include <Core/System/Log.h>
+#include <Core/System/Utf8Path.h>
 
 #include <nlohmann/json.hpp>
 
@@ -397,7 +398,7 @@ bool FJsonDocument::LoadFromFile(const std::string& FilePath)
 	SourcePath = FilePath;
 	LastError.clear();
 
-	std::ifstream Input(FilePath, std::ios::binary);
+	std::ifstream Input(PathFromUtf8(FilePath), std::ios::binary);
 	if (!Input)
 	{
 		LastError = "failed to open file";
@@ -412,7 +413,7 @@ bool FJsonDocument::LoadFromFile(const std::string& FilePath)
 
 bool FJsonDocument::SaveToFile(const std::string& FilePath, bool bPretty) const
 {
-	std::ofstream Output(FilePath, std::ios::binary | std::ios::trunc);
+	std::ofstream Output(PathFromUtf8(FilePath), std::ios::binary | std::ios::trunc);
 	if (!Output)
 	{
 		MAHO_CORE_ERROR("FJsonDocument::SaveToFile failed to open '{}'", FilePath);

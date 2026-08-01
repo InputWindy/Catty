@@ -32,8 +32,12 @@ public:
 	FObjectRef& operator=(const FObjectRef& Other);
 	FObjectRef& operator=(FObjectRef&& Other) noexcept;
 
-	[[nodiscard]] bool IsValid() const { return Object != nullptr; }
-	[[nodiscard]] explicit operator bool() const { return Object != nullptr; }
+	/** Non-null pointer stored (does not prove GC liveness). */
+	[[nodiscard]] bool HasObject() const { return Object != nullptr; }
+
+	/** Non-null and still registered with FGCSystem (safe before dynamic_cast / member access). */
+	[[nodiscard]] bool IsValid() const;
+	[[nodiscard]] explicit operator bool() const { return IsValid(); }
 	[[nodiscard]] UObject& operator*() const { return *Object; }
 	[[nodiscard]] UObject* operator->() const { return Object; }
 
@@ -43,6 +47,10 @@ public:
 	[[nodiscard]] TObject* Cast() const
 	{
 		static_assert(std::is_base_of_v<UObject, TObject>, "TObject must derive from UObject");
+		if (!IsValid())
+		{
+			return nullptr;
+		}
 		return dynamic_cast<TObject*>(Object);
 	}
 
@@ -62,7 +70,10 @@ private:
 
 	explicit FObjectRef(UObject* InObject);
 
-	[[nodiscard]] UObject* Get() const { return Object; }
+	/** Live pointer only; nullptr if purged. Prefer Cast<> for typed access. */
+	[[nodiscard]] UObject* Get() const;
+	/** Raw stored address (may be dangling) — Outer walk / Detach only. */
+	[[nodiscard]] UObject* GetRaw() const { return Object; }
 
 	UObject* Object = nullptr;
 };

@@ -1,6 +1,7 @@
 ﻿#include "ResourceServer.h"
 
 #include <Core/System/Log.h>
+#include <Core/System/Utf8Path.h>
 
 #include <filesystem>
 #include <fstream>
@@ -58,7 +59,8 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 
 		namespace fs = std::filesystem;
 		std::error_code ErrorCode;
-		if (!fs::is_regular_file(Path, ErrorCode) || ErrorCode)
+		const fs::path FilePath = PathFromUtf8(Path);
+		if (!fs::is_regular_file(FilePath, ErrorCode) || ErrorCode)
 		{
 			MAHO_CORE_ERROR(
 				"Resource BulkData failed: id={} path=\"{}\" (not a regular file)",
@@ -67,7 +69,7 @@ FResourceId FResourceServer::RequestLoad(std::string Path)
 		}
 		else
 		{
-			std::ifstream File(Path, std::ios::binary | std::ios::ate);
+			std::ifstream File(FilePath, std::ios::binary | std::ios::ate);
 			if (!File)
 			{
 				MAHO_CORE_ERROR(

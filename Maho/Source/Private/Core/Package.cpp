@@ -1,5 +1,6 @@
 ﻿#include <Core/Object/Package.h>
 
+#include <Core/Extension/GC/GC.h>
 #include <Core/System/Log.h>
 #include <Core/Extension/Resource/Resource.h>
 
@@ -141,7 +142,12 @@ bool UPackage::IsTransient() const
 FObjectRef UPackage::FindObject(const std::string& InObjectName) const
 {
 	const auto It = Objects.find(InObjectName);
-	if (It == Objects.end())
+	if (It == Objects.end() || !It->second)
+	{
+		return {};
+	}
+	FGCSystem* GCSystem = Detail::GetGCSystem();
+	if (GCSystem && GCSystem->IsInitialized() && !GCSystem->ContainsLiveObject(It->second))
 	{
 		return {};
 	}

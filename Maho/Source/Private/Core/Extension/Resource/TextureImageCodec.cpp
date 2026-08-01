@@ -1,6 +1,7 @@
 #include "TextureImageCodec.h"
 
 #include <Core/System/Log.h>
+#include <Core/System/Utf8Path.h>
 
 #include <algorithm>
 #include <cctype>
@@ -257,7 +258,7 @@ namespace
 		Container = GUID_ContainerFormatTiff;
 	}
 
-	const std::wstring WidePath(DestinationPath.begin(), DestinationPath.end());
+	const std::wstring WidePath = Utf8ToWide(DestinationPath);
 	ComPtr<IWICStream> Stream;
 	Hr = Factory->CreateStream(Stream.GetAddressOf());
 	if (FAILED(Hr))
@@ -643,12 +644,12 @@ bool EncodeToFile(const UTexture& Texture, const std::string& DestinationPath, b
 {
 	namespace fs = std::filesystem;
 	std::error_code ErrorCode;
-	if (!bOverwrite && fs::exists(DestinationPath, ErrorCode) && !ErrorCode)
+	const fs::path Dest = PathFromUtf8(DestinationPath);
+	if (!bOverwrite && fs::exists(Dest, ErrorCode) && !ErrorCode)
 	{
 		MAHO_CORE_ERROR("TextureImageCodec: destination exists '{}'", DestinationPath);
 		return false;
 	}
-	const fs::path Dest(DestinationPath);
 	if (Dest.has_parent_path())
 	{
 		fs::create_directories(Dest.parent_path(), ErrorCode);

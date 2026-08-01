@@ -1,6 +1,7 @@
 #include <Core/System/Paths.h>
 
 #include <Core/System/Log.h>
+#include <Core/System/Utf8Path.h>
 
 #include <algorithm>
 #include <cctype>
@@ -171,15 +172,15 @@ constexpr const char* GPackageExtension = ".pkg.json";
 {
 	if (RelOrAbs.empty())
 	{
-		return Root.string();
+		return PathToUtf8(Root);
 	}
-	const fs::path AsPath(RelOrAbs);
+	const fs::path AsPath = PathFromUtf8(RelOrAbs);
 	std::error_code ErrorCode;
 	if (AsPath.is_absolute())
 	{
-		return fs::weakly_canonical(AsPath, ErrorCode).string();
+		return PathToUtf8(fs::weakly_canonical(AsPath, ErrorCode));
 	}
-	return fs::weakly_canonical(Root / AsPath, ErrorCode).string();
+	return PathToUtf8(fs::weakly_canonical(Root / AsPath, ErrorCode));
 }
 
 [[nodiscard]] std::string NormalizeVirtualRoot(std::string Root)
@@ -211,9 +212,17 @@ constexpr const char* GPackageExtension = ".pkg.json";
 #if defined(_WIN32)
 	for (std::size_t Index = 0; Index < Prefix.size(); ++Index)
 	{
-		const unsigned char A = static_cast<unsigned char>(Text[Index]);
-		const unsigned char B = static_cast<unsigned char>(Prefix[Index]);
-		if (std::tolower(A) != std::tolower(B))
+		char A = Text[Index];
+		char B = Prefix[Index];
+		if (A >= 'A' && A <= 'Z')
+		{
+			A = static_cast<char>(A - 'A' + 'a');
+		}
+		if (B >= 'A' && B <= 'Z')
+		{
+			B = static_cast<char>(B - 'A' + 'a');
+		}
+		if (A != B)
 		{
 			return false;
 		}
@@ -300,8 +309,8 @@ void FPaths::Initialize(FConfig& InOutConfig)
 	const fs::path ProjectRoot = DetectProjectDir(ExeDir);
 	const fs::path EngineRoot = DetectEngineDir(ProjectRoot);
 
-	ProjectDir = ProjectRoot.string();
-	EngineDir = EngineRoot.string();
+	ProjectDir = PathToUtf8(ProjectRoot);
+	EngineDir = PathToUtf8(EngineRoot);
 	InOutConfig.ProjectDir = ProjectDir;
 	InOutConfig.EngineDir = EngineDir;
 
@@ -336,11 +345,11 @@ void FPaths::Initialize(FConfig& InOutConfig)
 	const fs::path EngineMahoShaders = EngineRoot / "Maho" / "Shaders";
 	std::error_code ErrorCode;
 	if (InOutConfig.EngineShadersDir.empty()
-		|| !fs::path(InOutConfig.EngineShadersDir).is_absolute())
+		|| !PathFromUtf8(InOutConfig.EngineShadersDir).is_absolute())
 	{
 		if (fs::is_directory(EngineMahoShaders, ErrorCode) && !ErrorCode)
 		{
-			InOutConfig.EngineShadersDir = fs::weakly_canonical(EngineMahoShaders, ErrorCode).string();
+			InOutConfig.EngineShadersDir = PathToUtf8(fs::weakly_canonical(EngineMahoShaders, ErrorCode));
 		}
 		else
 		{
@@ -351,12 +360,12 @@ void FPaths::Initialize(FConfig& InOutConfig)
 	}
 
 	if (InOutConfig.EnginePluginsDir.empty()
-		|| !fs::path(InOutConfig.EnginePluginsDir).is_absolute())
+		|| !PathFromUtf8(InOutConfig.EnginePluginsDir).is_absolute())
 	{
 		const fs::path EnginePlugins = EngineRoot / "Maho" / "Plugins";
 		if (fs::is_directory(EnginePlugins, ErrorCode) && !ErrorCode)
 		{
-			InOutConfig.EnginePluginsDir = fs::weakly_canonical(EnginePlugins, ErrorCode).string();
+			InOutConfig.EnginePluginsDir = PathToUtf8(fs::weakly_canonical(EnginePlugins, ErrorCode));
 		}
 		else
 		{
@@ -367,7 +376,7 @@ void FPaths::Initialize(FConfig& InOutConfig)
 	}
 
 	ProjectContentDir = InOutConfig.ProjectContentDir;
-	EngineContentDir = DetectEngineContentDir(EngineRoot, ExeDir).string();
+	EngineContentDir = PathToUtf8(DetectEngineContentDir(EngineRoot, ExeDir));
 
 	MountPoints.clear();
 	RegisterMountPoint("/Game", ProjectContentDir);
@@ -411,7 +420,7 @@ std::string FPaths::Combine(const std::string& A, const std::string& B)
 	{
 		return A;
 	}
-	return (fs::path(A) / B).string();
+	return PathToUtf8(PathFromUtf8(A) / PathFromUtf8(B));
 }
 
 std::string FPaths::Combine(const std::string& A, const std::string& B, const std::string& C)
@@ -426,7 +435,8 @@ std::string FPaths::MakeAbsolute(const std::string& Path)
 		return {};
 	}
 	std::error_code ErrorCode;
-	return fs::weakly_canonical(fs::absolute(Path, ErrorCode), ErrorCode).string();
+	const fs::path AsPath = PathFromUtf8(Path);
+	return PathToUtf8(fs::weakly_canonical(fs::absolute(AsPath, ErrorCode), ErrorCode));
 }
 
 std::string FPaths::MakeProjectRelativeAbsolute(const std::string& RelOrAbs)
@@ -435,7 +445,7 @@ std::string FPaths::MakeProjectRelativeAbsolute(const std::string& RelOrAbs)
 	{
 		return ProjectDir;
 	}
-	const fs::path AsPath(RelOrAbs);
+	const fs::path AsPath = PathFromUtf8(RelOrAbs);
 	if (AsPath.is_absolute())
 	{
 		return MakeAbsolute(RelOrAbs);
@@ -452,13 +462,13 @@ void FPaths::RegisterMountPoint(std::string VirtualRoot, std::string DiskRoot)
 	}
 
 	std::error_code ErrorCode;
-	fs::path DiskPath(DiskRoot);
+	fs::path DiskPath = PathFromUtf8(DiskRoot);
 	if (!DiskPath.empty())
 	{
-		DiskRoot = fs::weakly_canonical(DiskPath, ErrorCode).string();
+		DiskRoot = PathToUtf8(fs::weakly_canonical(DiskPath, ErrorCode));
 		if (ErrorCode || DiskRoot.empty())
 		{
-			DiskRoot = DiskPath.lexically_normal().string();
+			DiskRoot = PathToUtf8(DiskPath.lexically_normal());
 		}
 	}
 
@@ -637,10 +647,11 @@ std::string FPaths::ConvertFilenameToVirtualPath(const std::string& Filename)
 	}
 
 	std::error_code ErrorCode;
-	std::string Absolute = fs::weakly_canonical(fs::path(Filename), ErrorCode).string();
+	const fs::path AsPath = PathFromUtf8(Filename);
+	std::string Absolute = PathToUtf8(fs::weakly_canonical(AsPath, ErrorCode));
 	if (ErrorCode || Absolute.empty())
 	{
-		Absolute = fs::path(Filename).lexically_normal().string();
+		Absolute = PathToUtf8(AsPath.lexically_normal());
 	}
 	Absolute = ToForwardSlashes(std::move(Absolute));
 

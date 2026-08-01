@@ -6,6 +6,7 @@
 #include <Core/System/Paths.h>
 #include <Core/Object/Package.h>
 #include <Core/Object/SoftObjectPath.h>
+#include <Core/Extension/Resource/Resource.h>
 #include <ObjectReflectTypes.gen.h>
 
 #include <algorithm>
@@ -200,6 +201,15 @@ void FGCSystem::UnregisterObject(UObject& Object)
 	Object.GC = nullptr;
 }
 
+bool FGCSystem::ContainsLiveObject(const UObject* Object) const
+{
+	if (!Object || !bInitialized)
+	{
+		return false;
+	}
+	return std::find(LiveObjects.begin(), LiveObjects.end(), Object) != LiveObjects.end();
+}
+
 void FGCSystem::RemoveFromPendingKill(UObject* Object)
 {
 	PendingKill.erase(std::remove(PendingKill.begin(), PendingKill.end(), Object), PendingKill.end());
@@ -207,7 +217,29 @@ void FGCSystem::RemoveFromPendingKill(UObject* Object)
 
 bool FGCSystem::IsKeptAlive(const UObject& Object)
 {
-	return Object.GetRefCount() > 0;
+	if (Object.GetRefCount() > 0)
+	{
+		return true;
+	}
+
+	// Catalog / import pins must keep RefCount > 0. If we find a cataloged object at 0,
+	// treat it as alive and log — indicates an FObjectRef hold bug.
+	if (FResourceSystem* Resources = Detail::GetResourceSystem())
+	{
+		if (const UResource* AsResource = dynamic_cast<const UResource*>(&Object))
+		{
+			const std::string Key = FResourceSystem::MakeResourceCatalogKey(*AsResource);
+			if (!Key.empty() && Resources->FindRegisteredResource(Key).GetRaw() == &Object)
+			{
+				MAHO_CORE_ERROR(
+					"GC: '{}' is in Resource catalog with RefCount 0 — pinning to avoid purge",
+					Object.GetPathName());
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 void FGCSystem::FinalizeDeadObject(UObject* Object)
