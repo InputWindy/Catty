@@ -3,6 +3,8 @@
 #include <Core/Editor/AgentChatClient.h>
 #include <Core/Editor/EditorUIRegistry.h>
 #include <Core/Export.h>
+#include <Core/Extension/Resource/Resource.h>
+#include <Core/Object/Object.h>
 #include <Core/Sequencer/EngineExtension.h>
 #include <Core/System/Log.h>
 #include <Core/Sequencer/EngineStage.h>
@@ -53,6 +55,32 @@ public:
 	[[nodiscard]] bool IsDummyUIEnabled() const { return bShowDummyUI; }
 
 private:
+	struct FContentAssetEntry
+	{
+		std::string CatalogKey;
+		std::string DisplayName;
+		EResourceType Type = EResourceType::Unknown;
+		EResourceLoadState LoadState = EResourceLoadState::Invalid;
+	};
+
+	struct FStartupImportJob
+	{
+		std::string SourcePath;
+		std::string PackagePath;
+		std::string ObjectName;
+		FObjectRef Resource;
+		bool bKicked = false;
+	};
+
+	struct FResourceBrowserWindow
+	{
+		std::string CatalogKey;
+		EResourceType Type = EResourceType::Unknown;
+		bool bOpen = true;
+		FImGuiTextureHandle PreviewTexture;
+		std::uint64_t PreviewGeneration = 0;
+	};
+
 	void MountEditor();
 	void UnmountEditor();
 	void RegisterBuiltinUIContributions();
@@ -63,7 +91,6 @@ private:
 	void DrawBrandBlock(float Size);
 	void DrawToolbarPrimary();
 	void DrawToolbarSecondary();
-	// menu → toolbar1(+brand) → toolbar2 → fixed main dockspace
 	void DrawDockSpace(FApp& App);
 	void DrawMainViewportPanel();
 	void DrawContentBrowser();
@@ -89,8 +116,17 @@ private:
 	void EnsureContentMounts();
 	void SelectContentFolder(const std::string& VirtualPath);
 	void RefreshContentListing();
-	[[nodiscard]] std::filesystem::path VirtualPathToDisk(const std::string& VirtualPath) const;
-	void DrawVirtualFolderTree(const std::string& VirtualPath, const std::filesystem::path& DiskPath, int Depth);
+	void DrawVirtualFolderTree(const std::string& VirtualPath);
+	[[nodiscard]] bool IsContentBrowserInputLocked() const;
+	void CollectChildFolders(const std::string& ParentVirtualPath, std::vector<std::string>& OutFolders) const;
+
+	void StartStartupContentImport();
+	void TickStartupContentImport();
+	void DrawContentImportProgressOverlay();
+	void OpenResourceBrowser(const std::string& CatalogKey);
+	void DrawOpenResourceBrowsers(FApp& App);
+	void DrawResourceBrowserBody(FResourceBrowserWindow& Window, UResource& Resource, FApp& App);
+	void ReleaseResourceBrowserPreview(FResourceBrowserWindow& Window, FApp& App);
 
 	void AppendOutput(std::string Line, spdlog::level::level_enum Level = spdlog::level::info);
 	void DrainEngineLogs(FApp& App);
@@ -120,17 +156,25 @@ private:
 	bool bAutoScrollOutput = true;
 	bool bAutoScrollAgent = true;
 	bool bBuildDefaultLayout = true;
-	/** 0 = Extension depends topo (per EEngineStage), 1 = FApp::Run lifecycle. */
 	int SequenceGraphViewMode = 0;
 	int SequenceGraphStage = static_cast<int>(EEngineStage::BeginFrame);
 	std::size_t SequenceGraphLayoutExtCount = 0;
 	int SequenceGraphLayoutStage = -1;
 
-	/** UE-style virtual path currently shown on the right (e.g. "/Game" or "/Game/Maps"). */
 	std::string CurrentVirtualPath = "/Game";
 	std::string SelectedVirtualEntry;
 	std::vector<std::string> FolderVirtualEntries;
-	std::vector<std::string> FileVirtualEntries;
+	std::vector<FContentAssetEntry> AssetEntries;
+	bool bContentBrowserRefreshing = false;
+
+	bool bStartupContentImportStarted = false;
+	bool bStartupImportActive = false;
+	std::vector<FStartupImportJob> StartupImportJobs;
+	std::size_t StartupImportKickIndex = 0;
+	std::size_t StartupImportCompleted = 0;
+	std::string StartupImportCurrentName;
+
+	std::vector<FResourceBrowserWindow> OpenResourceBrowsers;
 
 	struct FOutputLine
 	{
@@ -153,24 +197,20 @@ private:
 	std::unique_ptr<FAgentChatClient> AgentChat;
 	static constexpr std::size_t MaxAgentBubbles = 500;
 
-	// Viewport / ImGuizmo
 	float ViewMatrix[16] = {};
 	float ProjectionMatrix[16] = {};
 	float ObjectMatrix[16] = {};
 	EViewportTool ViewportTool = EViewportTool::Select;
-	int GizmoOperation = 7; // ImGuizmo::TRANSLATE (kept in sync with ViewportTool)
+	int GizmoOperation = 7;
 
-	// Blueprint node editor (demo panel)
 	void* NodeEditorContext = nullptr;
 	bool bBlueprintInited = false;
 
-	// SequenceGraph / FApp flow visualizer
 	void* SequenceGraphEditorContext = nullptr;
 	bool bSequenceGraphEditorInited = false;
 	bool bSequenceGraphLayoutApplied = false;
 	bool bEditorMounted = false;
 
-	/** Desktop wallpaper shown behind translucent dock panels. */
 	FImGuiTextureHandle WallpaperTexture;
 	std::string WallpaperSourcePath;
 	float WallpaperDropMinX = 0.0f;

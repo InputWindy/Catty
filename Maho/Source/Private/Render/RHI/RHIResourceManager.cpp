@@ -4,6 +4,8 @@
 
 #include <Core/System/Log.h>
 
+#include <vector>
+
 namespace Maho
 {
 
@@ -24,8 +26,25 @@ FRHITexture* FRHIResourceManager::AcquireTexture(const FRHITextureDesc& Desc, co
 		const auto It = Named.find(Key);
 		if (It != Named.end() && It->second != nullptr && It->second->GetType() == ERHIResourceType::Texture)
 		{
-			++It->second->RefCount;
-			return static_cast<FRHITexture*>(It->second);
+			auto* Existing = static_cast<FRHITexture*>(It->second);
+			const FRHITextureDesc& ExistingDesc = Existing->GetDesc();
+			if (ExistingDesc.Format == Desc.Format
+				&& ExistingDesc.Dimension == Desc.Dimension
+				&& ExistingDesc.Extent.Width == Desc.Extent.Width
+				&& ExistingDesc.Extent.Height == Desc.Extent.Height
+				&& ExistingDesc.Extent.Depth == Desc.Extent.Depth
+				&& ExistingDesc.MipLevels == Desc.MipLevels
+				&& ExistingDesc.ArrayLayers == Desc.ArrayLayers
+				&& ExistingDesc.Usage == Desc.Usage
+				&& ExistingDesc.MemoryUsage == Desc.MemoryUsage)
+			{
+				++Existing->RefCount;
+				return Existing;
+			}
+			MAHO_CORE_ERROR(
+				"FRHIResourceManager::AcquireTexture: key '{}' exists with incompatible Desc — creating unnamed",
+				Key);
+			Key = nullptr;
 		}
 	}
 
@@ -359,17 +378,46 @@ void FRHIResourceManager::Shutdown()
 {
 	FlushUnused();
 
-	for (auto& Pair : Named)
+	// Snapshot first — Release() erases from Named and must not run while iterating it.
+	std::vector<FRHIResource*> Snapshot;
+	Snapshot.reserve(Named.size());
+	for (const auto& Pair : Named)
 	{
-		FRHIResource* Resource = Pair.second;
-		if (Resource == nullptr)
+		if (Pair.second != nullptr)
 		{
-			continue;
+			Snapshot.push_back(Pair.second);
 		}
-		Resource->RefCount = 1;
-		Release(Resource, true);
 	}
 	Named.clear();
+
+	for (FRHIResource* Resource : Snapshot)
+	{
+		Resource->RefCount = 0;
+		switch (Resource->GetType())
+		{
+		case ERHIResourceType::Buffer:
+			Device.DestroyBuffer(static_cast<FRHIBuffer*>(Resource));
+			break;
+		case ERHIResourceType::Texture:
+			Device.DestroyTexture(static_cast<FRHITexture*>(Resource));
+			break;
+		case ERHIResourceType::Sampler:
+			Device.DestroySampler(static_cast<FRHISampler*>(Resource));
+			break;
+		case ERHIResourceType::ShaderModule:
+			Device.DestroyShaderModule(static_cast<FRHIShaderModule*>(Resource));
+			break;
+		case ERHIResourceType::GraphicsPipeline:
+			Device.DestroyGraphicsPipeline(static_cast<FRHIGraphicsPipeline*>(Resource));
+			break;
+		case ERHIResourceType::ComputePipeline:
+			Device.DestroyComputePipeline(static_cast<FRHIComputePipeline*>(Resource));
+			break;
+		default:
+			delete Resource;
+			break;
+		}
+	}
 	LiveCount = 0;
 }
 

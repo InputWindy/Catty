@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -42,6 +43,8 @@ static TAutoConsoleVariable GCVarImGuiDescriptorPoolSize(
 	"r.ImGui.DescriptorPoolSize",
 	64,
 	"ImGui Vulkan descriptor pool size (font + ImGui_ImplVulkan_AddTexture slots)");
+
+std::atomic<std::uint64_t> GImGuiRgba8TextureSerial{ 1 };
 
 void CheckImGuiVkResult(VkResult Result)
 {
@@ -518,7 +521,11 @@ bool FImGuiSystem::CreateRgba8Texture(
 			Desc.MemoryUsage = ERHIMemoryUsage::GPUOnly;
 
 			FRHIResourceManager& Manager = RHI->GetResourceManager();
-			Created.Texture = Manager.AcquireTexture(Desc, "ImGui.Rgba8");
+			// Unique key per upload — a fixed name made wallpaper + preview share one GPU image
+			// (Named AcquireTexture returns the existing entry and subsequent copies overwrite it).
+			const std::string DebugKey =
+				"ImGui.Rgba8." + std::to_string(GImGuiRgba8TextureSerial.fetch_add(1));
+			Created.Texture = Manager.AcquireTexture(Desc, DebugKey.c_str());
 			if (!Created.Texture)
 			{
 				MAHO_CORE_ERROR("FImGuiSystem::CreateRgba8Texture: AcquireTexture failed");

@@ -15,6 +15,7 @@
 #include <Core/TypeList.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -500,6 +501,20 @@ public:
 	[[nodiscard]] static std::string MakeResourceCatalogKey(const UResource& Resource);
 	[[nodiscard]] static std::string NormalizeResourceVirtualPath(const std::string& VirtualPath);
 
+	/** Iterate registered catalog entries (SoftPath key → live UResource). */
+	void ForEachRegisteredResource(
+		const std::function<void(const std::string& CatalogKey, const FObjectRef& Resource)>& Fn) const;
+
+	[[nodiscard]] FObjectRef FindRegisteredResource(const std::string& CatalogKey) const;
+
+	/**
+	 * True when a typed importer MatchesSourcePath (excludes Raw fallback).
+	 * Used by editor content scan — does not create objects.
+	 */
+	[[nodiscard]] bool CanImportSourcePath(const std::string& SourcePath) const;
+
+	[[nodiscard]] bool IsInitialized() const;
+
 	const char* GetName() const override { return "Resource"; }
 	bool ExecuteStage(EEngineStage Stage) override;
 	[[nodiscard]] bool IsIdle() const override;
@@ -512,7 +527,6 @@ private:
 
 	[[nodiscard]] bool Initialize();
 	void Shutdown();
-	[[nodiscard]] bool IsInitialized() const;
 	void PrepareForExit();
 
 	void RegisterImporter(std::unique_ptr<IResourceImporter> Importer);

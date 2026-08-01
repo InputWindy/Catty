@@ -226,6 +226,57 @@ std::string FResourceSystem::NormalizeResourceVirtualPath(const std::string& Vir
 	return Path;
 }
 
+void FResourceSystem::ForEachRegisteredResource(
+	const std::function<void(const std::string& CatalogKey, const FObjectRef& Resource)>& Fn) const
+{
+	if (!Fn)
+	{
+		return;
+	}
+	for (const auto& Pair : Resources)
+	{
+		if (Pair.second)
+		{
+			Fn(Pair.first, Pair.second);
+		}
+	}
+}
+
+FObjectRef FResourceSystem::FindRegisteredResource(const std::string& CatalogKey) const
+{
+	const std::string Key = NormalizeResourceVirtualPath(CatalogKey);
+	if (Key.empty())
+	{
+		return {};
+	}
+	const auto It = Resources.find(Key);
+	if (It == Resources.end())
+	{
+		return {};
+	}
+	return It->second;
+}
+
+bool FResourceSystem::CanImportSourcePath(const std::string& SourcePath) const
+{
+	if (SourcePath.empty())
+	{
+		return false;
+	}
+	for (const auto& Importer : Importers)
+	{
+		if (!Importer || Importer->GetType() == EResourceType::Raw)
+		{
+			continue;
+		}
+		if (Importer->MatchesSourcePath(SourcePath))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void FResourceSystem::UnregisterResourcesInPackage(const std::string& PackageName)
 {
 	const std::string Key = NormalizePackageName(PackageName);

@@ -5,8 +5,12 @@
 #include <Core/System/Console.h>
 #include <Core/Editor/AgentChatClient.h>
 #include <Core/Editor/EditorUIRegistry.h>
+#include <Core/Extension/GC/GC.h>
 #include <Core/Extension/Platform/Platform.h>
 #include <Core/Extension/Render/Render.h>
+#include <Core/Extension/Resource/Resource.h>
+#include <Core/Object/Package.h>
+#include <Core/Object/SoftObjectPath.h>
 #include <Core/System/Log.h>
 #include <Core/System/Paths.h>
 #include <Render/UI/ImGuiExtensions.h>
@@ -23,6 +27,7 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -375,6 +380,7 @@ void FEditorLayer::MountEditor()
 
 	EnsureContentMounts();
 	SelectContentFolder("/Game");
+	StartStartupContentImport();
 	AppendOutput("Output Log ready. Commands: `Dump` | `<Name>` | `<Name> <Value>` | `help`.");
 	StartAgentChat();
 
@@ -409,8 +415,24 @@ void FEditorLayer::UnmountEditor()
 
 	if (GApp)
 	{
+		for (FResourceBrowserWindow& Window : OpenResourceBrowsers)
+		{
+			ReleaseResourceBrowserPreview(Window, *GApp);
+		}
+		OpenResourceBrowsers.clear();
 		ClearWallpaper(*GApp);
 	}
+	else
+	{
+		OpenResourceBrowsers.clear();
+	}
+
+	StartupImportJobs.clear();
+	bStartupImportActive = false;
+	bStartupContentImportStarted = false;
+	StartupImportKickIndex = 0;
+	StartupImportCompleted = 0;
+	StartupImportCurrentName.clear();
 
 	if (AgentChat)
 	{
@@ -1041,6 +1063,11 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 
 	EnsureDefaultWallpaper(App);
 	ProcessWallpaperFileDrops(App);
+	if (!bStartupContentImportStarted)
+	{
+		StartStartupContentImport();
+	}
+	TickStartupContentImport();
 	DrawDockSpace(App);
 	DrawMainViewportPanel();
 	{
@@ -1048,6 +1075,8 @@ bool FEditorLayer::ExecuteStage(EEngineStage Stage)
 		UIRegistry.DrawDockPanels(Ctx);
 		UIRegistry.DrawModals(Ctx);
 	}
+	DrawOpenResourceBrowsers(App);
+	DrawContentImportProgressOverlay();
 #if MAHO_EDITOR_EXTRA_PANELS
 	DrawFileDialogs();
 #endif
@@ -1761,9 +1790,159 @@ void FEditorLayer::ProcessWallpaperFileDrops(FApp& App)
 	}
 }
 
+namespace
+{
+
+[[nodiscard]] const char* ResourceTypeGlyph(EResourceType Type)
+{
+	switch (Type)
+	{
+	case EResourceType::Texture:
+	case EResourceType::Texture2D:
+	case EResourceType::Texture3D:
+	case EResourceType::TextureCube:
+	case EResourceType::TextureCubeArray:
+	case EResourceType::Texture2DArray:
+		return ICON_FA_FILE_IMAGE;
+	case EResourceType::Mesh:
+		return ICON_FA_CUBE;
+	case EResourceType::Material:
+		return ICON_FA_PALETTE;
+	case EResourceType::Skeleton:
+		return ICON_FA_BONE;
+	case EResourceType::Animation:
+	case EResourceType::AnimationGraph:
+		return ICON_FA_PERSON;
+	case EResourceType::Prefab:
+		return ICON_FA_DIAGRAM_PROJECT;
+	default:
+		return ICON_FA_FILE;
+	}
+}
+
+[[nodiscard]] ImU32 ResourceTypeGlyphColor(EResourceType Type)
+{
+	switch (Type)
+	{
+	case EResourceType::Texture:
+	case EResourceType::Texture2D:
+	case EResourceType::Texture3D:
+	case EResourceType::TextureCube:
+	case EResourceType::TextureCubeArray:
+	case EResourceType::Texture2DArray:
+		return IM_COL32(230, 140, 220, 255);
+	case EResourceType::Mesh:
+		return IM_COL32(120, 190, 255, 255);
+	case EResourceType::Material:
+		return IM_COL32(255, 180, 100, 255);
+	case EResourceType::Skeleton:
+		return IM_COL32(200, 210, 180, 255);
+	case EResourceType::Animation:
+	case EResourceType::AnimationGraph:
+		return IM_COL32(140, 230, 170, 255);
+	case EResourceType::Prefab:
+		return IM_COL32(180, 160, 255, 255);
+	default:
+		return IM_COL32(199, 209, 224, 255);
+	}
+}
+
+[[nodiscard]] const char* LoadStateLabel(EResourceLoadState State)
+{
+	switch (State)
+	{
+	case EResourceLoadState::Pending:
+		return "Pending";
+	case EResourceLoadState::Ready:
+		return "Ready";
+	case EResourceLoadState::Failed:
+		return "Failed";
+	default:
+		return "Invalid";
+	}
+}
+
+[[nodiscard]] std::string StripFileExtension(std::string Path)
+{
+	const std::size_t Slash = Path.find_last_of('/');
+	const std::size_t Dot = Path.find_last_of('.');
+	if (Dot != std::string::npos && (Slash == std::string::npos || Dot > Slash))
+	{
+		Path.resize(Dot);
+	}
+	return Path;
+}
+
+/** Parent of "/Game/Textures/Brick" → "/Game/Textures"; of "/Game" → "". */
+[[nodiscard]] std::string VirtualPathParent(const std::string& Path)
+{
+	if (Path.empty() || Path == "/")
+	{
+		return {};
+	}
+	const std::size_t Slash = Path.find_last_of('/');
+	if (Slash == std::string::npos || Slash == 0)
+	{
+		return {};
+	}
+	return Path.substr(0, Slash);
+}
+
+} // namespace
+
+bool FEditorLayer::IsContentBrowserInputLocked() const
+{
+	return bContentBrowserRefreshing || bStartupImportActive;
+}
+
+void FEditorLayer::CollectChildFolders(
+	const std::string& ParentVirtualPath,
+	std::vector<std::string>& OutFolders) const
+{
+	OutFolders.clear();
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	if (!Resources)
+	{
+		return;
+	}
+
+	// Package path "/Game/Textures/Brick" → folders under /Game are "Textures";
+	// the leaf "Brick" is the package (asset lives in parent folder), not a folder.
+	const std::string Parent = FPaths::NormalizePackagePath(ParentVirtualPath);
+	const std::string Prefix = Parent + "/";
+	std::unordered_set<std::string> Unique;
+	Resources->ForEachRegisteredResource(
+		[&](const std::string& CatalogKey, const FObjectRef& /*Resource*/)
+		{
+			FSoftObjectPath SoftPath;
+			if (!SoftPath.TrySetPath(CatalogKey) || !SoftPath.IsValid())
+			{
+				return;
+			}
+			const std::string& PackageName = SoftPath.GetPackageName();
+			if (PackageName.rfind(Prefix, 0) != 0)
+			{
+				return;
+			}
+			const std::string Rest = PackageName.substr(Prefix.size());
+			const std::size_t Slash = Rest.find('/');
+			if (Slash == std::string::npos)
+			{
+				return;
+			}
+			const std::string Segment = Rest.substr(0, Slash);
+			if (!Segment.empty())
+			{
+				Unique.insert(Prefix + Segment);
+			}
+		});
+
+	OutFolders.assign(Unique.begin(), Unique.end());
+	std::sort(OutFolders.begin(), OutFolders.end());
+}
+
 void FEditorLayer::DrawContentBrowser()
 {
-	// No trailing dock-bar close (X); show/hide via Window menu.
 	ImGuiWindowClass ContentClass;
 	ContentClass.DockNodeFlagsOverrideSet = static_cast<ImGuiDockNodeFlags>(
 		static_cast<int>(ImGuiDockNodeFlags_NoWindowMenuButton)
@@ -1774,6 +1953,11 @@ void FEditorLayer::DrawContentBrowser()
 		ImGui::End();
 		return;
 	}
+
+	RefreshContentListing();
+
+	const bool bLocked = IsContentBrowserInputLocked();
+	ImGui::BeginDisabled(bLocked);
 
 	const bool bAtMountRoot =
 		CurrentVirtualPath == "/Game" || CurrentVirtualPath == "/Engine";
@@ -1793,7 +1977,6 @@ void FEditorLayer::DrawContentBrowser()
 	}
 	ImGui::SameLine(0.0f, 6.0f);
 
-	// Clickable breadcrumbs: /Game / Maps / ...
 	{
 		std::string Accumulated;
 		bool bFirst = true;
@@ -1845,6 +2028,11 @@ void FEditorLayer::DrawContentBrowser()
 	{
 		RefreshContentListing();
 	}
+	if (bLocked)
+	{
+		ImGui::SameLine();
+		ImGui::TextDisabled(bStartupImportActive ? "(importing…)" : "(refreshing…)");
+	}
 
 	const ImVec4 DeepBg = ImVec4(14.0f / 255.0f, 14.0f / 255.0f, 16.0f / 255.0f, 1.0f);
 	const float TreeWidth = ImMax(180.0f, ImGui::GetContentRegionAvail().x * 0.22f);
@@ -1870,15 +2058,14 @@ void FEditorLayer::DrawContentBrowser()
 	ImGui::EndChild();
 	ImGui::PopStyleColor();
 
+	ImGui::EndDisabled();
 	ImGui::End();
 }
 
 void FEditorLayer::DrawContentBrowserTree()
 {
-	std::error_code ErrorCode;
 	for (const FPathMount& Mount : FPaths::GetMountPoints())
 	{
-		const std::filesystem::path DiskRoot = Mount.DiskRoot;
 		ImGuiTreeNodeFlags RootFlags =
 			ImGuiTreeNodeFlags_OpenOnArrow
 			| ImGuiTreeNodeFlags_OpenOnDoubleClick
@@ -1901,47 +2088,23 @@ void FEditorLayer::DrawContentBrowserTree()
 		}
 		if (bOpen)
 		{
-			if (std::filesystem::is_directory(DiskRoot, ErrorCode) && !ErrorCode)
-			{
-				DrawVirtualFolderTree(Mount.VirtualRoot, DiskRoot, 0);
-			}
+			DrawVirtualFolderTree(Mount.VirtualRoot);
 			ImGui::TreePop();
 		}
 		ImGui::PopID();
 	}
 }
 
-void FEditorLayer::DrawVirtualFolderTree(
-	const std::string& VirtualPath,
-	const std::filesystem::path& DiskPath,
-	int Depth)
+void FEditorLayer::DrawVirtualFolderTree(const std::string& VirtualPath)
 {
-	(void)Depth;
-	std::error_code ErrorCode;
-	std::vector<std::filesystem::path> Subdirs;
-	for (const std::filesystem::directory_entry& Entry :
-		std::filesystem::directory_iterator(DiskPath, ErrorCode))
+	std::vector<std::string> Children;
+	CollectChildFolders(VirtualPath, Children);
+	for (const std::string& ChildVirtual : Children)
 	{
-		if (ErrorCode)
-		{
-			break;
-		}
-		const std::string EntryName = Entry.path().filename().string();
-		if (EntryName.empty() || EntryName[0] == '.')
-		{
-			continue;
-		}
-		if (Entry.is_directory(ErrorCode) && !ErrorCode)
-		{
-			Subdirs.push_back(Entry.path());
-		}
-	}
-	std::sort(Subdirs.begin(), Subdirs.end());
+		const std::size_t Slash = ChildVirtual.find_last_of('/');
+		const std::string ChildName =
+			(Slash == std::string::npos) ? ChildVirtual : ChildVirtual.substr(Slash + 1);
 
-	for (const std::filesystem::path& Sub : Subdirs)
-	{
-		const std::string ChildName = Sub.filename().string();
-		const std::string ChildVirtual = VirtualPath + "/" + ChildName;
 		ImGuiTreeNodeFlags Flags =
 			ImGuiTreeNodeFlags_OpenOnArrow
 			| ImGuiTreeNodeFlags_OpenOnDoubleClick
@@ -1963,7 +2126,7 @@ void FEditorLayer::DrawVirtualFolderTree(
 		}
 		if (bOpen)
 		{
-			DrawVirtualFolderTree(ChildVirtual, Sub, Depth + 1);
+			DrawVirtualFolderTree(ChildVirtual);
 			ImGui::TreePop();
 		}
 		ImGui::PopID();
@@ -1983,24 +2146,19 @@ void FEditorLayer::DrawContentBrowserTiles()
 		Columns = 1;
 	}
 
-	auto DrawTile = [&](const std::string& VirtualPath, bool bIsFolder)
+	auto DrawFolderTile = [&](const std::string& VirtualPath)
 	{
 		const std::size_t Slash = VirtualPath.find_last_of('/');
 		const std::string EntryName =
 			(Slash == std::string::npos) ? VirtualPath : VirtualPath.substr(Slash + 1);
 		const bool bSelected = SelectedVirtualEntry == VirtualPath;
-		const char* Glyph = bIsFolder ? ICON_FA_FOLDER : ICON_FA_FILE;
-		const ImU32 GlyphColor = bIsFolder
-			? IM_COL32(242, 199, 89, 255)
-			: IM_COL32(199, 209, 224, 255);
-		const ImU32 FaceColor = bSelected
-			? IM_COL32(51, 71, 102, 255)
-			: IM_COL32(31, 33, 38, 255);
+		const char* Glyph = ICON_FA_FOLDER;
+		const ImU32 GlyphColor = IM_COL32(242, 199, 89, 255);
+		const ImU32 FaceColor = bSelected ? IM_COL32(51, 71, 102, 255) : IM_COL32(31, 33, 38, 255);
 		const ImU32 FaceHover = IM_COL32(56, 61, 71, 255);
 
 		ImGui::PushID(VirtualPath.c_str());
 		ImGui::BeginGroup();
-
 		const ImVec2 StartPos = ImGui::GetCursorPos();
 		const ImVec2 Screen0 = ImGui::GetCursorScreenPos();
 		ImGui::InvisibleButton("##Tile", ImVec2(Tile, Tile));
@@ -2009,7 +2167,7 @@ void FEditorLayer::DrawContentBrowserTiles()
 		{
 			SelectedVirtualEntry = VirtualPath;
 		}
-		if (bIsFolder && bHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		if (bHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
 		{
 			SelectContentFolder(VirtualPath);
 		}
@@ -2020,7 +2178,6 @@ void FEditorLayer::DrawContentBrowserTiles()
 			ImVec2(Screen0.x + Tile, Screen0.y + Tile),
 			bHovered ? FaceHover : FaceColor,
 			4.0f);
-
 		ImFont* Font = ImGui::GetFont();
 		const float IconPx = Tile * 0.72f;
 		const ImVec2 GlyphSize = Font->CalcTextSizeA(IconPx, FLT_MAX, 0.0f, Glyph);
@@ -2038,11 +2195,76 @@ void FEditorLayer::DrawContentBrowserTiles()
 			StartPos.x + (Tile - LabelSize.x) * 0.5f,
 			StartPos.y + Tile + LabelGap));
 		ImGui::TextUnformatted(EntryName.c_str());
-
-		// Keep group cell width for SameLine column layout.
 		ImGui::SetCursorPos(ImVec2(StartPos.x, StartPos.y + Tile + LabelGap + LabelSize.y));
 		ImGui::Dummy(ImVec2(Tile, 0.0f));
+		ImGui::EndGroup();
+		ImGui::PopID();
+	};
 
+	auto DrawAssetTile = [&](const FContentAssetEntry& Entry)
+	{
+		const bool bSelected = SelectedVirtualEntry == Entry.CatalogKey;
+		const char* Glyph = ResourceTypeGlyph(Entry.Type);
+		ImU32 GlyphColor = ResourceTypeGlyphColor(Entry.Type);
+		if (Entry.LoadState == EResourceLoadState::Pending)
+		{
+			GlyphColor = IM_COL32(140, 140, 150, 255);
+		}
+		else if (Entry.LoadState == EResourceLoadState::Failed)
+		{
+			GlyphColor = IM_COL32(220, 90, 90, 255);
+		}
+		const ImU32 FaceColor = bSelected ? IM_COL32(51, 71, 102, 255) : IM_COL32(31, 33, 38, 255);
+		const ImU32 FaceHover = IM_COL32(56, 61, 71, 255);
+
+		ImGui::PushID(Entry.CatalogKey.c_str());
+		ImGui::BeginGroup();
+		const ImVec2 StartPos = ImGui::GetCursorPos();
+		const ImVec2 Screen0 = ImGui::GetCursorScreenPos();
+		ImGui::InvisibleButton("##Tile", ImVec2(Tile, Tile));
+		const bool bHovered = ImGui::IsItemHovered();
+		if (ImGui::IsItemClicked())
+		{
+			SelectedVirtualEntry = Entry.CatalogKey;
+		}
+		if (bHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		{
+			OpenResourceBrowser(Entry.CatalogKey);
+		}
+		if (bHovered)
+		{
+			ImGui::SetTooltip(
+				"%s\n%s · %s",
+				Entry.CatalogKey.c_str(),
+				LoadStateLabel(Entry.LoadState),
+				Entry.DisplayName.c_str());
+		}
+
+		ImDrawList* DrawList = ImGui::GetWindowDrawList();
+		DrawList->AddRectFilled(
+			Screen0,
+			ImVec2(Screen0.x + Tile, Screen0.y + Tile),
+			bHovered ? FaceHover : FaceColor,
+			4.0f);
+		ImFont* Font = ImGui::GetFont();
+		const float IconPx = Tile * 0.72f;
+		const ImVec2 GlyphSize = Font->CalcTextSizeA(IconPx, FLT_MAX, 0.0f, Glyph);
+		DrawList->AddText(
+			Font,
+			IconPx,
+			ImVec2(
+				Screen0.x + (Tile - GlyphSize.x) * 0.5f,
+				Screen0.y + (Tile - GlyphSize.y) * 0.5f),
+			GlyphColor,
+			Glyph);
+
+		const ImVec2 LabelSize = ImGui::CalcTextSize(Entry.DisplayName.c_str());
+		ImGui::SetCursorPos(ImVec2(
+			StartPos.x + (Tile - LabelSize.x) * 0.5f,
+			StartPos.y + Tile + LabelGap));
+		ImGui::TextUnformatted(Entry.DisplayName.c_str());
+		ImGui::SetCursorPos(ImVec2(StartPos.x, StartPos.y + Tile + LabelGap + LabelSize.y));
+		ImGui::Dummy(ImVec2(Tile, 0.0f));
 		ImGui::EndGroup();
 		ImGui::PopID();
 	};
@@ -2054,22 +2276,32 @@ void FEditorLayer::DrawContentBrowserTiles()
 		{
 			ImGui::SameLine(0.0f, Pad);
 		}
-		DrawTile(Folder, true);
+		DrawFolderTile(Folder);
 		++Index;
 	}
-	for (const std::string& File : FileVirtualEntries)
+	for (const FContentAssetEntry& Asset : AssetEntries)
 	{
 		if (Index > 0 && (Index % Columns) != 0)
 		{
 			ImGui::SameLine(0.0f, Pad);
 		}
-		DrawTile(File, false);
+		DrawAssetTile(Asset);
 		++Index;
 	}
 
-	if (FolderVirtualEntries.empty() && FileVirtualEntries.empty())
+	if (FolderVirtualEntries.empty() && AssetEntries.empty())
 	{
 		ImGui::TextDisabled("Empty  %s", CurrentVirtualPath.c_str());
+		ImGui::TextDisabled("Showing registered UResource assets only.");
+		const std::string Disk = FPaths::ConvertVirtualPathToFilename(CurrentVirtualPath);
+		if (!Disk.empty())
+		{
+			ImGui::TextDisabled("Mount disk: %s", Disk.c_str());
+		}
+		if (bStartupImportActive)
+		{
+			ImGui::TextDisabled("Startup import still running…");
+		}
 	}
 }
 
@@ -2085,53 +2317,558 @@ void FEditorLayer::SelectContentFolder(const std::string& VirtualPath)
 	RefreshContentListing();
 }
 
-std::filesystem::path FEditorLayer::VirtualPathToDisk(const std::string& VirtualPath) const
-{
-	const std::string Disk = FPaths::ConvertVirtualPathToFilename(VirtualPath);
-	if (!Disk.empty())
-	{
-		return std::filesystem::path(Disk);
-	}
-	return std::filesystem::path(FPaths::GetProjectContentDir());
-}
-
 void FEditorLayer::RefreshContentListing()
 {
+	bContentBrowserRefreshing = true;
 	FolderVirtualEntries.clear();
-	FileVirtualEntries.clear();
+	AssetEntries.clear();
 
-	const std::filesystem::path DiskFolder = VirtualPathToDisk(CurrentVirtualPath);
-	std::error_code ErrorCode;
-	if (!std::filesystem::is_directory(DiskFolder, ErrorCode) || ErrorCode)
+	CollectChildFolders(CurrentVirtualPath, FolderVirtualEntries);
+
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	if (Resources)
+	{
+		const std::string Folder = FPaths::NormalizePackagePath(CurrentVirtualPath);
+		Resources->ForEachRegisteredResource(
+			[&](const std::string& CatalogKey, const FObjectRef& ResourceRef)
+			{
+				FSoftObjectPath SoftPath;
+				if (!SoftPath.TrySetPath(CatalogKey) || !SoftPath.IsValid())
+				{
+					return;
+				}
+				// SoftPath PackageName "/Game/Foo" lists asset "Foo" under folder "/Game".
+				if (VirtualPathParent(SoftPath.GetPackageName()) != Folder)
+				{
+					return;
+				}
+				UResource* Resource = ResourceRef.Cast<UResource>();
+				if (!Resource)
+				{
+					return;
+				}
+				FContentAssetEntry Entry;
+				Entry.CatalogKey = CatalogKey;
+				Entry.DisplayName = SoftPath.GetAssetName();
+				Entry.Type = Resource->GetType();
+				Entry.LoadState = Resource->GetLoadState();
+				AssetEntries.push_back(std::move(Entry));
+			});
+	}
+
+	std::sort(
+		AssetEntries.begin(),
+		AssetEntries.end(),
+		[](const FContentAssetEntry& A, const FContentAssetEntry& B)
+		{
+			return A.DisplayName < B.DisplayName;
+		});
+	bContentBrowserRefreshing = false;
+}
+
+void FEditorLayer::StartStartupContentImport()
+{
+	if (bStartupContentImportStarted)
 	{
 		return;
 	}
 
-	for (const std::filesystem::directory_entry& Entry :
-		std::filesystem::directory_iterator(DiskFolder, ErrorCode))
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	if (!Resources || !Resources->IsInitialized())
 	{
-		if (ErrorCode)
-		{
-			break;
-		}
-		const std::string EntryName = Entry.path().filename().string();
-		if (EntryName.empty() || EntryName[0] == '.')
+		// Retry on a later Update — Attach may run before Resource Init finishes.
+		return;
+	}
+
+	bStartupContentImportStarted = true;
+	StartupImportJobs.clear();
+	StartupImportKickIndex = 0;
+	StartupImportCompleted = 0;
+	StartupImportCurrentName.clear();
+
+	for (const FPathMount& Mount : FPaths::GetMountPoints())
+	{
+		std::error_code ErrorCode;
+		const std::filesystem::path DiskRoot(Mount.DiskRoot);
+		if (!std::filesystem::is_directory(DiskRoot, ErrorCode) || ErrorCode)
 		{
 			continue;
 		}
-		const std::string ChildVirtual = CurrentVirtualPath + "/" + EntryName;
-		if (Entry.is_directory(ErrorCode) && !ErrorCode)
+
+		for (const std::filesystem::directory_entry& Entry :
+			std::filesystem::recursive_directory_iterator(DiskRoot, ErrorCode))
 		{
-			FolderVirtualEntries.push_back(ChildVirtual);
-		}
-		else if (Entry.is_regular_file(ErrorCode) && !ErrorCode)
-		{
-			FileVirtualEntries.push_back(ChildVirtual);
+			if (ErrorCode)
+			{
+				break;
+			}
+			if (!Entry.is_regular_file(ErrorCode) || ErrorCode)
+			{
+				continue;
+			}
+			const std::string FileName = Entry.path().filename().string();
+			if (FileName.empty() || FileName[0] == '.')
+			{
+				continue;
+			}
+
+			const std::string Absolute = std::filesystem::absolute(Entry.path(), ErrorCode).string();
+			if (ErrorCode || Absolute.empty())
+			{
+				continue;
+			}
+			if (!Resources->CanImportSourcePath(Absolute))
+			{
+				continue;
+			}
+
+			std::string VirtualFile = FPaths::ConvertFilenameToVirtualPath(Absolute);
+			if (VirtualFile.empty())
+			{
+				continue;
+			}
+			VirtualFile = FPaths::NormalizePackagePath(std::move(VirtualFile));
+			const std::string PackagePath = FPaths::NormalizePackagePath(StripFileExtension(VirtualFile));
+			const std::string ObjectName = std::filesystem::path(VirtualFile).stem().string();
+			if (PackagePath.empty() || ObjectName.empty())
+			{
+				continue;
+			}
+
+			const std::string CatalogKey = PackagePath + "." + ObjectName;
+			if (Resources->FindRegisteredResource(CatalogKey))
+			{
+				// Keep already-loaded catalog entry; do not reimport or overwrite.
+				continue;
+			}
+
+			FStartupImportJob Job;
+			Job.SourcePath = Absolute;
+			Job.PackagePath = PackagePath;
+			Job.ObjectName = ObjectName;
+			StartupImportJobs.push_back(std::move(Job));
 		}
 	}
 
-	std::sort(FolderVirtualEntries.begin(), FolderVirtualEntries.end());
-	std::sort(FileVirtualEntries.begin(), FileVirtualEntries.end());
+	bStartupImportActive = !StartupImportJobs.empty();
+	if (bStartupImportActive)
+	{
+		AppendOutput(
+			"Content import: queued " + std::to_string(StartupImportJobs.size()) + " source file(s).");
+	}
+	else
+	{
+		std::string Roots;
+		for (const FPathMount& Mount : FPaths::GetMountPoints())
+		{
+			if (!Roots.empty())
+			{
+				Roots += " | ";
+			}
+			Roots += Mount.VirtualRoot + " → " + Mount.DiskRoot;
+		}
+		AppendOutput(
+			"Content import: no importable source files under mounts (" + Roots + ").");
+	}
+}
+
+void FEditorLayer::TickStartupContentImport()
+{
+	if (!bStartupImportActive)
+	{
+		return;
+	}
+
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	FGCSystem* GC = Detail::GetGCSystem();
+	if (!Resources || !GC)
+	{
+		bStartupImportActive = false;
+		return;
+	}
+
+	constexpr std::size_t KicksPerFrame = 4;
+	std::size_t KickedThisFrame = 0;
+	while (StartupImportKickIndex < StartupImportJobs.size() && KickedThisFrame < KicksPerFrame)
+	{
+		FStartupImportJob& Job = StartupImportJobs[StartupImportKickIndex];
+		++StartupImportKickIndex;
+		if (Job.bKicked)
+		{
+			continue;
+		}
+
+		const std::string CatalogKey = Job.PackagePath + "." + Job.ObjectName;
+		if (Resources->FindRegisteredResource(CatalogKey))
+		{
+			Job.bKicked = true;
+			continue;
+		}
+
+		FObjectRef PackageRef = GC->FindPackage(Job.PackagePath);
+		if (!PackageRef)
+		{
+			PackageRef = GC->NewObject<UPackage>(Job.PackagePath, EPackageFlags::Persistent);
+		}
+		if (!PackageRef)
+		{
+			Job.bKicked = true;
+			continue;
+		}
+
+		FResourceImportConfig Config;
+		Config.Package = PackageRef;
+		Config.ObjectName = Job.ObjectName;
+		Config.SourcePath = Job.SourcePath;
+		Config.TypeHint = EResourceType::Unknown;
+		Job.Resource = Resources->KickImport(std::move(Config));
+		Job.bKicked = true;
+		StartupImportCurrentName = std::filesystem::path(Job.SourcePath).filename().string();
+		++KickedThisFrame;
+	}
+
+	StartupImportCompleted = 0;
+	bool bAnyPending = false;
+	for (FStartupImportJob& Job : StartupImportJobs)
+	{
+		if (!Job.bKicked)
+		{
+			bAnyPending = true;
+			continue;
+		}
+		if (!Job.Resource)
+		{
+			++StartupImportCompleted;
+			continue;
+		}
+		const EResourceLoadState State = Resources->GetLoadState(Job.Resource);
+		if (State == EResourceLoadState::Pending)
+		{
+			bAnyPending = true;
+			if (StartupImportCurrentName.empty())
+			{
+				StartupImportCurrentName = std::filesystem::path(Job.SourcePath).filename().string();
+			}
+		}
+		else
+		{
+			++StartupImportCompleted;
+		}
+	}
+
+	if (StartupImportKickIndex < StartupImportJobs.size())
+	{
+		bAnyPending = true;
+	}
+
+	if (!bAnyPending)
+	{
+		bStartupImportActive = false;
+		StartupImportCurrentName.clear();
+		RefreshContentListing();
+		AppendOutput(
+			"Content import finished: " + std::to_string(StartupImportCompleted) + "/"
+			+ std::to_string(StartupImportJobs.size()));
+	}
+}
+
+void FEditorLayer::DrawContentImportProgressOverlay()
+{
+	if (!bStartupImportActive || StartupImportJobs.empty())
+	{
+		return;
+	}
+
+	ImGuiViewport* Viewport = ImGui::GetMainViewport();
+	if (!Viewport)
+	{
+		return;
+	}
+
+	const ImVec2 Pad(16.0f, 16.0f);
+	ImGui::SetNextWindowPos(
+		ImVec2(Viewport->WorkPos.x + Viewport->WorkSize.x - Pad.x, Viewport->WorkPos.y + Viewport->WorkSize.y - Pad.y),
+		ImGuiCond_Always,
+		ImVec2(1.0f, 1.0f));
+	ImGui::SetNextWindowBgAlpha(0.92f);
+	ImGuiWindowFlags Flags =
+		ImGuiWindowFlags_NoDecoration
+		| ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_AlwaysAutoResize
+		| ImGuiWindowFlags_NoSavedSettings
+		| ImGuiWindowFlags_NoFocusOnAppearing
+		| ImGuiWindowFlags_NoNav;
+	if (ImGui::Begin("##ContentImportProgress", nullptr, Flags))
+	{
+		const float Total = static_cast<float>(StartupImportJobs.size());
+		const float Done = static_cast<float>(StartupImportCompleted);
+		const float Fraction = Total > 0.0f ? (Done / Total) : 0.0f;
+		ImGui::TextUnformatted("Importing content…");
+		ImGui::ProgressBar(Fraction, ImVec2(260.0f, 0.0f));
+		ImGui::Text("%zu / %zu", StartupImportCompleted, StartupImportJobs.size());
+		if (!StartupImportCurrentName.empty())
+		{
+			ImGui::TextDisabled("%s", StartupImportCurrentName.c_str());
+		}
+	}
+	ImGui::End();
+}
+
+void FEditorLayer::OpenResourceBrowser(const std::string& CatalogKey)
+{
+	for (FResourceBrowserWindow& Window : OpenResourceBrowsers)
+	{
+		if (Window.CatalogKey == CatalogKey)
+		{
+			Window.bOpen = true;
+			return;
+		}
+	}
+
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	FObjectRef Ref = Resources ? Resources->FindRegisteredResource(CatalogKey) : FObjectRef{};
+	UResource* Resource = Ref.Cast<UResource>();
+	FResourceBrowserWindow Window;
+	Window.CatalogKey = CatalogKey;
+	Window.Type = Resource ? Resource->GetType() : EResourceType::Unknown;
+	Window.bOpen = true;
+	OpenResourceBrowsers.push_back(std::move(Window));
+}
+
+void FEditorLayer::ReleaseResourceBrowserPreview(FResourceBrowserWindow& Window, FApp& App)
+{
+	if (!Window.PreviewTexture.IsValid())
+	{
+		return;
+	}
+	FRenderSystem* Render = App.GetExtension<FRenderSystem>();
+	if (Render)
+	{
+		Render->GetRenderServer().GetImGui().DestroyTexture(
+			Render->GetRenderServer().GetRHIServer(),
+			Window.PreviewTexture);
+	}
+	Window.PreviewTexture.Reset();
+	Window.PreviewGeneration = 0;
+}
+
+void FEditorLayer::DrawOpenResourceBrowsers(FApp& App)
+{
+	FResourceSystem* Resources = Detail::GetResourceSystem();
+	for (std::size_t Index = 0; Index < OpenResourceBrowsers.size();)
+	{
+		FResourceBrowserWindow& Window = OpenResourceBrowsers[Index];
+		if (!Window.bOpen)
+		{
+			ReleaseResourceBrowserPreview(Window, App);
+			OpenResourceBrowsers.erase(OpenResourceBrowsers.begin() + static_cast<std::ptrdiff_t>(Index));
+			continue;
+		}
+
+		FSoftObjectPath SoftPath;
+		(void)SoftPath.TrySetPath(Window.CatalogKey);
+		const std::string Title =
+			std::string(ResourceTypeGlyph(Window.Type)) + "  "
+			+ (SoftPath.IsValid() ? SoftPath.GetAssetName() : Window.CatalogKey)
+			+ "###ResourceBrowser_" + Window.CatalogKey;
+
+		ImGui::SetNextWindowSize(ImVec2(420.0f, 360.0f), ImGuiCond_FirstUseEver);
+		if (ImGui::Begin(Title.c_str(), &Window.bOpen))
+		{
+			UResource* Resource =
+				Resources ? Resources->FindRegisteredResource(Window.CatalogKey).Cast<UResource>() : nullptr;
+			if (!Resource)
+			{
+				ImGui::TextDisabled("Resource no longer in catalog.");
+			}
+			else
+			{
+				ImGui::TextUnformatted(Window.CatalogKey.c_str());
+				ImGui::Text("Type: %d   State: %s", static_cast<int>(Resource->GetType()), LoadStateLabel(Resource->GetLoadState()));
+				ImGui::TextWrapped("Source: %s", Resource->GetSourcePath().c_str());
+				ImGui::Separator();
+				if (Resource->GetLoadState() != EResourceLoadState::Ready)
+				{
+					ImGui::TextDisabled("Waiting until Ready…");
+				}
+				else
+				{
+					DrawResourceBrowserBody(Window, *Resource, App);
+				}
+			}
+		}
+		ImGui::End();
+
+		if (!Window.bOpen)
+		{
+			ReleaseResourceBrowserPreview(Window, App);
+			OpenResourceBrowsers.erase(OpenResourceBrowsers.begin() + static_cast<std::ptrdiff_t>(Index));
+			continue;
+		}
+		++Index;
+	}
+}
+
+void FEditorLayer::DrawResourceBrowserBody(FResourceBrowserWindow& Window, UResource& Resource, FApp& App)
+{
+	const EResourceType Type = Resource.GetType();
+	if (Type == EResourceType::Texture
+		|| Type == EResourceType::Texture2D
+		|| Type == EResourceType::Texture3D
+		|| Type == EResourceType::TextureCube
+		|| Type == EResourceType::TextureCubeArray
+		|| Type == EResourceType::Texture2DArray)
+	{
+		UTexture* Texture = dynamic_cast<UTexture*>(&Resource);
+		if (!Texture)
+		{
+			ImGui::TextDisabled("Not a UTexture.");
+			return;
+		}
+		ImGui::Text(
+			"%u x %u  format=%d  gen=%llu",
+			Texture->GetWidth(),
+			Texture->GetHeight(),
+			static_cast<int>(Texture->GetPixelFormat()),
+			static_cast<unsigned long long>(Texture->GetContentGeneration()));
+
+		if (Texture->GetDimension() == ETextureDimension::Tex2D
+			&& Texture->GetPixelFormat() == ETexturePixelFormat::RGBA8
+			&& !Texture->GetPixels().empty())
+		{
+			if (Window.PreviewGeneration != Texture->GetContentGeneration() || !Window.PreviewTexture.IsValid())
+			{
+				ReleaseResourceBrowserPreview(Window, App);
+				FRenderSystem* Render = App.GetExtension<FRenderSystem>();
+				if (Render)
+				{
+					const bool bOk = Render->GetRenderServer().GetImGui().CreateRgba8Texture(
+						Render->GetRenderServer().GetRHIServer(),
+						Texture->GetWidth(),
+						Texture->GetHeight(),
+						Texture->GetPixels().data(),
+						Texture->GetPixels().size(),
+						Window.PreviewTexture);
+					if (bOk)
+					{
+						Window.PreviewGeneration = Texture->GetContentGeneration();
+					}
+				}
+			}
+			if (Window.PreviewTexture.IsValid())
+			{
+				const float MaxW = ImGui::GetContentRegionAvail().x;
+				const float MaxH = ImGui::GetContentRegionAvail().y;
+				float W = static_cast<float>(Texture->GetWidth());
+				float H = static_cast<float>(Texture->GetHeight());
+				const float Scale = (std::min)(MaxW / W, MaxH / H);
+				if (Scale > 0.0f && Scale < 1.0f)
+				{
+					W *= Scale;
+					H *= Scale;
+				}
+				ImGui::Image(reinterpret_cast<ImTextureID>(Window.PreviewTexture.Id), ImVec2(W, H));
+			}
+		}
+		else
+		{
+			ImGui::TextDisabled("Preview supports RGBA8 Tex2D only.");
+		}
+		return;
+	}
+
+	if (Type == EResourceType::Mesh)
+	{
+		if (UStaticMesh* Mesh = dynamic_cast<UStaticMesh*>(&Resource))
+		{
+			ImGui::Text("Vertices: %zu", Mesh->GetPositions().size() / 3u);
+			ImGui::Text("Indices: %zu", Mesh->GetIndices().size());
+			ImGui::TextWrapped("Material: %s", Mesh->GetMaterial().ToString().c_str());
+		}
+		return;
+	}
+
+	if (Type == EResourceType::Material)
+	{
+		if (UMaterial* Material = dynamic_cast<UMaterial*>(&Resource))
+		{
+			ImGui::TextWrapped("BaseColor: %s", Material->GetBaseColorTexture().ToString().c_str());
+			ImGui::TextWrapped("Normal: %s", Material->GetNormalTexture().ToString().c_str());
+			ImGui::TextWrapped("MR: %s", Material->GetMetallicRoughnessTexture().ToString().c_str());
+			ImGui::Text(
+				"Metallic=%.2f Roughness=%.2f",
+				Material->MetallicFactor,
+				Material->RoughnessFactor);
+		}
+		return;
+	}
+
+	if (Type == EResourceType::Skeleton)
+	{
+		if (USkeleton* Skeleton = dynamic_cast<USkeleton*>(&Resource))
+		{
+			ImGui::Text("Bones: %zu", Skeleton->GetBones().size());
+			if (ImGui::BeginChild("##BoneList", ImVec2(0, 0), ImGuiChildFlags_Borders))
+			{
+				for (std::size_t I = 0; I < Skeleton->GetBones().size(); ++I)
+				{
+					const FSkeletonBone& Bone = Skeleton->GetBones()[I];
+					ImGui::Text("[%zu] %s  parent=%d", I, Bone.Name.c_str(), Bone.ParentIndex);
+				}
+			}
+			ImGui::EndChild();
+		}
+		return;
+	}
+
+	if (Type == EResourceType::Animation)
+	{
+		if (UAnimation* Animation = dynamic_cast<UAnimation*>(&Resource))
+		{
+			ImGui::Text("Duration: %.3f s", Animation->GetDurationSeconds());
+			ImGui::TextWrapped("Skeleton: %s", Animation->GetSkeleton().ToString().c_str());
+			ImGui::Text("Tracks: %zu", Animation->GetTracks().size());
+			if (ImGui::BeginChild("##AnimTracks", ImVec2(0, 0), ImGuiChildFlags_Borders))
+			{
+				for (const FAnimationTrack& Track : Animation->GetTracks())
+				{
+					ImGui::Text("%s  (%zu keys)", Track.TargetBoneName.c_str(), Track.Keys.size());
+				}
+			}
+			ImGui::EndChild();
+		}
+		return;
+	}
+
+	if (Type == EResourceType::AnimationGraph)
+	{
+		if (UAnimationGraph* Graph = dynamic_cast<UAnimationGraph*>(&Resource))
+		{
+			if (ImGui::BeginChild("##AnimGraphJson", ImVec2(0, 0), ImGuiChildFlags_Borders))
+			{
+				ImGui::TextUnformatted(
+					Graph->GetDocumentJson().empty() ? "(empty)" : Graph->GetDocumentJson().c_str());
+			}
+			ImGui::EndChild();
+		}
+		return;
+	}
+
+	if (Type == EResourceType::Prefab)
+	{
+		if (UPrefab* Prefab = dynamic_cast<UPrefab*>(&Resource))
+		{
+			if (ImGui::BeginChild("##PrefabJson", ImVec2(0, 0), ImGuiChildFlags_Borders))
+			{
+				ImGui::TextUnformatted(
+					Prefab->GetDocumentJson().empty() ? "(empty)" : Prefab->GetDocumentJson().c_str());
+			}
+			ImGui::EndChild();
+		}
+		return;
+	}
+
+	ImGui::TextDisabled("No specialized browser for this type yet.");
 }
 
 void FEditorLayer::DrawOutputPanel(FApp& App)
