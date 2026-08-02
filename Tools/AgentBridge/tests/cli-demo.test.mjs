@@ -94,6 +94,10 @@ test("CLI startup defaults to MockProvider and never requires a real key", async
   assert.match(text, /Thinking: disabled/);
   assert.match(text, /World adapter: mock/);
   assert.match(text, /Adapter readiness: ready/);
+  assert.match(text, /Supported tools: 8/);
+  assert.match(text, /Atomic transactions: yes/);
+  assert.match(text, /Dry-run: yes/);
+  assert.match(text, /Undo: yes/);
 });
 
 test("CLI uses remote only when explicitly selected and closes cleanly", async (t) => {
@@ -130,5 +134,38 @@ test("CLI uses remote only when explicitly selected and closes cleanly", async (
   assert.equal(
     fake.requests.every((request) => !("authorization" in request)),
     true
+  );
+});
+
+test("CLI undo explains when a minimal remote adapter has no undo capability", async (t) => {
+  const fake = await startFakeMahoWorldServer({ profile: "minimal" });
+  t.after(() => fake.close());
+  let text = "";
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      text += chunk.toString();
+      callback();
+    },
+  });
+  const exit_code = await runDemo({
+    input: Readable.from(["/undo\n", "/exit\n"]),
+    output,
+    env: {
+      MAHO_WORLD_ADAPTER: "remote",
+      MAHO_WORLD_BASE_URL: fake.base_url,
+      MAHO_WORLD_TIMEOUT_MS: "1000",
+    },
+  });
+
+  assert.equal(exit_code, 0);
+  assert.match(text, /history\.undo ✗/);
+  assert.match(text, /does not support undo/);
+  assert.match(text, /Supported tools: 3/);
+  assert.match(text, /Atomic transactions: no/);
+  assert.match(text, /Dry-run: no/);
+  assert.match(text, /Undo: no/);
+  assert.equal(
+    fake.requests.some((request) => request.pathname.endsWith("/undo")),
+    false
   );
 });

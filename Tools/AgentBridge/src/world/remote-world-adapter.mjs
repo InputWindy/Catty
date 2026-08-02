@@ -4,6 +4,7 @@ import {
   assertJsonDto,
   assertWorldAdapterContract,
   validateAdapterCapabilities,
+  validateAdapterCapabilityRequest,
   validateExecuteTransactionInput,
   validateExecuteTransactionResult,
   validateGetSnapshotInput,
@@ -19,12 +20,6 @@ import {
 import { RemoteWorldClient } from "./remote-world-client.mjs";
 
 const HEALTH_CACHE_TTL_MS = 1_000;
-const REQUIRED_CAPABILITIES = [
-  "supports_atomic_transactions",
-  "supports_dry_run",
-  "supports_undo",
-  "supports_idempotency",
-];
 
 function clone(value) {
   return structuredClone(value);
@@ -108,7 +103,7 @@ export class RemoteWorldAdapter {
     this.session_id = session_id;
     this.world_id = world_id;
     this.tool_registry = tool_registry;
-    this.required_tools = tool_registry
+    this.known_tools = tool_registry
       .listDefinitions()
       .map((definition) => definition.name);
     this.client = client || new RemoteWorldClient({
@@ -124,13 +119,14 @@ export class RemoteWorldAdapter {
     this.latest_undo_token = null;
     this.closed = false;
     this.ready = false;
+    this.capabilities_negotiated = false;
     this.capabilities = Object.freeze({
       supports_atomic_transactions: true,
       supports_dry_run: true,
       supports_undo: true,
       supports_idempotency: true,
       max_tool_calls: 16,
-      supported_tools: Object.freeze([...this.required_tools]),
+      supported_tools: Object.freeze([...this.known_tools]),
     });
     assertWorldAdapterContract(this);
   }
@@ -148,7 +144,10 @@ export class RemoteWorldAdapter {
       endpoint_origin: client_metadata.endpoint_origin,
       loopback: client_metadata.loopback,
       timeout_ms: client_metadata.timeout_ms,
-      capabilities: clone(this.capabilities),
+      capabilities: this.capabilities_negotiated
+        ? clone(this.capabilities)
+        : null,
+      capabilities_negotiated: this.capabilities_negotiated,
     };
   }
 
@@ -266,38 +265,13 @@ export class RemoteWorldAdapter {
     this.#assertOpen("execute");
     this.#assertIdentity(input);
     await this.health({ signal: input.signal });
-    if (input.tool_calls.length > this.capabilities.max_tool_calls) {
-      throw new WorldAdapterError(
-        worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT,
-        "Remote world max_tool_calls is smaller than the request",
-        {
-          adapter: this.name,
-          protocol_version: this.protocolVersion,
-          phase: "execute",
-          details: {
-            tool_call_count: input.tool_calls.length,
-            max_tool_calls: this.capabilities.max_tool_calls,
-          },
-        }
-      );
-    }
-    for (const [index, tool_call] of input.tool_calls.entries()) {
-      if (!this.capabilities.supported_tools.includes(tool_call.tool_name)) {
-        throw new WorldAdapterError(
-          worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT,
-          "Remote world does not advertise the requested tool",
-          {
-            adapter: this.name,
-            protocol_version: this.protocolVersion,
-            phase: "execute",
-            details: {
-              tool_call_index: index,
-              tool_name: tool_call.tool_name,
-            },
-          }
-        );
-      }
-    }
+    validateAdapterCapabilityRequest(this.capabilities, {
+      tool_calls: input.tool_calls,
+      dry_run: input.dry_run,
+      atomic: input.atomic,
+      phase: "execute",
+      known_tools: this.known_tools,
+    });
 
     const started_at = performance.now();
     const response = await this.client.request({
@@ -365,6 +339,13 @@ export class RemoteWorldAdapter {
     this.#assertOpen("undo");
     this.#assertIdentity(input);
     await this.health({ signal: input.signal });
+    validateAdapterCapabilityRequest(this.capabilities, {
+      tool_calls: [{ tool_name: "history.undo" }],
+      dry_run: false,
+      atomic: false,
+      phase: "undo",
+      known_tools: this.known_tools,
+    });
     const undo_token = input.undo_token || this.latest_undo_token;
     if (!undo_token) {
       return validateUndoResult(
@@ -463,39 +444,27 @@ export class RemoteWorldAdapter {
   #acceptCapabilities(capabilities) {
     const validated = validateAdapterCapabilities(capabilities, {
       phase: "health",
+      known_tools: this.known_tools,
     });
-    for (const capability of REQUIRED_CAPABILITIES) {
-      if (validated[capability] !== true) {
-        throw new WorldAdapterError(
-          worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT,
-          `Remote world capability is required: ${capability}`,
-          {
-            adapter: this.name,
-            protocol_version: this.protocolVersion,
-            phase: "health",
-            details: { field: `capabilities.${capability}` },
-          }
-        );
-      }
-    }
-    for (const tool_name of this.required_tools) {
-      if (!validated.supported_tools.includes(tool_name)) {
-        throw new WorldAdapterError(
-          worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT,
-          "Remote world is missing a required tool capability",
-          {
-            adapter: this.name,
-            protocol_version: this.protocolVersion,
-            phase: "health",
-            details: { tool_name },
-          }
-        );
-      }
+    if (!validated.supports_idempotency) {
+      throw new WorldAdapterError(
+        worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT,
+        "Remote world request replay requires idempotency support",
+        {
+          adapter: this.name,
+          protocol_version: this.protocolVersion,
+          phase: "health",
+          details: {
+            field: "capabilities.supports_idempotency",
+          },
+        }
+      );
     }
     this.capabilities = Object.freeze({
       ...validated,
       supported_tools: Object.freeze([...validated.supported_tools]),
     });
+    this.capabilities_negotiated = true;
   }
 
   #assertProtocolVersion(payload, phase) {

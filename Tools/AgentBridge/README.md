@@ -2,10 +2,11 @@
 
 AgentBridge is a loopback-only Node.js service used by the existing Maho editor
 Agent panel. It preserves the legacy chat API and Agent Protocol v1 while
-providing Agent Core v0.4 with a selectable `WorldAdapter`.
+providing Agent Core v0.4.1 with a selectable, capability-negotiated
+`WorldAdapter`.
 
-Agent Core v0.4 adds the **World Adapter Abstraction and Remote World
-Protocol**. It keeps the v0.3 Generic AI Provider architecture: real model
+Agent Core v0.4.1 adds **World Adapter Capability Negotiation and the Minimal
+World Profile** on top of the v0.4 remote protocol. It keeps the v0.3 Generic AI Provider architecture: real model
 planning is not coupled to Cursor SDK, and MockProvider, DeepSeek, generic
 OpenAI-compatible Chat Completions, and the optional CursorProvider implement
 one internal Provider contract.
@@ -16,7 +17,7 @@ WebSockets, rendering, physics, or multiplayer features.
 
 ## Architecture
 
-The v0.4 request path is:
+The v0.4.1 request path is:
 
 ```text
 natural language
@@ -27,6 +28,7 @@ natural language
        -> CursorProvider
   -> structured ToolCall
   -> ToolRegistry + Ajv validation
+  -> Session WorldAdapter capability validation
   -> CommandExecutor
   -> WorldAdapterFactory
        -> MockWorldAdapter -> MockWorld + UndoJournal
@@ -67,17 +69,19 @@ npm install
 npm test
 npm run eval
 npm run eval:remote
+npm run eval:remote:minimal
 npm run smoke:remote
 ```
 
-`eval:remote` and `smoke:remote` start an isolated fake world server on a
-random loopback port. They do not contact a real external service.
+The remote eval and smoke commands start an isolated fake world server on a
+random loopback port. `eval:remote:minimal` runs five cases against the
+three-tool Minimal World Profile. They do not contact a real external service.
 
 All default tests use `node:test`, random loopback ports, local fake HTTP
 servers, independent Sessions, and offline world adapters. No DeepSeek/Cursor API key,
 external network service, C++ game, or MyGame checkout is required.
 
-The verified v0.4 install reports zero dependency vulnerabilities. This task
+The verified v0.4.1 install reports zero dependency vulnerabilities. This task
 does not run `npm audit fix --force` or upgrade unrelated dependencies.
 
 ## Provider selection
@@ -112,6 +116,23 @@ World selection is independent of Provider selection:
 - `remote` is selected only by `MAHO_WORLD_ADAPTER=remote`.
 - A selected remote adapter never falls back to mock after configuration,
   health, transport, protocol, validation, or execution failures.
+
+Remote health capabilities may truthfully disable atomic batches, dry-run, or
+undo and may advertise a non-empty subset of the eight ToolRegistry names.
+AgentService exposes only that stable subset to the selected Provider, while
+CommandExecutor independently rejects unsupported Provider output before any
+world call. Non-atomic adapters are limited to one ToolCall per request; a
+batch is never split. Unsupported dry-run is not converted to real execution,
+and unsupported undo returns `UNDO_NOT_AVAILABLE` without a remote undo call.
+
+The Minimal World Profile supports only:
+
+- `world.get_summary`
+- `entity.spawn_primitive`
+- `entity.set_transform`
+
+It declares `max_tool_calls=1`, no atomic transactions, no dry-run, no undo,
+and required request-id idempotency. This is still World Adapter Protocol v1.
 
 The remote protocol is a development integration boundary, not a public
 Internet API. Remote URLs are restricted to `127.0.0.1`, `localhost`, or
@@ -179,6 +200,9 @@ $env:MAHO_WORLD_BASE_URL = "http://127.0.0.1:8770"
 npm run demo
 ```
 
+Set `MAHO_WORLD_FAKE_PROFILE=minimal` in Window 1 to run the same fake server
+with the three-tool Minimal World Profile; `full` remains the default.
+
 Enter natural-language commands directly. Built-in commands are:
 
 - `/help`
@@ -189,8 +213,9 @@ Enter natural-language commands directly. Built-in commands are:
 - `/exit`
 
 Ctrl+C exits normally. Command errors are displayed without crashing the
-process. Startup prints Provider, model, Mock/real mode, and
-`Thinking: disabled`; it never prints a Key.
+CLI. Startup shows the selected adapter, supported tool count, and its
+atomic/dry-run/undo capability flags, Provider, model, Mock/real mode, and
+`Thinking: disabled`; it never prints a Key or token.
 
 Select DeepSeek:
 
@@ -317,7 +342,7 @@ non-loopback address.
 Generic OpenAI-compatible mode requires all of `MAHO_AI_BASE_URL`,
 `MAHO_AI_MODEL`, and `MAHO_AI_API_KEY`. It receives no DeepSeek-specific
 fields. DeepSeek defaults to `https://api.deepseek.com` and
-`deepseek-v4-flash`, both overridable by generic variables. Agent Core v0.4
+`deepseek-v4-flash`, both overridable by generic variables. Agent Core v0.4.1
 always disables thinking mode.
 
 ## Offline and real-network commands
@@ -414,10 +439,11 @@ Invoke-RestMethod -Method Post -Uri "$base/shutdown" `
 - Entities are primitives only: `cube`, `sphere`, `cylinder`, or `plane`.
 - Properties are restricted to `color`, `visible`, and `label`.
 - Rotation uses three Euler-angle numbers.
-- Undo is limited to the latest successful write transaction.
+- Full-profile undo is limited to the latest successful write transaction;
+  the Minimal World Profile has no undo.
 - MockWorldAdapter uses an in-memory UndoJournal internally; RemoteWorldAdapter
   retains only opaque undo tokens returned by the remote world.
-- Agent Core v0.4 does not include a production C++ adapter or game integration.
+- Agent Core v0.4.1 does not include a production C++ adapter or game integration.
 - Session state and reference context are not persisted.
 - Provider finalization is limited to one text-only request; it cannot produce
   another executable ToolCall.

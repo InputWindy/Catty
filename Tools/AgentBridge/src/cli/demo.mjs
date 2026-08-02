@@ -289,8 +289,11 @@ export async function runDemo({
   const metadata = state.provider.getMetadata();
   const adapter_metadata =
     state.active_session.adapter.getMetadata();
+  const adapter_capabilities =
+    adapter_metadata.capabilities ||
+    state.active_session.adapter.capabilities;
   output.write(
-    `Maho Agent Core v0.4\nProvider: ${metadata.provider}\nModel: ${metadata.model}\nMode: ${metadata.real ? "real" : "Mock"}\nThinking: disabled\nWorld adapter: ${adapter_metadata.adapter}\nAdapter readiness: ${adapter_metadata.ready ? "ready" : "not ready"}${adapter_metadata.remote ? `\nRemote base URL: ${adapter_metadata.base_url}` : ""}\nType /help for commands.\n\n`
+    `Maho Agent Core v0.4.1\nProvider: ${metadata.provider}\nModel: ${metadata.model}\nMode: ${metadata.real ? "real" : "Mock"}\nThinking: disabled\nWorld adapter: ${adapter_metadata.adapter}\nAdapter readiness: ${adapter_metadata.ready ? "ready" : "not ready"}\nSupported tools: ${adapter_capabilities.supported_tools.length}\nAtomic transactions: ${adapter_capabilities.supports_atomic_transactions ? "yes" : "no"}\nDry-run: ${adapter_capabilities.supports_dry_run ? "yes" : "no"}\nUndo: ${adapter_capabilities.supports_undo ? "yes" : "no"}${adapter_metadata.remote ? `\nRemote base URL: ${adapter_metadata.base_url}` : ""}\nType /help for commands.\n\n`
   );
   reader.on("SIGINT", () => {
     output.write("\nBye.\n");

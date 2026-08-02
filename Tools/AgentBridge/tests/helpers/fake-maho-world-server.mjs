@@ -3,6 +3,7 @@ import { AgentError, errorHttpStatus } from "../../src/protocol/errors.mjs";
 import { createDefaultToolRegistry } from "../../src/tools/definitions.mjs";
 import {
   ADAPTER_PROTOCOL_VERSION,
+  validateAdapterCapabilityRequest,
   validateExecuteTransactionInput,
   validateGetSnapshotInput,
   validateUndoInput,
@@ -16,6 +17,19 @@ import {
 } from "../../src/world/world-adapter-errors.mjs";
 
 const REQUEST_LIMIT_BYTES = 1024 * 1024;
+
+export const MINIMAL_WORLD_PROFILE = Object.freeze({
+  supports_atomic_transactions: false,
+  supports_dry_run: false,
+  supports_undo: false,
+  supports_idempotency: true,
+  max_tool_calls: 1,
+  supported_tools: Object.freeze([
+    "world.get_summary",
+    "entity.spawn_primitive",
+    "entity.set_transform",
+  ]),
+});
 
 function clone(value) {
   return structuredClone(value);
@@ -75,12 +89,26 @@ function adapterInput(body, validate) {
 }
 
 function errorEnvelope(error, body = {}) {
+  const revision = Number.isSafeInteger(body.expected_revision)
+    ? body.expected_revision
+    : undefined;
   return {
     ok: false,
     adapter_protocol_version: ADAPTER_PROTOCOL_VERSION,
     request_id: body.request_id ?? null,
     session_id: body.session_id ?? null,
     world_id: body.world_id ?? null,
+    ...(revision === undefined
+      ? {}
+      : {
+          before_revision: revision,
+          after_revision: revision,
+          replayed: false,
+          tool_results: [],
+          changes: [],
+          undo_token: null,
+          failed_tool_call_index: 0,
+        }),
     error: error.toJSON(),
   };
 }
@@ -93,21 +121,37 @@ export async function startFakeMahoWorldServer({
   port = 0,
   auth_token = "",
   response_handler = null,
+  profile = "full",
   capabilities: capability_overrides = {},
 } = {}) {
   const tool_registry = createDefaultToolRegistry();
   const supported_tools = tool_registry
     .listDefinitions()
     .map((definition) => definition.name);
-  const capabilities = {
+  const full_capabilities = {
     supports_atomic_transactions: true,
     supports_dry_run: true,
     supports_undo: true,
     supports_idempotency: true,
     max_tool_calls: 16,
     supported_tools,
-    ...clone(capability_overrides),
   };
+  let capabilities;
+  if (profile === "full") {
+    capabilities = {
+      ...full_capabilities,
+      ...clone(capability_overrides),
+    };
+  } else if (profile === "minimal") {
+    capabilities = {
+      ...clone(MINIMAL_WORLD_PROFILE),
+      ...clone(capability_overrides),
+    };
+  } else if (profile === "custom") {
+    capabilities = clone(capability_overrides);
+  } else {
+    throw new TypeError(`Unknown fake world capability profile: ${profile}`);
+  }
   const adapters = new Map();
   const requests = [];
 
@@ -157,7 +201,7 @@ export async function startFakeMahoWorldServer({
           ok: true,
           adapter_protocol_version: ADAPTER_PROTOCOL_VERSION,
           server_name: "fake-maho-world",
-          server_version: "0.4-test",
+          server_version: "0.4.1-test",
           capabilities: clone(capabilities),
           error: null,
         },
@@ -197,7 +241,22 @@ export async function startFakeMahoWorldServer({
         body,
         validateExecuteTransactionInput
       );
-      const result = await getAdapter(input).executeTransaction(input);
+      validateAdapterCapabilityRequest(capabilities, {
+        tool_calls: input.tool_calls,
+        dry_run: input.dry_run,
+        atomic: input.atomic,
+        phase: "execute",
+        known_tools: supported_tools,
+      });
+      const result = clone(
+        await getAdapter(input).executeTransaction(input)
+      );
+      if (!capabilities.supports_undo) {
+        result.undo_token = null;
+        for (const tool_result of result.tool_results) {
+          tool_result.undo_token = null;
+        }
+      }
       return {
         status: responseStatus(result),
         body: {
@@ -212,6 +271,13 @@ export async function startFakeMahoWorldServer({
       pathname === "/world-adapter/v1/undo"
     ) {
       const input = adapterInput(body, validateUndoInput);
+      validateAdapterCapabilityRequest(capabilities, {
+        tool_calls: [{ tool_name: "history.undo" }],
+        dry_run: false,
+        atomic: false,
+        phase: "undo",
+        known_tools: supported_tools,
+      });
       const result = await getAdapter(input).undo(input);
       return {
         status: responseStatus(result),
@@ -304,6 +370,7 @@ export async function startFakeMahoWorldServer({
     requests,
     adapters,
     capabilities: clone(capabilities),
+    profile,
     getAdapter(session_id, world_id) {
       return adapters.get(adapterKey(session_id, world_id)) || null;
     },

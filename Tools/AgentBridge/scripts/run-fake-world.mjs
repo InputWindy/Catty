@@ -9,6 +9,14 @@ function parsePort(value) {
   return port;
 }
 
+function parseProfile(value) {
+  const profile = String(value || "full").trim().toLowerCase();
+  if (!new Set(["full", "minimal"]).has(profile)) {
+    throw new Error("MAHO_WORLD_FAKE_PROFILE must be full or minimal");
+  }
+  return profile;
+}
+
 export async function main({
   env = process.env,
   output = process.stdout,
@@ -20,12 +28,14 @@ export async function main({
     const auth_token = String(
       env.MAHO_WORLD_AUTH_TOKEN || ""
     ).trim();
+    const profile = parseProfile(env.MAHO_WORLD_FAKE_PROFILE);
     fake = await startFakeMahoWorldServer({
       port,
       auth_token,
+      profile,
     });
     output.write(
-      `FakeMahoWorldServer listening on ${fake.base_url} adapter_protocol_version=1.0 auth=${auth_token ? "required" : "disabled"}\n`
+      `FakeMahoWorldServer listening on ${fake.base_url} adapter_protocol_version=1.0 profile=${profile} auth=${auth_token ? "required" : "disabled"}\n`
     );
     await new Promise((resolve) => {
       const stop = () => resolve();
