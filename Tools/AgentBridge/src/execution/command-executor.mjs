@@ -7,11 +7,13 @@ import {
 import { NullAuditLog } from "../logging/audit-log.mjs";
 import { applyToolResultsToEntityContext } from "../sessions/entity-context.mjs";
 import {
+  validateAdapterCapabilityRequest,
   validateExecuteTransactionResult,
   validateUndoResult,
 } from "../world/world-adapter-contract.mjs";
 import {
   WorldAdapterError,
+  worldAdapterErrorReasons,
   worldAdapterErrorToAgentError,
 } from "../world/world-adapter-errors.mjs";
 
@@ -234,6 +236,7 @@ export class CommandExecutor {
   async #executeWithAdapter(request, session, adapter) {
     let prepared;
     try {
+      await adapter.health({ signal: request.signal });
       prepared = this.#prepareTransaction(request, adapter);
       if (prepared.undo) {
         if (prepared.dry_run) {
@@ -290,7 +293,7 @@ export class CommandExecutor {
         world_id: request.world_id,
         expected_revision: prepared.expected_revision,
         dry_run: prepared.dry_run,
-        atomic: true,
+        atomic: prepared.atomic,
         tool_calls: prepared.tool_calls.map((tool_call) => ({
           tool_call_id: tool_call.tool_call_id,
           tool_name: tool_call.tool_name,
@@ -335,6 +338,12 @@ export class CommandExecutor {
                 adapter_timeout: error.timeout,
                 adapter_cancelled: error.cancelled,
                 remote_error_class: error.reason,
+                capability_rejection_reason: [
+                  worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT,
+                  worldAdapterErrorReasons.UNDO_NOT_AVAILABLE,
+                ].includes(error.reason)
+                  ? error.reason
+                  : null,
               }
             : null,
       };
@@ -342,19 +351,15 @@ export class CommandExecutor {
   }
 
   #prepareTransaction(request, adapter) {
-    const max_tool_calls = Math.min(
-      100,
-      adapter.capabilities.max_tool_calls
-    );
     if (
       !Array.isArray(request.tool_calls) ||
       request.tool_calls.length === 0 ||
-      request.tool_calls.length > max_tool_calls
+      request.tool_calls.length > 100
     ) {
       throw new AgentError(
         "INVALID_REQUEST",
-        `tool_calls must contain between 1 and ${max_tool_calls} calls`,
-        { field: "tool_calls", max_tool_calls }
+        "tool_calls must contain between 1 and 100 calls",
+        { field: "tool_calls", max_tool_calls: 100 }
       );
     }
 
@@ -404,10 +409,24 @@ export class CommandExecutor {
       );
     }
 
+    const atomic =
+      validated.length > 1 ||
+      adapter.capabilities.supports_atomic_transactions;
+    validateAdapterCapabilityRequest(adapter.capabilities, {
+      tool_calls: validated,
+      dry_run: validated[0].dry_run,
+      atomic,
+      phase: contains_undo ? "undo" : "execute",
+      known_tools: this.tool_registry
+        .listDefinitions()
+        .map((definition) => definition.name),
+    });
+
     return {
       tool_calls: validated,
       expected_revision: validated[0].expected_revision,
       dry_run: validated[0].dry_run,
+      atomic,
       undo: contains_undo,
     };
   }
@@ -468,6 +487,19 @@ export class CommandExecutor {
           adapter_metadata?.remote_error_class ??
           result.error?.details?.adapter_reason ??
           null,
+        adapter_supported_tools: clone(
+          adapter?.capabilities?.supported_tools ?? []
+        ),
+        adapter_max_tool_calls:
+          adapter?.capabilities?.max_tool_calls ?? null,
+        adapter_supports_atomic:
+          adapter?.capabilities?.supports_atomic_transactions ?? null,
+        adapter_supports_dry_run:
+          adapter?.capabilities?.supports_dry_run ?? null,
+        adapter_supports_undo:
+          adapter?.capabilities?.supports_undo ?? null,
+        capability_rejection_reason:
+          adapter_metadata?.capability_rejection_reason ?? null,
         before_revision:
           result.tool_results?.[0]?.before_revision ??
           result.world_revision,

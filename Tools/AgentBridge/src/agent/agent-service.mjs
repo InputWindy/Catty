@@ -168,7 +168,12 @@ export class AgentService {
     started_at
   ) {
     let provider_output;
-    const tool_definitions = this.tool_registry.listDefinitions();
+    const supported_tools = new Set(
+      adapter.capabilities.supported_tools
+    );
+    const tool_definitions = this.tool_registry
+      .listDefinitions()
+      .filter((definition) => supported_tools.has(definition.name));
     const normalized_messages = createPlanMessages({
       system_message: buildProviderSystemPrompt({
         world_snapshot,

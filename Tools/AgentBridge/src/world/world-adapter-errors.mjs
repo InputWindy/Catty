@@ -125,7 +125,8 @@ export function worldAdapterErrorToAgentError(error) {
     adapter_error.reason === worldAdapterErrorReasons.CONFIGURATION_ERROR ||
     adapter_error.reason === worldAdapterErrorReasons.INVALID_BASE_URL ||
     adapter_error.reason === worldAdapterErrorReasons.NON_LOOPBACK_REJECTED ||
-    adapter_error.reason === worldAdapterErrorReasons.AUTH_REQUIRED
+    adapter_error.reason === worldAdapterErrorReasons.AUTH_REQUIRED ||
+    adapter_error.reason === worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT
   ) {
     code = "INVALID_REQUEST";
   } else if (

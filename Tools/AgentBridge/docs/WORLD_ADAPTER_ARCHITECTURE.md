@@ -1,8 +1,8 @@
-# Agent Core v0.4 World Adapter Architecture
+# Agent Core v0.4.1 World Adapter Architecture
 
 ## Scope
 
-Agent Core v0.4 separates model planning and Agent Protocol handling from world
+Agent Core v0.4.1 separates model planning and Agent Protocol handling from world
 state and execution. Agent Protocol v1, the eight public game tools, Provider
 contracts, and legacy HTTP endpoints remain unchanged.
 
@@ -70,9 +70,25 @@ Capabilities advertise:
 - `max_tool_calls`;
 - `supported_tools`.
 
-Remote initialization requires all four boolean capabilities and all eight
-Agent Protocol tools. Capability mismatch is a hard error; it does not change
-adapter selection.
+All four booleans may honestly be false. `supported_tools` is a non-empty,
+duplicate-free subset of ToolRegistry, and non-atomic adapters declare one
+maximum ToolCall. Undo, dry-run, atomic batching, tool membership, and request
+count dependencies are validated centrally. Capability mismatch is a hard
+error; it does not change adapter selection.
+
+The generic contract can express `supports_idempotency: false`, but the current
+RemoteWorldAdapter rejects that profile during health negotiation. Remote
+request replay is unsafe after an ambiguous transport outcome unless the world
+service owns idempotent request records.
+
+## Minimal World Profile
+
+The testable minimal profile advertises only `world.get_summary`,
+`entity.spawn_primitive`, and `entity.set_transform`; it has no atomic batches,
+dry-run, or undo, and `max_tool_calls` is one. It is intended for the first Maho
+C++ service and remains World Adapter Protocol v1. Full MockWorldAdapter and
+full remote services continue to advertise all eight tools and all four
+capabilities.
 
 ## Session ownership and lifecycle
 
@@ -95,7 +111,8 @@ snapshot. Health results are cached for one second and invalidated on close.
 Agent Protocol ToolCalls
   -> envelope and UUID validation
   -> ToolRegistry name/schema validation
-  -> one normalized atomic adapter request
+  -> centralized adapter capability validation
+  -> one normalized adapter request
   -> adapter-owned transaction
   -> runtime validation of correlation, revisions, and ToolResults
   -> unchanged Agent Protocol v1 response
@@ -105,6 +122,20 @@ Agent Protocol ToolCalls
 coalescing. It does not inspect or mutate world storage. All calls in a batch
 must have one expected revision and one dry-run value. `history.undo` must be a
 single-call transaction and is routed to `adapter.undo()`.
+
+Before any adapter method call, CommandExecutor rejects unsupported tool names,
+requests over `max_tool_calls`, non-atomic batches, unsupported dry-run, and
+unsupported undo. A full adapter receives `atomic: true`; a minimal
+single-operation request receives `atomic: false`. A rejected batch is never
+split, and revision, undo token, world state, and EntityContext remain
+unchanged.
+
+After the initial remote health/snapshot negotiation, AgentService filters the
+ToolRegistry definition list by the Session adapter's `supported_tools`. The
+filter preserves registry order and reuses the authoritative definitions and
+schemas. It applies identically to MockProvider and real Providers. Provider
+output remains untrusted: CommandExecutor repeats capability validation even
+if a Provider returns a tool that was not exposed.
 
 On a successful response, CommandExecutor requests an authoritative snapshot
 before updating `EntityContext`. A missing, malformed, cancelled, or
@@ -127,6 +158,8 @@ RemoteWorldAdapter uses the
 [Maho World Adapter Protocol v1](MAHO_WORLD_ADAPTER_PROTOCOL_V1.md). It:
 
 - validates health, version, capabilities, every response DTO, and correlation;
+- stores and reports the remote service's negotiated capability subset;
+- enforces the same capability request checks before HTTP execute or undo;
 - sends the auth token only in `Authorization: Bearer ...`;
 - applies one configured timeout to each request;
 - distinguishes timeout, external cancellation, shutdown cancellation,
@@ -169,6 +202,7 @@ AgentBridge boundary they map to existing Agent Protocol v1 codes:
 | missing entity | `ENTITY_NOT_FOUND` |
 | unknown tool | `UNKNOWN_TOOL` |
 | invalid argument | `INVALID_ARGUMENT` |
+| insufficient capability | `INVALID_REQUEST` |
 | unavailable undo | `UNDO_NOT_AVAILABLE` |
 | HTTP 401/403 | `PERMISSION_DENIED` |
 | transport, cancellation, protocol, shape, or correlation failure | `EXECUTION_FAILED` |
@@ -182,7 +216,9 @@ arbitrary remote exception objects.
 
 Audit records preserve the existing fields and add only safe adapter metadata:
 adapter name and protocol version, operation phase, duration, HTTP status,
-replay flag, timeout/cancellation flags, and normalized remote error class.
+replay flag, timeout/cancellation flags, normalized remote error class,
+supported tool name array, maximum call count, atomic/dry-run/undo booleans,
+and a normalized capability rejection reason.
 Existing recursive sensitive-key redaction remains active. Startup and CLI
 output may show the credential-free base URL but never the token.
 
@@ -196,18 +232,24 @@ remain offline.
 npm test
 npm run eval
 npm run eval:remote
+npm run eval:remote:minimal
 npm run smoke:remote
 ```
 
 `eval:remote` reuses every default behavior JSON case. `smoke:remote` verifies
 health, snapshot, spawn, transform, undo, and final authoritative state.
+`eval:remote:minimal` reuses the same runner with five supported minimal cases;
+it does not require the full 26-case behavior suite to pass under a three-tool
+profile. Golden JSON fixtures under `tests/fixtures/world-adapter-v1/` are
+validated by the runtime contracts and are available to future C++ tests.
 
 ## Current limits
 
 - No production C++ or game-world adapter is included.
 - FakeMahoWorldServer is test and local-development scaffolding.
 - State is not persisted by the included mock/fake implementations.
-- Undo remains limited to the latest successful write transaction.
+- Full-profile undo remains limited to the latest successful write transaction;
+  the Minimal World Profile has no undo.
 - There is no streaming, WebSocket transport, distributed transaction,
   recursive agent loop, or automatic adapter routing.
 
