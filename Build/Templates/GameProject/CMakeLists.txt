@@ -33,7 +33,7 @@ maho_ensure_workspace_dirs()
 maho_warn_if_not_intermediate_binary_dir()
 
 option(MAHO_BUILD_SHARED "Build Maho engine as a shared library (DLL)" ON)
-# Push Maho::FEditorLayer from the game App (layer lives in Maho.dll under Core/Extension/Editor).
+# Push Maho::FEditorLayer from the game App (Editor sources live in the game project under Source/Editor/).
 option(GAME_WITH_EDITOR "Enable Maho::FEditorLayer overlay (disable for shipping)" ON)
 
 # Enabled plugins come from the sibling .cproject (or -DMAHO_CPROJECT=...).
@@ -67,7 +67,9 @@ endif()
 add_executable({{PROJECT_NAME}} ${GAME_SOURCES})
 target_include_directories({{PROJECT_NAME}} PRIVATE
 	"${GAME_SOURCE_DIR}"
-	"${GAME_SOURCE_DIR}/{{PROJECT_NAME}}/Public"
+	"${MAHO_ENGINE_ROOT}/Maho/Source/Private"
+	"${MAHO_ENGINE_ROOT}/Maho/ThirdParty/VulkanMemoryAllocator/include"
+	"${MAHO_ENGINE_ROOT}/Maho/ThirdParty/nlohmann"
 )
 target_link_libraries({{PROJECT_NAME}} PRIVATE Maho::Engine Maho::Modules)
 target_compile_features({{PROJECT_NAME}} PRIVATE cxx_std_20)

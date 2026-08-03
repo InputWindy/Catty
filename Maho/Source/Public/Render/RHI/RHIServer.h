@@ -43,6 +43,8 @@ public:
 	void SubmitBeginMainPass(float R, float G, float B, float A);
 	/** SlotIndex from FImGuiDrawDataRing::CaptureFromImGui; ring owned by FRenderServer. */
 	void SubmitRenderUI(FImGuiDrawDataRing& Ring, int SlotIndex);
+	/** Secondary ImGui viewports: ImGui::RenderPlatformWindowsDefault on MahoRHI. */
+	void SubmitRenderPlatformWindows();
 	void SubmitEndFrameAndFence(std::uint64_t FrameIndex);
 	void RequestResize(int Width, int Height);
 

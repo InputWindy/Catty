@@ -15,7 +15,7 @@ list(APPEND CMAKE_MODULE_PATH "${MAHO_ENGINE_BUILD_CMAKE_DIR}")
 include(MahoDependencies)
 include(MahoHelpers)
 
-set(MAHO_GENERATED_DIR "${MAHO_SOURCE_DIR}/Generated")
+set(MAHO_GENERATED_DIR "${MAHO_ROOT}/Intermediate/Generated")
 
 # Engine repo root (Tools/python + object_reflect_codegen.py).
 # Installer layout: Tools/python/python.exe ; venv: Tools/python/Scripts/python.exe
@@ -61,18 +61,20 @@ message(STATUS "Maho: object reflect codegen OK")
 
 maho_collect_sources(MAHO_SOURCES "${MAHO_SOURCE_DIR}")
 
-# Drop anything under Source/Generated from the glob — added explicitly below.
+# Drop anything under Intermediate/Generated from the glob — added explicitly below.
 set(_MAHO_SOURCES_FILTERED "")
 foreach(_src IN LISTS MAHO_SOURCES)
-	string(FIND "${_src}" "/Generated/" _maho_gen_pos)
-	string(FIND "${_src}" "\\Generated\\" _maho_gen_pos_win)
+	string(FIND "${_src}" "/Intermediate/Generated/" _maho_gen_pos)
+	string(FIND "${_src}" "\\Intermediate\\Generated\\" _maho_gen_pos_win)
 	if(_maho_gen_pos EQUAL -1 AND _maho_gen_pos_win EQUAL -1)
 		list(APPEND _MAHO_SOURCES_FILTERED "${_src}")
 	endif()
 endforeach()
 set(MAHO_SOURCES "${_MAHO_SOURCES_FILTERED}")
 
-list(APPEND MAHO_SOURCES
+# Generated sources stay out of MAHO_SOURCES so they don't appear in VS filters.
+# They are added to the target via target_sources later.
+set(MAHO_GEN_SOURCES
 	"${_MAHO_GEN_OBJECT_CPP}"
 	"${_MAHO_GEN_OBJECT_H}"
 	"${_MAHO_GEN_LUA_CPP}"
@@ -255,6 +257,8 @@ endif()
 
 maho_set_output_dirs(Maho)
 maho_source_group_mirrors("${MAHO_SOURCE_DIR}" ${MAHO_SOURCES})
+# Generated codegen files: compiled but not shown in VS source tree.
+target_sources(Maho PRIVATE ${MAHO_GEN_SOURCES})
 set_target_properties(Maho PROPERTIES
 	FOLDER "Engine"
 	OUTPUT_NAME "Maho"

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 /**
  * Explicit Importer / Exporter types for FResourceSystem::Import / Export.
@@ -19,7 +19,7 @@
 namespace Maho
 {
 
-class IResourceImporter
+class MAHO_API IResourceImporter
 {
 public:
 	virtual ~IResourceImporter() = default;
@@ -48,7 +48,7 @@ public:
 };
 
 /** .casset package hydrate (MCAS binary BulkData → LoadPackageFromBinary). */
-class FCassetPackageImporter final : public IResourceImporter
+class MAHO_API FCassetPackageImporter final : public IResourceImporter
 {
 public:
 	[[nodiscard]] EResourceType GetType() const override
@@ -139,7 +139,7 @@ public:
 };
 
 template <>
-struct TResourceIOTraits<UResource>
+struct MAHO_API TResourceIOTraits<UResource>
 {
 	static constexpr EResourceType GetType()
 	{
@@ -169,7 +169,7 @@ struct TResourceIOTraits<UResource>
 };
 
 template <>
-struct TResourceIOTraits<UTexture2D>
+struct MAHO_API TResourceIOTraits<UTexture2D>
 {
 	static constexpr EResourceType GetType() { return EResourceType::Texture2D; }
 	static constexpr const char* TypeNames[] = {
@@ -189,7 +189,7 @@ struct TResourceIOTraits<UTexture2D>
 };
 
 template <>
-struct TResourceIOTraits<UTexture3D>
+struct MAHO_API TResourceIOTraits<UTexture3D>
 {
 	static constexpr EResourceType GetType() { return EResourceType::Texture3D; }
 	static constexpr const char* TypeNames[] = { "Texture3D", "UTexture3D" };
@@ -202,7 +202,7 @@ struct TResourceIOTraits<UTexture3D>
 };
 
 template <>
-struct TResourceIOTraits<UTextureCube>
+struct MAHO_API TResourceIOTraits<UTextureCube>
 {
 	static constexpr EResourceType GetType() { return EResourceType::TextureCube; }
 	static constexpr const char* TypeNames[] = { "TextureCube", "UTextureCube", "Cubemap" };
@@ -215,7 +215,7 @@ struct TResourceIOTraits<UTextureCube>
 };
 
 template <>
-struct TResourceIOTraits<UTextureCubeArray>
+struct MAHO_API TResourceIOTraits<UTextureCubeArray>
 {
 	static constexpr EResourceType GetType() { return EResourceType::TextureCubeArray; }
 	static constexpr const char* TypeNames[] = { "TextureCubeArray", "UTextureCubeArray" };
@@ -228,7 +228,7 @@ struct TResourceIOTraits<UTextureCubeArray>
 };
 
 template <>
-struct TResourceIOTraits<UTexture2DArray>
+struct MAHO_API TResourceIOTraits<UTexture2DArray>
 {
 	static constexpr EResourceType GetType() { return EResourceType::Texture2DArray; }
 	static constexpr const char* TypeNames[] = { "Texture2DArray", "UTexture2DArray" };
@@ -245,7 +245,7 @@ struct TResourceIOTraits<UTexture2DArray>
  * SoftPaths to Meshes / Skeleton / AnimationGraph live in Prefab JSON (Metadata peer).
  */
 template <>
-struct TResourceIOTraits<UPrefab>
+struct MAHO_API TResourceIOTraits<UPrefab>
 {
 	static constexpr EResourceType GetType() { return EResourceType::Prefab; }
 	static constexpr const char* TypeNames[] = { "Prefab", "UPrefab", "Model", "MeshScene" };

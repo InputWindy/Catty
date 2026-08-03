@@ -33,17 +33,17 @@ struct FDecodedImage
 namespace TextureImageCodec
 {
 
-[[nodiscard]] std::string GetExtensionLower(std::string_view Path);
+[[nodiscard]] MAHO_API std::string GetExtensionLower(std::string_view Path);
 
-[[nodiscard]] bool IsKtx2Extension(std::string_view Ext);
-[[nodiscard]] bool IsRasterExtension(std::string_view Ext);
+[[nodiscard]] MAHO_API bool IsKtx2Extension(std::string_view Ext);
+[[nodiscard]] MAHO_API bool IsRasterExtension(std::string_view Ext);
 
 [[nodiscard]] bool PathLooksLikeCube(std::string_view Path);
 [[nodiscard]] bool PathLooksLikeCubeArray(std::string_view Path);
 [[nodiscard]] bool PathLooksLikeTexture3D(std::string_view Path);
 [[nodiscard]] bool PathLooksLikeTexture2DArray(std::string_view Path);
 
-[[nodiscard]] bool DecodeFromMemory(
+[[nodiscard]] MAHO_API bool DecodeFromMemory(
 	const std::uint8_t* Bytes,
 	std::size_t ByteCount,
 	std::string_view SourcePathHint,

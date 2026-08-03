@@ -688,7 +688,7 @@ private:
 
 namespace Detail
 {
-[[nodiscard]] FResourceSystem* GetResourceSystem();
+[[nodiscard]] MAHO_API FResourceSystem* GetResourceSystem();
 }
 
 } // namespace Maho

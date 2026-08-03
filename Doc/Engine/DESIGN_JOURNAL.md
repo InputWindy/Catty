@@ -98,20 +98,19 @@ Still **Dear ImGui official backends** (`ImGui_ImplGlfw` + `ImGui_ImplVulkan`), 
 Not on `FRHICommandList`. Planned migration later; do not “fix” in drive-by RHI work.
 
 - **Multi-viewport enabled** (`ImGuiConfigFlags_ViewportsEnable`): undocked panels can leave the main OS window.
-- Per-frame: after main-window ImGui submit, `FRHIServer::Flush()` then Game-thread `UpdatePlatformWindows` + `RenderPlatformWindowsDefault` (GLFW create must stay on main; Vulkan viewport work runs only while RHI is idle).
-- Cost: KickRHI flushes RHI every frame when ImGui is up — acceptable for now; revisit if frame time regresses.
+- Per-frame: Game `UpdatePlatformWindows` (GLFW); MahoRHI `SubmitRenderPlatformWindows` / `RenderPlatformWindowsDefault` (Vulkan). No Game-thread Flush for viewports.
+- Viewport `Renderer_Create/Destroy/SetWindowSize` marshaled to MahoRHI with sync Flush (rare).
+- Cost: create/resize secondary windows still sync; per-frame draw stays async with 3-frame overlap.
 
-## Editor UI (`Core/Editor` + `FEditorLayer`)
+## Editor UI (game project, not engine)
 
-Region registry for editor chrome contributions (menus, dual toolbars, dock panels, viewport overlays, blocking modals).
+Editor chrome (`FEditorLayer`, `FEditorUIRegistry`, `FAgentChatClient`) lives in the **game project** under `Source/Editor/` when `GAME_WITH_EDITOR` is on. Engine only provides ImGui under `Render/UI/`.
 
-- **Law:** [`../../Maho/Source/Public/Core/Editor/CONTRACT.md`](../../Maho/Source/Public/Core/Editor/CONTRACT.md)
-- Shell (`FEditorLayer`) owns geometry / DockSpace; `FEditorUIRegistry` owns contributions + Catalog separators
+- **Law:** game `Source/Editor/CONTRACT.md`
+- Shell owns geometry / DockSpace; registry owns contributions + Catalog separators
 - Temporary Details = `DockPanel` + `bTransient` + `OpenDockPanel` — **not** Modal
-- DockSpace uses `ImGuiDockNodeFlags_NoDockingOverCentralNode`; central keeps `NoTabBar|NoUndocking`
 - Access: `TryGetEditorUIRegistry(FApp&)` or `GetExtension<FEditorLayer>()->GetUIRegistry()`
 - Runtime game HUD is **out of scope** (future `FGameUI`)
-- Debug menu: dummy pairs per region + Busy modal + Temporary Details sample
 
 ---
 

@@ -35,14 +35,13 @@
 #include <Core/Extension/Render/Render.h>
 #include <Core/Extension/Resource/Resource.h>
 #include <Core/Extension/Script/Script.h>
-#include <Core/Extension/Script/ScriptLayer.h>
-#include <Core/Extension/Editor/EditorLayer.h>
 #include <Core/System/PlatformWindow.h>
 #include <Render/RHI/RHI.h>
 #include <Render/RHI/RHIServer.h>
 #include <Render/RenderServer.h>
-#include <Render/Sequencer/RenderStage.h>
-#include <Render/Sequencer/RenderExtension.h>
+#include <Render/RenderPipelineStage.h>
+#include <Render/SceneUpdatePacket.h>
+#include <Render/Sequencer/RenderFeature.h>
 #include <Core/Object/Object.h>
 #include <Core/Object/Package.h>
 #include <Core/Server/ThreadedServer.h>

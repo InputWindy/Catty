@@ -28,7 +28,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 import maho_tools  # noqa: E402,F401
 
 _DEFAULT_ROOTS = [ENGINE_ROOT / "Maho" / "Source"]
-_DEFAULT_GEN_DIR = ENGINE_ROOT / "Maho" / "Source" / "Generated"
+_DEFAULT_GEN_DIR = ENGINE_ROOT / "Maho" / "Intermediate" / "Generated"
 _DEFAULT_OUT_H = _DEFAULT_GEN_DIR / "ObjectReflectTypes.gen.h"
 _DEFAULT_OUT_CPP = _DEFAULT_GEN_DIR / "ObjectReflectTypes.gen.cpp"
 _DEFAULT_OUT_JSON = _DEFAULT_GEN_DIR / "ObjectReflectCatalog.gen.json"

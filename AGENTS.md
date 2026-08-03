@@ -57,7 +57,8 @@ Full text: [`Doc/Engine/CODING_STANDARDS.md`](Doc/Engine/CODING_STANDARDS.md) an
 | RHI | [`Maho/Source/Public/Render/RHI/CONTRACT.md`](Maho/Source/Public/Render/RHI/CONTRACT.md) | DESIGN_JOURNAL → RHI |
 | Object / GC refs | [`Maho/Source/Public/Core/Object/CONTRACT.md`](Maho/Source/Public/Core/Object/CONTRACT.md) | Object |
 | Extensions | [`Maho/Source/Public/Core/Extension/CONTRACT.md`](Maho/Source/Public/Core/Extension/CONTRACT.md) | Extension |
-| Editor UI | [`Maho/Source/Public/Core/Editor/CONTRACT.md`](Maho/Source/Public/Core/Editor/CONTRACT.md) | Editor UI |
+
+Editor UI lives in the **game project** (`Source/Editor/`, `GAME_WITH_EDITOR`), not in Maho.dll.
 
 **Where are we now?** Read [`Doc/Engine/DESIGN_JOURNAL.md`](Doc/Engine/DESIGN_JOURNAL.md) first, then the module `CONTRACT.md` `Status` / `Pitfalls` sections.
 

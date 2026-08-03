@@ -1,4 +1,4 @@
-﻿#include <Render/UI/ImGuiSystem.h>
+#include <Render/UI/ImGuiSystem.h>
 
 #include <Core/System/Console.h>
 #include <Core/System/Log.h>
@@ -46,6 +46,54 @@ static TAutoConsoleVariable GCVarImGuiDescriptorPoolSize(
 	"ImGui Vulkan descriptor pool size (font + ImGui_ImplVulkan_AddTexture slots)");
 
 std::atomic<std::uint64_t> GImGuiRgba8TextureSerial{ 1 };
+
+/** Viewport Renderer_* hooks that touch Vulkan — run on MahoRHI while Game waits (Flush). */
+FRHIServer* GImGuiViewportRHIServer = nullptr;
+void (*GImGuiOrig_Renderer_CreateWindow)(ImGuiViewport*) = nullptr;
+void (*GImGuiOrig_Renderer_DestroyWindow)(ImGuiViewport*) = nullptr;
+void (*GImGuiOrig_Renderer_SetWindowSize)(ImGuiViewport*, ImVec2) = nullptr;
+
+void Maho_ImGui_Renderer_CreateWindow(ImGuiViewport* Viewport)
+{
+	if (!GImGuiViewportRHIServer || !GImGuiOrig_Renderer_CreateWindow)
+	{
+		return;
+	}
+	GImGuiViewportRHIServer->Enqueue(
+		[Viewport](FThreadedServer& /*Server*/)
+		{
+			GImGuiOrig_Renderer_CreateWindow(Viewport);
+		});
+	GImGuiViewportRHIServer->Flush();
+}
+
+void Maho_ImGui_Renderer_DestroyWindow(ImGuiViewport* Viewport)
+{
+	if (!GImGuiViewportRHIServer || !GImGuiOrig_Renderer_DestroyWindow)
+	{
+		return;
+	}
+	GImGuiViewportRHIServer->Enqueue(
+		[Viewport](FThreadedServer& /*Server*/)
+		{
+			GImGuiOrig_Renderer_DestroyWindow(Viewport);
+		});
+	GImGuiViewportRHIServer->Flush();
+}
+
+void Maho_ImGui_Renderer_SetWindowSize(ImGuiViewport* Viewport, ImVec2 Size)
+{
+	if (!GImGuiViewportRHIServer || !GImGuiOrig_Renderer_SetWindowSize)
+	{
+		return;
+	}
+	GImGuiViewportRHIServer->Enqueue(
+		[Viewport, Size](FThreadedServer& /*Server*/)
+		{
+			GImGuiOrig_Renderer_SetWindowSize(Viewport, Size);
+		});
+	GImGuiViewportRHIServer->Flush();
+}
 
 void CheckImGuiVkResult(VkResult Result)
 {
@@ -404,6 +452,8 @@ bool FImGuiSystem::Initialize(
 		return false;
 	}
 
+	InstallViewportRHIMarshaling(RHIServer);
+
 	bInitialized = true;
 	MAHO_CORE_INFO("FImGuiSystem initialized (GLFW + Vulkan, docking + viewports)");
 	return true;
@@ -418,6 +468,8 @@ void FImGuiSystem::Shutdown(FRHIServer& RHIServer)
 
 	RHIServer.Flush();
 	DestroyAllTextures(RHIServer);
+
+	UninstallViewportRHIMarshaling();
 
 	RHIServer.Enqueue([](FThreadedServer& /*Server*/)
 	{
@@ -457,7 +509,7 @@ void FImGuiSystem::EndFrame()
 	ImGui::Render();
 }
 
-void FImGuiSystem::UpdateAndRenderPlatformWindows()
+void FImGuiSystem::UpdatePlatformWindows()
 {
 	if (!bInitialized)
 	{
@@ -470,10 +522,54 @@ void FImGuiSystem::UpdateAndRenderPlatformWindows()
 		return;
 	}
 
-	// GLFW CreateWindow must stay on the game/main thread; Vulkan create/render for
-	// secondary viewports also run here after FRHIServer::Flush so the RHI thread is idle.
+	// GLFW Platform_* on game thread; Vulkan Renderer_Create/Destroy/SetWindowSize
+	// marshaled to MahoRHI (see InstallViewportRHIMarshaling).
 	ImGui::UpdatePlatformWindows();
-	ImGui::RenderPlatformWindowsDefault();
+}
+
+void FImGuiSystem::InstallViewportRHIMarshaling(FRHIServer& RHIServer)
+{
+	ImGuiPlatformIO& PlatformIO = ImGui::GetPlatformIO();
+	GImGuiViewportRHIServer = &RHIServer;
+	GImGuiOrig_Renderer_CreateWindow = PlatformIO.Renderer_CreateWindow;
+	GImGuiOrig_Renderer_DestroyWindow = PlatformIO.Renderer_DestroyWindow;
+	GImGuiOrig_Renderer_SetWindowSize = PlatformIO.Renderer_SetWindowSize;
+	if (GImGuiOrig_Renderer_CreateWindow)
+	{
+		PlatformIO.Renderer_CreateWindow = Maho_ImGui_Renderer_CreateWindow;
+	}
+	if (GImGuiOrig_Renderer_DestroyWindow)
+	{
+		PlatformIO.Renderer_DestroyWindow = Maho_ImGui_Renderer_DestroyWindow;
+	}
+	if (GImGuiOrig_Renderer_SetWindowSize)
+	{
+		PlatformIO.Renderer_SetWindowSize = Maho_ImGui_Renderer_SetWindowSize;
+	}
+}
+
+void FImGuiSystem::UninstallViewportRHIMarshaling()
+{
+	if (ImGui::GetCurrentContext() != nullptr)
+	{
+		ImGuiPlatformIO& PlatformIO = ImGui::GetPlatformIO();
+		if (GImGuiOrig_Renderer_CreateWindow)
+		{
+			PlatformIO.Renderer_CreateWindow = GImGuiOrig_Renderer_CreateWindow;
+		}
+		if (GImGuiOrig_Renderer_DestroyWindow)
+		{
+			PlatformIO.Renderer_DestroyWindow = GImGuiOrig_Renderer_DestroyWindow;
+		}
+		if (GImGuiOrig_Renderer_SetWindowSize)
+		{
+			PlatformIO.Renderer_SetWindowSize = GImGuiOrig_Renderer_SetWindowSize;
+		}
+	}
+	GImGuiOrig_Renderer_CreateWindow = nullptr;
+	GImGuiOrig_Renderer_DestroyWindow = nullptr;
+	GImGuiOrig_Renderer_SetWindowSize = nullptr;
+	GImGuiViewportRHIServer = nullptr;
 }
 
 bool FImGuiSystem::PollExitRequest() const
@@ -502,9 +598,13 @@ void FImGuiSystem::DestroyTextureOnRHI(FRHIServer& RHIServer, FOwnedGpuTexture& 
 		ImGui_ImplVulkan_RemoveTexture(static_cast<VkDescriptorSet>(Owned.DescriptorSet));
 		Owned.DescriptorSet = nullptr;
 	}
-	if (Owned.ImageView)
+	if (Owned.bOwnsImageView && Owned.ImageView)
 	{
 		vkDestroyImageView(VulkanRHI->GetVkDevice(), static_cast<VkImageView>(Owned.ImageView), nullptr);
+		Owned.ImageView = nullptr;
+	}
+	else
+	{
 		Owned.ImageView = nullptr;
 	}
 	if (Owned.Sampler)
@@ -512,9 +612,13 @@ void FImGuiSystem::DestroyTextureOnRHI(FRHIServer& RHIServer, FOwnedGpuTexture& 
 		RHI->GetResourceManager().Release(Owned.Sampler, true);
 		Owned.Sampler = nullptr;
 	}
-	if (Owned.Texture)
+	if (Owned.bOwnsTexture && Owned.Texture)
 	{
 		RHI->GetResourceManager().Release(Owned.Texture, true);
+		Owned.Texture = nullptr;
+	}
+	else
+	{
 		Owned.Texture = nullptr;
 	}
 }
@@ -727,6 +831,85 @@ bool FImGuiSystem::CreateRgba8Texture(
 				return;
 			}
 
+			Created.DescriptorSet = Set;
+			bOk.store(true);
+		});
+	RHIServer.Flush();
+
+	if (!bOk.load() || !Created.DescriptorSet)
+	{
+		return false;
+	}
+
+	OutHandle.Id = Created.DescriptorSet;
+	OwnedTextures.emplace(OutHandle.Id, Created);
+	return true;
+}
+
+bool FImGuiSystem::RegisterExternalSampledTexture(
+	FRHIServer& RHIServer,
+	FRHITextureView* View,
+	FImGuiTextureHandle& OutHandle)
+{
+	OutHandle.Reset();
+	if (!bInitialized || !View)
+	{
+		return false;
+	}
+
+	if (!RHIServer.HasRHI() || !RHIServer.GetVulkanRHI())
+	{
+		MAHO_CORE_ERROR("FImGuiSystem::RegisterExternalSampledTexture: Vulkan RHI unavailable");
+		return false;
+	}
+
+	FOwnedGpuTexture Created{};
+	Created.bOwnsTexture = false;
+	Created.bOwnsImageView = false;
+	std::atomic<bool> bOk{false};
+
+	RHIServer.Enqueue(
+		[this, &RHIServer, View, &Created, &bOk](FThreadedServer& /*Server*/)
+		{
+			IRHI* RHI = RHIServer.GetRHI();
+			if (!RHI)
+			{
+				return;
+			}
+
+			auto* VkView = static_cast<FVulkanTextureView*>(View);
+			if (!VkView || VkView->GetVkImageView() == VK_NULL_HANDLE)
+			{
+				MAHO_CORE_ERROR("FImGuiSystem::RegisterExternalSampledTexture: invalid texture view");
+				return;
+			}
+
+			FRHISamplerDesc SamplerDesc{};
+			SamplerDesc.MagFilter = ERHIFilter::Linear;
+			SamplerDesc.MinFilter = ERHIFilter::Linear;
+			SamplerDesc.AddressU = ERHIAddressMode::ClampToEdge;
+			SamplerDesc.AddressV = ERHIAddressMode::ClampToEdge;
+			SamplerDesc.AddressW = ERHIAddressMode::ClampToEdge;
+			Created.Sampler = RHI->GetResourceManager().AcquireSampler(SamplerDesc);
+			if (!Created.Sampler)
+			{
+				MAHO_CORE_ERROR("FImGuiSystem::RegisterExternalSampledTexture: AcquireSampler failed");
+				return;
+			}
+
+			auto* VkSampler = static_cast<FVulkanSampler*>(Created.Sampler);
+			VkDescriptorSet Set = ImGui_ImplVulkan_AddTexture(
+				VkSampler->GetVkSampler(),
+				VkView->GetVkImageView(),
+				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			if (!Set)
+			{
+				DestroyTextureOnRHI(RHIServer, Created);
+				MAHO_CORE_ERROR("FImGuiSystem::RegisterExternalSampledTexture: ImGui_ImplVulkan_AddTexture failed");
+				return;
+			}
+
+			Created.ImageView = VkView->GetVkImageView();
 			Created.DescriptorSet = Set;
 			bOk.store(true);
 		});

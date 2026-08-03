@@ -6,6 +6,7 @@
  */
 
 #include <Core/Extension/Resource/Resource.h>
+#include <Render/SceneUpdatePacket.h>
 
 #include <cstdint>
 #include <string>
@@ -79,9 +80,11 @@ struct FRenderFramePacket
 	float ClearColorA = 1.f;
 	int ImGuiSlotIndex = -1;
 	bool bSubmitImGui = false;
+	bool bSubmitImGuiViewports = false;
 	int FramebufferWidth = 0;
 	int FramebufferHeight = 0;
 	bool bResizeFramebuffer = false;
+	FSceneUpdatePacket Scene;
 };
 
 } // namespace Maho

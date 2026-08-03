@@ -1,22 +1,30 @@
 #version 460
 
-#pragma vertex vert_main
-#pragma fragment frag_main
+#pragma vertex main
+#pragma fragment main
 
 #include "MahoCommon.glsl"
 
+#if defined(MAHO_SHADER_STAGE_VERTEX)
+
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec3 a_Color;
+layout(location = 0) out vec4 v_Color;
 
-layout(location = 0) out vec4 out_Color;
-
-void vert_main()
+void main()
 {
 	gl_Position = MahoLocalToClip(a_Position);
-	out_Color = vec4(a_Color, 1.0);
+	v_Color = vec4(a_Color, 1.0);
 }
 
-void frag_main()
+#elif defined(MAHO_SHADER_STAGE_FRAGMENT)
+
+layout(location = 0) in vec4 v_Color;
+layout(location = 0) out vec4 out_Color;
+
+void main()
 {
-	out_Color = out_Color;
+	out_Color = v_Color;
 }
+
+#endif

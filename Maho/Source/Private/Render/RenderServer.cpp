@@ -1,5 +1,6 @@
 ﻿#include <Render/RenderServer.h>
 #include <Render/RenderCommand.h>
+#include <Render/RDG/RDGBuilder.h>
 
 #include <Core/Application/App.h>
 #include <Core/Extension/Render/Render.h>
@@ -277,6 +278,11 @@ void FRenderServer::SetClearColor(float R, float G, float B, float A)
 	ClearColorA = A;
 }
 
+void FRenderServer::SubmitSceneUpdate(FSceneUpdatePacket Packet)
+{
+	PendingScene = std::move(Packet);
+}
+
 FTextureProxyRegistry& FRenderServer::GetTextureProxyRegistry()
 {
 	return *TextureProxies;
@@ -430,6 +436,23 @@ void FRenderServer::TearDown()
 		Flush();
 	}
 
+	// Unregister features while RHI is still alive (GPU allocs / ImGui external textures).
+	if (RHIServer.IsInitialized())
+	{
+		RHIServer.Flush();
+	}
+	for (auto It = Features.rbegin(); It != Features.rend(); ++It)
+	{
+		if (*It)
+		{
+			(*It)->OnUnregister(*this);
+		}
+	}
+	Features.clear();
+	GameViewImGuiTexture.Reset();
+	GameViewWidth = 0;
+	GameViewHeight = 0;
+
 	if (AnimationProxies)
 	{
 		AnimationProxies->DestroyAll(RHIServer);
@@ -466,7 +489,6 @@ void FRenderServer::TearDown()
 		ImGuiDrawDataRing->ReleaseAll();
 	}
 
-	RenderExtensions.clear();
 	{
 		std::lock_guard<std::mutex> Lock(PendingUploadMutex);
 		PendingTextureUploads.clear();
@@ -498,61 +520,139 @@ void FRenderServer::WaitBeforeImGuiNewFrame(std::uint64_t FrameIndex)
 	}
 }
 
-bool FRenderServer::InvokeRenderStage(
-	IRenderExtension& Extension,
-	ERenderStage Stage,
-	FRenderServer& Self)
+std::vector<IRenderFeature*> FRenderServer::SortFeaturesForStage(
+	std::vector<IRenderFeature*>& Participants,
+	std::unordered_map<std::type_index, IRenderFeature*>& TypeMap,
+	ERenderPipelineStage Stage)
 {
-	Extension.SetCurrentStage(Stage);
-	return Extension.ExecuteStage(Stage, Self);
-}
+	std::unordered_map<IRenderFeature*, std::vector<IRenderFeature*>> Deps;
+	std::unordered_map<IRenderFeature*, int32_t> InDegree;
 
-void FRenderServer::ExecuteRenderStages(const FRenderFramePacket& Packet)
-{
-	static constexpr ERenderStage Stages[] =
+	for (auto* F : Participants)
 	{
-		ERenderStage::BeginFrame,
-		ERenderStage::ProcessPacket,
-		ERenderStage::Cull,
-		ERenderStage::BuildDrawLists,
-		ERenderStage::UploadPrep,
-		ERenderStage::KickRHI,
-		ERenderStage::EndFrame,
-	};
+		InDegree.try_emplace(F, 0);
+		F->ForEachStageDep(Stage, [&](const std::type_index& DepType) {
+			auto It = TypeMap.find(DepType);
+			if (It != TypeMap.end() && It->second->ParticipatesInStage(Stage))
+			{
+				Deps[It->second].push_back(F);
+				InDegree[F]++;
+			}
+		});
+	}
 
-	for (ERenderStage Stage : Stages)
+	// Kahn topological sort
+	std::vector<IRenderFeature*> Sorted;
+	std::queue<IRenderFeature*> Q;
+
+	for (auto* F : Participants)
 	{
-		for (std::unique_ptr<IRenderExtension>& Extension : RenderExtensions)
+		if (InDegree[F] == 0)
 		{
-			if (!Extension)
-			{
-				continue;
-			}
-			if (!InvokeRenderStage(*Extension, Stage, *this))
-			{
-				MAHO_CORE_ERROR(
-					"FRenderServer: render extension '{}' failed at stage {}",
-					Extension->GetName() ? Extension->GetName() : "?",
-					static_cast<int>(Stage));
-				return;
-			}
-		}
-
-		if (Stage == ERenderStage::KickRHI)
-		{
-			RHIServer.SubmitBeginMainPass(
-				Packet.ClearColorR,
-				Packet.ClearColorG,
-				Packet.ClearColorB,
-				Packet.ClearColorA);
-			if (Packet.bSubmitImGui && Packet.ImGuiSlotIndex >= 0 && ImGuiDrawDataRing)
-			{
-				RHIServer.SubmitRenderUI(*ImGuiDrawDataRing, Packet.ImGuiSlotIndex);
-			}
-			RHIServer.SubmitEndFrameAndFence(Packet.FrameIndex);
-			RHIServer.Flush();
+			Q.push(F);
 		}
 	}
+
+	while (!Q.empty())
+	{
+		auto* F = Q.front();
+		Q.pop();
+		Sorted.push_back(F);
+		for (auto* Next : Deps[F])
+		{
+			if (--InDegree[Next] == 0)
+			{
+				Q.push(Next);
+			}
+		}
+	}
+
+	if (Sorted.size() != Participants.size())
+	{
+		MAHO_CORE_WARN("FRenderServer: circular feature dependency in stage, falling back to declaration order");
+		return Participants;
+	}
+
+	return Sorted;
+}
+
+void FRenderServer::BuildAndExecuteGraph(const FRenderFramePacket& Packet)
+{
+	static constexpr ERenderPipelineStage PipelineStages[] =
+	{
+		ERenderPipelineStage::BeginFrame,
+		ERenderPipelineStage::DepthPrePass,
+		ERenderPipelineStage::ShadowMap,
+		ERenderPipelineStage::BasePass,
+		ERenderPipelineStage::Translucent,
+		ERenderPipelineStage::PostProcess,
+		ERenderPipelineStage::EndFrame,
+	};
+
+	// Build type -> feature map
+	std::unordered_map<std::type_index, IRenderFeature*> TypeMap;
+	for (auto& F : Features)
+	{
+		TypeMap[std::type_index(typeid(*F))] = F.get();
+	}
+
+	for (ERenderPipelineStage Stage : PipelineStages)
+	{
+		// Collect participants for this stage
+		std::vector<IRenderFeature*> Participants;
+		for (auto& F : Features)
+		{
+			if (F->ParticipatesInStage(Stage))
+			{
+				Participants.push_back(F.get());
+			}
+		}
+
+		if (Participants.empty())
+		{
+			continue;
+		}
+
+		// Sort by dependency graph
+		std::vector<IRenderFeature*> Sorted = SortFeaturesForStage(Participants, TypeMap, Stage);
+
+		// Build render graph for this stage
+		FRDGBuilder GraphBuilder(RHIServer.GetRHI());
+		bool bHasPasses = false;
+
+		for (auto* Feature : Sorted)
+		{
+			Feature->SetCurrentStage(Stage);
+			std::size_t PassCountBefore = GraphBuilder.GetPassCount();
+			Feature->BuildRenderGraph(GraphBuilder, *this);
+			if (GraphBuilder.GetPassCount() > PassCountBefore)
+			{
+				bHasPasses = true;
+			}
+		}
+
+		if (bHasPasses)
+		{
+			GraphBuilder.Compile();
+			GraphBuilder.Execute();
+		}
+	}
+
+	// Built-in: swapchain present + ImGui
+	RHIServer.SubmitBeginMainPass(
+		Packet.ClearColorR,
+		Packet.ClearColorG,
+		Packet.ClearColorB,
+		Packet.ClearColorA);
+	if (Packet.bSubmitImGui && Packet.ImGuiSlotIndex >= 0 && ImGuiDrawDataRing)
+	{
+		RHIServer.SubmitRenderUI(*ImGuiDrawDataRing, Packet.ImGuiSlotIndex);
+	}
+	if (Packet.bSubmitImGuiViewports)
+	{
+		RHIServer.SubmitRenderPlatformWindows();
+	}
+	RHIServer.SubmitEndFrameAndFence(Packet.FrameIndex);
 }
 
 void FRenderServer::ProcessPendingResourceTransfers()
@@ -620,6 +720,7 @@ void FRenderServer::ProcessPendingResourceTransfers()
 void FRenderServer::ExecuteFrame(FRenderFramePacket Packet)
 {
 	CurrentFrameIndex = Packet.FrameIndex;
+	CurrentScene = std::move(Packet.Scene);
 
 	if (Packet.bResizeFramebuffer && Packet.FramebufferWidth > 0 && Packet.FramebufferHeight > 0)
 	{
@@ -629,7 +730,7 @@ void FRenderServer::ExecuteFrame(FRenderFramePacket Packet)
 	}
 
 	ProcessPendingResourceTransfers();
-	ExecuteRenderStages(Packet);
+	BuildAndExecuteGraph(Packet);
 }
 
 void FRenderServer::Render(std::uint64_t FrameIndex)
@@ -646,6 +747,8 @@ void FRenderServer::Render(std::uint64_t FrameIndex)
 	Packet.ClearColorG = ClearColorG;
 	Packet.ClearColorB = ClearColorB;
 	Packet.ClearColorA = ClearColorA;
+	Packet.Scene = std::move(PendingScene);
+	PendingScene = FSceneUpdatePacket{};
 
 	int Width = LastFramebufferWidth;
 	int Height = LastFramebufferHeight;
@@ -663,6 +766,7 @@ void FRenderServer::Render(std::uint64_t FrameIndex)
 
 	Packet.ImGuiSlotIndex = -1;
 	Packet.bSubmitImGui = false;
+	Packet.bSubmitImGuiViewports = false;
 	if (ImGui.IsInitialized())
 	{
 		ImGui.EndFrame();
@@ -671,6 +775,9 @@ void FRenderServer::Render(std::uint64_t FrameIndex)
 			Packet.ImGuiSlotIndex = ImGuiDrawDataRing->CaptureFromImGui(FrameIndex);
 			Packet.bSubmitImGui = bImGuiEnabled && Packet.ImGuiSlotIndex >= 0;
 		}
+		Packet.bSubmitImGuiViewports = bImGuiEnabled;
+		// GLFW platform windows on game thread; Vulkan viewport submit is on MahoRHI.
+		ImGui.UpdatePlatformWindows();
 	}
 
 	ENQUEUE_RENDER_COMMAND(RenderFrame)(
@@ -678,12 +785,6 @@ void FRenderServer::Render(std::uint64_t FrameIndex)
 		{
 			Server.ExecuteFrame(std::move(Packet));
 		});
-	Flush();
-
-	if (ImGui.IsInitialized())
-	{
-		ImGui.UpdateAndRenderPlatformWindows();
-	}
 }
 
 void FRenderServer::SyncFramebufferSize()

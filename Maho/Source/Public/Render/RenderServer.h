@@ -8,15 +8,18 @@
 #include <Core/System/PlatformWindow.h>
 #include <Render/RenderFramePacket.h>
 #include <Render/RHI/RHIServer.h>
-#include <Render/Sequencer/RenderExtension.h>
-#include <Render/Sequencer/RenderStage.h>
+#include <Render/Sequencer/RenderFeature.h>
+#include <Render/RenderPipelineStage.h>
 #include <Render/UI/ImGuiSystem.h>
 
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <type_traits>
+#include <typeindex>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -55,8 +58,8 @@ public:
 	void TearDown();
 
 	/**
-	 * Game: wait MaxFramesInFlight, EndFrame/Capture ImGui, enqueue ExecuteFrame on MahoRender,
-	 * flush, then UpdateAndRenderPlatformWindows on Game.
+	 * Game: wait MaxFramesInFlight, EndFrame/Capture ImGui, UpdatePlatformWindows (GLFW),
+	 * enqueue ExecuteFrame on MahoRender. No Flush — MahoRHI owns ImGui viewport Vulkan.
 	 */
 	void Render(std::uint64_t FrameIndex);
 
@@ -66,6 +69,15 @@ public:
 	void WaitBeforeImGuiNewFrame(std::uint64_t FrameIndex);
 
 	void SetClearColor(float R, float G, float B, float A);
+
+	/**
+	 * Game thread: replace the pending scene snapshot consumed by the next Render().
+	 * Value-copied into FRenderFramePacket — not Import/Export.
+	 */
+	void SubmitSceneUpdate(FSceneUpdatePacket Packet);
+
+	/** Render thread: scene snapshot for the frame currently executing. */
+	[[nodiscard]] const FSceneUpdatePacket& GetCurrentScene() const { return CurrentScene; }
 
 	/**
 	 * Client (Game): non-blocking resource → proxy upload.
@@ -99,18 +111,38 @@ public:
 	void SetImGuiEnabled(bool bEnabled) { bImGuiEnabled = bEnabled; }
 	[[nodiscard]] bool IsImGuiEnabled() const { return bImGuiEnabled; }
 
+	/** Game/editor view color target bound for ImGui::Image (set by render features). */
+	void SetGameViewImGuiTexture(FImGuiTextureHandle Handle) { GameViewImGuiTexture = Handle; }
+	[[nodiscard]] FImGuiTextureHandle GetGameViewImGuiTexture() const { return GameViewImGuiTexture; }
+	[[nodiscard]] std::uint32_t GetGameViewWidth() const { return GameViewWidth; }
+	[[nodiscard]] std::uint32_t GetGameViewHeight() const { return GameViewHeight; }
+	void SetGameViewExtent(std::uint32_t Width, std::uint32_t Height)
+	{
+		GameViewWidth = Width;
+		GameViewHeight = Height;
+	}
+
 	void RequestResize(int Width, int Height) { RHIServer.RequestResize(Width, Height); }
 
 	[[nodiscard]] FPlatformWindow* GetBoundWindow() { return BoundWindow; }
 	[[nodiscard]] const FPlatformWindow* GetBoundWindow() const { return BoundWindow; }
 
 	template <typename T, typename... TArgs>
-	T& RegisterRenderExtension(TArgs&&... Args)
+	T& RegisterFeature(TArgs&&... Args)
 	{
-		static_assert(std::is_base_of_v<IRenderExtension, T>, "T must derive from IRenderExtension");
-		auto Extension = std::make_unique<T>(std::forward<TArgs>(Args)...);
-		T& Ref = *Extension;
-		RenderExtensions.push_back(std::move(Extension));
+		static_assert(std::is_base_of_v<IRenderFeature, T>, "T must derive from IRenderFeature");
+		auto Feature = std::make_unique<T>(std::forward<TArgs>(Args)...);
+		T& Ref = *Feature;
+
+		if (HasRHI())
+		{
+			if (!Feature->OnRegister(*this))
+			{
+				MAHO_CORE_ERROR("FRenderServer: OnRegister failed for '{}'", Feature->GetName());
+			}
+		}
+
+		Features.push_back(std::move(Feature));
 		return Ref;
 	}
 
@@ -157,12 +189,12 @@ private:
 
 	void SyncFramebufferSize();
 	[[nodiscard]] int GetMaxFramesInFlight() const;
-	void ExecuteRenderStages(const FRenderFramePacket& Packet);
+	void BuildAndExecuteGraph(const FRenderFramePacket& Packet);
 	void ProcessPendingResourceTransfers();
-	[[nodiscard]] static bool InvokeRenderStage(
-		IRenderExtension& Extension,
-		ERenderStage Stage,
-		FRenderServer& Self);
+	[[nodiscard]] std::vector<IRenderFeature*> SortFeaturesForStage(
+		std::vector<IRenderFeature*>& Participants,
+		std::unordered_map<std::type_index, IRenderFeature*>& TypeMap,
+		ERenderPipelineStage Stage);
 
 	FRHIServer RHIServer;
 	FPlatformWindow* BoundWindow = nullptr;
@@ -172,7 +204,7 @@ private:
 	std::unique_ptr<FMeshProxyRegistry> MeshProxies;
 	std::unique_ptr<FSkeletonProxyRegistry> SkeletonProxies;
 	std::unique_ptr<FAnimationProxyRegistry> AnimationProxies;
-	std::vector<std::unique_ptr<IRenderExtension>> RenderExtensions;
+	std::vector<std::unique_ptr<IRenderFeature>> Features;
 
 	std::mutex PendingUploadMutex;
 	std::vector<FPendingTextureUpload> PendingTextureUploads;
@@ -185,6 +217,8 @@ private:
 	std::vector<FPendingDestroy> PendingAnimationDestroys;
 
 	std::uint64_t CurrentFrameIndex = 0;
+	FSceneUpdatePacket CurrentScene;
+	FSceneUpdatePacket PendingScene;
 
 	float ClearColorR = 0.08f;
 	float ClearColorG = 0.10f;
@@ -192,6 +226,9 @@ private:
 	float ClearColorA = 1.0f;
 
 	bool bImGuiEnabled = false;
+	FImGuiTextureHandle GameViewImGuiTexture;
+	std::uint32_t GameViewWidth = 0;
+	std::uint32_t GameViewHeight = 0;
 	int LastFramebufferWidth = 0;
 	int LastFramebufferHeight = 0;
 };

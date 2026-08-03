@@ -1,4 +1,4 @@
-﻿#include "Render/RHI/VulkanRHI.h"
+#include "Render/RHI/VulkanRHI.h"
 
 #include "Render/RHI/VulkanResources.h"
 
@@ -1437,8 +1437,9 @@ void FVulkanRHI::UpdateDescriptorSets(const FRHIDescriptorWrite* Writes, std::ui
 		VkWrite.dstBinding = W.Binding;
 		VkWrite.dstArrayElement = W.ArrayIndex;
 		VkWrite.descriptorCount = 1;
-		VkWrite.descriptorType = static_cast<VkDescriptorType>(W.Type);
+		VkWrite.descriptorType = ToVkDescriptorType(W.Type);
 
+		bool bHasInfo = false;
 		if (W.Type == ERHIDescriptorType::UniformBuffer && W.Buffer != nullptr)
 		{
 			auto* VkBuf = static_cast<FVulkanBuffer*>(W.Buffer);
@@ -1447,7 +1448,8 @@ void FVulkanRHI::UpdateDescriptorSets(const FRHIDescriptorWrite* Writes, std::ui
 			Info.offset = W.Offset;
 			Info.range = W.Range > 0 ? W.Range : VK_WHOLE_SIZE;
 
-			VkWrite.pBufferInfo = &Info;
+			VkWrite.pBufferInfo = &BufferInfos.back();
+			bHasInfo = (Info.buffer != VK_NULL_HANDLE);
 		}
 		else if (W.Type == ERHIDescriptorType::CombinedImageSampler && W.TextureView != nullptr)
 		{
@@ -1459,10 +1461,14 @@ void FVulkanRHI::UpdateDescriptorSets(const FRHIDescriptorWrite* Writes, std::ui
 			Info.sampler = VkSampler ? VkSampler->GetVkSampler() : VK_NULL_HANDLE;
 			Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-			VkWrite.pImageInfo = &Info;
+			VkWrite.pImageInfo = &ImageInfos.back();
+			bHasInfo = (Info.imageView != VK_NULL_HANDLE);
 		}
 
-		VkWrites.push_back(VkWrite);
+		if (bHasInfo)
+		{
+			VkWrites.push_back(VkWrite);
+		}
 	}
 
 	if (!VkWrites.empty())
@@ -1562,6 +1568,32 @@ VkFormat FVulkanRHI::ToVkFormat(ERHIFormat Format)
 		return VK_FORMAT_D32_SFLOAT;
 	default:
 		return VK_FORMAT_UNDEFINED;
+	}
+}
+
+VkDescriptorType FVulkanRHI::ToVkDescriptorType(ERHIDescriptorType Type)
+{
+	// ERHIDescriptorType is dense and skips Vulkan texel-buffer enums — never static_cast.
+	switch (Type)
+	{
+	case ERHIDescriptorType::Sampler:
+		return VK_DESCRIPTOR_TYPE_SAMPLER;
+	case ERHIDescriptorType::CombinedImageSampler:
+		return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	case ERHIDescriptorType::SampledImage:
+		return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	case ERHIDescriptorType::StorageImage:
+		return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	case ERHIDescriptorType::UniformBuffer:
+		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	case ERHIDescriptorType::StorageBuffer:
+		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	case ERHIDescriptorType::DynamicUniform:
+		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+	case ERHIDescriptorType::DynamicStorage:
+		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+	default:
+		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	}
 }
 
@@ -2048,7 +2080,7 @@ FRHIDescriptorSetLayout* FVulkanRHI::CreateDescriptorSetLayout(const FRHIDescrip
 	{
 		VkDescriptorSetLayoutBinding Binding{};
 		Binding.binding = B.Binding;
-		Binding.descriptorType = static_cast<VkDescriptorType>(B.Type);
+		Binding.descriptorType = ToVkDescriptorType(B.Type);
 		Binding.descriptorCount = B.Count;
 
 		VkShaderStageFlags Flags = 0;
@@ -2154,7 +2186,7 @@ FRHIDescriptorPool* FVulkanRHI::CreateDescriptorPool(const FRHIDescriptorPoolDes
 	for (const auto& S : Desc.PoolSizes)
 	{
 		VkDescriptorPoolSize Size{};
-		Size.type = static_cast<VkDescriptorType>(S.Type);
+		Size.type = ToVkDescriptorType(S.Type);
 		Size.descriptorCount = S.Count;
 		PoolSizes.push_back(Size);
 	}

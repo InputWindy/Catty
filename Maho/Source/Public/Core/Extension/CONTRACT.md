@@ -51,7 +51,8 @@ See [`../../../../Plugins/README.md`](../../../../Plugins/README.md):
 
 ## Related files
 
-- `Core/Extension/<Name>/<Name>.h` (built-in systems), `Core/Extension/Script/ScriptLayer.h`, `Core/Extension/Editor/EditorLayer.h`, `Core/Application/App.h`
+- `Core/Extension/<Name>/<Name>.h` (built-in systems), `Core/Application/App.h`
+- Script / Editor layers are **game-project** overlays (`Source/Script/`, `Source/Editor/`), not engine Extension headers
 - `Core/Extension/Resource/Resource.h` — `UTexture*` / model `U*` / `FResourceSystem`
 - Private: `MeshModelCodec`, `TextureImageCodec`, `ResourceIO` (`TResourceIOTraits`)
 - `Render/RenderServer.h`, `Render/RHI/RHIServer.h`

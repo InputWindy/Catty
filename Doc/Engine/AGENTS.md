@@ -14,7 +14,7 @@ After the repo-root [`AGENTS.md`](../../AGENTS.md), use this folder for **engine
 | [`ObjectReflectAPI.html`](ObjectReflectAPI.html) | Reflect C++ API |
 | [`LuaAPI.html`](LuaAPI.html) | Lua `maho.*` API |
 
-Module contracts live next to code (`Maho/Source/Public/**/CONTRACT.md`), including Editor UI: [`../../Maho/Source/Public/Core/Editor/CONTRACT.md`](../../Maho/Source/Public/Core/Editor/CONTRACT.md).
+Module contracts live next to code (`Maho/Source/Public/**/CONTRACT.md`). Editor UI is **project-owned** (`Source/Editor/CONTRACT.md` in the game), not an engine module.
 
 ## Typical workflows
 

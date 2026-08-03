@@ -13,6 +13,7 @@ namespace Maho
 class FPlatformWindow;
 class FRHIServer;
 class FRHITexture;
+class FRHITextureView;
 class FRHISampler;
 
 /** Opaque ImGui texture id (VkDescriptorSet on Vulkan). */
@@ -59,11 +60,11 @@ public:
 	void EndFrame();
 
 	/**
-	 * Secondary OS viewports (drag panels outside the main window).
-	 * Call on the game thread after FRHIServer has flushed this frame's main ImGui submit
-	 * so GLFW + ImGui_ImplVulkan viewport work do not race the RHI thread.
+	 * Secondary OS viewports: GLFW create/move/resize only (game/main thread).
+	 * Vulkan create/resize for those windows is marshaled onto MahoRHI (sync Flush).
+	 * Per-frame draw/present is submitted via FRHIServer::SubmitRenderPlatformWindows.
 	 */
-	void UpdateAndRenderPlatformWindows();
+	void UpdatePlatformWindows();
 
 	/** True when Escape was pressed and ImGui is not capturing keyboard input. */
 	[[nodiscard]] bool PollExitRequest() const;
@@ -80,7 +81,16 @@ public:
 		std::size_t PixelByteCount,
 		FImGuiTextureHandle& OutHandle);
 
-	/** Unregister and free GPU resources for a texture created by CreateRgba8Texture. */
+	/**
+	 * Bind an existing RHI sampled texture view for ImGui::Image (does not own the GPU image).
+	 * Blocks on FRHIServer::Flush. Call DestroyTexture to free the ImGui descriptor + sampler only.
+	 */
+	[[nodiscard]] bool RegisterExternalSampledTexture(
+		FRHIServer& RHIServer,
+		FRHITextureView* View,
+		FImGuiTextureHandle& OutHandle);
+
+	/** Unregister and free GPU resources for a texture created by CreateRgba8Texture / RegisterExternalSampledTexture. */
 	void DestroyTexture(FRHIServer& RHIServer, FImGuiTextureHandle& Handle);
 
 private:
@@ -88,12 +98,16 @@ private:
 	{
 		FRHITexture* Texture = nullptr;
 		FRHISampler* Sampler = nullptr;
-		void* ImageView = nullptr; // VkImageView
+		void* ImageView = nullptr; // VkImageView (owned only when created by CreateRgba8Texture)
 		void* DescriptorSet = nullptr; // VkDescriptorSet / ImTextureID
+		bool bOwnsTexture = true;
+		bool bOwnsImageView = true;
 	};
 
 	void DestroyTextureOnRHI(FRHIServer& RHIServer, FOwnedGpuTexture& Owned);
 	void DestroyAllTextures(FRHIServer& RHIServer);
+	void InstallViewportRHIMarshaling(FRHIServer& RHIServer);
+	void UninstallViewportRHIMarshaling();
 
 	bool bInitialized = false;
 	/** Owns storage for ImGuiIO::IniFilename (ImGui keeps a raw const char*). */

@@ -121,6 +121,7 @@ private:
 	[[nodiscard]] static VkBufferUsageFlags ToVkBufferUsage(ERHIBufferUsage Usage);
 	[[nodiscard]] static VkImageUsageFlags ToVkImageUsage(ERHITextureUsage Usage);
 	[[nodiscard]] static VkFormat ToVkFormat(ERHIFormat Format);
+	[[nodiscard]] static VkDescriptorType ToVkDescriptorType(ERHIDescriptorType Type);
 	[[nodiscard]] static VkFilter ToVkFilter(ERHIFilter Filter);
 	[[nodiscard]] static VkSamplerAddressMode ToVkAddressMode(ERHIAddressMode Mode);
 

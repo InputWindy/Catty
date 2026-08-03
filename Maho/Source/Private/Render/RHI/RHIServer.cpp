@@ -6,6 +6,7 @@
 
 #include <atomic>
 
+#include <imgui.h>
 #include <imgui_impl_vulkan.h>
 
 namespace Maho
@@ -203,6 +204,19 @@ void FRHIServer::SubmitRenderUI(FImGuiDrawDataRing& Ring, int SlotIndex)
 		}
 
 		ImGui_ImplVulkan_RenderDrawData(&Slot.DrawData, VulkanRHI->GetVkCommandBuffer());
+	});
+}
+
+void FRHIServer::SubmitRenderPlatformWindows()
+{
+	if (!RHI)
+	{
+		return;
+	}
+
+	Enqueue([](FThreadedServer& /*Server*/)
+	{
+		ImGui::RenderPlatformWindowsDefault();
 	});
 }
 

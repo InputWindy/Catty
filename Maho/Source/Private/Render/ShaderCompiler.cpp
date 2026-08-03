@@ -204,17 +204,26 @@ FShaderCompileResult FShaderCompiler::CompileStage(
 	const char* SourcePtr = Desc.Source.c_str();
 	int SourceLen = static_cast<int>(Desc.Source.size());
 	Shader.setStringsWithLengths(&SourcePtr, &SourceLen, 1);
-	Shader.setEntryPoint(EntryPoint.c_str());
+	// Pipeline stages bind SPIR-V entry "main" (see FVulkanRHI::CreateGraphicsPipeline).
+	Shader.setEntryPoint("main");
 	Shader.setSourceEntryPoint(EntryPoint.c_str());
 
-	// Pass defines via preamble
-	if (!Desc.Defines.empty())
+	// Keep alive until after parse/link — setPreamble stores a raw pointer.
+	std::string Preamble;
+	if (Stage == ERHIShaderStage::Vertex)
 	{
-		std::string Preamble;
-		for (const auto& Def : Desc.Defines)
-		{
-			Preamble += "#define " + Def + "\n";
-		}
+		Preamble += "#define MAHO_SHADER_STAGE_VERTEX 1\n";
+	}
+	else if (Stage == ERHIShaderStage::Fragment)
+	{
+		Preamble += "#define MAHO_SHADER_STAGE_FRAGMENT 1\n";
+	}
+	for (const auto& Def : Desc.Defines)
+	{
+		Preamble += "#define " + Def + "\n";
+	}
+	if (!Preamble.empty())
+	{
 		Shader.setPreamble(Preamble.c_str());
 	}
 
