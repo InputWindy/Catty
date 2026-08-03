@@ -189,11 +189,28 @@ struct FRHIVertexAttribute
 	std::uint32_t Offset = 0;
 };
 
+// Forward declarations used by FRHIGraphicsPipelineDesc / FRHIFramebufferDesc
+class FRHIRenderPass;
+class FRHIFramebuffer;
+class FRHITextureView;
+
+struct FRHIAttachmentBlend
+{
+	bool bBlend = false;
+	ERHIBlendFactor SrcColorFactor = ERHIBlendFactor::One;
+	ERHIBlendFactor DstColorFactor = ERHIBlendFactor::Zero;
+	ERHIBlendFactor SrcAlphaFactor = ERHIBlendFactor::One;
+	ERHIBlendFactor DstAlphaFactor = ERHIBlendFactor::Zero;
+	ERHIBlendOp ColorOp = ERHIBlendOp::Add;
+	ERHIBlendOp AlphaOp = ERHIBlendOp::Add;
+};
+
 struct FRHIGraphicsPipelineDesc
 {
 	FRHIShaderModule* VertexShader = nullptr;
 	FRHIShaderModule* FragmentShader = nullptr;
 	FRHIPipelineLayout* Layout = nullptr;
+	FRHIRenderPass* RenderPass = nullptr;
 	ERHIPrimitiveTopology Topology = ERHIPrimitiveTopology::TriangleList;
 	std::uint32_t VertexStride = 0;
 	std::vector<FRHIVertexAttribute> Attributes;
@@ -201,9 +218,12 @@ struct FRHIGraphicsPipelineDesc
 	ERHIFillMode FillMode = ERHIFillMode::Solid;
 	ERHIFormat ColorFormat = ERHIFormat::B8G8R8A8_UNORM;
 	ERHIFormat DepthFormat = ERHIFormat::Unknown;
+	std::uint32_t SampleCount = 1;
 	bool bDepthTest = false;
 	bool bDepthWrite = false;
 	ERHICompareOp DepthCompare = ERHICompareOp::Less;
+	std::vector<FRHIAttachmentBlend> AttachmentBlends;
+	bool bAlphaToCoverage = false;
 };
 
 class MAHO_API FRHIGraphicsPipeline : public FRHIResource
@@ -264,6 +284,29 @@ class MAHO_API FRHIRenderPass : public FRHIResource
 public:
 	[[nodiscard]] const char* GetTypeName() const override { return "FRHIRenderPass"; }
 	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::RenderPass; }
+};
+
+struct FRHIRenderPassAttachment
+{
+	ERHIFormat Format = ERHIFormat::B8G8R8A8_UNORM;
+	std::uint32_t SampleCount = 1;
+	ERHILoadOp LoadOp = ERHILoadOp::Clear;
+	ERHIStoreOp StoreOp = ERHIStoreOp::Store;
+};
+
+struct FRHIRenderPassDesc
+{
+	std::vector<FRHIRenderPassAttachment> ColorAttachments;
+	ERHIFormat DepthFormat = ERHIFormat::Unknown;
+	std::uint32_t SampleCount = 1;
+};
+
+struct FRHIFramebufferDesc
+{
+	FRHIRenderPass* RenderPass = nullptr;
+	std::vector<FRHITextureView*> Attachments;
+	std::uint32_t Width = 0;
+	std::uint32_t Height = 0;
 };
 
 class MAHO_API FRHICommandPool : public FRHIResource

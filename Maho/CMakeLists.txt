@@ -179,6 +179,20 @@ if(MAHO_HAS_ASSIMP)
 	unset(_MAHO_ASSIMP_TYPE)
 endif()
 
+if(MAHO_HAS_GLSLANG)
+	target_link_libraries(Maho PRIVATE glslang OSDependent SPIRV)
+	target_compile_definitions(Maho PRIVATE MAHO_WITH_GLSLANG=1)
+	target_include_directories(Maho PRIVATE
+		"${glslang_SOURCE_DIR}"
+		"${glslang_BINARY_DIR}"
+	)
+	# SPIRV-Tools (optimizer) — optional.
+	if(MAHO_HAS_SPIRV_TOOLS)
+		target_link_libraries(Maho PRIVATE SPIRV-Tools-opt SPIRV-Tools)
+		target_compile_definitions(Maho PRIVATE MAHO_WITH_SPIRV_TOOLS=1)
+	endif()
+endif()
+
 # Re-export ImGui include paths / defs so game TUs can #include <imgui.h> against Maho.dll.
 target_include_directories(Maho
 	PUBLIC

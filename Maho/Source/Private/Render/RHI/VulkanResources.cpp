@@ -77,4 +77,67 @@ FVulkanSemaphore::~FVulkanSemaphore()
 	}
 }
 
+FVulkanQueryPool::~FVulkanQueryPool()
+{
+	if (Device != VK_NULL_HANDLE && Pool != VK_NULL_HANDLE)
+	{
+		vkDestroyQueryPool(Device, Pool, nullptr);
+		Pool = VK_NULL_HANDLE;
+	}
+}
+
+FVulkanTextureView::~FVulkanTextureView()
+{
+	if (Device != VK_NULL_HANDLE && View != VK_NULL_HANDLE)
+	{
+		vkDestroyImageView(Device, View, nullptr);
+		View = VK_NULL_HANDLE;
+	}
+}
+
+FVulkanDescriptorSetLayout::~FVulkanDescriptorSetLayout()
+{
+	if (Device != VK_NULL_HANDLE && Layout != VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorSetLayout(Device, Layout, nullptr);
+		Layout = VK_NULL_HANDLE;
+	}
+}
+
+FVulkanPipelineLayout::~FVulkanPipelineLayout()
+{
+	if (Device != VK_NULL_HANDLE && Layout != VK_NULL_HANDLE)
+	{
+		vkDestroyPipelineLayout(Device, Layout, nullptr);
+		Layout = VK_NULL_HANDLE;
+	}
+}
+
+FVulkanDescriptorPool::~FVulkanDescriptorPool()
+{
+	if (Device != VK_NULL_HANDLE && Pool != VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorPool(Device, Pool, nullptr);
+		Pool = VK_NULL_HANDLE;
+	}
+}
+
+FVulkanRenderPass::~FVulkanRenderPass()
+{
+	if (Device != VK_NULL_HANDLE && Pass != VK_NULL_HANDLE)
+	{
+		vkDestroyRenderPass(Device, Pass, nullptr);
+		Pass = VK_NULL_HANDLE;
+	}
+}
+
+FVulkanFramebuffer::~FVulkanFramebuffer()
+{
+	if (Device != VK_NULL_HANDLE && FB != VK_NULL_HANDLE)
+	{
+		vkDestroyFramebuffer(Device, FB, nullptr);
+		FB = VK_NULL_HANDLE;
+	}
+}
+
 } // namespace Maho

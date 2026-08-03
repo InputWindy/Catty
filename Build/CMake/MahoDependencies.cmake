@@ -618,6 +618,85 @@ if(MAHO_WITH_ASSIMP)
 	unset(_MAHO_ASSIMP_SRC)
 endif()
 
+# -----------------------------------------------------------------------------
+# glslang — Khronos GLSL → SPIR-V compiler (runtime shader compilation)
+#
+# Default: FetchContent from GitHub (required; shader system won't work without it).
+# Override:
+#   -DMAHO_GLSLANG_SOURCE_DIR=<checkout>  use a local tree (skips fetch)
+# -----------------------------------------------------------------------------
+option(MAHO_FETCH_GLSLANG "FetchContent glslang from GitHub" ON)
+set(MAHO_HAS_GLSLANG 0)
+set(MAHO_GLSLANG_SOURCE_DIR "" CACHE PATH "Pre-cloned glslang root (optional)")
+set(MAHO_GLSLANG_BINARY_DIR "" CACHE PATH "glslang build dir (optional, paired with SOURCE_DIR)")
+
+set(_MAHO_GLSLANG_SRC "")
+if(MAHO_GLSLANG_SOURCE_DIR AND EXISTS "${MAHO_GLSLANG_SOURCE_DIR}/CMakeLists.txt")
+	set(_MAHO_GLSLANG_SRC "${MAHO_GLSLANG_SOURCE_DIR}")
+	message(STATUS "Maho: using MAHO_GLSLANG_SOURCE_DIR=${_MAHO_GLSLANG_SRC}")
+else()
+	set(_maho_glslang_reuse "${FETCHCONTENT_BASE_DIR}/glslang-src")
+	if(EXISTS "${_maho_glslang_reuse}/CMakeLists.txt")
+		set(_MAHO_GLSLANG_SRC "${_maho_glslang_reuse}")
+		message(STATUS "Maho: reusing glslang at ${_MAHO_GLSLANG_SRC}")
+	elseif(MAHO_FETCH_GLSLANG)
+		FetchContent_Declare(
+			glslang
+			GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
+			GIT_TAG 14.3.0
+			GIT_SHALLOW TRUE
+		)
+		FetchContent_GetProperties(glslang)
+		if(NOT glslang_POPULATED)
+			FetchContent_Populate(glslang)
+		endif()
+		if(DEFINED glslang_SOURCE_DIR AND EXISTS "${glslang_SOURCE_DIR}/CMakeLists.txt")
+			set(_MAHO_GLSLANG_SRC "${glslang_SOURCE_DIR}")
+		endif()
+	endif()
+	unset(_maho_glslang_reuse)
+endif()
+
+if(_MAHO_GLSLANG_SRC AND EXISTS "${_MAHO_GLSLANG_SRC}/CMakeLists.txt")
+	set(BUILD_TESTING OFF)
+	set(ENABLE_GLSLANG_INSTALL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_SPIRV_TOOLS_INSTALL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_HLSL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_OPT OFF CACHE BOOL "" FORCE)
+	set(BUILD_SHARED_LIBS OFF)
+
+	set(glslang_SOURCE_DIR "${_MAHO_GLSLANG_SRC}")
+	set(glslang_BINARY_DIR "${FETCHCONTENT_BASE_DIR}/glslang-build")
+	if(NOT TARGET glslang)
+		enable_language(C)
+		add_subdirectory(${glslang_SOURCE_DIR} ${glslang_BINARY_DIR} EXCLUDE_FROM_ALL)
+	endif()
+	if(TARGET glslang AND TARGET OSDependent AND TARGET SPIRV)
+		set(MAHO_HAS_GLSLANG 1)
+		set_target_properties(glslang PROPERTIES FOLDER "ThirdParty")
+		set_target_properties(OSDependent PROPERTIES FOLDER "ThirdParty")
+		set_target_properties(SPIRV PROPERTIES FOLDER "ThirdParty")
+		message(STATUS "Maho: glslang enabled")
+	else()
+		message(WARNING "Maho: glslang sources present but required targets missing")
+	endif()
+else()
+	message(WARNING
+		"Maho: glslang not found. Shader compilation disabled. "
+		"Set MAHO_GLSLANG_SOURCE_DIR or MAHO_FETCH_GLSLANG=ON when network allows.")
+endif()
+unset(_MAHO_GLSLANG_SRC)
+
+# SPIRV-Tools (optimizer / linker — optional, for future shader optimization)
+set(MAHO_HAS_SPIRV_TOOLS 0)
+if(_MAHO_GLSLANG_SRC AND EXISTS "${_MAHO_GLSLANG_SRC}/External/spirv-tools/CMakeLists.txt")
+	if(TARGET SPIRV-Tools-opt)
+		set(MAHO_HAS_SPIRV_TOOLS 1)
+		set_target_properties(SPIRV-Tools-opt PROPERTIES FOLDER "ThirdParty")
+		set_target_properties(SPIRV-Tools PROPERTIES FOLDER "ThirdParty")
+	endif()
+endif()
+
 unset(_MAHO_REPO_ROOT)
 unset(_MAHO_PUBLIC_HEADERS)
 unset(_MAHO_TP)

@@ -167,4 +167,144 @@ private:
 	VkSemaphore Semaphore = VK_NULL_HANDLE;
 };
 
+class FVulkanQueryPool final : public FRHIQueryPool
+{
+public:
+	FVulkanQueryPool(VkDevice InDevice, VkQueryPool InPool)
+		: Device(InDevice)
+		, Pool(InPool)
+	{
+	}
+
+	~FVulkanQueryPool() override;
+
+	[[nodiscard]] VkQueryPool GetVkQueryPool() const { return Pool; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkQueryPool Pool = VK_NULL_HANDLE;
+};
+
+class FVulkanTextureView final : public FRHITextureView
+{
+public:
+	FVulkanTextureView(VkDevice InDevice, VkImageView InView)
+		: Device(InDevice)
+		, View(InView)
+	{
+	}
+
+	~FVulkanTextureView() override;
+
+	[[nodiscard]] VkImageView GetVkImageView() const { return View; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkImageView View = VK_NULL_HANDLE;
+};
+
+class FVulkanDescriptorSetLayout final : public FRHIDescriptorSetLayout
+{
+public:
+	FVulkanDescriptorSetLayout(VkDevice InDevice, VkDescriptorSetLayout InLayout)
+		: Device(InDevice)
+		, Layout(InLayout)
+	{
+	}
+
+	~FVulkanDescriptorSetLayout() override;
+
+	[[nodiscard]] VkDescriptorSetLayout GetVkLayout() const { return Layout; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkDescriptorSetLayout Layout = VK_NULL_HANDLE;
+};
+
+class FVulkanPipelineLayout final : public FRHIPipelineLayout
+{
+public:
+	FVulkanPipelineLayout(VkDevice InDevice, VkPipelineLayout InLayout)
+		: Device(InDevice)
+		, Layout(InLayout)
+	{
+	}
+
+	~FVulkanPipelineLayout() override;
+
+	[[nodiscard]] VkPipelineLayout GetVkLayout() const { return Layout; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkPipelineLayout Layout = VK_NULL_HANDLE;
+};
+
+class FVulkanDescriptorPool final : public FRHIDescriptorPool
+{
+public:
+	FVulkanDescriptorPool(VkDevice InDevice, VkDescriptorPool InPool)
+		: Device(InDevice)
+		, Pool(InPool)
+	{
+	}
+
+	~FVulkanDescriptorPool() override;
+
+	[[nodiscard]] VkDescriptorPool GetVkPool() const { return Pool; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkDescriptorPool Pool = VK_NULL_HANDLE;
+};
+
+class FVulkanDescriptorSet final : public FRHIDescriptorSet
+{
+public:
+	FVulkanDescriptorSet(VkDescriptorSet InSet)
+		: Set(InSet)
+	{
+	}
+
+	[[nodiscard]] VkDescriptorSet GetVkSet() const { return Set; }
+
+private:
+	VkDescriptorSet Set = VK_NULL_HANDLE;
+};
+
+class FVulkanRenderPass final : public FRHIRenderPass
+{
+public:
+	FVulkanRenderPass(VkDevice InDevice, VkRenderPass InPass)
+		: Device(InDevice)
+		, Pass(InPass)
+	{
+	}
+
+	~FVulkanRenderPass() override;
+
+	[[nodiscard]] VkRenderPass GetVkPass() const { return Pass; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkRenderPass Pass = VK_NULL_HANDLE;
+};
+
+class FVulkanFramebuffer final : public FRHIFramebuffer
+{
+public:
+	FVulkanFramebuffer(VkDevice InDevice, VkFramebuffer InFB)
+		: Device(InDevice)
+		, FB(InFB)
+	{
+	}
+
+	~FVulkanFramebuffer() override;
+
+	[[nodiscard]] VkFramebuffer GetVkFramebuffer() const { return FB; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkFramebuffer FB = VK_NULL_HANDLE;
+};
+
 } // namespace Maho

@@ -85,6 +85,21 @@ public:
 	[[nodiscard]] virtual FRHIComputePipeline* CreateComputePipeline(const FRHIComputePipelineDesc& Desc) = 0;
 	virtual void DestroyComputePipeline(FRHIComputePipeline* Pipeline) = 0;
 
+	[[nodiscard]] virtual FRHITextureView* CreateTextureView(const FRHITextureViewDesc& Desc) = 0;
+	virtual void DestroyTextureView(FRHITextureView* View) = 0;
+	[[nodiscard]] virtual FRHIDescriptorSetLayout* CreateDescriptorSetLayout(const FRHIDescriptorSetLayoutDesc& Desc) = 0;
+	virtual void DestroyDescriptorSetLayout(FRHIDescriptorSetLayout* Layout) = 0;
+	[[nodiscard]] virtual FRHIPipelineLayout* CreatePipelineLayout(const FRHIPipelineLayoutDesc& Desc) = 0;
+	virtual void DestroyPipelineLayout(FRHIPipelineLayout* Layout) = 0;
+	[[nodiscard]] virtual FRHIDescriptorPool* CreateDescriptorPool(const FRHIDescriptorPoolDesc& Desc) = 0;
+	virtual void DestroyDescriptorPool(FRHIDescriptorPool* Pool) = 0;
+	[[nodiscard]] virtual FRHIDescriptorSet* AllocateDescriptorSet(FRHIDescriptorPool* Pool, FRHIDescriptorSetLayout* Layout) = 0;
+	virtual void FreeDescriptorSet(FRHIDescriptorPool* Pool, FRHIDescriptorSet* Set) = 0;
+	[[nodiscard]] virtual FRHIRenderPass* CreateRenderPass(const FRHIRenderPassDesc& Desc) = 0;
+	virtual void DestroyRenderPass(FRHIRenderPass* Pass) = 0;
+	[[nodiscard]] virtual FRHIFramebuffer* CreateFramebuffer(const FRHIFramebufferDesc& Desc) = 0;
+	virtual void DestroyFramebuffer(FRHIFramebuffer* Framebuffer) = 0;
+
 protected:
 	IRHI() = default;
 };

@@ -1405,9 +1405,71 @@ void FVulkanRHI::UpdateBuffer(FRHIBuffer* Buffer, std::uint64_t Offset, std::uin
 	MemoryAllocator->Unmap(Opaque);
 }
 
-void FVulkanRHI::UpdateDescriptorSets(const FRHIDescriptorWrite* /*Writes*/, std::uint32_t /*Count*/)
+void FVulkanRHI::UpdateDescriptorSets(const FRHIDescriptorWrite* Writes, std::uint32_t Count)
 {
-	// Skeleton stub.
+	if (Writes == nullptr || Count == 0 || Device == VK_NULL_HANDLE)
+	{
+		return;
+	}
+
+	std::vector<VkWriteDescriptorSet> VkWrites;
+	VkWrites.reserve(Count);
+
+	// Temporary storage for descriptor info structs (must live until vkUpdateDescriptorSets call)
+	std::vector<VkDescriptorBufferInfo> BufferInfos;
+	BufferInfos.reserve(Count);
+	std::vector<VkDescriptorImageInfo> ImageInfos;
+	ImageInfos.reserve(Count);
+
+	for (std::uint32_t i = 0; i < Count; ++i)
+	{
+		const FRHIDescriptorWrite& W = Writes[i];
+		if (W.Set == nullptr)
+		{
+			continue;
+		}
+
+		auto* VkSet = static_cast<FVulkanDescriptorSet*>(W.Set);
+
+		VkWriteDescriptorSet VkWrite{};
+		VkWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		VkWrite.dstSet = VkSet->GetVkSet();
+		VkWrite.dstBinding = W.Binding;
+		VkWrite.dstArrayElement = W.ArrayIndex;
+		VkWrite.descriptorCount = 1;
+		VkWrite.descriptorType = static_cast<VkDescriptorType>(W.Type);
+
+		if (W.Type == ERHIDescriptorType::UniformBuffer && W.Buffer != nullptr)
+		{
+			auto* VkBuf = static_cast<FVulkanBuffer*>(W.Buffer);
+			VkDescriptorBufferInfo& Info = BufferInfos.emplace_back();
+			Info.buffer = VkBuf->GetVkBuffer();
+			Info.offset = W.Offset;
+			Info.range = W.Range > 0 ? W.Range : VK_WHOLE_SIZE;
+
+			VkWrite.pBufferInfo = &Info;
+		}
+		else if (W.Type == ERHIDescriptorType::CombinedImageSampler && W.TextureView != nullptr)
+		{
+			auto* VkView = static_cast<FVulkanTextureView*>(W.TextureView);
+			auto* VkSampler = (W.Sampler != nullptr) ? static_cast<FVulkanSampler*>(W.Sampler) : nullptr;
+
+			VkDescriptorImageInfo& Info = ImageInfos.emplace_back();
+			Info.imageView = VkView->GetVkImageView();
+			Info.sampler = VkSampler ? VkSampler->GetVkSampler() : VK_NULL_HANDLE;
+			Info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+			VkWrite.pImageInfo = &Info;
+		}
+
+		VkWrites.push_back(VkWrite);
+	}
+
+	if (!VkWrites.empty())
+	{
+		vkUpdateDescriptorSets(Device, static_cast<std::uint32_t>(VkWrites.size()),
+		                       VkWrites.data(), 0, nullptr);
+	}
 }
 
 VkBufferUsageFlags FVulkanRHI::ToVkBufferUsage(ERHIBufferUsage Usage)
@@ -1488,6 +1550,10 @@ VkFormat FVulkanRHI::ToVkFormat(ERHIFormat Format)
 		return VK_FORMAT_B8G8R8A8_UNORM;
 	case ERHIFormat::R32_SFLOAT:
 		return VK_FORMAT_R32_SFLOAT;
+	case ERHIFormat::R32G32_SFLOAT:
+		return VK_FORMAT_R32G32_SFLOAT;
+	case ERHIFormat::R32G32B32_SFLOAT:
+		return VK_FORMAT_R32G32B32_SFLOAT;
 	case ERHIFormat::R16G16_SFLOAT:
 		return VK_FORMAT_R16G16_SFLOAT;
 	case ERHIFormat::D24_UNORM_S8_UINT:
@@ -1636,10 +1702,254 @@ void FVulkanRHI::DestroyShaderModule(FRHIShaderModule* Module)
 	delete Module;
 }
 
-FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipelineDesc& /*Desc*/)
+FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipelineDesc& Desc)
 {
-	// Full PSO create is a follow-up; return a placeholder owning no VkPipeline.
-	return new FVulkanGraphicsPipeline(Device, VK_NULL_HANDLE);
+	if (Desc.VertexShader == nullptr || Desc.FragmentShader == nullptr)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateGraphicsPipeline: missing shader modules");
+		return nullptr;
+	}
+
+	auto* VkVs = static_cast<FVulkanShaderModule*>(Desc.VertexShader);
+	auto* VkFs = static_cast<FVulkanShaderModule*>(Desc.FragmentShader);
+
+	if (VkVs->GetVkShaderModule() == VK_NULL_HANDLE || VkFs->GetVkShaderModule() == VK_NULL_HANDLE)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateGraphicsPipeline: invalid shader modules");
+		return nullptr;
+	}
+
+	VkRenderPass VkRp = VK_NULL_HANDLE;
+	if (Desc.RenderPass != nullptr)
+	{
+		auto* VkPass = static_cast<FVulkanRenderPass*>(Desc.RenderPass);
+		VkRp = VkPass->GetVkPass();
+	}
+	else
+	{
+		// Fallback to swapchain render pass
+		VkRp = RenderPass;
+	}
+
+	if (VkRp == VK_NULL_HANDLE)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateGraphicsPipeline: no render pass available");
+		return nullptr;
+	}
+
+	VkPipelineLayout VkPLayout = VK_NULL_HANDLE;
+	if (Desc.Layout != nullptr)
+	{
+		auto* VkL = static_cast<FVulkanPipelineLayout*>(Desc.Layout);
+		VkPLayout = VkL->GetVkLayout();
+	}
+
+	std::vector<VkPipelineShaderStageCreateInfo> ShaderStages;
+
+	VkPipelineShaderStageCreateInfo VsInfo{};
+	VsInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	VsInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	VsInfo.module = VkVs->GetVkShaderModule();
+	VsInfo.pName = "main";
+	ShaderStages.push_back(VsInfo);
+
+	VkPipelineShaderStageCreateInfo FsInfo{};
+	FsInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	FsInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	FsInfo.module = VkFs->GetVkShaderModule();
+	FsInfo.pName = "main";
+	ShaderStages.push_back(FsInfo);
+
+	// Vertex input
+	std::vector<VkVertexInputBindingDescription> Bindings;
+	std::vector<VkVertexInputAttributeDescription> Attrs;
+	if (Desc.VertexStride > 0)
+	{
+		VkVertexInputBindingDescription Bind{};
+		Bind.binding = 0;
+		Bind.stride = Desc.VertexStride;
+		Bind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		Bindings.push_back(Bind);
+
+		for (const auto& A : Desc.Attributes)
+		{
+			VkVertexInputAttributeDescription Attr{};
+			Attr.location = A.Location;
+			Attr.binding = 0;
+			Attr.format = ToVkFormat(A.Format);
+			Attr.offset = A.Offset;
+			Attrs.push_back(Attr);
+		}
+	}
+
+	VkPipelineVertexInputStateCreateInfo VertexInput{};
+	VertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	VertexInput.vertexBindingDescriptionCount = static_cast<std::uint32_t>(Bindings.size());
+	VertexInput.pVertexBindingDescriptions = Bindings.data();
+	VertexInput.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(Attrs.size());
+	VertexInput.pVertexAttributeDescriptions = Attrs.data();
+
+	// Input assembly
+	VkPrimitiveTopology VkTopo = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	switch (Desc.Topology)
+	{
+	case ERHIPrimitiveTopology::TriangleStrip:
+		VkTopo = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+		break;
+	case ERHIPrimitiveTopology::LineList:
+		VkTopo = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+		break;
+	case ERHIPrimitiveTopology::PointList:
+		VkTopo = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+		break;
+	default:
+		break;
+	}
+
+	VkPipelineInputAssemblyStateCreateInfo InputAssembly{};
+	InputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	InputAssembly.topology = VkTopo;
+	InputAssembly.primitiveRestartEnable = VK_FALSE;
+
+	// Viewport (dynamic)
+	VkPipelineViewportStateCreateInfo ViewportState{};
+	ViewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	ViewportState.viewportCount = 1;
+	ViewportState.scissorCount = 1;
+
+	// Rasterization
+	VkCullModeFlags VkCull = VK_CULL_MODE_BACK_BIT;
+	if (Desc.CullMode == ERHICullMode::None)
+	{
+		VkCull = VK_CULL_MODE_NONE;
+	}
+	else if (Desc.CullMode == ERHICullMode::Front)
+	{
+		VkCull = VK_CULL_MODE_FRONT_BIT;
+	}
+
+	VkPolygonMode VkFill = Desc.FillMode == ERHIFillMode::Wireframe
+		? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+
+	VkPipelineRasterizationStateCreateInfo Rasterizer{};
+	Rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	Rasterizer.depthClampEnable = VK_FALSE;
+	Rasterizer.rasterizerDiscardEnable = VK_FALSE;
+	Rasterizer.polygonMode = VkFill;
+	Rasterizer.cullMode = VkCull;
+	Rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	Rasterizer.depthBiasEnable = VK_FALSE;
+	Rasterizer.lineWidth = 1.0f;
+
+	// Multisampling
+	VkPipelineMultisampleStateCreateInfo Multisampling{};
+	Multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	Multisampling.rasterizationSamples = static_cast<VkSampleCountFlagBits>(Desc.SampleCount);
+	Multisampling.sampleShadingEnable = VK_FALSE;
+
+	// Depth / stencil
+	VkPipelineDepthStencilStateCreateInfo DepthStencil{};
+	DepthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	DepthStencil.depthTestEnable = Desc.bDepthTest ? VK_TRUE : VK_FALSE;
+	DepthStencil.depthWriteEnable = Desc.bDepthWrite ? VK_TRUE : VK_FALSE;
+	switch (Desc.DepthCompare)
+	{
+	case ERHICompareOp::Never:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_NEVER;
+		break;
+	case ERHICompareOp::Less:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+		break;
+	case ERHICompareOp::Equal:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_EQUAL;
+		break;
+	case ERHICompareOp::LessOrEqual:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+		break;
+	case ERHICompareOp::Greater:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_GREATER;
+		break;
+	case ERHICompareOp::NotEqual:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_NOT_EQUAL;
+		break;
+	case ERHICompareOp::GreaterOrEqual:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+		break;
+	case ERHICompareOp::Always:
+		DepthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+		break;
+	}
+	DepthStencil.depthBoundsTestEnable = VK_FALSE;
+	DepthStencil.stencilTestEnable = VK_FALSE;
+
+	// Color blend
+	std::vector<VkPipelineColorBlendAttachmentState> BlendAttachments;
+	for (const auto& Blend : Desc.AttachmentBlends)
+	{
+		VkPipelineColorBlendAttachmentState Attachment{};
+		Attachment.blendEnable = Blend.bBlend ? VK_TRUE : VK_FALSE;
+		Attachment.srcColorBlendFactor = static_cast<VkBlendFactor>(Blend.SrcColorFactor);
+		Attachment.dstColorBlendFactor = static_cast<VkBlendFactor>(Blend.DstColorFactor);
+		Attachment.colorBlendOp = static_cast<VkBlendOp>(Blend.ColorOp);
+		Attachment.srcAlphaBlendFactor = static_cast<VkBlendFactor>(Blend.SrcAlphaFactor);
+		Attachment.dstAlphaBlendFactor = static_cast<VkBlendFactor>(Blend.DstAlphaFactor);
+		Attachment.alphaBlendOp = static_cast<VkBlendOp>(Blend.AlphaOp);
+		Attachment.colorWriteMask =
+			VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+			VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		BlendAttachments.push_back(Attachment);
+	}
+
+	if (BlendAttachments.empty())
+	{
+		VkPipelineColorBlendAttachmentState Default{};
+		Default.colorWriteMask =
+			VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+			VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		Default.blendEnable = VK_FALSE;
+		BlendAttachments.push_back(Default);
+	}
+
+	VkPipelineColorBlendStateCreateInfo ColorBlend{};
+	ColorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	ColorBlend.logicOpEnable = VK_FALSE;
+	ColorBlend.attachmentCount = static_cast<std::uint32_t>(BlendAttachments.size());
+	ColorBlend.pAttachments = BlendAttachments.data();
+
+	// Dynamic states
+	VkDynamicState DynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+	VkPipelineDynamicStateCreateInfo DynamicState{};
+	DynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	DynamicState.dynamicStateCount = 2;
+	DynamicState.pDynamicStates = DynamicStates;
+
+	// Create the pipeline
+	VkGraphicsPipelineCreateInfo PipelineInfo{};
+	PipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	PipelineInfo.stageCount = static_cast<std::uint32_t>(ShaderStages.size());
+	PipelineInfo.pStages = ShaderStages.data();
+	PipelineInfo.pVertexInputState = &VertexInput;
+	PipelineInfo.pInputAssemblyState = &InputAssembly;
+	PipelineInfo.pViewportState = &ViewportState;
+	PipelineInfo.pRasterizationState = &Rasterizer;
+	PipelineInfo.pMultisampleState = &Multisampling;
+	PipelineInfo.pDepthStencilState = &DepthStencil;
+	PipelineInfo.pColorBlendState = &ColorBlend;
+	PipelineInfo.pDynamicState = &DynamicState;
+	PipelineInfo.layout = VkPLayout;
+	PipelineInfo.renderPass = VkRp;
+	PipelineInfo.subpass = 0;
+	PipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+	VkPipeline Pipeline = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateGraphicsPipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline),
+	                   "vkCreateGraphicsPipelines"))
+	{
+		return nullptr;
+	}
+
+	MAHO_CORE_INFO("FVulkanRHI: created graphics pipeline");
+	return new FVulkanGraphicsPipeline(Device, Pipeline);
 }
 
 void FVulkanRHI::DestroyGraphicsPipeline(FRHIGraphicsPipeline* Pipeline)
@@ -1647,14 +1957,353 @@ void FVulkanRHI::DestroyGraphicsPipeline(FRHIGraphicsPipeline* Pipeline)
 	delete Pipeline;
 }
 
-FRHIComputePipeline* FVulkanRHI::CreateComputePipeline(const FRHIComputePipelineDesc& /*Desc*/)
+FRHIComputePipeline* FVulkanRHI::CreateComputePipeline(const FRHIComputePipelineDesc& Desc)
 {
-	return new FVulkanComputePipeline(Device, VK_NULL_HANDLE);
+	if (Desc.ComputeShader == nullptr)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateComputePipeline: missing compute shader");
+		return nullptr;
+	}
+
+	auto* VkCs = static_cast<FVulkanShaderModule*>(Desc.ComputeShader);
+	if (VkCs->GetVkShaderModule() == VK_NULL_HANDLE)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateComputePipeline: invalid compute shader");
+		return nullptr;
+	}
+
+	VkPipelineLayout VkPLayout = VK_NULL_HANDLE;
+	if (Desc.Layout != nullptr)
+	{
+		auto* VkL = static_cast<FVulkanPipelineLayout*>(Desc.Layout);
+		VkPLayout = VkL->GetVkLayout();
+	}
+
+	VkPipelineShaderStageCreateInfo StageInfo{};
+	StageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	StageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	StageInfo.module = VkCs->GetVkShaderModule();
+	StageInfo.pName = "main";
+
+	VkComputePipelineCreateInfo PipelineInfo{};
+	PipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	PipelineInfo.stage = StageInfo;
+	PipelineInfo.layout = VkPLayout;
+	PipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+	VkPipeline Pipeline = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateComputePipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline),
+	                   "vkCreateComputePipelines"))
+	{
+		return nullptr;
+	}
+
+	MAHO_CORE_INFO("FVulkanRHI: created compute pipeline");
+	return new FVulkanComputePipeline(Device, Pipeline);
 }
 
 void FVulkanRHI::DestroyComputePipeline(FRHIComputePipeline* Pipeline)
 {
 	delete Pipeline;
+}
+
+FRHITextureView* FVulkanRHI::CreateTextureView(const FRHITextureViewDesc& Desc)
+{
+	if (Desc.Texture == nullptr)
+	{
+		return nullptr;
+	}
+
+	auto* VkTex = static_cast<FVulkanTexture*>(Desc.Texture);
+
+	VkImageViewCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	Info.image = VkTex->GetVkImage();
+	Info.format = ToVkFormat(Desc.Format);
+	Info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	Info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	Info.subresourceRange.baseMipLevel = Desc.BaseMip;
+	Info.subresourceRange.levelCount = Desc.MipCount;
+	Info.subresourceRange.baseArrayLayer = Desc.BaseArrayLayer;
+	Info.subresourceRange.layerCount = Desc.ArrayLayerCount;
+
+	VkImageView View = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateImageView(Device, &Info, nullptr, &View), "vkCreateImageView"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanTextureView(Device, View);
+}
+
+void FVulkanRHI::DestroyTextureView(FRHITextureView* View)
+{
+	delete View;
+}
+
+FRHIDescriptorSetLayout* FVulkanRHI::CreateDescriptorSetLayout(const FRHIDescriptorSetLayoutDesc& Desc)
+{
+	std::vector<VkDescriptorSetLayoutBinding> Bindings;
+	for (const auto& B : Desc.Bindings)
+	{
+		VkDescriptorSetLayoutBinding Binding{};
+		Binding.binding = B.Binding;
+		Binding.descriptorType = static_cast<VkDescriptorType>(B.Type);
+		Binding.descriptorCount = B.Count;
+
+		VkShaderStageFlags Flags = 0;
+		if (RHIEnumHas(B.Stages, ERHIShaderStage::Vertex))
+		{
+			Flags |= VK_SHADER_STAGE_VERTEX_BIT;
+		}
+		if (RHIEnumHas(B.Stages, ERHIShaderStage::Fragment))
+		{
+			Flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+		}
+		if (RHIEnumHas(B.Stages, ERHIShaderStage::Compute))
+		{
+			Flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+		}
+		Binding.stageFlags = Flags;
+
+		Bindings.push_back(Binding);
+	}
+
+	VkDescriptorSetLayoutCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	Info.bindingCount = static_cast<std::uint32_t>(Bindings.size());
+	Info.pBindings = Bindings.data();
+
+	VkDescriptorSetLayout Layout = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateDescriptorSetLayout(Device, &Info, nullptr, &Layout),
+	                   "vkCreateDescriptorSetLayout"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanDescriptorSetLayout(Device, Layout);
+}
+
+void FVulkanRHI::DestroyDescriptorSetLayout(FRHIDescriptorSetLayout* Layout)
+{
+	delete Layout;
+}
+
+FRHIPipelineLayout* FVulkanRHI::CreatePipelineLayout(const FRHIPipelineLayoutDesc& Desc)
+{
+	std::vector<VkDescriptorSetLayout> SetLayouts;
+	for (auto* SetLayout : Desc.SetLayouts)
+	{
+		if (SetLayout != nullptr)
+		{
+			auto* VkSl = static_cast<FVulkanDescriptorSetLayout*>(SetLayout);
+			SetLayouts.push_back(VkSl->GetVkLayout());
+		}
+	}
+
+	std::vector<VkPushConstantRange> PcRanges;
+	for (const auto& Pc : Desc.PushConstants)
+	{
+		VkPushConstantRange Range{};
+		Range.offset = Pc.Offset;
+		Range.size = Pc.Size;
+
+		VkShaderStageFlags Flags = 0;
+		if (RHIEnumHas(Pc.Stages, ERHIShaderStage::Vertex))
+		{
+			Flags |= VK_SHADER_STAGE_VERTEX_BIT;
+		}
+		if (RHIEnumHas(Pc.Stages, ERHIShaderStage::Fragment))
+		{
+			Flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+		}
+		if (RHIEnumHas(Pc.Stages, ERHIShaderStage::Compute))
+		{
+			Flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+		}
+		Range.stageFlags = Flags;
+
+		PcRanges.push_back(Range);
+	}
+
+	VkPipelineLayoutCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	Info.setLayoutCount = static_cast<std::uint32_t>(SetLayouts.size());
+	Info.pSetLayouts = SetLayouts.data();
+	Info.pushConstantRangeCount = static_cast<std::uint32_t>(PcRanges.size());
+	Info.pPushConstantRanges = PcRanges.data();
+
+	VkPipelineLayout Layout = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreatePipelineLayout(Device, &Info, nullptr, &Layout),
+	                   "vkCreatePipelineLayout"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanPipelineLayout(Device, Layout);
+}
+
+void FVulkanRHI::DestroyPipelineLayout(FRHIPipelineLayout* Layout)
+{
+	delete Layout;
+}
+
+FRHIDescriptorPool* FVulkanRHI::CreateDescriptorPool(const FRHIDescriptorPoolDesc& Desc)
+{
+	std::vector<VkDescriptorPoolSize> PoolSizes;
+	for (const auto& S : Desc.PoolSizes)
+	{
+		VkDescriptorPoolSize Size{};
+		Size.type = static_cast<VkDescriptorType>(S.Type);
+		Size.descriptorCount = S.Count;
+		PoolSizes.push_back(Size);
+	}
+
+	VkDescriptorPoolCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	Info.maxSets = Desc.MaxSets;
+	Info.poolSizeCount = static_cast<std::uint32_t>(PoolSizes.size());
+	Info.pPoolSizes = PoolSizes.data();
+
+	VkDescriptorPool Pool = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateDescriptorPool(Device, &Info, nullptr, &Pool),
+	                   "vkCreateDescriptorPool"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanDescriptorPool(Device, Pool);
+}
+
+void FVulkanRHI::DestroyDescriptorPool(FRHIDescriptorPool* Pool)
+{
+	delete Pool;
+}
+
+FRHIDescriptorSet* FVulkanRHI::AllocateDescriptorSet(FRHIDescriptorPool* Pool, FRHIDescriptorSetLayout* Layout)
+{
+	auto* VkPool = static_cast<FVulkanDescriptorPool*>(Pool);
+	auto* VkLayout = static_cast<FVulkanDescriptorSetLayout*>(Layout);
+
+	VkDescriptorSetLayout VkSl = VkLayout->GetVkLayout();
+
+	VkDescriptorSetAllocateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	Info.descriptorPool = VkPool->GetVkPool();
+	Info.descriptorSetCount = 1;
+	Info.pSetLayouts = &VkSl;
+
+	VkDescriptorSet Set = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkAllocateDescriptorSets(Device, &Info, &Set),
+	                   "vkAllocateDescriptorSets"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanDescriptorSet(Set);
+}
+
+void FVulkanRHI::FreeDescriptorSet(FRHIDescriptorPool* Pool, FRHIDescriptorSet* Set)
+{
+	auto* VkPool = static_cast<FVulkanDescriptorPool*>(Pool);
+	auto* VkSet = static_cast<FVulkanDescriptorSet*>(Set);
+
+	VkDescriptorSet VkDs = VkSet->GetVkSet();
+	vkFreeDescriptorSets(Device, VkPool->GetVkPool(), 1, &VkDs);
+
+	delete Set;
+}
+
+FRHIRenderPass* FVulkanRHI::CreateRenderPass(const FRHIRenderPassDesc& Desc)
+{
+	std::vector<VkAttachmentDescription> Attachments;
+	std::vector<VkAttachmentReference> ColorRefs;
+
+	for (const auto& ColorAtt : Desc.ColorAttachments)
+	{
+		VkAttachmentDescription Att{};
+		Att.format = ToVkFormat(ColorAtt.Format);
+		Att.samples = static_cast<VkSampleCountFlagBits>(ColorAtt.SampleCount);
+		Att.loadOp = static_cast<VkAttachmentLoadOp>(ColorAtt.LoadOp);
+		Att.storeOp = static_cast<VkAttachmentStoreOp>(ColorAtt.StoreOp);
+		Att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		Att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		Att.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		Att.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference Ref{};
+		Ref.attachment = static_cast<std::uint32_t>(Attachments.size());
+		Ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		Attachments.push_back(Att);
+		ColorRefs.push_back(Ref);
+	}
+
+	VkSubpassDescription Subpass{};
+	Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	Subpass.colorAttachmentCount = static_cast<std::uint32_t>(ColorRefs.size());
+	Subpass.pColorAttachments = ColorRefs.data();
+
+	VkRenderPassCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	Info.attachmentCount = static_cast<std::uint32_t>(Attachments.size());
+	Info.pAttachments = Attachments.data();
+	Info.subpassCount = 1;
+	Info.pSubpasses = &Subpass;
+
+	VkRenderPass Pass = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateRenderPass(Device, &Info, nullptr, &Pass), "vkCreateRenderPass"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanRenderPass(Device, Pass);
+}
+
+void FVulkanRHI::DestroyRenderPass(FRHIRenderPass* Pass)
+{
+	delete Pass;
+}
+
+FRHIFramebuffer* FVulkanRHI::CreateFramebuffer(const FRHIFramebufferDesc& Desc)
+{
+	if (Desc.RenderPass == nullptr)
+	{
+		return nullptr;
+	}
+
+	auto* VkPas = static_cast<FVulkanRenderPass*>(Desc.RenderPass);
+	std::vector<VkImageView> Views;
+	for (auto* View : Desc.Attachments)
+	{
+		if (View != nullptr)
+		{
+			auto* VkView = static_cast<FVulkanTextureView*>(View);
+			Views.push_back(VkView->GetVkImageView());
+		}
+	}
+
+	VkFramebufferCreateInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	Info.renderPass = VkPas->GetVkPass();
+	Info.attachmentCount = static_cast<std::uint32_t>(Views.size());
+	Info.pAttachments = Views.data();
+	Info.width = Desc.Width;
+	Info.height = Desc.Height;
+	Info.layers = 1;
+
+	VkFramebuffer FB = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateFramebuffer(Device, &Info, nullptr, &FB), "vkCreateFramebuffer"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanFramebuffer(Device, FB);
+}
+
+void FVulkanRHI::DestroyFramebuffer(FRHIFramebuffer* Framebuffer)
+{
+	delete Framebuffer;
 }
 
 bool FVulkanRHI::RecreateSwapchain()

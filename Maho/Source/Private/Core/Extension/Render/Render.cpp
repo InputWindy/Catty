@@ -3,6 +3,9 @@
 #include <Core/Application/App.h>
 #include <Core/System/Log.h>
 
+// Forward declaration: defined in Render/HelloTriangleStage.cpp
+namespace Maho { void RegisterHelloTriangleStage(FRenderServer& Server); }
+
 namespace Maho
 {
 
@@ -29,6 +32,8 @@ bool FRenderSystem::ExecuteStage(EEngineStage Stage)
 			MAHO_CORE_ERROR("FRenderSystem: RenderServer.Boot failed");
 			return false;
 		}
+		// Register the Hello Triangle demo shader stage
+		RegisterHelloTriangleStage(RenderServer);
 		return true;
 	}
 	case EEngineStage::BeginFrame:

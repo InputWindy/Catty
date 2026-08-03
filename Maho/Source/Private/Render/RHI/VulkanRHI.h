@@ -66,6 +66,21 @@ public:
 	[[nodiscard]] virtual FRHIComputePipeline* CreateComputePipeline(const FRHIComputePipelineDesc& Desc) override;
 	virtual void DestroyComputePipeline(FRHIComputePipeline* Pipeline) override;
 
+	[[nodiscard]] virtual FRHITextureView* CreateTextureView(const FRHITextureViewDesc& Desc) override;
+	virtual void DestroyTextureView(FRHITextureView* View) override;
+	[[nodiscard]] virtual FRHIDescriptorSetLayout* CreateDescriptorSetLayout(const FRHIDescriptorSetLayoutDesc& Desc) override;
+	virtual void DestroyDescriptorSetLayout(FRHIDescriptorSetLayout* Layout) override;
+	[[nodiscard]] virtual FRHIPipelineLayout* CreatePipelineLayout(const FRHIPipelineLayoutDesc& Desc) override;
+	virtual void DestroyPipelineLayout(FRHIPipelineLayout* Layout) override;
+	[[nodiscard]] virtual FRHIDescriptorPool* CreateDescriptorPool(const FRHIDescriptorPoolDesc& Desc) override;
+	virtual void DestroyDescriptorPool(FRHIDescriptorPool* Pool) override;
+	[[nodiscard]] virtual FRHIDescriptorSet* AllocateDescriptorSet(FRHIDescriptorPool* Pool, FRHIDescriptorSetLayout* Layout) override;
+	virtual void FreeDescriptorSet(FRHIDescriptorPool* Pool, FRHIDescriptorSet* Set) override;
+	[[nodiscard]] virtual FRHIRenderPass* CreateRenderPass(const FRHIRenderPassDesc& Desc) override;
+	virtual void DestroyRenderPass(FRHIRenderPass* Pass) override;
+	[[nodiscard]] virtual FRHIFramebuffer* CreateFramebuffer(const FRHIFramebufferDesc& Desc) override;
+	virtual void DestroyFramebuffer(FRHIFramebuffer* Framebuffer) override;
+
 	/** Begin command buffer + main swapchain render pass (clear). Leaves the pass open. */
 	void BeginMainPass(float R, float G, float B, float A);
 
