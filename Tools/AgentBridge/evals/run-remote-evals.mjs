@@ -6,11 +6,14 @@ import {
 import { startFakeMahoWorldServer } from "../tests/helpers/fake-maho-world-server.mjs";
 import { runEvaluations } from "./eval-runner.mjs";
 
-export async function main({
+export async function runRemoteEvaluations({
   output = process.stdout,
   error_output = process.stderr,
+  profile = "full",
+  case_files,
+  adapter_name = profile === "minimal" ? "remote:minimal" : "remote",
 } = {}) {
-  const fake = await startFakeMahoWorldServer();
+  const fake = await startFakeMahoWorldServer({ profile });
   try {
     const config = resolveWorldAdapterConfig({
       env: {
@@ -20,7 +23,8 @@ export async function main({
     });
     const summary = await runEvaluations({
       output,
-      adapter_name: "remote",
+      adapter_name,
+      case_files,
       create_world_adapter_factory(tool_registry) {
         return new WorldAdapterFactory({
           config,
@@ -52,6 +56,10 @@ export async function main({
   } finally {
     await fake.close();
   }
+}
+
+export async function main(options = {}) {
+  return runRemoteEvaluations(options);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

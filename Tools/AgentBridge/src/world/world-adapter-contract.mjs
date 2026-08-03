@@ -10,6 +10,7 @@ import {
 
 export const ADAPTER_PROTOCOL_VERSION = "1.0";
 export const DEFAULT_MAX_TOOL_CALLS = 16;
+export const MAX_ADAPTER_TOOL_CALLS = 1000;
 
 export const DEFAULT_WORLD_ADAPTER_CAPABILITIES = Object.freeze({
   supports_atomic_transactions: true,
@@ -70,10 +71,11 @@ const adapterCapabilitiesSchema = {
     max_tool_calls: {
       type: "integer",
       minimum: 1,
-      maximum: 1000,
+      maximum: MAX_ADAPTER_TOOL_CALLS,
     },
     supported_tools: {
       type: "array",
+      minItems: 1,
       uniqueItems: true,
       items: { type: "string", minLength: 1, maxLength: 128 },
     },
@@ -308,6 +310,28 @@ function validationFailure(message, phase, details = {}) {
   );
 }
 
+function capabilityFailure(message, phase, details = {}) {
+  return new WorldAdapterError(
+    worldAdapterErrorReasons.CAPABILITY_INSUFFICIENT,
+    message,
+    {
+      protocol_version: ADAPTER_PROTOCOL_VERSION,
+      phase,
+      details,
+    }
+  );
+}
+
+function knownToolNames(known_tools) {
+  if (known_tools === undefined) {
+    return null;
+  }
+  if (!Array.isArray(known_tools)) {
+    throw new TypeError("known_tools must be an array of tool names");
+  }
+  return new Set(known_tools);
+}
+
 function assertKnownFields(value, fields, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new WorldAdapterError(
@@ -467,10 +491,10 @@ export function validateExecuteTransactionInput(input) {
       { details: { field: "dry_run" } }
     );
   }
-  if (input.atomic !== true) {
+  if (typeof input.atomic !== "boolean") {
     throw new WorldAdapterError(
       worldAdapterErrorReasons.INVALID_ARGUMENT,
-      "atomic must be true for Adapter Protocol v1",
+      "atomic must be a boolean",
       { details: { field: "atomic" } }
     );
   }
@@ -527,15 +551,156 @@ export function validateUndoInput(input) {
   return input;
 }
 
-export function validateAdapterCapabilities(capabilities, { phase = "contract" } = {}) {
+export function validateAdapterCapabilities(
+  capabilities,
+  { phase = "contract", known_tools } = {}
+) {
   assertJsonDto(capabilities, "capabilities");
   if (!validateCapabilitiesSchema(capabilities)) {
-    throw validationFailure(
+    throw capabilityFailure(
       "World adapter capabilities failed contract validation",
-      phase
+      phase,
+      { field: "capabilities" }
+    );
+  }
+  const known_tool_names = knownToolNames(known_tools);
+  if (known_tool_names) {
+    for (const [index, tool_name] of capabilities.supported_tools.entries()) {
+      if (!known_tool_names.has(tool_name)) {
+        throw capabilityFailure(
+          "World adapter capabilities contain an unknown tool",
+          phase,
+          {
+            field: `capabilities.supported_tools[${index}]`,
+            tool_name,
+          }
+        );
+      }
+    }
+  }
+  const supports_undo = capabilities.supports_undo;
+  const advertises_undo = capabilities.supported_tools.includes(
+    "history.undo"
+  );
+  if (supports_undo !== advertises_undo) {
+    throw capabilityFailure(
+      supports_undo
+        ? "supports_undo requires history.undo in supported_tools"
+        : "history.undo requires supports_undo=true",
+      phase,
+      { field: "capabilities.supports_undo", tool_name: "history.undo" }
+    );
+  }
+  if (
+    !capabilities.supports_atomic_transactions &&
+    capabilities.max_tool_calls !== 1
+  ) {
+    throw capabilityFailure(
+      "A non-atomic world adapter must declare max_tool_calls=1",
+      phase,
+      {
+        field: "capabilities.max_tool_calls",
+        max_tool_calls: capabilities.max_tool_calls,
+      }
     );
   }
   return structuredClone(capabilities);
+}
+
+export function validateAdapterCapabilityRequest(
+  capabilities,
+  {
+    tool_calls,
+    dry_run = false,
+    atomic = false,
+    phase = "execute",
+    known_tools,
+  } = {}
+) {
+  const known_tool_names = knownToolNames(known_tools);
+  const validated = validateAdapterCapabilities(capabilities, {
+    phase,
+    known_tools,
+  });
+  if (!Array.isArray(tool_calls) || tool_calls.length === 0) {
+    throw capabilityFailure(
+      "Capability validation requires at least one ToolCall",
+      phase,
+      { field: "tool_calls" }
+    );
+  }
+  if (tool_calls.length > validated.max_tool_calls) {
+    throw capabilityFailure(
+      "ToolCall count exceeds the world adapter capability",
+      phase,
+      {
+        tool_call_count: tool_calls.length,
+        max_tool_calls: validated.max_tool_calls,
+      }
+    );
+  }
+
+  for (const [index, tool_call] of tool_calls.entries()) {
+    const tool_name = tool_call?.tool_name ?? tool_call?.name;
+    if (known_tool_names && !known_tool_names.has(tool_name)) {
+      throw new WorldAdapterError(
+        worldAdapterErrorReasons.UNKNOWN_TOOL,
+        `Unknown tool: ${tool_name}`,
+        {
+          protocol_version: ADAPTER_PROTOCOL_VERSION,
+          phase,
+          details: { tool_call_index: index, tool_name },
+        }
+      );
+    }
+    if (tool_name === "history.undo" && !validated.supports_undo) {
+      throw new WorldAdapterError(
+        worldAdapterErrorReasons.UNDO_NOT_AVAILABLE,
+        "World adapter does not support undo",
+        {
+          protocol_version: ADAPTER_PROTOCOL_VERSION,
+          phase,
+          details: { tool_call_index: index, tool_name },
+        }
+      );
+    }
+    if (!validated.supported_tools.includes(tool_name)) {
+      throw capabilityFailure(
+        "World adapter does not advertise the requested tool",
+        phase,
+        { tool_call_index: index, tool_name }
+      );
+    }
+  }
+
+  if (dry_run && !validated.supports_dry_run) {
+    throw capabilityFailure(
+      "World adapter does not support dry-run execution",
+      phase,
+      { field: "dry_run" }
+    );
+  }
+  if (atomic && !validated.supports_atomic_transactions) {
+    throw capabilityFailure(
+      "World adapter does not support atomic transactions",
+      phase,
+      { field: "atomic" }
+    );
+  }
+  if (
+    tool_calls.length > 1 &&
+    (!validated.supports_atomic_transactions || !atomic)
+  ) {
+    throw capabilityFailure(
+      "Multiple ToolCalls require an atomic world adapter transaction",
+      phase,
+      {
+        field: "tool_calls",
+        tool_call_count: tool_calls.length,
+      }
+    );
+  }
+  return validated;
 }
 
 export function validateWorldSnapshot(
@@ -719,7 +884,11 @@ export function assertWorldAdapterContract(adapter) {
       `WorldAdapter protocolVersion must be ${ADAPTER_PROTOCOL_VERSION}`
     );
   }
-  validateAdapterCapabilities(adapter.capabilities);
+  validateAdapterCapabilities(adapter.capabilities, {
+    known_tools: adapter.tool_registry
+      ?.listDefinitions()
+      .map((definition) => definition.name),
+  });
   for (const method of [
     "getSnapshot",
     "executeTransaction",

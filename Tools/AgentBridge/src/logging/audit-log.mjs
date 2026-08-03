@@ -68,6 +68,18 @@ export class AuditLog {
         record.adapter_cancelled ?? false,
       remote_error_class:
         record.remote_error_class ?? null,
+      adapter_supported_tools:
+        record.adapter_supported_tools ?? [],
+      adapter_max_tool_calls:
+        record.adapter_max_tool_calls ?? null,
+      adapter_supports_atomic:
+        record.adapter_supports_atomic ?? null,
+      adapter_supports_dry_run:
+        record.adapter_supports_dry_run ?? null,
+      adapter_supports_undo:
+        record.adapter_supports_undo ?? null,
+      capability_rejection_reason:
+        record.capability_rejection_reason ?? null,
       user_message: record.user_message ?? null,
       before_revision: record.before_revision ?? null,
       after_revision: record.after_revision ?? null,

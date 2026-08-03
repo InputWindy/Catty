@@ -26,6 +26,12 @@ test("JSONL audit records required fields without API keys or authorization", as
     adapter_timeout: false,
     adapter_cancelled: false,
     remote_error_class: "revision_conflict",
+    adapter_supported_tools: ["world.get_summary"],
+    adapter_max_tool_calls: 1,
+    adapter_supports_atomic: false,
+    adapter_supports_dry_run: false,
+    adapter_supports_undo: false,
+    capability_rejection_reason: "capability_insufficient",
     user_message: "spawn a cube",
     before_revision: 0,
     after_revision: 1,
@@ -77,6 +83,12 @@ test("JSONL audit records required fields without API keys or authorization", as
     "adapter_timeout",
     "adapter_cancelled",
     "remote_error_class",
+    "adapter_supported_tools",
+    "adapter_max_tool_calls",
+    "adapter_supports_atomic",
+    "adapter_supports_dry_run",
+    "adapter_supports_undo",
+    "capability_rejection_reason",
     "user_message",
     "before_revision",
     "after_revision",
@@ -98,4 +110,13 @@ test("JSONL audit records required fields without API keys or authorization", as
   assert.equal(record.adapter_http_status, 409);
   assert.equal(record.adapter_replayed, true);
   assert.equal(record.remote_error_class, "revision_conflict");
+  assert.deepEqual(record.adapter_supported_tools, ["world.get_summary"]);
+  assert.equal(record.adapter_max_tool_calls, 1);
+  assert.equal(record.adapter_supports_atomic, false);
+  assert.equal(record.adapter_supports_dry_run, false);
+  assert.equal(record.adapter_supports_undo, false);
+  assert.equal(
+    record.capability_rejection_reason,
+    "capability_insufficient"
+  );
 });
