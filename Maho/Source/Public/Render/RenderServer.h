@@ -141,6 +141,10 @@ public:
 				MAHO_CORE_ERROR("FRenderServer: OnRegister failed for '{}'", Feature->GetName());
 			}
 		}
+		else
+		{
+			MAHO_CORE_WARN("FRenderServer: RHI not ready when registering '{}' — OnRegister deferred to first frame", Feature->GetName());
+		}
 
 		Features.push_back(std::move(Feature));
 		return Ref;

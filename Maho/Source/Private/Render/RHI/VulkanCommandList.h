@@ -73,8 +73,22 @@ public:
 	virtual void TransitionBuffer(FRHIBuffer* Buffer, ERHIResourceState OldState, ERHIResourceState NewState) override;
 	virtual void TransitionTexture(FRHITexture* Texture, ERHIResourceState OldState, ERHIResourceState NewState) override;
 
-	virtual void BeginRenderPass() override;
+	virtual void BeginRenderPass(
+		FRHIRenderPass* RenderPass,
+		FRHIFramebuffer* Framebuffer,
+		std::uint32_t Width,
+		std::uint32_t Height,
+		const float ClearColor[4],
+		bool bHasDepthStencil,
+		float DepthClear,
+		std::uint32_t StencilClear) override;
 	virtual void EndRenderPass() override;
+
+	virtual void BeginRendering(
+		const FRHIRenderingAttachmentInfo* ColorAttachments, std::uint32_t ColorCount,
+		const FRHIRenderingAttachmentInfo* DepthAttachment,
+		std::uint32_t Width, std::uint32_t Height) override;
+	virtual void EndRendering() override;
 	virtual void SetViewport(float X, float Y, float Width, float Height, float MinDepth, float MaxDepth) override;
 	virtual void SetScissor(std::int32_t X, std::int32_t Y, std::uint32_t Width, std::uint32_t Height) override;
 	virtual void BindGraphicsPipeline(FRHIGraphicsPipeline* Pipeline) override;
@@ -88,8 +102,22 @@ public:
 		std::int32_t VertexOffset,
 		std::uint32_t FirstInstance) override;
 
+	virtual void DrawIndirect(
+		FRHIBuffer* ArgsBuffer,
+		std::uint64_t ArgsOffset,
+		std::uint32_t DrawCount,
+		std::uint32_t Stride) override;
+	virtual void DrawIndexedIndirect(
+		FRHIBuffer* ArgsBuffer,
+		std::uint64_t ArgsOffset,
+		std::uint32_t DrawCount,
+		std::uint32_t Stride) override;
+
 	virtual void BindComputePipeline(FRHIComputePipeline* Pipeline) override;
 	virtual void Dispatch(std::uint32_t GroupCountX, std::uint32_t GroupCountY, std::uint32_t GroupCountZ) override;
+	virtual void DispatchIndirect(
+		FRHIBuffer* ArgsBuffer,
+		std::uint64_t ArgsOffset) override;
 
 	virtual void BindDescriptorSets(std::uint32_t FirstSet, FRHIDescriptorSet* const* Sets, std::uint32_t Count) override;
 	virtual void PushConstants(ERHIShaderStage Stages, std::uint32_t Offset, std::uint32_t Size, const void* Data) override;
@@ -103,6 +131,10 @@ private:
 	VkCommandPool Pool = VK_NULL_HANDLE;
 	VkCommandBuffer Buffer = VK_NULL_HANDLE;
 	bool bRecording = false;
+
+	// Cached bound state for pipeline-layout dependent calls.
+	FRHIGraphicsPipeline* BoundGraphicsPipeline = nullptr;
+	FRHIComputePipeline* BoundComputePipeline = nullptr;
 };
 
 } // namespace Maho

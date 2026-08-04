@@ -104,6 +104,8 @@ constexpr const char* GPackageExtension = ".casset";
 		}
 	}
 
+	// Climb failed — caller should use engine-root sibling scan.
+
 	if (!ErrorCode)
 	{
 		return fs::weakly_canonical(Cwd, ErrorCode);
@@ -336,10 +338,10 @@ void FPaths::Initialize(FConfig& InOutConfig)
 		? "Cached"
 		: InOutConfig.CachedDir);
 	InOutConfig.ProjectShadersDir = AbsolutizeUnder(ProjectRoot, InOutConfig.ProjectShadersDir.empty()
-		? "Project/Shaders"
+		? "Shaders"
 		: InOutConfig.ProjectShadersDir);
 	InOutConfig.ProjectPluginsDir = AbsolutizeUnder(ProjectRoot, InOutConfig.ProjectPluginsDir.empty()
-		? "Project/Plugins"
+		? "Plugins"
 		: InOutConfig.ProjectPluginsDir);
 
 	const fs::path EngineMahoShaders = EngineRoot / "Maho" / "Shaders";

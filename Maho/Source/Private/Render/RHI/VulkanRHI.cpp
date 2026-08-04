@@ -47,6 +47,8 @@ constexpr const char* GInstanceExtensions[] =
 constexpr const char* GDeviceExtensions[] =
 {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+	VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+	VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 };
 
 [[nodiscard]] bool CheckVkResult(VkResult Result, const char* Context)
@@ -800,8 +802,22 @@ bool FVulkanRHI::CreateLogicalDevice()
 
 	VkPhysicalDeviceFeatures DeviceFeatures{};
 
+	VkPhysicalDeviceDynamicRenderingFeatures DynamicRendering{};
+	DynamicRendering.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+	DynamicRendering.dynamicRendering = VK_TRUE;
+
+	VkPhysicalDeviceDescriptorIndexingFeatures DescriptorIndexing{};
+	DescriptorIndexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+	DescriptorIndexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	DescriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
+	DescriptorIndexing.descriptorBindingVariableDescriptorCount = VK_TRUE;
+	DescriptorIndexing.runtimeDescriptorArray = VK_TRUE;
+
+	DynamicRendering.pNext = &DescriptorIndexing;
+
 	VkDeviceCreateInfo CreateInfo{};
 	CreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	CreateInfo.pNext = &DynamicRendering;
 	CreateInfo.queueCreateInfoCount = static_cast<std::uint32_t>(QueueCreateInfos.size());
 	CreateInfo.pQueueCreateInfos = QueueCreateInfos.data();
 	CreateInfo.pEnabledFeatures = &DeviceFeatures;
@@ -1752,6 +1768,7 @@ FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipel
 	}
 
 	VkRenderPass VkRp = VK_NULL_HANDLE;
+	VkPipelineRenderingCreateInfo RenderingInfo{};
 	if (Desc.RenderPass != nullptr)
 	{
 		auto* VkPass = static_cast<FVulkanRenderPass*>(Desc.RenderPass);
@@ -1759,14 +1776,16 @@ FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipel
 	}
 	else
 	{
-		// Fallback to swapchain render pass
-		VkRp = RenderPass;
-	}
-
-	if (VkRp == VK_NULL_HANDLE)
-	{
-		MAHO_CORE_ERROR("FVulkanRHI::CreateGraphicsPipeline: no render pass available");
-		return nullptr;
+		// Dynamic rendering — declare attachment formats via pNext
+		RenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+		RenderingInfo.colorAttachmentCount = 1;
+		VkFormat ColorFmt = ToVkFormat(Desc.ColorFormat);
+		RenderingInfo.pColorAttachmentFormats = &ColorFmt;
+		if (Desc.DepthFormat != ERHIFormat::Unknown)
+		{
+			VkFormat DepthFmt = ToVkFormat(Desc.DepthFormat);
+			RenderingInfo.depthAttachmentFormat = DepthFmt;
+		}
 	}
 
 	VkPipelineLayout VkPLayout = VK_NULL_HANDLE;
@@ -1782,14 +1801,14 @@ FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipel
 	VsInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	VsInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
 	VsInfo.module = VkVs->GetVkShaderModule();
-	VsInfo.pName = "main";
+	VsInfo.pName = Desc.VertexEntryPoint;
 	ShaderStages.push_back(VsInfo);
 
 	VkPipelineShaderStageCreateInfo FsInfo{};
 	FsInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	FsInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 	FsInfo.module = VkFs->GetVkShaderModule();
-	FsInfo.pName = "main";
+	FsInfo.pName = Desc.FragmentEntryPoint;
 	ShaderStages.push_back(FsInfo);
 
 	// Vertex input
@@ -1973,6 +1992,12 @@ FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipel
 	PipelineInfo.subpass = 0;
 	PipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
+	// Use dynamic rendering pNext when no explicit render pass
+	if (VkRp == VK_NULL_HANDLE)
+	{
+		PipelineInfo.pNext = &RenderingInfo;
+	}
+
 	VkPipeline Pipeline = VK_NULL_HANDLE;
 	if (!CheckVkResult(vkCreateGraphicsPipelines(Device, VK_NULL_HANDLE, 1, &PipelineInfo, nullptr, &Pipeline),
 	                   "vkCreateGraphicsPipelines"))
@@ -1981,7 +2006,7 @@ FRHIGraphicsPipeline* FVulkanRHI::CreateGraphicsPipeline(const FRHIGraphicsPipel
 	}
 
 	MAHO_CORE_INFO("FVulkanRHI: created graphics pipeline");
-	return new FVulkanGraphicsPipeline(Device, Pipeline);
+	return new FVulkanGraphicsPipeline(Device, Pipeline, VkPLayout);
 }
 
 void FVulkanRHI::DestroyGraphicsPipeline(FRHIGraphicsPipeline* Pipeline)
@@ -2015,7 +2040,7 @@ FRHIComputePipeline* FVulkanRHI::CreateComputePipeline(const FRHIComputePipeline
 	StageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	StageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
 	StageInfo.module = VkCs->GetVkShaderModule();
-	StageInfo.pName = "main";
+	StageInfo.pName = Desc.ComputeEntryPoint;
 
 	VkComputePipelineCreateInfo PipelineInfo{};
 	PipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
@@ -2031,12 +2056,84 @@ FRHIComputePipeline* FVulkanRHI::CreateComputePipeline(const FRHIComputePipeline
 	}
 
 	MAHO_CORE_INFO("FVulkanRHI: created compute pipeline");
-	return new FVulkanComputePipeline(Device, Pipeline);
+	return new FVulkanComputePipeline(Device, Pipeline, VkPLayout);
 }
 
 void FVulkanRHI::DestroyComputePipeline(FRHIComputePipeline* Pipeline)
 {
 	delete Pipeline;
+}
+
+FRHIStructuredBuffer* FVulkanRHI::CreateStructuredBuffer(const FRHIStructuredBufferDesc& Desc)
+{
+	if (Desc.Stride == 0 || Desc.Size == 0)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateStructuredBuffer: invalid stride or size");
+		return nullptr;
+	}
+
+	FRHIBufferDesc BufDesc;
+	BufDesc.Size = Desc.Size;
+	BufDesc.Usage = Desc.Usage;
+	BufDesc.MemoryUsage = Desc.MemoryUsage;
+	FRHIBuffer* Underlying = CreateBuffer(BufDesc);
+	if (Underlying == nullptr)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateStructuredBuffer: failed to create underlying buffer");
+		return nullptr;
+	}
+
+	auto* Result = new FVulkanStructuredBuffer(Desc, static_cast<FVulkanBuffer*>(Underlying));
+	return Result;
+}
+
+void FVulkanRHI::DestroyStructuredBuffer(FRHIStructuredBuffer* Buffer)
+{
+	if (Buffer == nullptr)
+	{
+		return;
+	}
+	// Destroy the underlying buffer first.
+	FRHIBuffer* Underlying = Buffer->GetUnderlyingBuffer();
+	delete Buffer;
+	delete Underlying;
+}
+
+FRHIBufferView* FVulkanRHI::CreateBufferView(const FRHIBufferViewDesc& Desc)
+{
+	if (Desc.Buffer == nullptr)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateBufferView: null buffer");
+		return nullptr;
+	}
+
+	auto* Buf = static_cast<FVulkanBuffer*>(Desc.Buffer);
+	VkFormat VkFmt = ToVkFormat(Desc.Format);
+	if (VkFmt == VK_FORMAT_UNDEFINED)
+	{
+		MAHO_CORE_ERROR("FVulkanRHI::CreateBufferView: unsupported format");
+		return nullptr;
+	}
+
+	VkBufferViewCreateInfo ViewInfo{};
+	ViewInfo.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
+	ViewInfo.buffer = Buf->GetVkBuffer();
+	ViewInfo.format = VkFmt;
+	ViewInfo.offset = Desc.Offset;
+	ViewInfo.range = (Desc.Range == 0) ? VK_WHOLE_SIZE : Desc.Range;
+
+	VkBufferView View = VK_NULL_HANDLE;
+	if (!CheckVkResult(vkCreateBufferView(Device, &ViewInfo, nullptr, &View), "vkCreateBufferView"))
+	{
+		return nullptr;
+	}
+
+	return new FVulkanBufferView(Device, View);
+}
+
+void FVulkanRHI::DestroyBufferView(FRHIBufferView* View)
+{
+	delete View;
 }
 
 FRHITextureView* FVulkanRHI::CreateTextureView(const FRHITextureViewDesc& Desc)
@@ -2076,6 +2173,9 @@ void FVulkanRHI::DestroyTextureView(FRHITextureView* View)
 FRHIDescriptorSetLayout* FVulkanRHI::CreateDescriptorSetLayout(const FRHIDescriptorSetLayoutDesc& Desc)
 {
 	std::vector<VkDescriptorSetLayoutBinding> Bindings;
+	std::vector<VkDescriptorBindingFlags> BindingFlags;
+	bool bAnyBindless = false;
+
 	for (const auto& B : Desc.Bindings)
 	{
 		VkDescriptorSetLayoutBinding Binding{};
@@ -2099,10 +2199,32 @@ FRHIDescriptorSetLayout* FVulkanRHI::CreateDescriptorSetLayout(const FRHIDescrip
 		Binding.stageFlags = Flags;
 
 		Bindings.push_back(Binding);
+
+		VkDescriptorBindingFlags Flags2 = 0;
+		if (B.bPartiallyBound)
+		{
+			Flags2 |= VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+			bAnyBindless = true;
+		}
+		if (B.bVariableCount)
+		{
+			Flags2 |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+			bAnyBindless = true;
+		}
+		BindingFlags.push_back(Flags2);
 	}
+
+	VkDescriptorSetLayoutBindingFlagsCreateInfo FlagsInfo{};
+	FlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+	FlagsInfo.bindingCount = static_cast<std::uint32_t>(BindingFlags.size());
+	FlagsInfo.pBindingFlags = BindingFlags.data();
 
 	VkDescriptorSetLayoutCreateInfo Info{};
 	Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	if (bAnyBindless)
+	{
+		Info.pNext = &FlagsInfo;
+	}
 	Info.bindingCount = static_cast<std::uint32_t>(Bindings.size());
 	Info.pBindings = Bindings.data();
 
@@ -2196,6 +2318,10 @@ FRHIDescriptorPool* FVulkanRHI::CreateDescriptorPool(const FRHIDescriptorPoolDes
 	Info.maxSets = Desc.MaxSets;
 	Info.poolSizeCount = static_cast<std::uint32_t>(PoolSizes.size());
 	Info.pPoolSizes = PoolSizes.data();
+	if (Desc.bUpdateAfterBind)
+	{
+		Info.flags |= VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+	}
 
 	VkDescriptorPool Pool = VK_NULL_HANDLE;
 	if (!CheckVkResult(vkCreateDescriptorPool(Device, &Info, nullptr, &Pool),

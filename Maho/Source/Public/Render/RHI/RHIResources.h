@@ -65,6 +65,40 @@ public:
 	[[nodiscard]] virtual const FRHIBufferDesc& GetDesc() const = 0;
 };
 
+struct FRHIStructuredBufferDesc
+{
+	std::uint64_t Size = 0;
+	std::uint32_t Stride = 0;
+	std::uint32_t ElementCount = 0;
+	ERHIBufferUsage Usage = ERHIBufferUsage::Storage;
+	ERHIMemoryUsage MemoryUsage = ERHIMemoryUsage::GPUOnly;
+};
+
+class MAHO_API FRHIStructuredBuffer : public FRHIResource
+{
+public:
+	[[nodiscard]] const char* GetTypeName() const override { return "FRHIStructuredBuffer"; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::StructuredBuffer; }
+	[[nodiscard]] virtual const FRHIStructuredBufferDesc& GetDesc() const = 0;
+	[[nodiscard]] virtual FRHIBuffer* GetUnderlyingBuffer() = 0;
+};
+
+struct FRHIBufferViewDesc
+{
+	FRHIBuffer* Buffer = nullptr;
+	std::uint64_t Offset = 0;
+	std::uint64_t Range = 0;
+	ERHIFormat Format = ERHIFormat::Unknown;
+	std::uint32_t Stride = 0;
+};
+
+class MAHO_API FRHIBufferView : public FRHIResource
+{
+public:
+	[[nodiscard]] const char* GetTypeName() const override { return "FRHIBufferView"; }
+	[[nodiscard]] ERHIResourceType GetType() const override { return ERHIResourceType::BufferView; }
+};
+
 struct FRHIExtent3D
 {
 	std::uint32_t Width = 1;
@@ -133,6 +167,7 @@ struct FRHIShaderModuleDesc
 	ERHIShaderStage Stage = ERHIShaderStage::None;
 	const void* Bytecode = nullptr;
 	std::size_t BytecodeSize = 0;
+	const char* EntryPoint = "main";
 };
 
 class MAHO_API FRHIShaderModule : public FRHIResource
@@ -148,6 +183,8 @@ struct FRHIDescriptorBinding
 	ERHIDescriptorType Type = ERHIDescriptorType::UniformBuffer;
 	std::uint32_t Count = 1;
 	ERHIShaderStage Stages = ERHIShaderStage::None;
+	bool bPartiallyBound = false;
+	bool bVariableCount = false;
 };
 
 struct FRHIDescriptorSetLayoutDesc
@@ -209,6 +246,8 @@ struct FRHIGraphicsPipelineDesc
 {
 	FRHIShaderModule* VertexShader = nullptr;
 	FRHIShaderModule* FragmentShader = nullptr;
+	const char* VertexEntryPoint = "main";
+	const char* FragmentEntryPoint = "main";
 	FRHIPipelineLayout* Layout = nullptr;
 	FRHIRenderPass* RenderPass = nullptr;
 	ERHIPrimitiveTopology Topology = ERHIPrimitiveTopology::TriangleList;
@@ -236,6 +275,7 @@ public:
 struct FRHIComputePipelineDesc
 {
 	FRHIShaderModule* ComputeShader = nullptr;
+	const char* ComputeEntryPoint = "main";
 	FRHIPipelineLayout* Layout = nullptr;
 };
 
@@ -256,6 +296,7 @@ struct FRHIDescriptorPoolDesc
 {
 	std::uint32_t MaxSets = 0;
 	std::vector<FRHIDescriptorPoolSize> PoolSizes;
+	bool bUpdateAfterBind = false;
 };
 
 class MAHO_API FRHIDescriptorPool : public FRHIResource

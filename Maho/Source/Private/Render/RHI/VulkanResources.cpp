@@ -13,6 +13,21 @@ FVulkanBuffer::~FVulkanBuffer()
 	}
 }
 
+FVulkanStructuredBuffer::~FVulkanStructuredBuffer()
+{
+	// Underlying buffer is owned by the creator; do not destroy it here.
+	UnderlyingBuffer = nullptr;
+}
+
+FVulkanBufferView::~FVulkanBufferView()
+{
+	if (Device != VK_NULL_HANDLE && View != VK_NULL_HANDLE)
+	{
+		vkDestroyBufferView(Device, View, nullptr);
+		View = VK_NULL_HANDLE;
+	}
+}
+
 FVulkanTexture::~FVulkanTexture()
 {
 	if (Allocator != nullptr && Image != VK_NULL_HANDLE)

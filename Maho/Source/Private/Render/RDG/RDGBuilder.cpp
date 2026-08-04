@@ -4,6 +4,7 @@
 #include <Render/RHI/RHI.h>
 
 #include <algorithm>
+#include <cstring>
 #include <queue>
 
 namespace Maho
@@ -79,32 +80,64 @@ FRDGResource* FRDGBuilder::Import(const char* Name) const
 	return It != ExportedResources.end() ? It->second : nullptr;
 }
 
-// Pass Declaration
+// Pass Declaration (step-by-step, no Layer)
 
-FRDGPass& FRDGBuilder::AddRasterPass(const char* Name, int32_t Layer)
+FRDGPass& FRDGBuilder::AddRasterPass(const char* Name)
 {
 	auto P = std::make_unique<FRDGPass>(Name, ERDGPassType::Raster);
-	P->SetLayer(Layer);
 	FRDGPass& Ref = *P;
 	Passes.push_back(P.get());
 	OwnedPasses.push_back(std::move(P));
 	return Ref;
 }
 
-FRDGPass& FRDGBuilder::AddComputePass(const char* Name, int32_t Layer)
+FRDGPass& FRDGBuilder::AddComputePass(const char* Name)
 {
 	auto P = std::make_unique<FRDGPass>(Name, ERDGPassType::Compute);
-	P->SetLayer(Layer);
 	FRDGPass& Ref = *P;
 	Passes.push_back(P.get());
 	OwnedPasses.push_back(std::move(P));
 	return Ref;
 }
 
-FRDGPass& FRDGBuilder::AddCopyPass(const char* Name, int32_t Layer)
+FRDGPassParameters& FRDGBuilder::AllocateParameters()
 {
-	auto P = std::make_unique<FRDGPass>(Name, ERDGPassType::Copy);
-	P->SetLayer(Layer);
+	auto P = std::make_unique<FRDGPassParameters>();
+	FRDGPassParameters& Ref = *P;
+	ParameterPool.push_back(std::move(P));
+	return Ref;
+}
+
+FRDGPass& FRDGBuilder::AddRasterPass(
+	const char* Name,
+	const FRDGPassParameters& Params,
+	FRDGPass::FExecuteFunc Execute)
+{
+	auto P = std::make_unique<FRDGPass>(Name, ERDGPassType::Raster);
+	for (const auto& [Res, State] : Params.Reads)
+		P->AddRead(Res, State);
+	for (const auto& [Res, State] : Params.Writes)
+		P->AddWrite(Res, State);
+	P->SetParameters(&Params);
+	P->SetExecute(std::move(Execute));
+	FRDGPass& Ref = *P;
+	Passes.push_back(P.get());
+	OwnedPasses.push_back(std::move(P));
+	return Ref;
+}
+
+FRDGPass& FRDGBuilder::AddComputePass(
+	const char* Name,
+	const FRDGPassParameters& Params,
+	FRDGPass::FExecuteFunc Execute)
+{
+	auto P = std::make_unique<FRDGPass>(Name, ERDGPassType::Compute);
+	for (const auto& [Res, State] : Params.Reads)
+		P->AddRead(Res, State);
+	for (const auto& [Res, State] : Params.Writes)
+		P->AddWrite(Res, State);
+	P->SetParameters(&Params);
+	P->SetExecute(std::move(Execute));
 	FRDGPass& Ref = *P;
 	Passes.push_back(P.get());
 	OwnedPasses.push_back(std::move(P));
@@ -119,6 +152,26 @@ void FRDGBuilder::Read(FRDGPass& Pass, FRDGResource* Resource, ERHIResourceState
 void FRDGBuilder::Write(FRDGPass& Pass, FRDGResource* Resource, ERHIResourceState State)
 {
 	Pass.AddWrite(Resource, State);
+}
+
+// UBO upload
+
+void FRDGBuilder::UploadBuffer(FRDGBuffer* DstBuffer, const void* Data, std::size_t Size)
+{
+	if (Data == nullptr || Size == 0) return;
+
+	auto& Params = AllocateParameters();
+	Params.Writes.push_back({DstBuffer, ERHIResourceState::CopyDst});
+
+	auto ExecuteFn = [DstBuffer, Size](FRHICommandList& Cmd)
+	{
+		if (FRHIBuffer* RHIBuf = DstBuffer->GetRHI())
+		{
+			Cmd.FillBuffer(RHIBuf, 0, Size, 0);
+		}
+	};
+
+	AddComputePass("Upload", Params, std::move(ExecuteFn));
 }
 
 FRDGResource* FRDGBuilder::GetResource(const char* Name) const
@@ -225,22 +278,18 @@ void FRDGBuilder::SortPasses()
 		}
 	}
 
-	// Kahn + layer tie-break
+	// Topological sort by dependency only (no Layer tie-break).
 	std::vector<FRDGPass*> Sorted;
-	std::vector<FRDGPass*> Ready;
-	for (auto* P : Passes) if (InDegree[P] == 0) Ready.push_back(P);
-
-	auto LayerCmp = [](FRDGPass* A, FRDGPass* B) { return A->GetLayer() < B->GetLayer(); };
-	std::sort(Ready.begin(), Ready.end(), LayerCmp);
+	std::queue<FRDGPass*> Ready;
+	for (auto* P : Passes) if (InDegree[P] == 0) Ready.push(P);
 
 	while (!Ready.empty())
 	{
 		FRDGPass* P = Ready.front();
-		Ready.erase(Ready.begin());
+		Ready.pop();
 		Sorted.push_back(P);
 		for (auto* Next : Deps[P])
-			if (--InDegree[Next] == 0) Ready.push_back(Next);
-		std::sort(Ready.begin(), Ready.end(), LayerCmp);
+			if (--InDegree[Next] == 0) Ready.push(Next);
 	}
 
 	if (Sorted.size() != Passes.size())
@@ -293,6 +342,38 @@ void FRDGBuilder::DeriveBarriers()
 	}
 }
 
+void FRDGBuilder::BuildRenderingAttachments(
+	const FRDGPassParameters* Params,
+	std::vector<FRHIRenderingAttachmentInfo>& OutColor,
+	FRHIRenderingAttachmentInfo& OutDepth,
+	std::uint32_t& OutWidth, std::uint32_t& OutHeight)
+{
+	OutColor.clear();
+	OutDepth = {};
+	OutWidth = 0;
+	OutHeight = 0;
+
+	if (Params == nullptr || Params->RenderTargets.empty()) return;
+
+	for (const auto& RT : Params->RenderTargets)
+	{
+		if (RT.Texture == nullptr || RT.Texture->GetRHI() == nullptr) continue;
+
+		OutWidth = RT.Texture->GetDesc().Extent.Width;
+		OutHeight = RT.Texture->GetDesc().Extent.Height;
+
+		FRHIRenderingAttachmentInfo AttInfo{};
+		AttInfo.View = RT.View;
+		AttInfo.LoadOp = RT.LoadOp;
+		AttInfo.StoreOp = RT.StoreOp;
+		AttInfo.ClearColor[0] = RT.ClearColor[0];
+		AttInfo.ClearColor[1] = RT.ClearColor[1];
+		AttInfo.ClearColor[2] = RT.ClearColor[2];
+		AttInfo.ClearColor[3] = RT.ClearColor[3];
+		OutColor.push_back(AttInfo);
+	}
+}
+
 // Execute
 
 void FRDGBuilder::Execute()
@@ -334,7 +415,33 @@ void FRDGBuilder::Execute()
 			}
 		}
 
+		// Auto BeginRendering/EndRendering for raster passes
+		const FRDGPassParameters* Params = Pass->GetParameters();
+		bool bBegunRendering = false;
+		if (Pass->GetType() == ERDGPassType::Raster && Params != nullptr && !Params->RenderTargets.empty())
+		{
+			std::vector<FRHIRenderingAttachmentInfo> ColorAtts;
+			FRHIRenderingAttachmentInfo DepthAtt;
+			std::uint32_t Width = 0, Height = 0;
+			BuildRenderingAttachments(Params, ColorAtts, DepthAtt, Width, Height);
+
+			if (!ColorAtts.empty())
+			{
+				Cmd->BeginRendering(
+					ColorAtts.data(), static_cast<std::uint32_t>(ColorAtts.size()),
+					DepthAtt.View != nullptr ? &DepthAtt : nullptr,
+					Width, Height);
+				bBegunRendering = true;
+			}
+		}
+
 		Pass->GetExecute()(*Cmd);
+
+		if (bBegunRendering)
+		{
+			Cmd->EndRendering();
+		}
+
 		Cmd->End();
 
 		if (Pass->GetType() == ERDGPassType::Compute)

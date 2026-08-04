@@ -85,6 +85,11 @@ public:
 	[[nodiscard]] virtual FRHIComputePipeline* CreateComputePipeline(const FRHIComputePipelineDesc& Desc) = 0;
 	virtual void DestroyComputePipeline(FRHIComputePipeline* Pipeline) = 0;
 
+	[[nodiscard]] virtual FRHIStructuredBuffer* CreateStructuredBuffer(const FRHIStructuredBufferDesc& Desc) = 0;
+	virtual void DestroyStructuredBuffer(FRHIStructuredBuffer* Buffer) = 0;
+	[[nodiscard]] virtual FRHIBufferView* CreateBufferView(const FRHIBufferViewDesc& Desc) = 0;
+	virtual void DestroyBufferView(FRHIBufferView* View) = 0;
+
 	[[nodiscard]] virtual FRHITextureView* CreateTextureView(const FRHITextureViewDesc& Desc) = 0;
 	virtual void DestroyTextureView(FRHITextureView* View) = 0;
 	[[nodiscard]] virtual FRHIDescriptorSetLayout* CreateDescriptorSetLayout(const FRHIDescriptorSetLayoutDesc& Desc) = 0;

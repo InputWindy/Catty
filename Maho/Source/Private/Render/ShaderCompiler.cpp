@@ -200,15 +200,22 @@ FShaderCompileResult FShaderCompiler::CompileStage(
 
 	EShLanguage GlslangStage = ToGlslangStage(Stage);
 
-	glslang::TShader Shader(GlslangStage);
-	const char* SourcePtr = Desc.Source.c_str();
-	int SourceLen = static_cast<int>(Desc.Source.size());
-	Shader.setStringsWithLengths(&SourcePtr, &SourceLen, 1);
-	// Pipeline stages bind SPIR-V entry "main" (see FVulkanRHI::CreateGraphicsPipeline).
-	Shader.setEntryPoint("main");
-	Shader.setSourceEntryPoint(EntryPoint.c_str());
+	// Rename the entry-point function to "main" in source so glslang can find it.
+	// The shader parser uses vert_main/frag_main; we must rewrite to "main"
+	// because setEntryPoint("main") requires the source function to also be "main".
+	std::string SourceCopy = Desc.Source;
+	{
+		// Find the function declaration and rename it.
+		std::string Search = EntryPoint + "(";
+		std::size_t Pos = 0;
+		while ((Pos = SourceCopy.find(Search, Pos)) != std::string::npos)
+		{
+			SourceCopy.replace(Pos, EntryPoint.size(), "main");
+			Pos += 4; // "main"
+		}
+	}
 
-	// Keep alive until after parse/link — setPreamble stores a raw pointer.
+	// Inject stage #define after #version (setPreamble inserts BEFORE #version, illegal).
 	std::string Preamble;
 	if (Stage == ERHIShaderStage::Vertex)
 	{
@@ -224,8 +231,29 @@ FShaderCompileResult FShaderCompiler::CompileStage(
 	}
 	if (!Preamble.empty())
 	{
-		Shader.setPreamble(Preamble.c_str());
+		// Find the #version line and insert after it (and after any #extension lines)
+		std::size_t VerPos = SourceCopy.find("#version");
+		if (VerPos != std::string::npos)
+		{
+			std::size_t InsertPos = SourceCopy.find('\n', VerPos);
+			if (InsertPos != std::string::npos) InsertPos = InsertPos + 1;
+			// Skip any #extension lines after #version
+			while (InsertPos < SourceCopy.size() && SourceCopy.compare(InsertPos, 10, "#extension") == 0)
+			{
+				std::size_t NL = SourceCopy.find('\n', InsertPos);
+				if (NL == std::string::npos) break;
+				InsertPos = NL + 1;
+			}
+			SourceCopy.insert(InsertPos, Preamble);
+		}
 	}
+
+	glslang::TShader Shader(GlslangStage);
+	const char* SourcePtr = SourceCopy.c_str();
+	int SourceLen = static_cast<int>(SourceCopy.size());
+	Shader.setStringsWithLengths(&SourcePtr, &SourceLen, 1);
+	// Pipeline stages bind SPIR-V entry "main" (see FVulkanRHI::CreateGraphicsPipeline).
+	Shader.setEntryPoint("main");
 
 	// Target Vulkan 1.0 + SPIR-V 1.0
 	Shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);

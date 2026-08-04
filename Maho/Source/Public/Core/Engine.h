@@ -21,9 +21,9 @@ struct FConfig
 	std::string EngineDir;
 
 	std::string EngineShadersDir = "Engine/Shaders";
-	std::string ProjectShadersDir = "Project/Shaders";
+	std::string ProjectShadersDir = "Shaders";
 	std::string EnginePluginsDir = "Engine/Plugins";
-	std::string ProjectPluginsDir = "Project/Plugins";
+	std::string ProjectPluginsDir = "Plugins";
 	std::string ProjectContentDir = "Content";
 	/** UE-style: regenerable derived data (shader cache, etc.). */
 	std::string CachedDir = "Cached";

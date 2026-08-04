@@ -11,6 +11,14 @@ namespace Maho
 
 class FRHICommandList;
 
+struct MAHO_API FRHIRenderingAttachmentInfo
+{
+	FRHITextureView* View = nullptr;
+	ERHILoadOp LoadOp = ERHILoadOp::Clear;
+	ERHIStoreOp StoreOp = ERHIStoreOp::Store;
+	float ClearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+};
+
 /**
  * Logical submit endpoint (Graphics / Compute / Transfer).
  * Always exists for all three types; Transfer may map to another native queue under the hood.
@@ -63,8 +71,22 @@ public:
 	virtual void TransitionTexture(FRHITexture* Texture, ERHIResourceState OldState, ERHIResourceState NewState) = 0;
 
 	// Graphics only
-	virtual void BeginRenderPass() = 0;
+	virtual void BeginRenderPass(
+		FRHIRenderPass* RenderPass,
+		FRHIFramebuffer* Framebuffer,
+		std::uint32_t Width,
+		std::uint32_t Height,
+		const float ClearColor[4],
+		bool bHasDepthStencil = false,
+		float DepthClear = 1.0f,
+		std::uint32_t StencilClear = 0) = 0;
 	virtual void EndRenderPass() = 0;
+
+	virtual void BeginRendering(
+		const FRHIRenderingAttachmentInfo* ColorAttachments, std::uint32_t ColorCount,
+		const FRHIRenderingAttachmentInfo* DepthAttachment,
+		std::uint32_t Width, std::uint32_t Height) = 0;
+	virtual void EndRendering() = 0;
 	virtual void SetViewport(float X, float Y, float Width, float Height, float MinDepth = 0.0f, float MaxDepth = 1.0f) = 0;
 	virtual void SetScissor(std::int32_t X, std::int32_t Y, std::uint32_t Width, std::uint32_t Height) = 0;
 	virtual void BindGraphicsPipeline(FRHIGraphicsPipeline* Pipeline) = 0;
@@ -78,9 +100,24 @@ public:
 		std::int32_t VertexOffset = 0,
 		std::uint32_t FirstInstance = 0) = 0;
 
+	// Indirect draw (GPU-driven pipeline)
+	virtual void DrawIndirect(
+		FRHIBuffer* ArgsBuffer,
+		std::uint64_t ArgsOffset,
+		std::uint32_t DrawCount = 1,
+		std::uint32_t Stride = 0) = 0;
+	virtual void DrawIndexedIndirect(
+		FRHIBuffer* ArgsBuffer,
+		std::uint64_t ArgsOffset,
+		std::uint32_t DrawCount = 1,
+		std::uint32_t Stride = 0) = 0;
+
 	// Compute only
 	virtual void BindComputePipeline(FRHIComputePipeline* Pipeline) = 0;
 	virtual void Dispatch(std::uint32_t GroupCountX, std::uint32_t GroupCountY, std::uint32_t GroupCountZ) = 0;
+	virtual void DispatchIndirect(
+		FRHIBuffer* ArgsBuffer,
+		std::uint64_t ArgsOffset) = 0;
 
 	// Graphics + Compute
 	virtual void BindDescriptorSets(

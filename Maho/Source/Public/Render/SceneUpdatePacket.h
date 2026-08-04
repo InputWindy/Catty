@@ -31,9 +31,26 @@ struct FSceneDrawItem
 	};
 };
 
+struct FCameraFrameData
+{
+	float View[16] = {
+		1.f, 0.f, 0.f, 0.f,
+		0.f, 1.f, 0.f, 0.f,
+		0.f, 0.f, 1.f, 0.f,
+		0.f, 0.f, 0.f, 1.f,
+	};
+	float FOV = 60.0f;
+	float NearPlane = 0.1f;
+	float FarPlane = 1000.0f;
+	float AspectRatio = 16.0f / 9.0f;
+	bool bOrthographic = false;
+	float OrthoSize = 10.0f;
+};
+
 struct MAHO_API FSceneUpdatePacket
 {
 	std::vector<FSceneDrawItem> Draws;
+	FCameraFrameData Camera;
 };
 
 } // namespace Maho

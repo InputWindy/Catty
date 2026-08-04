@@ -29,6 +29,8 @@ enum class ERHIResourceType : std::uint16_t
 {
 	Unknown = 0,
 	Buffer,
+	StructuredBuffer,
+	BufferView,
 	Texture,
 	TextureView,
 	Sampler,

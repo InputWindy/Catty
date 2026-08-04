@@ -21,26 +21,46 @@ class IRHI;
 class FRDGBuffer;
 class FRDGTexture;
 
+/** CPU-side parameter block owned by the graph builder. */
+struct MAHO_API FRDGPassParameters
+{
+	struct FRenderTargetBinding
+	{
+		FRDGTexture* Texture = nullptr;
+		FRHITextureView* View = nullptr;
+		ERHILoadOp LoadOp = ERHILoadOp::Clear;
+		ERHIStoreOp StoreOp = ERHIStoreOp::Store;
+		float ClearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	};
+
+	using FAccessPair = std::pair<FRDGResource*, ERHIResourceState>;
+
+	std::vector<FAccessPair> Reads;
+	std::vector<FAccessPair> Writes;
+	std::vector<FRenderTargetBinding> RenderTargets;
+};
+
 /**
- * Render Graph Builder — single-frame pass graph compiler + executor.
+ * Render Graph Builder - single-frame pass graph compiler + executor.
  *
- * Usage (inside IRenderFeature::BuildRenderGraph):
- *   1. RegisterExternalBuffer/Texture for persistent resources.
- *   2. CreateBuffer/Texture for transient frame-lifetime resources.
- *   3. AddRasterPass / AddComputePass to declare GPU work.
- *   4. Read / Write to declare resource access states.
- *   5. Export resources for cross-feature sharing within the same stage.
- *   6. FRenderServer calls Compile() then Execute().
+ * Usage:
+ *   auto& Params = GB.AllocateParameters();
+ *   Params.Reads  = { {buf, ERHIResourceState::VertexBuffer} };
+ *   Params.Writes = { {tex, ERHIResourceState::RenderTarget} };
+ *   Params.RenderTargets = { {tex, view, Clear, Store, {0,0,0,1}} };
+ *   GB.AddRasterPass("MyPass", Params, [](FRHICommandList& Cmd){ ... });
  */
 class MAHO_API FRDGBuilder
 {
 public:
+	using FAccessPair = FRDGPassParameters::FAccessPair;
+
 	explicit FRDGBuilder(IRHI* InRHI);
 	~FRDGBuilder();
 	FRDGBuilder(const FRDGBuilder&) = delete;
 	FRDGBuilder& operator=(const FRDGBuilder&) = delete;
 
-	// ── Resource registration ──
+	// -- Resource registration --
 
 	FRDGBuffer* RegisterExternalBuffer(FRHIBuffer* Buffer,
 	                                   ERHIResourceState InitialState,
@@ -49,33 +69,50 @@ public:
 	                                     ERHIResourceState InitialState,
 	                                     const char* Name);
 
-	// ── Transient resource creation ──
+	// -- Transient resource creation --
 
 	FRDGBuffer* CreateBuffer(const FRHIBufferDesc& Desc, const char* Name);
 	FRDGTexture* CreateTexture(const FRHITextureDesc& Desc, const char* Name);
 
-	// ── Cross-feature resource exchange (same stage only) ──
+	// -- Cross-feature resource exchange (same stage only) --
 
 	void Export(FRDGResource* Resource, const char* Name);
 	[[nodiscard]] FRDGResource* Import(const char* Name) const;
 
-	// ── Pass declaration ──
+	// -- Parameter block allocation --
 
-	FRDGPass& AddRasterPass(const char* Name, int32_t Layer = 0);
-	FRDGPass& AddComputePass(const char* Name, int32_t Layer = 0);
-	FRDGPass& AddCopyPass(const char* Name, int32_t Layer = 0);
+	FRDGPassParameters& AllocateParameters();
 
-	// ── Resource access declaration ──
+	// -- Pass declaration (step-by-step) --
+
+	FRDGPass& AddRasterPass(const char* Name);
+	FRDGPass& AddComputePass(const char* Name);
+
+	// -- Pass declaration (parameter-based - recommended) --
+
+	FRDGPass& AddRasterPass(const char* Name,
+	                        const FRDGPassParameters& Params,
+	                        FRDGPass::FExecuteFunc Execute);
+
+	FRDGPass& AddComputePass(const char* Name,
+	                         const FRDGPassParameters& Params,
+	                         FRDGPass::FExecuteFunc Execute);
+
+	// -- Resource access declaration (step-by-step only) --
 
 	void Read(FRDGPass& Pass, FRDGResource* Resource, ERHIResourceState State);
 	void Write(FRDGPass& Pass, FRDGResource* Resource, ERHIResourceState State);
 
-	// ── Compilation & execution ──
+	// -- UBO upload (declarative) --
+
+	void UploadBuffer(FRDGBuffer* DstBuffer, const void* Data, std::size_t Size);
+
+	// -- Compilation & execution --
 
 	void Compile();
 	void Execute();
 
-	// ── Queries ──
+	// -- Queries --
 
 	[[nodiscard]] FRDGResource* GetResource(const char* Name) const;
 	[[nodiscard]] std::size_t GetPassCount() const { return Passes.size(); }
@@ -83,22 +120,16 @@ public:
 private:
 	IRHI* RHI = nullptr;
 
-	// Owns all RDG virtual resources
 	std::vector<std::unique_ptr<FRDGResource>> OwnedResources;
+	std::vector<std::unique_ptr<FRDGPassParameters>> ParameterPool;
 
-	// Passes in declaration order (Compile reorders them)
 	std::vector<std::unique_ptr<FRDGPass>> OwnedPasses;
 	std::vector<FRDGPass*> Passes;
 
-	// Name → resource lookup
 	std::unordered_map<std::string, FRDGResource*> NamedResources;
-
-	// Exported resources (cross-feature)
 	std::unordered_map<std::string, FRDGResource*> ExportedResources;
-
 	FRDGTransientPool TransientPool;
 
-	// Compiled output
 	struct FCompiledPass
 	{
 		FRDGPass* Pass;
@@ -106,7 +137,7 @@ private:
 	};
 	std::vector<FCompiledPass> CompiledPasses;
 
-	// ── Compile helpers ──
+	// -- Compile helpers --
 
 	void CollectResourceLifetimes();
 	void AllocateTransientResources();
@@ -120,6 +151,11 @@ private:
 		std::uint32_t LastUse = 0;
 	};
 	std::unordered_map<FRDGResource*, FResourceLifetime> Lifetimes;
+
+	void BuildRenderingAttachments(const FRDGPassParameters* Params,
+	                               std::vector<FRHIRenderingAttachmentInfo>& OutColor,
+	                               FRHIRenderingAttachmentInfo& OutDepth,
+	                               std::uint32_t& OutWidth, std::uint32_t& OutHeight);
 };
 
 } // namespace Maho

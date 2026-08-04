@@ -27,10 +27,50 @@ public:
 	[[nodiscard]] VmaAllocation GetAllocation() const { return Allocation; }
 
 private:
+	friend class FVulkanStructuredBuffer;
+
 	FRHIBufferDesc Desc{};
 	VkBuffer Buffer = VK_NULL_HANDLE;
 	VmaAllocation Allocation = nullptr;
 	FVulkanMemoryAllocator* Allocator = nullptr;
+};
+
+class FVulkanStructuredBuffer final : public FRHIStructuredBuffer
+{
+public:
+	FVulkanStructuredBuffer(FRHIStructuredBufferDesc InDesc, FVulkanBuffer* InUnderlying)
+		: Desc(InDesc)
+		, UnderlyingBuffer(InUnderlying)
+	{
+	}
+
+	~FVulkanStructuredBuffer() override;
+
+	[[nodiscard]] const FRHIStructuredBufferDesc& GetDesc() const override { return Desc; }
+	[[nodiscard]] FRHIBuffer* GetUnderlyingBuffer() override { return UnderlyingBuffer; }
+	[[nodiscard]] VkBuffer GetVkBuffer() const { return UnderlyingBuffer ? UnderlyingBuffer->GetVkBuffer() : VK_NULL_HANDLE; }
+
+private:
+	FRHIStructuredBufferDesc Desc{};
+	FVulkanBuffer* UnderlyingBuffer = nullptr;
+};
+
+class FVulkanBufferView final : public FRHIBufferView
+{
+public:
+	FVulkanBufferView(VkDevice InDevice, VkBufferView InView)
+		: Device(InDevice)
+		, View(InView)
+	{
+	}
+
+	~FVulkanBufferView() override;
+
+	[[nodiscard]] VkBufferView GetVkBufferView() const { return View; }
+
+private:
+	VkDevice Device = VK_NULL_HANDLE;
+	VkBufferView View = VK_NULL_HANDLE;
 };
 
 class FVulkanTexture final : public FRHITexture
@@ -98,37 +138,43 @@ private:
 class FVulkanGraphicsPipeline final : public FRHIGraphicsPipeline
 {
 public:
-	FVulkanGraphicsPipeline(VkDevice InDevice, VkPipeline InPipeline)
+	FVulkanGraphicsPipeline(VkDevice InDevice, VkPipeline InPipeline, VkPipelineLayout InLayout)
 		: Device(InDevice)
 		, Pipeline(InPipeline)
+		, Layout(InLayout)
 	{
 	}
 
 	~FVulkanGraphicsPipeline() override;
 
 	[[nodiscard]] VkPipeline GetVkPipeline() const { return Pipeline; }
+	[[nodiscard]] VkPipelineLayout GetVkPipelineLayout() const { return Layout; }
 
 private:
 	VkDevice Device = VK_NULL_HANDLE;
 	VkPipeline Pipeline = VK_NULL_HANDLE;
+	VkPipelineLayout Layout = VK_NULL_HANDLE;
 };
 
 class FVulkanComputePipeline final : public FRHIComputePipeline
 {
 public:
-	FVulkanComputePipeline(VkDevice InDevice, VkPipeline InPipeline)
+	FVulkanComputePipeline(VkDevice InDevice, VkPipeline InPipeline, VkPipelineLayout InLayout)
 		: Device(InDevice)
 		, Pipeline(InPipeline)
+		, Layout(InLayout)
 	{
 	}
 
 	~FVulkanComputePipeline() override;
 
 	[[nodiscard]] VkPipeline GetVkPipeline() const { return Pipeline; }
+	[[nodiscard]] VkPipelineLayout GetVkPipelineLayout() const { return Layout; }
 
 private:
 	VkDevice Device = VK_NULL_HANDLE;
 	VkPipeline Pipeline = VK_NULL_HANDLE;
+	VkPipelineLayout Layout = VK_NULL_HANDLE;
 };
 
 class FVulkanFence final : public FRHIFence

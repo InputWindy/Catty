@@ -328,14 +328,125 @@ void FVulkanCommandList::TransitionTexture(FRHITexture* Texture, ERHIResourceSta
 		&Barrier);
 }
 
-void FVulkanCommandList::BeginRenderPass()
+void FVulkanCommandList::BeginRenderPass(
+	FRHIRenderPass* RenderPass,
+	FRHIFramebuffer* Framebuffer,
+	std::uint32_t Width,
+	std::uint32_t Height,
+	const float ClearColor[4],
+	bool bHasDepthStencil,
+	float DepthClear,
+	std::uint32_t StencilClear)
 {
 	AssertType(ERHICommandListType::Graphics);
+
+	auto* VkPass = static_cast<FVulkanRenderPass*>(RenderPass);
+	auto* VkFB = static_cast<FVulkanFramebuffer*>(Framebuffer);
+	if (VkPass == nullptr || VkFB == nullptr)
+	{
+		MAHO_CORE_ERROR("FVulkanCommandList::BeginRenderPass: null render pass or framebuffer");
+		return;
+	}
+
+	VkClearValue ClearValues[2]{};
+	std::uint32_t ClearCount = 0;
+
+	VkClearValue& ColorClear = ClearValues[ClearCount++];
+	ColorClear.color.float32[0] = ClearColor[0];
+	ColorClear.color.float32[1] = ClearColor[1];
+	ColorClear.color.float32[2] = ClearColor[2];
+	ColorClear.color.float32[3] = ClearColor[3];
+
+	if (bHasDepthStencil)
+	{
+		VkClearValue& DS = ClearValues[ClearCount++];
+		DS.depthStencil.depth = DepthClear;
+		DS.depthStencil.stencil = StencilClear;
+	}
+
+	VkRenderPassBeginInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	Info.renderPass = VkPass->GetVkPass();
+	Info.framebuffer = VkFB->GetVkFramebuffer();
+	Info.renderArea.extent = { Width, Height };
+	Info.clearValueCount = ClearCount;
+	Info.pClearValues = ClearValues;
+	vkCmdBeginRenderPass(Buffer, &Info, VK_SUBPASS_CONTENTS_INLINE);
 }
 
 void FVulkanCommandList::EndRenderPass()
 {
 	AssertType(ERHICommandListType::Graphics);
+	vkCmdEndRenderPass(Buffer);
+}
+
+void FVulkanCommandList::BeginRendering(
+	const FRHIRenderingAttachmentInfo* ColorAttachments, std::uint32_t ColorCount,
+	const FRHIRenderingAttachmentInfo* DepthAttachment,
+	std::uint32_t Width, std::uint32_t Height)
+{
+	AssertType(ERHICommandListType::Graphics);
+
+	std::vector<VkRenderingAttachmentInfo> ColorAtts(ColorCount);
+	for (std::uint32_t I = 0; I < ColorCount; ++I)
+	{
+		auto* VkView = static_cast<FVulkanTextureView*>(ColorAttachments[I].View);
+		if (VkView == nullptr) continue;
+
+		VkRenderingAttachmentInfo& Att = ColorAtts[I];
+		Att.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+		Att.imageView = VkView->GetVkImageView();
+		Att.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		Att.loadOp = ColorAttachments[I].LoadOp == ERHILoadOp::Clear
+		             ? VK_ATTACHMENT_LOAD_OP_CLEAR
+		             : VK_ATTACHMENT_LOAD_OP_LOAD;
+		Att.storeOp = ColorAttachments[I].StoreOp == ERHIStoreOp::Store
+		              ? VK_ATTACHMENT_STORE_OP_STORE
+		              : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		Att.clearValue.color.float32[0] = ColorAttachments[I].ClearColor[0];
+		Att.clearValue.color.float32[1] = ColorAttachments[I].ClearColor[1];
+		Att.clearValue.color.float32[2] = ColorAttachments[I].ClearColor[2];
+		Att.clearValue.color.float32[3] = ColorAttachments[I].ClearColor[3];
+	}
+
+	VkRenderingAttachmentInfo DepthAtt{};
+	const VkRenderingAttachmentInfo* PDepthAtt = nullptr;
+	if (DepthAttachment != nullptr && DepthAttachment->View != nullptr)
+	{
+		auto* VkView = static_cast<FVulkanTextureView*>(DepthAttachment->View);
+		if (VkView != nullptr)
+		{
+			DepthAtt.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+			DepthAtt.imageView = VkView->GetVkImageView();
+			DepthAtt.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			DepthAtt.loadOp = DepthAttachment->LoadOp == ERHILoadOp::Clear
+			                  ? VK_ATTACHMENT_LOAD_OP_CLEAR
+			                  : VK_ATTACHMENT_LOAD_OP_LOAD;
+			DepthAtt.storeOp = DepthAttachment->StoreOp == ERHIStoreOp::Store
+			                   ? VK_ATTACHMENT_STORE_OP_STORE
+			                   : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			DepthAtt.clearValue.depthStencil.depth = DepthAttachment->ClearColor[0];
+			DepthAtt.clearValue.depthStencil.stencil = 0;
+			PDepthAtt = &DepthAtt;
+		}
+	}
+
+	VkRenderingInfo Info{};
+	Info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	Info.renderArea.extent = { Width, Height };
+	Info.renderArea.offset = { 0, 0 };
+	Info.layerCount = 1;
+	Info.colorAttachmentCount = static_cast<std::uint32_t>(ColorAtts.size());
+	Info.pColorAttachments = ColorAtts.empty() ? nullptr : ColorAtts.data();
+	Info.pDepthAttachment = PDepthAtt;
+	Info.pStencilAttachment = nullptr;
+	vkCmdBeginRendering(Buffer, &Info);
+}
+
+void FVulkanCommandList::EndRendering()
+{
+	AssertType(ERHICommandListType::Graphics);
+	vkCmdEndRendering(Buffer);
 }
 
 void FVulkanCommandList::SetViewport(float X, float Y, float Width, float Height, float MinDepth, float MaxDepth)
@@ -368,6 +479,7 @@ void FVulkanCommandList::BindGraphicsPipeline(FRHIGraphicsPipeline* Pipeline)
 	{
 		return;
 	}
+	BoundGraphicsPipeline = Pipeline;
 	vkCmdBindPipeline(Buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VkPipeline->GetVkPipeline());
 }
 
@@ -415,6 +527,36 @@ void FVulkanCommandList::DrawIndexed(
 	vkCmdDrawIndexed(Buffer, IndexCount, InstanceCount, FirstIndex, VertexOffset, FirstInstance);
 }
 
+void FVulkanCommandList::DrawIndirect(
+	FRHIBuffer* ArgsBuffer,
+	std::uint64_t ArgsOffset,
+	std::uint32_t DrawCount,
+	std::uint32_t Stride)
+{
+	AssertType(ERHICommandListType::Graphics);
+	auto* Buf = static_cast<FVulkanBuffer*>(ArgsBuffer);
+	if (Buf == nullptr)
+	{
+		return;
+	}
+	vkCmdDrawIndirect(Buffer, Buf->GetVkBuffer(), ArgsOffset, DrawCount, Stride);
+}
+
+void FVulkanCommandList::DrawIndexedIndirect(
+	FRHIBuffer* ArgsBuffer,
+	std::uint64_t ArgsOffset,
+	std::uint32_t DrawCount,
+	std::uint32_t Stride)
+{
+	AssertType(ERHICommandListType::Graphics);
+	auto* Buf = static_cast<FVulkanBuffer*>(ArgsBuffer);
+	if (Buf == nullptr)
+	{
+		return;
+	}
+	vkCmdDrawIndexedIndirect(Buffer, Buf->GetVkBuffer(), ArgsOffset, DrawCount, Stride);
+}
+
 void FVulkanCommandList::BindComputePipeline(FRHIComputePipeline* Pipeline)
 {
 	AssertType(ERHICommandListType::Compute);
@@ -423,6 +565,7 @@ void FVulkanCommandList::BindComputePipeline(FRHIComputePipeline* Pipeline)
 	{
 		return;
 	}
+	BoundComputePipeline = Pipeline;
 	vkCmdBindPipeline(Buffer, VK_PIPELINE_BIND_POINT_COMPUTE, VkPipeline->GetVkPipeline());
 }
 
@@ -432,14 +575,130 @@ void FVulkanCommandList::Dispatch(std::uint32_t GroupCountX, std::uint32_t Group
 	vkCmdDispatch(Buffer, GroupCountX, GroupCountY, GroupCountZ);
 }
 
-void FVulkanCommandList::BindDescriptorSets(std::uint32_t /*FirstSet*/, FRHIDescriptorSet* const* /*Sets*/, std::uint32_t /*Count*/)
+void FVulkanCommandList::DispatchIndirect(
+	FRHIBuffer* ArgsBuffer,
+	std::uint64_t ArgsOffset)
 {
-	AssertNotTransfer();
+	AssertType(ERHICommandListType::Compute);
+	auto* Buf = static_cast<FVulkanBuffer*>(ArgsBuffer);
+	if (Buf == nullptr)
+	{
+		return;
+	}
+	vkCmdDispatchIndirect(Buffer, Buf->GetVkBuffer(), ArgsOffset);
 }
 
-void FVulkanCommandList::PushConstants(ERHIShaderStage /*Stages*/, std::uint32_t /*Offset*/, std::uint32_t /*Size*/, const void* /*Data*/)
+void FVulkanCommandList::BindDescriptorSets(std::uint32_t FirstSet, FRHIDescriptorSet* const* Sets, std::uint32_t Count)
 {
 	AssertNotTransfer();
+
+	if (Sets == nullptr || Count == 0)
+	{
+		return;
+	}
+
+	// Determine pipeline bind point from command list type.
+	VkPipelineBindPoint BindPoint;
+	switch (Type)
+	{
+	case ERHICommandListType::Graphics:
+		BindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		break;
+	case ERHICommandListType::Compute:
+		BindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+		break;
+	default:
+		return;
+	}
+
+	std::vector<VkDescriptorSet> VkSets;
+	VkSets.reserve(Count);
+	for (std::uint32_t Index = 0; Index < Count; ++Index)
+	{
+		auto* VkSet = static_cast<FVulkanDescriptorSet*>(Sets[Index]);
+		if (VkSet == nullptr || VkSet->GetVkSet() == VK_NULL_HANDLE)
+		{
+			MAHO_CORE_ERROR("FVulkanCommandList::BindDescriptorSets: null descriptor set at index {}", Index);
+			return;
+		}
+		VkSets.push_back(VkSet->GetVkSet());
+	}
+
+	[[maybe_unused]] auto* VkGPipeline = static_cast<FVulkanGraphicsPipeline*>(BoundGraphicsPipeline);
+	[[maybe_unused]] auto* VkCPipeline = static_cast<FVulkanComputePipeline*>(BoundComputePipeline);
+	VkPipelineLayout Layout = VK_NULL_HANDLE;
+	if (Type == ERHICommandListType::Graphics && VkGPipeline != nullptr)
+	{
+		Layout = VkGPipeline->GetVkPipelineLayout();
+	}
+	else if (Type == ERHICommandListType::Compute && VkCPipeline != nullptr)
+	{
+		Layout = VkCPipeline->GetVkPipelineLayout();
+	}
+
+	if (Layout == VK_NULL_HANDLE)
+	{
+		MAHO_CORE_ERROR("FVulkanCommandList::BindDescriptorSets: no bound pipeline to extract layout from");
+		return;
+	}
+
+	vkCmdBindDescriptorSets(
+		Buffer,
+		BindPoint,
+		Layout,
+		FirstSet,
+		Count,
+		VkSets.data(),
+		0,
+		nullptr);
+}
+
+void FVulkanCommandList::PushConstants(ERHIShaderStage Stages, std::uint32_t Offset, std::uint32_t Size, const void* Data)
+{
+	AssertNotTransfer();
+
+	if (Data == nullptr || Size == 0)
+	{
+		return;
+	}
+
+	VkShaderStageFlags VkStages = 0;
+	if (RHIEnumHas(Stages, ERHIShaderStage::Vertex))
+	{
+		VkStages |= VK_SHADER_STAGE_VERTEX_BIT;
+	}
+	if (RHIEnumHas(Stages, ERHIShaderStage::Fragment))
+	{
+		VkStages |= VK_SHADER_STAGE_FRAGMENT_BIT;
+	}
+	if (RHIEnumHas(Stages, ERHIShaderStage::Compute))
+	{
+		VkStages |= VK_SHADER_STAGE_COMPUTE_BIT;
+	}
+
+	if (VkStages == 0)
+	{
+		return;
+	}
+
+	// Determine layout from the currently bound pipeline.
+	VkPipelineLayout Layout = VK_NULL_HANDLE;
+	if (Type == ERHICommandListType::Graphics && BoundGraphicsPipeline != nullptr)
+	{
+		Layout = static_cast<FVulkanGraphicsPipeline*>(BoundGraphicsPipeline)->GetVkPipelineLayout();
+	}
+	else if (Type == ERHICommandListType::Compute && BoundComputePipeline != nullptr)
+	{
+		Layout = static_cast<FVulkanComputePipeline*>(BoundComputePipeline)->GetVkPipelineLayout();
+	}
+
+	if (Layout == VK_NULL_HANDLE)
+	{
+		MAHO_CORE_ERROR("FVulkanCommandList::PushConstants: no bound pipeline");
+		return;
+	}
+
+	vkCmdPushConstants(Buffer, Layout, VkStages, Offset, Size, Data);
 }
 
 } // namespace Maho

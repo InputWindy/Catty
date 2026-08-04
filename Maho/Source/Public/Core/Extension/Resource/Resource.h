@@ -53,7 +53,7 @@ enum class EResourceLoadState : std::uint8_t
 	Failed
 };
 
-/** High-level asset kind (extend as typed resources appear). */
+	/** High-level asset kind (extend as typed resources appear). */
 MAHO_ENUM()
 enum class EResourceType : std::uint8_t
 {
@@ -78,6 +78,10 @@ enum class EResourceType : std::uint8_t
 	Shader,
 	Audio,
 	Data,
+	/** Level — dynamic streamable sub‑scene. */
+	Level,
+	/** World — root scene resource holding persistent entities + level list. */
+	World,
 };
 
 /** Source asset up-axis (Prefab Metadata / FDecodedModelMetadata). */
@@ -464,6 +468,59 @@ public:
 
 protected:
 	std::string DocumentJson;
+};
+
+/**
+ * Level — dynamic streamable sub‑scene.
+ * Owns the serialized ECS blob for entities within this level.
+ * Smallest atomic persistence unit: entire level's entities + components saved as binary.
+ */
+class MAHO_API ULevel : public UResource
+{
+public:
+	static constexpr int PoolSize = 16;
+
+	ULevel(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~ULevel() override;
+
+	/** Serialized ECS binary blob (entities + components). */
+	[[nodiscard]] const std::vector<std::uint8_t>& GetEntityBlob() const { return EntityBlob; }
+	void SetEntityBlob(std::vector<std::uint8_t> InBlob);
+
+	/** Bounding box for frustum culling. */
+	float BoundsMin[3] = {0, 0, 0};
+	float BoundsMax[3] = {0, 0, 0};
+
+protected:
+	std::vector<std::uint8_t> EntityBlob;
+};
+
+/**
+ * World — root scene resource.
+ * Holds the persistent entity list (camera, game manager, etc.) and the level manifest.
+ * Persistent entities are NOT part of any ULevel.
+ */
+class MAHO_API UWorld : public UResource
+{
+public:
+	static constexpr int PoolSize = 8;
+
+	UWorld(UPackage* InOuter, std::string InObjectName, EResourceType InType, std::string InSourcePath);
+	~UWorld() override;
+
+	/** Serialized persistent entity blob (entities not in any level). */
+	[[nodiscard]] const std::vector<std::uint8_t>& GetPersistentEntityBlob() const { return PersistentBlob; }
+	void SetPersistentEntityBlob(std::vector<std::uint8_t> InBlob);
+
+	/** Level SoftPaths for active streaming levels. */
+	[[nodiscard]] const std::vector<FSoftObjectPath>& GetLevels() const { return Levels; }
+	void SetLevels(std::vector<FSoftObjectPath> InLevels);
+	void AddLevel(FSoftObjectPath Path) { Levels.push_back(std::move(Path)); }
+	void RemoveLevel(const std::string& LevelPath);
+
+protected:
+	std::vector<std::uint8_t> PersistentBlob;
+	std::vector<FSoftObjectPath> Levels;
 };
 
 /** Opaque worker-prepared decode payload (model / texture); cast at Apply site. */
