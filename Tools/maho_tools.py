@@ -1115,7 +1115,10 @@ def _scan_header_for_class(header_path: Path, base_pattern: str) -> list[dict[st
 	content = re.sub(r"\s+", " ", content)
 
 	# Find all namespaces (stack not needed — we just need the innermost)
-	namespaces = re.findall(r"namespace\s+(\w+)\s*\{", content)
+	all_ns = re.findall(r"namespace\s+(\w+)\s*\{", content)
+	# Only use the outermost namespace — inner Detail/etc blocks are separate scopes,
+	# not nested under the class declarations we're looking for.
+	namespaces = all_ns[:1] if all_ns else []
 
 	# Find class declarations (stop at { or ; to avoid matching nested enums)
 	class_re = re.compile(r"class\s+(\w+)\s+(?:final\s+)?:\s*(?:public\s+)?[^{;]*?" + base_pattern)
