@@ -1,109 +1,298 @@
-# Maho
+# Maho — Minimal Game Engine Shell (脚手架)
 
-UE 风格 C++ 引擎（`Maho` DLL）+ 工具链：用 `.cproject`（类似 `.uproject`）创建、生成、打包游戏工程。
+> **Maho is a pure engine scaffold.** It provides only the minimal instruction set that every game needs: application lifecycle, platform abstraction, render hardware interface, and a framework for composing higher-level systems. Everything else is built in the project.
 
-## 安装
+## Design Philosophy
 
-首次克隆后在引擎根目录执行：
-
-```bat
-setup.bat
+```
+┌──────────────────────────────────────────────────────────┐
+│                     Game Project                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
+│  │ GCSystem │ │Resource  │ │WorkerPool│ │ScriptSystem│ │
+│  │          │ │System    │ │System    │ │            │ │
+│  └──────────┘ └──────────┘ └──────────┘ └────────────┘ │
+│  ┌──────────┐ ┌──────────────────────────────────────┐  │
+│  │ UObject  │ │          ECS + World + Level         │  │
+│  │ System   │ │   (Archetype / Component / System)   │  │
+│  └──────────┘ └──────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │        Custom Render Pipeline (RenderFeatures)    │   │
+│  │    TriangleBasePass · ShadowPass · PostProcess    │   │
+│  └──────────────────────────────────────────────────┘   │
+├──────────────────────────────────────────────────────────┤
+│                     Maho Engine DLL                     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
+│  │   FApp   │ │Platform  │ │ Render   │ │  ImGui     │ │
+│  │Extension │ │System    │ │ System   │ │  System    │ │
+│  │Framework │ │          │ │          │ │            │ │
+│  └──────────┘ └──────────┘ └──────────┘ └────────────┘ │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────────────────┐ │
+│  │   RHI    │ │   RDG    │ │  Shader Pipeline          │ │
+│  │ (Vulkan) │ │ (Graph)  │ │  GLSL → SPIR-V            │ │
+│  └──────────┘ └──────────┘ └──────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │   Async Infrastructure                            │   │
+│  │   FThreadedServer · TAsyncTransferServer          │   │
+│  └──────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────┘
 ```
 
-会在 `%LOCALAPPDATA%\Maho\python\tooling\` 放置**引擎私有** Python（不写系统 PATH，不进 git），并在仓库里创建 `Tools/python` → 该目录的 **junction**。
+### What stays in the engine (shell)
 
-这样设计是为了：**改引擎文件夹名字不会弄坏安装**（python.org 若装进仓库目录，注册表仍指向旧路径，下次 setup 会假成功）。有本机 Python 时优先 `venv`（不走 MSI）；否则才用官方安装器装到 LocalAppData。改名/挪仓库后若 junction 断了，再跑一次 `setup.bat` 即可。
+Only **infrastructure that every game needs**, regardless of genre or rendering approach:
 
-之后所有工具只走局部解释器；直接用系统 `python` 跑 `Tools/*.py` 会被拒绝。
+| Module | Role | Why it stays |
+|--------|------|-------------|
+| `FApp` + Extension Framework | Application lifecycle, plugin registry | Every game needs boot/shutdown orchestration |
+| `FPlatformSystem` | Window creation, input, file I/O, timers | Platform abstraction is infrastructure, not game logic |
+| `FRenderSystem` / `FRenderServer` | Render thread orchestration, async GPU upload | Engine must perceive rendering exists (even if empty) |
+| **RHI** (`FRHI*`) | Vulkan backend: resources, queues, command lists | GPU abstraction layer — no game should touch `vulkan.h` |
+| **RDG** (`FRDGBuilder`) | Declarative render graph: pass scheduling, resource lifetime | Declarative rendering framework for any pipeline |
+| **Shader Pipeline** | GLSL parsing → SPIR-V compilation, lazy compilation | Shader language + compiler are engine-level concepts |
+| `FImGuiSystem` | Dear ImGui integration (Vulkan backend) | RHI-level UI infrastructure, not a game "system" |
+| `TAsyncTransferServer` | Templated async worker thread + import/export | Generic async transfer pattern |
+| `FThreadedServer` | Single persistent worker thread, FIFO queue | Base async primitive |
 
-```bat
-setup.bat --force   :: 损坏时强制重装
+### What moves to the project (game)
+
+Any **opinionated system** that makes choices about how the game world works:
+
+| System | Location in project | Why it moved |
+|--------|-------------------|-------------|
+| **UObject / GC** | `Source/Game/Object/` + `Source/Game/System/GC/` | Object model is a game architecture choice |
+| **Resource System** | `Source/Game/System/Resource/` | Asset pipeline is game-specific |
+| **WorkerPool** | `Source/Game/System/WorkerPool/` | Job system strategy is game-specific |
+| **Script (Lua)** | `Source/Game/System/Script/` | Scripting language is a game choice |
+| **ECS** | `Source/Game/ECS/` | Data model is a game architecture choice |
+| **World / Level** | `Source/Game/World/` | Scene organization is game-specific |
+| **Editor UI** | `Source/Game/Editor/` | Editor chrome is per-project |
+
+## Core Capabilities
+
+### 1. Extension Framework (`IEngineExtension`)
+
+The engine shell orchestrates extensions through a priority-ordered stage pipeline. Extensions are **auto-discovered** from `Source/Game/` by code generation — no manual registration needed.
+
+```
+EExtensionPriority:
+  System  → Platform, Render (always first)
+  Layer   → GC, Resource, WorkerPool, World
+  Overlay → Script, Editor (always last)
+
+EEngineStage:
+  PreInit → Init → PostInit → Tick → PreShutdown → Shutdown
 ```
 
-## 创建项目
+Each extension implements:
 
-```bat
-createProject.bat
+```cpp
+class IEngineExtension
+{
+    const char* GetName() const override;
+    bool ExecuteStage(EEngineStage Stage) override;  // Called for every stage
+    bool IsIdle() const override;                     // For shutdown coordination
+};
 ```
 
-1. 填写项目名、父目录、引擎路径 → Create  
-2. 得到 `Parent/Name/Name.cproject`  
-3. 双击 `.cproject` → 生成同级 `.sln` → 用 Visual Studio 打开  
-4. 右键 `.cproject` → **选择链接引擎…** → 可改写 `EngineDirectory`（换引擎目录后建议勾选重新生成 `.sln`） 
+### 2. Render Server + Render Features
 
-也可在引擎根用 `Tools\generateProject.bat`（无参数）生成引擎工作区 `MahoWorkspace.sln`。
+The engine provides `FRenderServer` — a **render thread orchestrator** that owns the RHI queue and drives `IRenderFeature` execution. Features declare which pipeline stages they participate in:
 
-## 打包
-
-| 位置 | 入口 |
-|------|------|
-| 游戏工程根目录 | `package.bat`（读 `.cproject` 的 `EngineDirectory`，唤起引擎 Tools） |
-| 引擎根目录 | `Tools\package.bat` |
-
-GUI 可选平台 / 配置，产物在工程（或引擎）下的 `Packaged/<Platform>/`。关闭窗口可中止打包。
-
-## 清理
-
-```bat
-clean.bat
-clean.bat --ask
-clean.bat --dry-run
+```cpp
+class IRenderFeature
+{
+    void ExecuteStage(ERenderPipelineStage Stage, FRDGBuilder& GraphBuilder) override;
+};
 ```
 
-会删除 `Intermediate` / `Binaries` / `Packaged` / `Cached` / `Saved`，以及 `Maho/Source/Generated/`（reflect / Lua codegen）。**不删** `Tools/python`。
+```
+ERenderPipelineStage:
+  PreRender → BasePass → Translucent → PostProcess → Present
+```
 
----
+`FRenderServer` also inherits `TAsyncTransferServer` for async CPU→GPU resource upload (textures, meshes, skeletons, animations).
 
-## 目录结构
+### 3. RHI — Render Hardware Interface
+
+Backend-agnostic GPU abstraction. Public headers contain **no `vulkan.h`** — upper layers never see the backend.
+
+- **Three logical queues**: Graphics, Compute, Transfer (always present, Transfer may fall back to Graphics)
+- **Resource Manager**: `Acquire*` / `Release` with descriptor-free-lists (not ad-hoc `Create*`)
+- **Dynamic Rendering**: `VK_KHR_dynamic_rendering` — no `VkFramebuffer` objects
+- **Bindless Descriptors**: `VK_EXT_descriptor_indexing` for flexible descriptor management
+- **VMA**: GPU memory allocation via vendored `VulkanMemoryAllocator`
+
+```cpp
+// How upper layers talk to RHI
+FRHIResourceManager& Mgr = RHIServer.GetResourceManager();
+FRHIBufferRef VBO = Mgr.AcquireVertexBuffer(Desc);
+FRHITextureRef Tex = Mgr.AcquireTexture2D(Desc);
+
+FRHICommandList& CL = RHIServer.GetGraphicsQueue().BeginCommandList();
+CL.CopyBuffer(Src, Dst, Size);
+CL.Submit();
+```
+
+### 4. RDG — Render Dependency Graph
+
+Declarative rendering framework. You declare **what** a pass reads/writes, and RDG handles resource transitions, lifetimes, and scheduling:
+
+```cpp
+FRDGBuilder GB;
+FRDGPassParameters Params;
+Params.ColorAttachments[0] = GB.CreateTexture("SceneColor", Desc);
+Params.DepthStencil = GB.CreateTexture("Depth", Desc);
+
+GB.AddRasterPass("BasePass", Params, [](FRHICommandList& CL)
+{
+    CL.SetViewport(0, 0, W, H);
+    CL.SetPipeline(MyPSO);
+    CL.Draw(3, 1, 0, 0);
+});
+
+GB.Execute();
+```
+
+### 5. Shader Pipeline
+
+GLSL source → SPIR-V binary, with Unity-style authoring extensions:
+
+- **`.shader` format**: `Properties{}`, `SubShader{}`, `Pass{}` blocks
+- **Semantic-based vertex input**: `in vec3 a_Position : POSITION` (not `layout(location=N)`)
+- **`a2v` / `v2f` structs**: Standard inter-stage communication
+- **Render states in shader**: `Cull`, `ZWrite`, `Blend` declared in `Pass`
+- **Lazy compilation**: Shaders are compiled on first use (not at boot), enabling real-time shader editing
+- **Compiler**: glslang → SPIR-V + reflection JSON
+
+### 6. Async Transfer Infrastructure
+
+Two levels of async primitives, forming a inheritance chain:
+
+```
+FThreadedServer                    ← Single worker thread + FIFO queue
+  └── TAsyncTransferServer<TReq,TRes>  ← Typed Submit/RetrieveResult
+        ├── FResourceServer             ← Asset IO (file read → codec decode)
+        └── FRenderServer               ← CPU→GPU upload (snapshot → RHI)
+```
+
+`FTransferHandle` is a **lightweight status token** — only query InProgress / Failed / Succeeded. No GPU objects or result data on the handle.
+
+## Extension by the Project
+
+### EngineExtension discovery
+
+Place your extension classes under `Source/Game/` with the correct directory hint for priority:
+
+```
+Source/Game/
+├── System/GC/GCSystem.h       → EExtensionPriority::System
+├── System/Resource/...        → EExtensionPriority::System
+├── World/WorldLayer.h         → EExtensionPriority::Layer
+├── Script/ScriptLayer.h       → EExtensionPriority::Overlay
+└── Editor/EditorLayer.h       → EExtensionPriority::Overlay
+```
+
+Codegen (`maho_tools.py`) scans these directories and generates `Hiyajo-ProjectApp.cpp` with all `RegisterExtension<>` calls. **No manual registration.**
+
+### RenderFeature discovery
+
+Place your render features under `Source/Render/`:
+
+```
+Source/Render/
+├── TriangleBasePassFeature.h  → Auto-registered by codegen
+├── ShadowPassFeature.h        → (future)
+└── PostProcessFeature.h       → (future)
+```
+
+The codegen injects `Server.RegisterFeature<FTriangleBasePassFeature>()` into `PostInitialize()`.
+
+### Render resource exporters
+
+To bridge game-side `UResource` types (project) with engine-side `FRenderServer` (engine), specialize `TRenderResourceExporter` in `Source/Render/RenderResourceExporters.cpp`:
+
+```cpp
+template <>
+struct TRenderResourceExporter<UTexture>
+{
+    static bool TryExport(const UTexture& Texture, FRenderServer& Server);
+};
+```
+
+CPU snapshots (`FTextureCpuSnapshot`, `FMeshCpuSnapshot`, etc.) are defined in the engine's `<Render/ResourceSnapshots.h>` and converted in the project's `ResourceSnapshotConverters.cpp`.
+
+## Key Invariants
+
+1. **Public = `#include <...>`**, Private = `#include "..."` — no `Public/Maho/` nesting
+2. **Allman braces**, Tab indent, English comments
+3. **`U*` types are CPU-only** — no `FRHI*` or Vulkan handles on game objects
+4. **Never hand-edit** `Maho/Source/Generated/**` or `Intermediate/Generated/**`
+5. **No `vulkan.h`** in Public headers — RHI backends are opaque
+6. **Pass `FObjectRef`**, never raw `UObject*` across module boundaries
+
+## Repository Map
 
 ```text
-Maho/                          # 引擎仓库根
-├── setup.bat                   # 安装局部 Python
-├── createProject.bat           # 新建游戏项目（GUI）
-├── clean.bat                   # 清理中间产物
-├── Maho/                      # 引擎模块（DLL 源码）
-│   ├── Source/
-│   │   ├── Public/             # 对外头文件
-│   │   ├── Private/            # 实现
-│   │   └── Generated/          # codegen 输出（gitignore，clean 可清）
-│   ├── Shaders/
-│   └── Plugins/
-├── Build/                      # CMake 入口、模块、游戏工程模板
-├── Tools/                      # 工具脚本 + 局部 python/
-│   └── object_reflect_codegen.bat  # UObject 反射表生成
-│   └── package.bat             # 打包 GUI
-│   └── generateProject.bat     # .cproject / 工作区 → .sln
-├── Maho/ThirdParty/           # 引擎第三方依赖（fonts / nlohmann / …）
-├── Doc/                        # Maho 文档
-│   └── Engine/                 # 引擎 API / 架构 / Agent 规范与进度
-└── README.md
+Maho/                              # Engine repo root
+├── README.md                       # YOU ARE HERE
+├── AGENTS.md                       # AI agent entry point
+├── Maho/                          # Engine DLL sources
+│   ├── Source/Public/              # Public API
+│   │   ├── Core/
+│   │   │   ├── App.h               # FApp — application lifecycle
+│   │   │   ├── Engine.h            # FEngine
+│   │   │   ├── Extension/          # IEngineExtension, FLayer, EExtensionPriority
+│   │   │   ├── Server/             # FThreadedServer, TAsyncTransferServer
+│   │   │   └── Export.h            # MAHO_API / MAHO_OBJECT macros
+│   │   └── Render/
+│   │       ├── RHI/                # IRHI, FRHI*, CONTRACT.md
+│   │       ├── RDG/                # FRDGBuilder, FRDGPass
+│   │       ├── Sequencer/          # IRenderFeature, ERenderPipelineStage
+│   │       ├── RenderServer.h      # FRenderServer
+│   │       ├── RenderServerTypes.h # FScene, FTransferHandle
+│   │       └── UI/ImGuiSystem.h    # FImGuiSystem
+│   ├── Source/Private/             # Engine internals
+│   │   ├── Core/App.cpp, Engine.cpp
+│   │   ├── Core/Extension/
+│   │   │   ├── Platform/           # FPlatformSystem
+│   │   │   └── Render/             # FRenderSystem
+│   │   └── Render/
+│   │       ├── RHI/VulkanRHI.*     # Vulkan backend (VMA, dynamic rendering)
+│   │       ├── RDG/RDGBuilder.cpp
+│   │       ├── RenderServer.cpp
+│   │       ├── ShaderCompiler.cpp  # GLSL → SPIR-V
+│   │       └── UI/ImGuiSystem.cpp  # ImGui Vulkan integration
+│   ├── Source/Generated/           # codegen (gitignored)
+│   │   ├── ObjectReflectTypes.gen.*
+│   │   ├── ResourceTypes.gen.*
+│   │   └── LuaReflectBindings.gen.*
+│   ├── ThirdParty/                 # nlohmann, VMA header, fonts
+│   └── Plugins/                    # Optional .cplugin modules
+├── Build/                          # CMake toolchain + templates
+├── Tools/                          # setup, generateProject, codegen
+│   ├── maho_tools.py               # Extension/Feature auto-scan + codegen
+│   └── object_reflect_codegen.py   # UObject reflection codegen
+└── Doc/Engine/                     # Architecture docs, coding standards
 ```
 
-游戏工程（由模板生成）大致为：
+## Quick Start
 
-```text
-MyGame/
-├── MyGame.cproject
-├── package.bat / clean.bat
-├── Source/
-├── Scripts/
-├── Intermediate/               # VS / CMake 中间文件
-├── Binaries/
-└── Packaged/
+```bat
+# First time
+setup.bat                           # Install local Python
+createProject.bat                   # Create a game project
+
+# Development
+# Double-click .cproject → generates .sln with auto-registered extensions
+# Build in Visual Studio
 ```
 
----
+## Documentation
 
-## 文档
-
-| 文档 | 说明 |
-|------|------|
-| [**AGENTS.md**](AGENTS.md) | **所有 AI Agent 第一站**（项目地图、约束入口、进度指路） |
-| [Doc/Engine/AGENTS.md](Doc/Engine/AGENTS.md) | 引擎开发 Agent 说明 |
-| [Doc/Engine/CODING_STANDARDS.md](Doc/Engine/CODING_STANDARDS.md) | C++ 编码规范（全文） |
-| [Doc/Engine/DESIGN_JOURNAL.md](Doc/Engine/DESIGN_JOURNAL.md) | 子系统做到哪一步、设计意图与踩坑 |
-| [Doc/Engine/ObjectReflectAPI.html](Doc/Engine/ObjectReflectAPI.html) | Object / Struct / Enum 反射 C++ API（codegen 同步类型目录） |
-| [Doc/Engine/LuaAPI.html](Doc/Engine/LuaAPI.html) | Lua API（手工 `maho.*`；Object usertype 另案） |
-| [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html) | 引擎架构（FApp / Extension / RHI 等；若与代码冲突以代码与 CONTRACT 为准） |
-
-用浏览器或 Cursor **Live Preview** 打开 HTML 即可。Markdown（`AGENTS.md` / `CONTRACT.md` / `DESIGN_JOURNAL.md`）直接给 Agent 读。
+| Document | Purpose |
+|----------|---------|
+| [AGENTS.md](AGENTS.md) | AI agent first stop — project map, invariants |
+| [Doc/Engine/DESIGN_JOURNAL.md](Doc/Engine/DESIGN_JOURNAL.md) | Subsystem status, design rationale, pitfalls |
+| [Doc/Engine/CODING_STANDARDS.md](Doc/Engine/CODING_STANDARDS.md) | Full C++ coding standard |
+| [Doc/Engine/引擎架构设计.html](Doc/Engine/引擎架构设计.html) | Architecture overview diagram |
+| [`**/CONTRACT.md`](Maho/Source/Public/Render/RHI/CONTRACT.md) | Module-level laws and invariants |

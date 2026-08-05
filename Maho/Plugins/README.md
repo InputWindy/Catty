@@ -3,22 +3,29 @@
 Optional runtime plugins live here (`.cplugin` + `Source/`). They are **not** part of
 `Maho.dll`.
 
-Built-in always-on extensions ship inside the engine core. Games get a **generated**
-`Source/Generated/<Game>App.cpp` (double-click `.cproject` / `generateProject`) that
-calls `RegisterExtension` for builtins, the game Layer, and enabled plugins.
+## Built-in engine systems (Mahi.dll, always loaded)
+
+These are **engine-scaffold systems** that ship inside the engine core — every game gets them:
 
 | Extension class | `GetName()` | Location |
 |-----------------|-------------|----------|
-| `FPlatformSystem` | `Platform` | `Source/Public/Core/Extension/Platform/Platform.h` |
-| `FRenderSystem` | `Render` | `Source/Public/Core/Extension/Render/Render.h` |
-| `FGCSystem` | `GC` | `Source/Public/Core/Extension/GC/GC.h` |
-| `FResourceSystem` | `Resource` | `Source/Public/Core/Extension/Resource/Resource.h` |
-| `FWorkerPoolSystem` | `WorkerPool` | `Source/Public/Core/Extension/WorkerPool/WorkerPool.h` |
-| `FScriptSystem` | `Script` | `Source/Public/Core/Extension/Script/Script.h` |
+| `FPlatformSystem` | `Platform` | `Maho/Source/Public/Core/Extension/Platform/Platform.h` |
+| `FRenderSystem` | `Render` | `Maho/Source/Public/Core/Extension/Render/Render.h` |
 
-Game-specific plugins belong in the game project's `Plugins/`.
+## Project-side systems (`Source/Game/System/` in game project)
 
-## Minimal example: `Sample`
+These are **application-layer systems** — the project owns them, not the engine:
+
+| System | Location in project |
+|--------|-------------------|
+| `FGCSystem` | `Source/Game/System/GC/GCSystem.h` |
+| `FResourceSystem` | `Source/Game/System/Resource/ResourceSystem.h` |
+| `FWorkerPoolSystem` | `Source/Game/System/WorkerPool/WorkerPoolSystem.h` |
+| `FScriptSystem` | `Source/Game/System/Script/ScriptSystem.h` |
+
+They are auto-discovered by codegen from `Source/Game/System/` and registered in the generated `<Game>App.cpp`.
+
+## Minimal plugin example: `Sample`
 
 ```text
 Maho/Plugins/Sample/
