@@ -4,38 +4,7 @@
 
 ## Design Philosophy
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                     Game Project                         │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
-│  │ GCSystem │ │Resource  │ │WorkerPool│ │ScriptSystem│ │
-│  │          │ │System    │ │System    │ │            │ │
-│  └──────────┘ └──────────┘ └──────────┘ └────────────┘ │
-│  ┌──────────┐ ┌──────────────────────────────────────┐  │
-│  │ UObject  │ │          ECS + World + Level         │  │
-│  │ System   │ │   (Archetype / Component / System)   │  │
-│  └──────────┘ └──────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │        Custom Render Pipeline (RenderFeatures)    │   │
-│  │    TriangleBasePass · ShadowPass · PostProcess    │   │
-│  └──────────────────────────────────────────────────┘   │
-├──────────────────────────────────────────────────────────┤
-│                     Maho Engine DLL                     │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
-│  │   FApp   │ │Platform  │ │ Render   │ │  ImGui     │ │
-│  │Extension │ │System    │ │ System   │ │  System    │ │
-│  │Framework │ │          │ │          │ │            │ │
-│  └──────────┘ └──────────┘ └──────────┘ └────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────────────┐ │
-│  │   RHI    │ │   RDG    │ │  Shader Pipeline          │ │
-│  │ (Vulkan) │ │ (Graph)  │ │  GLSL → SPIR-V            │ │
-│  └──────────┘ └──────────┘ └──────────────────────────┘ │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │   Async Infrastructure                            │   │
-│  │   FThreadedServer · TAsyncTransferServer          │   │
-│  └──────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────┘
-```
+![Engine Architecture](Doc/Engine/diagrams/engine_architecture.png)
 
 ### What stays in the engine (shell)
 
@@ -166,14 +135,9 @@ GLSL source → SPIR-V binary, with Unity-style authoring extensions:
 
 ### 6. Async Transfer Infrastructure
 
-Two levels of async primitives, forming a inheritance chain:
+Two levels of async primitives, forming an inheritance chain:
 
-```
-FThreadedServer                    ← Single worker thread + FIFO queue
-  └── TAsyncTransferServer<TReq,TRes>  ← Typed Submit/RetrieveResult
-        ├── FResourceServer             ← Asset IO (file read → codec decode)
-        └── FRenderServer               ← CPU→GPU upload (snapshot → RHI)
-```
+![Async Infrastructure](Doc/Engine/diagrams/async_infrastructure.png)
 
 `FTransferHandle` is a **lightweight status token** — only query InProgress / Failed / Succeeded. No GPU objects or result data on the handle.
 
