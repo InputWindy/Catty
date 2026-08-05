@@ -74,7 +74,7 @@ void FMaterialParamMap::SetFloat4(const char* Name, float X, float Y, float Z, f
 	Values[Name] = std::move(Val);
 }
 
-void FMaterialParamMap::SetTexture(const char* Name, const FSoftObjectPath& Path)
+void FMaterialParamMap::SetTexture(const char* Name, const std::string& Path)
 {
 	FMaterialParamValue Val;
 	Val.TextureAsset = Path;

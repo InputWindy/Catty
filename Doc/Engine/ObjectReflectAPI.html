@@ -219,14 +219,12 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 <!-- @@MAHO_OBJECT_REFLECT_TOC_BEGIN@@ -->
 	<div class="sec">Objects</div>
 	<ul>
-		<li><a href="#type-Maho-UObject">UObject</a></li>
 	</ul>
 	<div class="sec">Structs</div>
 	<ul>
 	</ul>
 	<div class="sec">Enums</div>
 	<ul>
-		<li><a href="#type-Maho-EObjectFlags">EObjectFlags</a></li>
 	</ul>
 <!-- @@MAHO_OBJECT_REFLECT_TOC_END@@ -->
 </nav>
@@ -476,56 +474,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 <section class="card" id="catalog">
 	<h2>Registered types</h2>
 	<div class="body">
-		<p>Codegen 扫描结果：1 object / 0 struct / 1 enum。 修改标注宏后重新构建即可刷新本节。</p>
-
-		<article class="fn" id="type-Maho-UObject">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::UObject</h3>
-				<span class="tag tag-object">object</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">super: (root) · Maho/Source/Public/Core/Object/Object.h:119</code>
-				<h4>Properties</h4>
-				<table>
-					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
-					<tbody>
-						<tr><td><code>ObjectName</code></td><td><code>std::string</code></td><td><code>String</code></td></tr>
-					</tbody>
-				</table>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Signature</th></tr></thead>
-					<tbody>
-						<tr><td><code>GetName</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>GetPathName</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>GetOuter</code></td><td><code>FObjectRef()</code></td></tr>
-						<tr><td><code>GetPackage</code></td><td><code>FObjectRef()</code></td></tr>
-						<tr><td><code>GetRefCount</code></td><td><code>std::uint32_t()</code></td></tr>
-						<tr><td><code>GetFlags</code></td><td><code>EObjectFlags()</code></td></tr>
-						<tr><td><code>HasAnyFlags</code></td><td><code>bool(EObjectFlags)</code></td></tr>
-						<tr><td><code>IsPendingKill</code></td><td><code>bool()</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-EObjectFlags">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::EObjectFlags</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint32_t · Maho/Source/Public/Core/Object/Object.h:77</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>None</code></td><td><code>0</code></td></tr>
-						<tr><td><code>PendingKill</code></td><td><code>1</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
+		<p>Codegen 扫描结果：0 object / 0 struct / 0 enum。 修改标注宏后重新构建即可刷新本节。</p>
 
 	</div>
 </section>

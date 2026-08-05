@@ -839,7 +839,7 @@ def render_header() -> str:
 		"//*****************************************************************************",
 		"#pragma once",
 		"",
-		'#include <Core/Object/ObjectReflect.h>',
+		'#include "Game/Object/ObjectReflect.h"',
 		"",
 		"namespace Maho",
 		"{",
@@ -1055,7 +1055,7 @@ def render_cpp(
 		"",
 		'#include <ObjectReflectTypes.gen.h>',
 		"",
-		'#include <Core/Object/ObjectReflect.h>',
+		'#include "Game/Object/ObjectReflect.h"',
 		"",
 	]
 	for inc in includes:
@@ -1635,7 +1635,7 @@ def render_lua_header(objects: list[FTypeEntry]) -> str:
 		"//*****************************************************************************",
 		"#pragma once",
 		"",
-		'#include <Core/Object/Object.h>',
+		'#include "Game/Object/Object.h"',
 		"",
 		"#define SOL_ALL_SAFETIES_ON 1",
 		"#include <sol/sol.hpp>",
@@ -1703,7 +1703,7 @@ def render_lua_cpp(objects: list[FTypeEntry]) -> str:
 		"#define SOL_ALL_SAFETIES_ON 1",
 		"#include <sol/sol.hpp>",
 		"",
-		'#include <Core/Object/ObjectReflect.h>',
+		'#include "Game/Object/ObjectReflect.h"',
 		'#include <ObjectReflectTypes.gen.h>',
 		"",
 	]

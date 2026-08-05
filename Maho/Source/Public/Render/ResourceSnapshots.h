@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-#include <Core/Object/SoftObjectPath.h>
-
 #include <cstdint>
 #include <memory>
 #include <string>
