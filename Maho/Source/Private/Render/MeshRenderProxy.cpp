@@ -1,7 +1,5 @@
-#include "MeshRenderProxy.h"
+﻿#include "MeshRenderProxy.h"
 
-#include <Core/Extension/Resource/Resource.h>
-#include <Core/Object/SoftObjectPath.h>
 #include <Core/System/Log.h>
 #include <Render/RHI/RHI.h>
 #include <Render/RHI/RHIResourceManager.h>
@@ -34,66 +32,6 @@ constexpr std::uint32_t kMeshVertexStride = sizeof(float) * 8; // P3 N3 UV2
 }
 
 } // namespace
-
-bool TryBuildMeshCpuSnapshot(const UStaticMesh& Mesh, FMeshCpuSnapshot& Out)
-{
-	if (Mesh.GetLoadState() != EResourceLoadState::Ready)
-	{
-		return false;
-	}
-
-	const std::vector<float>& Positions = Mesh.GetPositions();
-	const std::vector<float>& Normals = Mesh.GetNormals();
-	const std::vector<float>& UVs = Mesh.GetUVs();
-	const std::vector<std::uint32_t>& Indices = Mesh.GetIndices();
-	if (Positions.size() < 3 || Indices.empty() || (Positions.size() % 3u) != 0)
-	{
-		return false;
-	}
-
-	const std::uint32_t VertexCount = static_cast<std::uint32_t>(Positions.size() / 3u);
-	Out = FMeshCpuSnapshot{};
-	Out.CatalogKey = FResourceSystem::MakeResourceCatalogKey(Mesh);
-	Out.Generation = Mesh.GetContentGeneration();
-	Out.VertexStride = kMeshVertexStride;
-	Out.VertexCount = VertexCount;
-	Out.bHasSkinning = false;
-	Out.Indices = Indices;
-	Out.InterleavedVertices.resize(static_cast<std::size_t>(VertexCount) * kMeshVertexStride);
-
-	for (std::uint32_t Vi = 0; Vi < VertexCount; ++Vi)
-	{
-		float* Dst = reinterpret_cast<float*>(
-			Out.InterleavedVertices.data() + static_cast<std::size_t>(Vi) * kMeshVertexStride);
-		Dst[0] = Positions[Vi * 3u + 0u];
-		Dst[1] = Positions[Vi * 3u + 1u];
-		Dst[2] = Positions[Vi * 3u + 2u];
-		if (Normals.size() >= (Vi + 1u) * 3u)
-		{
-			Dst[3] = Normals[Vi * 3u + 0u];
-			Dst[4] = Normals[Vi * 3u + 1u];
-			Dst[5] = Normals[Vi * 3u + 2u];
-		}
-		else
-		{
-			Dst[3] = 0.f;
-			Dst[4] = 1.f;
-			Dst[5] = 0.f;
-		}
-		if (UVs.size() >= (Vi + 1u) * 2u)
-		{
-			Dst[6] = UVs[Vi * 2u + 0u];
-			Dst[7] = UVs[Vi * 2u + 1u];
-		}
-		else
-		{
-			Dst[6] = 0.f;
-			Dst[7] = 0.f;
-		}
-	}
-
-	return IsSupportedMeshUpload(Out);
-}
 
 FMeshRenderProxy::FMeshRenderProxy(std::string InCatalogKey)
 	: CatalogKey(std::move(InCatalogKey))

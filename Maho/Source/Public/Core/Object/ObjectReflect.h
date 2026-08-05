@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 /**
  * UObject / struct / enum runtime reflection (editor properties / blueprint call).
@@ -92,7 +92,7 @@ enum class EPropertyFlags : std::uint32_t
  * Type-erased value for Get/SetPropertyValue and CallFunction.
  * ObjectRef type owns one AddRef while ObjectValue is non-null.
  */
-struct MAHO_API FPropertyValue
+struct FPropertyValue
 {
 	EPropertyType Type = EPropertyType::Bool;
 
@@ -189,6 +189,7 @@ template <typename TEnum>
 	return Out;
 }
 
+
 using FPropertyGetterFn = bool (*)(const UObject* Object, FPropertyValue& OutValue);
 using FPropertySetterFn = bool (*)(UObject* Object, const FPropertyValue& Value);
 /** Args may be null when ArgCount == 0. OutReturn may be null (ignored for void). */
@@ -242,7 +243,7 @@ struct FObjectType
 /** Friend of every MAHO_OBJECT type; method bodies live in ObjectReflectTypes.gen.cpp. */
 struct FObjectReflectDetail;
 
-class MAHO_API FObjectTypeRegistry
+class FObjectTypeRegistry
 {
 public:
 	static FObjectTypeRegistry& Get();
@@ -288,7 +289,7 @@ struct FStructType
 /** Friend of every MAHO_STRUCT type; method bodies live in ObjectReflectTypes.gen.cpp. */
 struct FStructReflectDetail;
 
-class MAHO_API FStructTypeRegistry
+class FStructTypeRegistry
 {
 public:
 	static FStructTypeRegistry& Get();
@@ -336,7 +337,7 @@ struct FEnumType
 	[[nodiscard]] const FEnumValue* FindByValue(std::int64_t InValue) const;
 };
 
-class MAHO_API FEnumTypeRegistry
+class FEnumTypeRegistry
 {
 public:
 	static FEnumTypeRegistry& Get();

@@ -1,7 +1,5 @@
-#include "AnimationRenderProxy.h"
+﻿#include "AnimationRenderProxy.h"
 
-#include <Core/Extension/Resource/Resource.h>
-#include <Core/Object/SoftObjectPath.h>
 #include <Core/System/Log.h>
 #include <Render/RHI/RHIServer.h>
 
@@ -14,38 +12,6 @@ namespace
 {
 
 } // namespace
-
-bool TryBuildAnimationCpuSnapshot(const UAnimation& Animation, FAnimationCpuSnapshot& Out)
-{
-	if (Animation.GetLoadState() != EResourceLoadState::Ready)
-	{
-		return false;
-	}
-
-	Out = FAnimationCpuSnapshot{};
-	Out.CatalogKey = FResourceSystem::MakeResourceCatalogKey(Animation);
-	Out.Generation = Animation.GetContentGeneration();
-	Out.DurationSeconds = Animation.GetDurationSeconds();
-
-	const FSoftObjectPath& SkeletonPath = Animation.GetSkeleton();
-	if (SkeletonPath.IsValid())
-	{
-		Out.SkeletonCatalogKey = FResourceSystem::NormalizeResourceVirtualPath(
-			SkeletonPath.GetAssetPathString());
-	}
-
-	Out.Tracks.reserve(Animation.GetTracks().size());
-	for (const FAnimationTrack& Track : Animation.GetTracks())
-	{
-		FAnimationTrackSnapshot SnapTrack{};
-		SnapTrack.TargetBoneName = Track.TargetBoneName;
-		SnapTrack.TargetBoneIndex = -1;
-		SnapTrack.Keys = Track.Keys;
-		Out.Tracks.push_back(std::move(SnapTrack));
-	}
-
-	return !Out.CatalogKey.empty();
-}
 
 FAnimationRenderProxy::FAnimationRenderProxy(std::string InCatalogKey)
 	: CatalogKey(std::move(InCatalogKey))

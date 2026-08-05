@@ -220,23 +220,13 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 	<div class="sec">Objects</div>
 	<ul>
 		<li><a href="#type-Maho-UObject">UObject</a></li>
-		<li><a href="#type-Maho-UPackage">UPackage</a></li>
-		<li><a href="#type-Maho-UResource">UResource</a></li>
 	</ul>
 	<div class="sec">Structs</div>
 	<ul>
 	</ul>
 	<div class="sec">Enums</div>
 	<ul>
-		<li><a href="#type-Maho-EModelAxis">EModelAxis</a></li>
-		<li><a href="#type-Maho-EModelHandedness">EModelHandedness</a></li>
 		<li><a href="#type-Maho-EObjectFlags">EObjectFlags</a></li>
-		<li><a href="#type-Maho-EPackageFlags">EPackageFlags</a></li>
-		<li><a href="#type-Maho-EResourceIOMode">EResourceIOMode</a></li>
-		<li><a href="#type-Maho-EResourceLoadState">EResourceLoadState</a></li>
-		<li><a href="#type-Maho-EResourceType">EResourceType</a></li>
-		<li><a href="#type-Maho-ETextureDimension">ETextureDimension</a></li>
-		<li><a href="#type-Maho-ETexturePixelFormat">ETexturePixelFormat</a></li>
 	</ul>
 <!-- @@MAHO_OBJECT_REFLECT_TOC_END@@ -->
 </nav>
@@ -486,7 +476,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 <section class="card" id="catalog">
 	<h2>Registered types</h2>
 	<div class="body">
-		<p>Codegen 扫描结果：3 object / 0 struct / 9 enum。 修改标注宏后重新构建即可刷新本节。</p>
+		<p>Codegen 扫描结果：1 object / 0 struct / 1 enum。 修改标注宏后重新构建即可刷新本节。</p>
 
 		<article class="fn" id="type-Maho-UObject">
 			<div class="fn-head">
@@ -494,7 +484,7 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 				<span class="tag tag-object">object</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">super: (root) · Maho/Source/Public/Core/Object/Object.h:130</code>
+				<code class="sig">super: (root) · Maho/Source/Public/Core/Object/Object.h:119</code>
 				<h4>Properties</h4>
 				<table>
 					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
@@ -519,251 +509,19 @@ if (const FEnumValue* Entry = E-&gt;FindByName("Texture"))
 			</div>
 		</article>
 
-		<article class="fn" id="type-Maho-UPackage">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::UPackage</h3>
-				<span class="tag tag-object">object</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">super: Maho::UObject · Maho/Source/Public/Core/Object/Package.h:80</code>
-				<p>无反射属性。</p>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Signature</th></tr></thead>
-					<tbody>
-						<tr><td><code>FindObject</code></td><td><code>FObjectRef(std::string)</code></td></tr>
-						<tr><td><code>GetFilePath</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>SetFilePath</code></td><td><code>void(std::string)</code></td></tr>
-						<tr><td><code>GetPackageFlags</code></td><td><code>EPackageFlags()</code></td></tr>
-						<tr><td><code>IsPersistent</code></td><td><code>bool()</code></td></tr>
-						<tr><td><code>IsTransient</code></td><td><code>bool()</code></td></tr>
-						<tr><td><code>GetObjectCount</code></td><td><code>std::uint32_t()</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-UResource">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::UResource</h3>
-				<span class="tag tag-object">object</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">super: Maho::UObject · Maho/Source/Public/Core/Extension/Resource/Resource.h:145</code>
-				<h4>Properties</h4>
-				<table>
-					<thead><tr><th>Name</th><th>C++</th><th>Type</th></tr></thead>
-					<tbody>
-						<tr><td><code>Type</code></td><td><code>EResourceType</code></td><td><code>EnumInt32</code></td></tr>
-						<tr><td><code>SourcePath</code></td><td><code>std::string</code></td><td><code>String</code></td></tr>
-						<tr><td><code>LoadState</code></td><td><code>EResourceLoadState</code></td><td><code>EnumInt32</code></td></tr>
-					</tbody>
-				</table>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Signature</th></tr></thead>
-					<tbody>
-						<tr><td><code>GetType</code></td><td><code>EResourceType()</code></td></tr>
-						<tr><td><code>GetSourcePath</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>GetPath</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>GetLoadState</code></td><td><code>EResourceLoadState()</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-EModelAxis">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::EModelAxis</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:88</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
-						<tr><td><code>X</code></td><td><code>1</code></td></tr>
-						<tr><td><code>Y</code></td><td><code>2</code></td></tr>
-						<tr><td><code>Z</code></td><td><code>3</code></td></tr>
-						<tr><td><code>NegX</code></td><td><code>4</code></td></tr>
-						<tr><td><code>NegY</code></td><td><code>5</code></td></tr>
-						<tr><td><code>NegZ</code></td><td><code>6</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-EModelHandedness">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::EModelHandedness</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:100</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
-						<tr><td><code>Right</code></td><td><code>1</code></td></tr>
-						<tr><td><code>Left</code></td><td><code>2</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
 		<article class="fn" id="type-Maho-EObjectFlags">
 			<div class="fn-head">
 				<h3 class="fn-name">Maho::EObjectFlags</h3>
 				<span class="tag tag-enum">enum</span>
 			</div>
 			<div class="fn-body">
-				<code class="sig">enum class : std::uint32_t · Maho/Source/Public/Core/Object/Object.h:82</code>
+				<code class="sig">enum class : std::uint32_t · Maho/Source/Public/Core/Object/Object.h:77</code>
 				<h4>Values</h4>
 				<table>
 					<thead><tr><th>Name</th><th>Value</th></tr></thead>
 					<tbody>
 						<tr><td><code>None</code></td><td><code>0</code></td></tr>
 						<tr><td><code>PendingKill</code></td><td><code>1</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-EPackageFlags">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::EPackageFlags</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint32_t · Maho/Source/Public/Core/Object/Package.h:28</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>None</code></td><td><code>0</code></td></tr>
-						<tr><td><code>Transient</code></td><td><code>1</code></td></tr>
-						<tr><td><code>Persistent</code></td><td><code>2</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-EResourceIOMode">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::EResourceIOMode</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:544</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>Async</code></td><td><code>0</code></td></tr>
-						<tr><td><code>Sync</code></td><td><code>1</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-EResourceLoadState">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::EResourceLoadState</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:47</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>Invalid</code></td><td><code>0</code></td></tr>
-						<tr><td><code>Pending</code></td><td><code>1</code></td></tr>
-						<tr><td><code>Ready</code></td><td><code>2</code></td></tr>
-						<tr><td><code>Failed</code></td><td><code>3</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-EResourceType">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::EResourceType</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:57</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
-						<tr><td><code>Raw</code></td><td><code>1</code></td></tr>
-						<tr><td><code>Texture</code></td><td><code>2</code></td></tr>
-						<tr><td><code>Texture2D</code></td><td><code>3</code></td></tr>
-						<tr><td><code>Texture3D</code></td><td><code>4</code></td></tr>
-						<tr><td><code>TextureCube</code></td><td><code>5</code></td></tr>
-						<tr><td><code>TextureCubeArray</code></td><td><code>6</code></td></tr>
-						<tr><td><code>Texture2DArray</code></td><td><code>7</code></td></tr>
-						<tr><td><code>Mesh</code></td><td><code>8</code></td></tr>
-						<tr><td><code>Material</code></td><td><code>9</code></td></tr>
-						<tr><td><code>Skeleton</code></td><td><code>10</code></td></tr>
-						<tr><td><code>Animation</code></td><td><code>11</code></td></tr>
-						<tr><td><code>AnimationGraph</code></td><td><code>12</code></td></tr>
-						<tr><td><code>Prefab</code></td><td><code>13</code></td></tr>
-						<tr><td><code>Shader</code></td><td><code>14</code></td></tr>
-						<tr><td><code>Audio</code></td><td><code>15</code></td></tr>
-						<tr><td><code>Data</code></td><td><code>16</code></td></tr>
-						<tr><td><code>Level</code></td><td><code>17</code></td></tr>
-						<tr><td><code>World</code></td><td><code>18</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-ETextureDimension">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::ETextureDimension</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:112</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>Tex2D</code></td><td><code>0</code></td></tr>
-						<tr><td><code>Tex3D</code></td><td><code>1</code></td></tr>
-						<tr><td><code>Cube</code></td><td><code>2</code></td></tr>
-						<tr><td><code>CubeArray</code></td><td><code>3</code></td></tr>
-						<tr><td><code>Tex2DArray</code></td><td><code>4</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="type-Maho-ETexturePixelFormat">
-			<div class="fn-head">
-				<h3 class="fn-name">Maho::ETexturePixelFormat</h3>
-				<span class="tag tag-enum">enum</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">enum class : std::uint8_t · Maho/Source/Public/Core/Extension/Resource/Resource.h:126</code>
-				<h4>Values</h4>
-				<table>
-					<thead><tr><th>Name</th><th>Value</th></tr></thead>
-					<tbody>
-						<tr><td><code>Unknown</code></td><td><code>0</code></td></tr>
-						<tr><td><code>R8</code></td><td><code>1</code></td></tr>
-						<tr><td><code>RG8</code></td><td><code>2</code></td></tr>
-						<tr><td><code>RGB8</code></td><td><code>3</code></td></tr>
-						<tr><td><code>RGBA8</code></td><td><code>4</code></td></tr>
-						<tr><td><code>RGBA16F</code></td><td><code>5</code></td></tr>
-						<tr><td><code>RGBA32F</code></td><td><code>6</code></td></tr>
-						<tr><td><code>BlockCompressed</code></td><td><code>7</code></td></tr>
 					</tbody>
 				</table>
 			</div>

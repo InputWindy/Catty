@@ -1,4 +1,4 @@
-# Shared helpers for create_project.py / generateProject.py / package.py / clean.py
+﻿# Shared helpers for create_project.py / generateProject.py / package.py / clean.py
 from __future__ import annotations
 
 import json
@@ -1150,9 +1150,15 @@ def scan_game_extensions(source_game_dir: Path) -> list[dict[str, str]]:
 		results = _scan_header_for_class(header_path, r"\b(?:IEngineExtension|FLayer)\b")
 		for info in results:
 			full_cls = _full_class_name(info)
-			# Priority heuristic: Editor/ and Script/ → Overlay, everything else → Layer
+			# Priority heuristic: System/ → System, Editor/Script → Overlay, else → Layer
+			is_system = "/System/" in rel
 			is_overlay = "/Editor/" in rel or "/Script/" in rel
-			priority = "Overlay" if is_overlay else "Layer"
+			if is_system:
+				priority = "System"
+			elif is_overlay:
+				priority = "Overlay"
+			else:
+				priority = "Layer"
 			exts.append({
 				"class": full_cls,
 				"namespace": info["namespace"],
@@ -1264,12 +1270,8 @@ def generate_game_app_cpp(cproject_path: Path, *, log: Any = print) -> Path:
 			"\t{",
 			"\t\tusing Maho::EExtensionPriority;",
 			"",
-			"\t\tRegisterExtension<Maho::FWorkerPoolSystem>(EExtensionPriority::System);",
 			"\t\tRegisterExtension<Maho::FPlatformSystem>(EExtensionPriority::System);",
 			"\t\tRegisterExtension<Maho::FRenderSystem>(EExtensionPriority::System);",
-			"\t\tRegisterExtension<Maho::FGCSystem>(EExtensionPriority::System);",
-			"\t\tRegisterExtension<Maho::FResourceSystem>(EExtensionPriority::System);",
-			"\t\tRegisterExtension<Maho::FScriptSystem>(EExtensionPriority::System);",
 			"",
 		]
 	)

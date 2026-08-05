@@ -17,7 +17,6 @@
 #include <Core/System/Timer.h>
 #include <Core/System/ConfigFile.h>
 #include <Core/Json.h>
-#include <Core/Object/PoolAllocator.h>
 #include <Core/System/ConsoleVariable.h>
 #include <Core/System/Console.h>
 #include <Core/Delegate.h>
@@ -26,15 +25,10 @@
 #include <Core/Concurrent/AsyncTask.h>
 #include <Core/Engine.h>
 #include <Core/System/Paths.h>
-#include <Core/Object/SoftObjectPath.h>
 #include <Core/Sequencer/EngineExtension.h>
 #include <Core/Application/App.h>
-#include <Core/Extension/GC/GC.h>
-#include <Core/Extension/WorkerPool/WorkerPool.h>
 #include <Core/Extension/Platform/Platform.h>
 #include <Core/Extension/Render/Render.h>
-#include <Core/Extension/Resource/Resource.h>
-#include <Core/Extension/Script/Script.h>
 #include <Core/System/PlatformWindow.h>
 #include <Render/RHI/RHI.h>
 #include <Render/RHI/RHIServer.h>
@@ -42,8 +36,6 @@
 #include <Render/RenderPipelineStage.h>
 #include <Render/SceneUpdatePacket.h>
 #include <Render/Sequencer/RenderFeature.h>
-#include <Core/Object/Object.h>
-#include <Core/Object/Package.h>
 #include <Core/Server/ThreadedServer.h>
 #include <Core/Server/ServerTask.h>
 #include <Core/Server/TaskContext.h>

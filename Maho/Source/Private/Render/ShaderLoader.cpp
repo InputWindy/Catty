@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <unordered_set>
 

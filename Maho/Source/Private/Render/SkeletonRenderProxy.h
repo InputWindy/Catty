@@ -19,7 +19,7 @@ class FRHIFence;
 class FRHICommandList;
 class FRHIBuffer;
 
-[[nodiscard]] bool TryBuildSkeletonCpuSnapshot(const USkeleton& Skeleton, FSkeletonCpuSnapshot& Out);
+// TryBuildSkeletonCpuSnapshot moved to project (needs USkeleton)
 
 class FSkeletonRenderProxy
 {

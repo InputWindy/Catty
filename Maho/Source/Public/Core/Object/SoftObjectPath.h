@@ -13,22 +13,8 @@ class FObjectRef;
 /**
  * Soft reference string (UE FSoftObjectPath lite).
  * Serialisable object address — not a live FObjectRef wrapper.
- *
- * Game code resolves via Resolve() / TryLoad() against FGCSystem LiveObjects and the private Resource module.
- *
- * Supported forms:
- *   /Game/Maps/Demo.Demo
- *   /Game/Maps/Demo.Demo:Subobject
- *   UResource'/Game/Maps/Demo.Demo'
- *   UResource'/Game/Maps/Demo.Demo:Subobject'
- *
- * Segments:
- *   AssetClass  — optional type name outside the quotes
- *   PackageName — long package path (/Game/...)
- *   AssetName   — object name inside the package
- *   SubPath     — subobject chain after ':' (no leading colon)
  */
-class MAHO_API FSoftObjectPath
+class FSoftObjectPath
 {
 public:
 	FSoftObjectPath() = default;
@@ -42,19 +28,36 @@ public:
 		std::string InPackageName,
 		std::string InAssetName,
 		std::string InSubPath = {},
-		std::string InAssetClass = {});
+		std::string InAssetClass = {})
+		: AssetClass(std::move(InAssetClass))
+		, PackageName(std::move(InPackageName))
+		, AssetName(std::move(InAssetName))
+		, SubPath(std::move(InSubPath))
+	{
+	}
 
-	/** Build from a live object: OuterPackage.ObjectName (no class / subpath). */
 	[[nodiscard]] static FSoftObjectPath FromObject(const UObject& Object);
 
-	/** Parse PathString; returns false and Reset() on failure. */
 	[[nodiscard]] bool TrySetPath(const std::string& PathString);
 
-	void Reset();
+	void Reset()
+	{
+		AssetClass.clear();
+		PackageName.clear();
+		AssetName.clear();
+		SubPath.clear();
+	}
 
-	[[nodiscard]] bool IsNull() const;
-	/** PackageName and AssetName both non-empty (resolvable object identity). */
-	[[nodiscard]] bool IsValid() const;
+	[[nodiscard]] bool IsNull() const
+	{
+		return PackageName.empty() && AssetName.empty();
+	}
+
+	[[nodiscard]] bool IsValid() const
+	{
+		return !PackageName.empty() && !AssetName.empty();
+	}
+
 	[[nodiscard]] bool HasSubPath() const { return !SubPath.empty(); }
 	[[nodiscard]] bool HasAssetClass() const { return !AssetClass.empty(); }
 
@@ -68,32 +71,21 @@ public:
 	void SetAssetName(std::string InAsset) { AssetName = std::move(InAsset); }
 	void SetSubPath(std::string InSub) { SubPath = std::move(InSub); }
 
-	/** PackageName.AssetName (no class, no subpath). */
 	[[nodiscard]] std::string GetAssetPathString() const;
-
-	/**
-	 * Full soft path string.
-	 * With class: Class'Package.Asset[:Sub]'
-	 * Without:    Package.Asset[:Sub]
-	 */
 	[[nodiscard]] std::string ToString() const;
-
-	/** Same as ToString() but never wraps Class'...'. */
 	[[nodiscard]] std::string ToStringWithoutClass() const;
 
-	/**
-	 * Resolve among already-loaded packages only (no Import).
-	 * No Resource module / miss → empty Ref.
-	 */
 	[[nodiscard]] FObjectRef Resolve() const;
-
-	/**
-	 * Resolve; if missing, Sync Import<.casset> for the package then Resolve.
-	 * Prefer FResourceSystem::Import<T> when the importer type is known.
-	 */
 	[[nodiscard]] FObjectRef TryLoad() const;
 
-	[[nodiscard]] bool operator==(const FSoftObjectPath& Other) const;
+	[[nodiscard]] bool operator==(const FSoftObjectPath& Other) const
+	{
+		return AssetClass == Other.AssetClass
+			&& PackageName == Other.PackageName
+			&& AssetName == Other.AssetName
+			&& SubPath == Other.SubPath;
+	}
+
 	[[nodiscard]] bool operator!=(const FSoftObjectPath& Other) const
 	{
 		return !(*this == Other);

@@ -1,7 +1,5 @@
-#include "TextureRenderProxy.h"
+﻿#include "TextureRenderProxy.h"
 
-#include <Core/Object/SoftObjectPath.h>
-#include <Core/Extension/Resource/Resource.h>
 #include <Core/System/Log.h>
 #include <Render/RHI/RHI.h>
 #include <Render/RHI/RHIResourceManager.h>
@@ -51,27 +49,6 @@ namespace
 
 } // namespace
 
-bool TryBuildTextureCpuSnapshot(const UTexture& Texture, FTextureCpuSnapshot& Out)
-{
-	if (Texture.GetLoadState() != EResourceLoadState::Ready || Texture.GetPixels().empty())
-	{
-		return false;
-	}
-
-	Out = FTextureCpuSnapshot{};
-	Out.CatalogKey = FResourceSystem::MakeResourceCatalogKey(Texture);
-	Out.Generation = Texture.GetContentGeneration();
-	Out.Dimension = Texture.GetDimension();
-	Out.PixelFormat = Texture.GetPixelFormat();
-	Out.Width = Texture.GetWidth();
-	Out.Height = Texture.GetHeight();
-	Out.Depth = Texture.GetDepth();
-	Out.ArrayLayers = Texture.GetArrayLayers();
-	Out.MipCount = Texture.GetMipCount();
-	Out.bSRGB = Texture.IsSRGB();
-	Out.Pixels = Texture.GetPixels();
-	return IsSupportedUpload(Out);
-}
 
 ERHIFormat MapTexturePixelFormatToRHI(ETexturePixelFormat Format, bool bSRGB)
 {

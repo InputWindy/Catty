@@ -1,8 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include <Core/Engine.h>
 #include <Core/Export.h>
-#include <Core/Extension/Resource/Resource.h>
+#include <Render/ResourceSnapshots.h>
 #include <Core/Server/ThreadedServer.h>
 #include <Core/Server/TransferHandle.h>
 #include <Core/System/PlatformWindow.h>

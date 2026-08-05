@@ -19,7 +19,7 @@ class FRHIFence;
 class FRHICommandList;
 class FRHIBuffer;
 
-[[nodiscard]] bool TryBuildMeshCpuSnapshot(const UStaticMesh& Mesh, FMeshCpuSnapshot& Out);
+// TryBuildMeshCpuSnapshot moved to project (needs UStaticMesh)
 
 class FMeshRenderProxy
 {

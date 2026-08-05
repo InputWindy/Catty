@@ -18,9 +18,8 @@ class UObject;
 
 /**
  * Intrusive refcounted handle for any UObject subclass.
- * Sole caller of UObject::AddRef / ReleaseRef (with FPropertyValue). Use Cast<T>() for typed access.
  */
-class MAHO_API FObjectRef
+class FObjectRef
 {
 public:
 	FObjectRef() = default;
@@ -32,10 +31,8 @@ public:
 	FObjectRef& operator=(const FObjectRef& Other);
 	FObjectRef& operator=(FObjectRef&& Other) noexcept;
 
-	/** Non-null pointer stored (does not prove GC liveness). */
 	[[nodiscard]] bool HasObject() const { return Object != nullptr; }
 
-	/** Non-null and still registered with FGCSystem (safe before dynamic_cast / member access). */
 	[[nodiscard]] bool IsValid() const;
 	[[nodiscard]] explicit operator bool() const { return IsValid(); }
 	[[nodiscard]] UObject& operator*() const { return *Object; }
@@ -70,9 +67,7 @@ private:
 
 	explicit FObjectRef(UObject* InObject);
 
-	/** Live pointer only; nullptr if purged. Prefer Cast<> for typed access. */
 	[[nodiscard]] UObject* Get() const;
-	/** Raw stored address (may be dangling) — Outer walk / Detach only. */
 	[[nodiscard]] UObject* GetRaw() const { return Object; }
 
 	UObject* Object = nullptr;
@@ -120,32 +115,21 @@ inline EObjectFlags& operator&=(EObjectFlags& A, EObjectFlags B)
 
 /**
  * Abstract base for package objects (UE UObject-lite).
- * Not allocatable by itself — construct only via subclasses (UPackage, UResource, ...).
- * Lifetime is RefCount via FObjectRef only — AddRef/ReleaseRef are private.
- * Outer is FObjectRef (empty for UPackage, or for runtime-only objects with no package).
- * Cleanup is fully owned by ~UObject.
- *
- * Reflection (editor / blueprint): MAHO_OBJECT + MAHO_PROPERTY / MAHO_FUNCTION.
  */
 MAHO_OBJECT()
-class MAHO_API UObject
+class UObject
 {
 	MAHO_GENERATED_BODY()
 
 public:
-	virtual ~UObject();
+	virtual ~UObject()
+	{
+		ClearOuter();
+	}
 
 	UObject(const UObject&) = delete;
 	UObject& operator=(const UObject&) = delete;
 
-	// ---------------------------------------------------------------------------
-	// Runtime reflect invoke (by name; not MAHO_FUNCTION markers)
-	// ---------------------------------------------------------------------------
-	/**
-	 * Invoke a reflected function by name (walks Super chain).
-	 * Args is type-erased; count must match the reflected signature.
-	 * OutReturn receives the return value when the function has one (may be null).
-	 */
 	[[nodiscard]] bool CallFunction(
 		std::string_view Name,
 		const FPropertyValue* Args,
@@ -157,10 +141,6 @@ public:
 		return CallFunction(Name, static_cast<const FPropertyValue*>(nullptr), 0, nullptr);
 	}
 
-	/**
-	 * Typed convenience overload. Excludes the type-erased
-	 * CallFunction(Name, Args*, Count, OutReturn) form (and nullptr Args).
-	 */
 	template <typename TFirst, typename... TRest>
 	[[nodiscard]] bool CallFunction(std::string_view Name, TFirst&& First, TRest&&... Rest)
 		requires(
@@ -182,28 +162,24 @@ public:
 	[[nodiscard]] bool GetPropertyValue(std::string_view Name, FPropertyValue& OutValue) const;
 	[[nodiscard]] bool SetPropertyValue(std::string_view Name, const FPropertyValue& Value);
 
-	// ---------------------------------------------------------------------------
-	// Package serialize hooks (not a GC mark graph)
-	// ---------------------------------------------------------------------------
-	virtual void GetReferencedObjects(std::vector<UObject*>& OutObjects) const;
-	virtual void SetReferencedObjects(const std::vector<UObject*>& InObjects);
+	virtual void GetReferencedObjects(std::vector<UObject*>& OutObjects) const
+	{
+		(void)OutObjects;
+	}
 
-	/**
-	 * FGCSystem pool TearDown — called after RefCount hits 0, before pool Free.
-	 * Override for type-specific cleanup (unregister catalogs, clear tables, …).
-	 * Default is no-op. Codegen registers pools with this virtual; no StaticTearDown.
-	 */
-	virtual void OnPoolTearDown();
+	virtual void SetReferencedObjects(const std::vector<UObject*>& InObjects)
+	{
+		(void)InObjects;
+	}
 
-	// ---------------------------------------------------------------------------
-	// Reflection — MAHO_FUNCTION / MAHO_PROPERTY (game / editor / Lua)
-	// ---------------------------------------------------------------------------
+	virtual void OnPoolTearDown() {}
+
 	MAHO_FUNCTION()
 	[[nodiscard]] const std::string& GetName() const { return ObjectName; }
 	MAHO_FUNCTION()
 	[[nodiscard]] std::string GetPathName() const;
 	MAHO_FUNCTION()
-	[[nodiscard]] FObjectRef GetOuter() const;
+	[[nodiscard]] FObjectRef GetOuter() const { return Outer; }
 	MAHO_FUNCTION()
 	[[nodiscard]] FObjectRef GetPackage() const;
 	MAHO_FUNCTION()
@@ -211,22 +187,22 @@ public:
 	MAHO_FUNCTION()
 	[[nodiscard]] EObjectFlags GetFlags() const { return ObjectFlags; }
 	MAHO_FUNCTION()
-	[[nodiscard]] bool HasAnyFlags(EObjectFlags Test) const;
+	[[nodiscard]] bool HasAnyFlags(EObjectFlags Test) const
+	{
+		return ::Maho::HasAnyObjectFlags(ObjectFlags, Test);
+	}
 	MAHO_FUNCTION()
-	[[nodiscard]] bool IsPendingKill() const;
+	[[nodiscard]] bool IsPendingKill() const
+	{
+		return HasAnyFlags(EObjectFlags::PendingKill);
+	}
 
 protected:
 	UObject(UPackage* InOuter, std::string InObjectName);
 
-	// ---------------------------------------------------------------------------
-	// Flags (subclass / package helpers — engine-only)
-	// ---------------------------------------------------------------------------
 	void AddFlags(EObjectFlags InFlags) { ObjectFlags |= InFlags; }
 	void ClearFlags(EObjectFlags InFlags) { ObjectFlags &= ~InFlags; }
 
-	// ---------------------------------------------------------------------------
-	// Reflection — fields
-	// ---------------------------------------------------------------------------
 	MAHO_PROPERTY()
 	std::string ObjectName;
 
@@ -237,19 +213,32 @@ private:
 	friend class FGCSystem;
 	friend struct FPropertyValue;
 
-	// ---------------------------------------------------------------------------
-	// RefCount (FObjectRef / FPropertyValue only)
-	// ---------------------------------------------------------------------------
-	std::uint32_t AddRef();
-	std::uint32_t ReleaseRef();
-	void ClearOuter();
+	std::uint32_t AddRef()
+	{
+		return ++RefCount;
+	}
 
-	// ---------------------------------------------------------------------------
-	// Fields
-	// ---------------------------------------------------------------------------
+	std::uint32_t ReleaseRef()
+	{
+		if (RefCount > 0)
+		{
+			--RefCount;
+		}
+		return RefCount;
+	}
+
+	void ClearOuter()
+	{
+		if (Outer.Object)
+		{
+			Outer.Object->ReleaseRef();
+			Outer.Object = nullptr;
+		}
+	}
+
 	FGCSystem* GC = nullptr;
-	/** Outer package pin. Empty for UPackage, or runtime-only objects. */
 	FObjectRef Outer;
+
 	std::uint32_t RefCount = 0;
 	EObjectFlags ObjectFlags = EObjectFlags::None;
 };

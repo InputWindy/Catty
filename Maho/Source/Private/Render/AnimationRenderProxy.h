@@ -13,7 +13,7 @@ namespace Maho
 
 class FRHIServer;
 
-[[nodiscard]] bool TryBuildAnimationCpuSnapshot(const UAnimation& Animation, FAnimationCpuSnapshot& Out);
+// TryBuildAnimationCpuSnapshot moved to project (needs UAnimation)
 
 class FAnimationRenderProxy
 {

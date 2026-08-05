@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+﻿cmake_minimum_required(VERSION 3.20)
 
 set(MAHO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(MAHO_SOURCE_DIR "${MAHO_ROOT}/Source")
@@ -27,10 +27,6 @@ if(NOT EXISTS "${_MAHO_LOCAL_PYTHON}")
 endif()
 set(_MAHO_GEN_OBJECT_H "${MAHO_GENERATED_DIR}/ObjectReflectTypes.gen.h")
 set(_MAHO_GEN_OBJECT_CPP "${MAHO_GENERATED_DIR}/ObjectReflectTypes.gen.cpp")
-set(_MAHO_GEN_LUA_H "${MAHO_GENERATED_DIR}/LuaReflectBindings.gen.h")
-set(_MAHO_GEN_LUA_CPP "${MAHO_GENERATED_DIR}/LuaReflectBindings.gen.cpp")
-set(_MAHO_GEN_RESOURCE_H "${MAHO_GENERATED_DIR}/ResourceTypes.gen.h")
-set(_MAHO_GEN_RESOURCE_CPP "${MAHO_GENERATED_DIR}/ResourceTypes.gen.cpp")
 
 # Build-time FObject reflection codegen.
 if(NOT EXISTS "${_MAHO_LOCAL_PYTHON}")
@@ -68,19 +64,16 @@ foreach(_src IN LISTS MAHO_SOURCES)
 	string(FIND "${_src}" "\\Intermediate\\Generated\\" _maho_gen_pos_win)
 	if(_maho_gen_pos EQUAL -1 AND _maho_gen_pos_win EQUAL -1)
 		list(APPEND _MAHO_SOURCES_FILTERED "${_src}")
-	endif()
+endif()
 endforeach()
 set(MAHO_SOURCES "${_MAHO_SOURCES_FILTERED}")
 
 # Generated sources stay out of MAHO_SOURCES so they don't appear in VS filters.
 # They are added to the target via target_sources later.
 set(MAHO_GEN_SOURCES
-	"${_MAHO_GEN_OBJECT_CPP}"
-	"${_MAHO_GEN_OBJECT_H}"
-	"${_MAHO_GEN_LUA_CPP}"
-	"${_MAHO_GEN_LUA_H}"
-	"${_MAHO_GEN_RESOURCE_CPP}"
-	"${_MAHO_GEN_RESOURCE_H}"
+
+
+
 )
 list(REMOVE_DUPLICATES MAHO_SOURCES)
 
@@ -91,12 +84,7 @@ endif()
 if(NOT TARGET imgui)
 	message(FATAL_ERROR "Maho: imgui ThirdParty target was not created (MahoDependencies.cmake)")
 endif()
-if(NOT TARGET lua)
-	message(FATAL_ERROR "Maho: lua ThirdParty target was not created (MahoDependencies.cmake)")
-endif()
-if(NOT MAHO_SOL2_INCLUDE_DIR)
-	message(FATAL_ERROR "Maho: sol2 include dir was not set (MahoDependencies.cmake)")
-endif()
+
 
 if(MAHO_BUILD_SHARED)
 	add_library(Maho SHARED ${MAHO_SOURCES})
@@ -129,7 +117,6 @@ target_include_directories(Maho
 	PRIVATE
 		"${MAHO_PRIVATE_DIR}"
 		"${MAHO_NLOHMANN_JSON_INCLUDE_DIR}"
-		"${MAHO_SOL2_INCLUDE_DIR}"
 		"${MAHO_VMA_INCLUDE_DIR}"
 )
 
@@ -143,7 +130,6 @@ target_link_libraries(Maho
 	PRIVATE
 		glfw
 		Threads::Threads
-		lua
 )
 
 if(MAHO_HAS_LIBKTX)
@@ -153,34 +139,6 @@ endif()
 if(MAHO_HAS_OPENIMAGEIO)
 	target_compile_definitions(Maho PRIVATE MAHO_WITH_OPENIMAGEIO=1)
 endif()
-if(MAHO_HAS_ASSIMP)
-	target_link_libraries(Maho PRIVATE assimp)
-	target_compile_definitions(Maho PRIVATE MAHO_WITH_ASSIMP=1)
-	# Assimp contrib zlib — used by FCompression / .casset packing.
-	if(TARGET zlibstatic)
-		target_link_libraries(Maho PRIVATE zlibstatic)
-		if(DEFINED assimp_SOURCE_DIR AND DEFINED assimp_BINARY_DIR)
-			target_include_directories(Maho PRIVATE
-				"${assimp_SOURCE_DIR}/contrib/zlib"
-				"${assimp_BINARY_DIR}/contrib/zlib"
-			)
-		endif()
-		target_compile_definitions(Maho PRIVATE MAHO_WITH_ZLIB=1)
-	endif()
-	# Shared Assimp (or leftover shared build) must sit next to Maho.dll / the game exe.
-	get_target_property(_MAHO_ASSIMP_TYPE assimp TYPE)
-	if(_MAHO_ASSIMP_TYPE STREQUAL "SHARED_LIBRARY")
-		add_custom_command(TARGET Maho POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different
-				"$<TARGET_FILE:assimp>"
-				"$<TARGET_FILE_DIR:Maho>"
-			COMMENT "Copy Assimp runtime DLL"
-			VERBATIM
-		)
-	endif()
-	unset(_MAHO_ASSIMP_TYPE)
-endif()
-
 if(MAHO_HAS_GLSLANG)
 	target_link_libraries(Maho PRIVATE glslang OSDependent SPIRV)
 	target_compile_definitions(Maho PRIVATE MAHO_WITH_GLSLANG=1)
@@ -192,7 +150,7 @@ if(MAHO_HAS_GLSLANG)
 	if(MAHO_HAS_SPIRV_TOOLS)
 		target_link_libraries(Maho PRIVATE SPIRV-Tools-opt SPIRV-Tools)
 		target_compile_definitions(Maho PRIVATE MAHO_WITH_SPIRV_TOOLS=1)
-	endif()
+endif()
 endif()
 
 # Re-export ImGui include paths / defs so game TUs can #include <imgui.h> against Maho.dll.
@@ -217,7 +175,7 @@ if(MAHO_BUILD_SHARED)
 			imgui
 			"-Wl,--no-whole-archive"
 		)
-	endif()
+endif()
 else()
 	target_link_libraries(Maho PRIVATE imgui)
 endif()
@@ -252,7 +210,7 @@ else()
 			CXX_VISIBILITY_PRESET hidden
 			VISIBILITY_INLINES_HIDDEN ON
 		)
-	endif()
+endif()
 endif()
 
 maho_set_output_dirs(Maho)

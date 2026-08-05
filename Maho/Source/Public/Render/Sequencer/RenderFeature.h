@@ -73,22 +73,16 @@ public:
 	virtual bool OnRegister(FRenderServer& RenderServer) { (void)RenderServer; return true; }
 	virtual void OnUnregister(FRenderServer& RenderServer) { (void)RenderServer; }
 
-	virtual void BuildRenderGraph(FRDGBuilder& GraphBuilder, FRenderServer& RenderServer)
+	/** Stage is an explicit parameter — aligned with IEngineExtension::ExecuteStage. */
+	virtual void ExecuteStage(ERenderPipelineStage Stage, FRDGBuilder& GraphBuilder)
 	{
+		(void)Stage;
 		(void)GraphBuilder;
-		(void)RenderServer;
 	}
-
-	[[nodiscard]] ERenderPipelineStage GetCurrentStage() const { return CurrentStage; }
 
 	[[nodiscard]] virtual bool ParticipatesInStage(ERenderPipelineStage Stage) const = 0;
 	virtual void ForEachStageDep(ERenderPipelineStage Stage,
 	                             const std::function<void(const std::type_index&)>& Visitor) const = 0;
-
-private:
-	friend class FRenderServer;
-	void SetCurrentStage(ERenderPipelineStage Stage) { CurrentStage = Stage; }
-	ERenderPipelineStage CurrentStage = ERenderPipelineStage::COUNT;
 };
 
 // ── CRTP base with auto dispatch ─────────────────────────────────────

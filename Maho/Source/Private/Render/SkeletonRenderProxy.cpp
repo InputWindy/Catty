@@ -1,7 +1,5 @@
-#include "SkeletonRenderProxy.h"
+﻿#include "SkeletonRenderProxy.h"
 
-#include <Core/Extension/Resource/Resource.h>
-#include <Core/Object/SoftObjectPath.h>
 #include <Core/System/Log.h>
 #include <Render/RHI/RHI.h>
 #include <Render/RHI/RHIResourceManager.h>
@@ -90,56 +88,6 @@ void IdentityMat4(float* Out)
 }
 
 } // namespace
-
-bool TryBuildSkeletonCpuSnapshot(const USkeleton& Skeleton, FSkeletonCpuSnapshot& Out)
-{
-	if (Skeleton.GetLoadState() != EResourceLoadState::Ready)
-	{
-		return false;
-	}
-
-	const std::vector<FSkeletonBone>& Bones = Skeleton.GetBones();
-	if (Bones.empty())
-	{
-		return false;
-	}
-
-	Out = FSkeletonCpuSnapshot{};
-	Out.CatalogKey = FResourceSystem::MakeResourceCatalogKey(Skeleton);
-	Out.Generation = Skeleton.GetContentGeneration();
-	Out.BoneCount = static_cast<std::uint32_t>(Bones.size());
-	Out.BoneNames.resize(Bones.size());
-	Out.ParentIndex.resize(Bones.size());
-	Out.InverseBindPose.resize(Bones.size() * 16u);
-
-	std::vector<float> BindWorld(Bones.size() * 16u);
-	for (std::size_t I = 0; I < Bones.size(); ++I)
-	{
-		Out.BoneNames[I] = Bones[I].Name;
-		Out.ParentIndex[I] = Bones[I].ParentIndex;
-
-		float* World = BindWorld.data() + I * 16u;
-		if (Bones[I].ParentIndex >= 0 && static_cast<std::size_t>(Bones[I].ParentIndex) < I)
-		{
-			MulMat4(
-				BindWorld.data() + static_cast<std::size_t>(Bones[I].ParentIndex) * 16u,
-				Bones[I].BindLocal,
-				World);
-		}
-		else
-		{
-			std::memcpy(World, Bones[I].BindLocal, sizeof(float) * 16);
-		}
-
-		float* Ibm = Out.InverseBindPose.data() + I * 16u;
-		if (!InvertMat4(World, Ibm))
-		{
-			IdentityMat4(Ibm);
-		}
-	}
-
-	return Out.BoneCount > 0;
-}
 
 FSkeletonRenderProxy::FSkeletonRenderProxy(std::string InCatalogKey)
 	: CatalogKey(std::move(InCatalogKey))

@@ -50,7 +50,10 @@ FetchContent_Declare(
 	GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(spdlog)
+maho_fetchcontent_populate_or_reuse(spdlog include/spdlog/spdlog.h)
+if(spdlog_POPULATED AND NOT TARGET spdlog::spdlog_header_only)
+	add_subdirectory(${spdlog_SOURCE_DIR} ${spdlog_BINARY_DIR})
+endif()
 
 if(TARGET spdlog)
 	set_target_properties(spdlog PROPERTIES FOLDER "ThirdParty")

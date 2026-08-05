@@ -1,7 +1,7 @@
-#pragma once
+﻿#pragma once
 
 #include <Core/Export.h>
-#include <Core/Object/SoftObjectPath.h>
+#include <Render/ResourceSnapshots.h>
 
 #include <cstdint>
 #include <functional>
@@ -39,7 +39,6 @@ public:
 
 	const FMaterialParamValue* Find(const std::string& Name) const;
 
-	// Iterate all params (for editor panels).
 	void ForEach(std::function<void(const std::string&, const FMaterialParamValue&)> Fn) const;
 
 	[[nodiscard]] bool IsEmpty() const { return Values.empty(); }

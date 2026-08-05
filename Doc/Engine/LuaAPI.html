@@ -206,8 +206,6 @@ footer { color: var(--muted); font-size: 13px; padding: 0 36px 40px; max-width: 
 	<div class="sec">Usertypes</div>
 	<ul>
 		<li><a href="#maho.object">maho.object</a></li>
-		<li><a href="#maho.package">maho.package</a></li>
-		<li><a href="#maho.resource">maho.resource</a></li>
 	</ul>
 <!-- @@MAHO_LUA_USERTYPE_TOC_END@@ -->
 </nav>
@@ -300,58 +298,6 @@ maho.flush_all()</code>
 						<tr><td><code>get_flags</code></td><td><code>GetFlags</code></td><td><code>EObjectFlags()</code></td></tr>
 						<tr><td><code>has_any_flags</code></td><td><code>HasAnyFlags</code></td><td><code>bool(EObjectFlags)</code></td></tr>
 						<tr><td><code>is_pending_kill</code></td><td><code>IsPendingKill</code></td><td><code>bool()</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="maho.package">
-			<div class="fn-head">
-				<h3 class="fn-name">maho.package</h3>
-				<span class="tag tag-reflect">usertype</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">Maho::UPackage · extends maho.object</code>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Lua</th><th>C++</th><th>Signature</th></tr></thead>
-					<tbody>
-						<tr><td><code>find_object</code></td><td><code>FindObject</code></td><td><code>FObjectRef(std::string)</code></td></tr>
-						<tr><td><code>get_file_path</code></td><td><code>GetFilePath</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>set_file_path</code></td><td><code>SetFilePath</code></td><td><code>void(std::string)</code></td></tr>
-						<tr><td><code>get_package_flags</code></td><td><code>GetPackageFlags</code></td><td><code>EPackageFlags()</code></td></tr>
-						<tr><td><code>is_persistent</code></td><td><code>IsPersistent</code></td><td><code>bool()</code></td></tr>
-						<tr><td><code>is_transient</code></td><td><code>IsTransient</code></td><td><code>bool()</code></td></tr>
-						<tr><td><code>get_object_count</code></td><td><code>GetObjectCount</code></td><td><code>std::uint32_t()</code></td></tr>
-					</tbody>
-				</table>
-			</div>
-		</article>
-
-		<article class="fn" id="maho.resource">
-			<div class="fn-head">
-				<h3 class="fn-name">maho.resource</h3>
-				<span class="tag tag-reflect">usertype</span>
-			</div>
-			<div class="fn-body">
-				<code class="sig">Maho::UResource · extends maho.object</code>
-				<h4>Properties</h4>
-				<table>
-					<thead><tr><th>Lua</th><th>C++</th><th>Type</th></tr></thead>
-					<tbody>
-						<tr><td><code>type</code></td><td><code>Type</code></td><td><code>EnumInt32</code></td></tr>
-						<tr><td><code>source_path</code></td><td><code>SourcePath</code></td><td><code>String</code></td></tr>
-						<tr><td><code>load_state</code></td><td><code>LoadState</code></td><td><code>EnumInt32</code></td></tr>
-					</tbody>
-				</table>
-				<h4>Functions</h4>
-				<table>
-					<thead><tr><th>Lua</th><th>C++</th><th>Signature</th></tr></thead>
-					<tbody>
-						<tr><td><code>get_type</code></td><td><code>GetType</code></td><td><code>EResourceType()</code></td></tr>
-						<tr><td><code>get_source_path</code></td><td><code>GetSourcePath</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>get_path</code></td><td><code>GetPath</code></td><td><code>std::string()</code></td></tr>
-						<tr><td><code>get_load_state</code></td><td><code>GetLoadState</code></td><td><code>EResourceLoadState()</code></td></tr>
 					</tbody>
 				</table>
 			</div>

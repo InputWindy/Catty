@@ -20,7 +20,7 @@ class FRHIFence;
 class FRHICommandList;
 class FRHIBuffer;
 
-[[nodiscard]] bool TryBuildTextureCpuSnapshot(const UTexture& Texture, FTextureCpuSnapshot& Out);
+// TryBuildTextureCpuSnapshot moved to project (needs UTexture)
 
 [[nodiscard]] ERHIFormat MapTexturePixelFormatToRHI(ETexturePixelFormat Format, bool bSRGB);
 [[nodiscard]] ERHITextureDimension MapTextureDimensionToRHI(ETextureDimension Dimension);
