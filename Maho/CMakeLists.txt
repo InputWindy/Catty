@@ -153,6 +153,15 @@ if(MAHO_HAS_GLSLANG)
 endif()
 endif()
 
+if(TARGET zlibstatic)
+	target_link_libraries(Maho PRIVATE zlibstatic)
+	target_compile_definitions(Maho PRIVATE MAHO_WITH_ZLIB=1)
+	target_include_directories(Maho PRIVATE
+		$<TARGET_PROPERTY:zlibstatic,SOURCE_DIR>
+		$<TARGET_PROPERTY:zlibstatic,BINARY_DIR>
+	)
+endif()
+
 # Re-export ImGui include paths / defs so game TUs can #include <imgui.h> against Maho.dll.
 target_include_directories(Maho
 	PUBLIC
